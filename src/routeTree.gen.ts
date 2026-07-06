@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
 import { Route as MetasRouteImport } from './routes/metas'
+import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
 const MetasRoute = MetasRouteImport.update({
   id: '/metas',
   path: '/metas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EquipeRoute = EquipeRouteImport.update({
@@ -38,12 +44,14 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/equipe': typeof EquipeRoute
+  '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/equipe': typeof EquipeRoute
+  '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/equipe': typeof EquipeRoute
+  '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/equipe' | '/metas' | '/minhas-tarefas'
+  fullPaths: '/' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/equipe' | '/metas' | '/minhas-tarefas'
-  id: '__root__' | '/' | '/equipe' | '/metas' | '/minhas-tarefas'
+  to: '/' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
+  id: '__root__' | '/' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   EquipeRoute: typeof EquipeRoute
+  InboxRoute: typeof InboxRoute
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/metas'
       fullPath: '/metas'
       preLoaderRoute: typeof MetasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/equipe': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   EquipeRoute: EquipeRoute,
+  InboxRoute: InboxRoute,
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
 }
