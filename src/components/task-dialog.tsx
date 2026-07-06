@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { X, AtSign, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { formatRelative } from "@/lib/use-theme";
 import {
   sectors,
   freqLabels,
@@ -9,24 +10,34 @@ import {
   type Frequency,
   type Priority,
   type Status,
-  type Task,
 } from "@/lib/fluxo-types";
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
-  editing?: Task | null;
-}
+type Tab = "detalhes" | "checklist" | "comentarios" | "atividade";
 
-export function TaskDialog({ open, onClose, editing }: Props) {
+export function TaskDialog() {
   const {
     users,
+    tasks,
     currentUser,
     visibleUsersForAssign,
     createTask,
     updateTask,
     deleteTask,
+    addComment,
+    addChecklistItem,
+    toggleChecklistItem,
+    removeChecklistItem,
+    taskDialog,
+    closeTaskDialog,
   } = useFluxo();
+
+  const open = taskDialog.open;
+  const editing = useMemo(
+    () => (taskDialog.editingId ? tasks.find((t) => t.id === taskDialog.editingId) ?? null : null),
+    [taskDialog.editingId, tasks],
+  );
+
+  const [tab, setTab] = useState<Tab>("detalhes");
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -38,13 +49,17 @@ export function TaskDialog({ open, onClose, editing }: Props) {
   const [score, setScore] = useState(20);
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [recurring, setRecurring] = useState(false);
+  const [recurringUntil, setRecurringUntil] = useState<string>("");
   const [tags, setTags] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [newComment, setNewComment] = useState("");
+  const [newChecklist, setNewChecklist] = useState("");
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    setTab("detalhes");
     if (editing) {
       setTitle(editing.title);
       setDescription(editing.description ?? "");
@@ -56,6 +71,7 @@ export function TaskDialog({ open, onClose, editing }: Props) {
       setScore(editing.score);
       setDueDate(editing.dueDate.slice(0, 10));
       setRecurring(editing.recurring);
+      setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
       setTags(editing.tags.join(", "));
       setMentions(editing.mentions);
     } else {
@@ -64,15 +80,16 @@ export function TaskDialog({ open, onClose, editing }: Props) {
       setSector(currentUser.sector);
       setAssigneeId(currentUser.id);
       setFrequency("diaria");
-      setStatus("pendente");
+      setStatus(taskDialog.initialStatus ?? "pendente");
       setPriority("media");
       setScore(20);
       setDueDate(new Date().toISOString().slice(0, 10));
       setRecurring(false);
+      setRecurringUntil("");
       setTags("");
       setMentions([]);
     }
-  }, [open, editing, currentUser.id, currentUser.sector]);
+  }, [open, editing, currentUser.id, currentUser.sector, taskDialog.initialStatus]);
 
   if (!open) return null;
 
@@ -83,7 +100,7 @@ export function TaskDialog({ open, onClose, editing }: Props) {
     const caret = descRef.current?.selectionStart ?? val.length;
     const upto = val.slice(0, caret);
     const m = upto.match(/@(\w*)$/);
-    setMentionQuery(m ? m[1].toLowerCase() : null);
+    setMentionQuery(m ? m[1]!.toLowerCase() : null);
   };
 
   const insertMention = (u: { id: string; name: string }) => {
@@ -109,7 +126,7 @@ export function TaskDialog({ open, onClose, editing }: Props) {
       title: title.trim(),
       description: description.trim(),
       sector,
-      createdBy: currentUser.id,
+      createdBy: editing?.createdBy ?? currentUser.id,
       assigneeId,
       mentions,
       frequency,
@@ -117,185 +134,339 @@ export function TaskDialog({ open, onClose, editing }: Props) {
       score,
       dueDate: new Date(dueDate + "T17:00:00").toISOString(),
       recurring,
+      recurringUntil: recurring && recurringUntil ? new Date(recurringUntil + "T23:59:59").toISOString() : null,
       priority,
-      tags: tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
     };
-    if (editing) {
-      updateTask(editing.id, payload);
-    } else {
-      createTask(payload);
-    }
-    onClose();
+    if (editing) updateTask(editing.id, payload);
+    else createTask(payload);
+    closeTaskDialog();
   };
 
   const handleDelete = () => {
     if (editing && confirm("Excluir esta tarefa?")) {
       deleteTask(editing.id);
-      onClose();
+      closeTaskDialog();
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeTaskDialog}>
       <div
-        className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
+        className="w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-base font-semibold">
-            {editing ? "Editar tarefa" : "Nova tarefa"}
-          </h2>
-          <button onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-secondary">
+          <h2 className="text-base font-semibold">{editing ? "Editar tarefa" : "Nova tarefa"}</h2>
+          <button onClick={closeTaskDialog} className="rounded-md p-1 text-muted-foreground hover:bg-secondary">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="max-h-[75vh] space-y-4 overflow-y-auto p-5">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Título</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="O que precisa ser feito?"
-              autoFocus
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+        {editing && (
+          <div className="flex gap-1 border-b border-border px-5">
+            {(
+              [
+                { id: "detalhes", label: "Detalhes", icon: null },
+                { id: "checklist", label: `Checklist${editing.checklist.length ? ` (${editing.checklist.filter((c) => c.done).length}/${editing.checklist.length})` : ""}`, icon: ListChecks },
+                { id: "comentarios", label: `Comentários${editing.comments.length ? ` (${editing.comments.length})` : ""}`, icon: MessageSquare },
+                { id: "atividade", label: "Atividade", icon: Activity },
+              ] as { id: Tab; label: string; icon: typeof Activity | null }[]
+            ).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`relative inline-flex items-center gap-1.5 px-3 py-2 text-sm ${
+                  tab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.icon && <t.icon className="h-3.5 w-3.5" />}
+                {t.label}
+                {tab === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+              </button>
+            ))}
           </div>
+        )}
 
-          <div className="relative">
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Descrição <span className="text-muted-foreground/60">(use @ para mencionar)</span>
-            </label>
-            <textarea
-              ref={descRef}
-              value={description}
-              onChange={(e) => handleDescChange(e.target.value)}
-              rows={3}
-              className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            {mentionQuery !== null && filteredMentions.length > 0 && (
-              <div className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
-                {filteredMentions.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => insertMention(u)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
-                  >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                      {u.avatar}
-                    </span>
-                    {u.name}
-                    <span className="ml-auto text-[10px] text-muted-foreground">{u.jobTitle}</span>
-                  </button>
-                ))}
+        <div className="max-h-[70vh] overflow-y-auto p-5">
+          {tab === "detalhes" && (
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Título</label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="O que precisa ser feito?"
+                  autoFocus
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
               </div>
-            )}
-            {mentions.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {mentions.map((mid) => {
-                  const u = users.find((x) => x.id === mid);
-                  if (!u) return null;
-                  return (
-                    <span
-                      key={mid}
-                      className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px]"
-                    >
-                      <AtSign className="h-2.5 w-2.5" />
-                      {u.name}
-                      <button onClick={() => removeMention(mid)} className="ml-1 text-muted-foreground hover:text-foreground">
-                        <X className="h-2.5 w-2.5" />
+
+              <div className="relative">
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Descrição <span className="text-muted-foreground/60">(use @ para mencionar)</span>
+                </label>
+                <textarea
+                  ref={descRef}
+                  value={description}
+                  onChange={(e) => handleDescChange(e.target.value)}
+                  rows={3}
+                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                {mentionQuery !== null && filteredMentions.length > 0 && (
+                  <div className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                    {filteredMentions.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => insertMention(u)}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
+                      >
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                          {u.avatar}
+                        </span>
+                        {u.name}
+                        <span className="ml-auto text-[10px] text-muted-foreground">{u.jobTitle}</span>
                       </button>
+                    ))}
+                  </div>
+                )}
+                {mentions.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {mentions.map((mid) => {
+                      const u = users.find((x) => x.id === mid);
+                      if (!u) return null;
+                      return (
+                        <span
+                          key={mid}
+                          className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px]"
+                        >
+                          <AtSign className="h-2.5 w-2.5" />
+                          {u.name}
+                          <button onClick={() => removeMention(mid)} className="ml-1 text-muted-foreground hover:text-foreground">
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Responsável">
+                  <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="input">
+                    {assignables.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} {u.id === currentUser.id ? "(eu)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {currentUser.role === "adm" && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Como ADM, você só cria tarefas para si mesmo. Use @ para mencionar colegas.
+                    </p>
+                  )}
+                </Field>
+                <Field label="Setor">
+                  <select value={sector} onChange={(e) => setSector(e.target.value)} className="input">
+                    {sectors.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Frequência">
+                  <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className="input">
+                    {Object.entries(freqLabels).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Prioridade">
+                  <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="input">
+                    {Object.entries(priorityLabels).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Status">
+                  <select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="input">
+                    {Object.entries(statusLabels).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Prazo">
+                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
+                </Field>
+                <Field label="Pontos base">
+                  <input type="number" min={0} value={score} onChange={(e) => setScore(Number(e.target.value))} className="input" />
+                </Field>
+                <Field label="Tags (separadas por vírgula)">
+                  <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
+                </Field>
+              </div>
+
+              <div className="rounded-md border border-border bg-secondary/40 p-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
+                  Tarefa recorrente (repete automaticamente ao concluir)
+                </label>
+                {recurring && (
+                  <div className="mt-2 flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Repetir até (opcional):</span>
+                    <input
+                      type="date"
+                      value={recurringUntil}
+                      onChange={(e) => setRecurringUntil(e.target.value)}
+                      className="input max-w-[10rem] py-1"
+                    />
+                    {recurringUntil && (
+                      <button
+                        type="button"
+                        onClick={() => setRecurringUntil("")}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        limpar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {tab === "checklist" && editing && (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  value={newChecklist}
+                  onChange={(e) => setNewChecklist(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newChecklist.trim()) {
+                      addChecklistItem(editing.id, newChecklist);
+                      setNewChecklist("");
+                    }
+                  }}
+                  placeholder="Adicionar item…"
+                  className="input flex-1"
+                />
+                <button
+                  onClick={() => {
+                    if (newChecklist.trim()) {
+                      addChecklistItem(editing.id, newChecklist);
+                      setNewChecklist("");
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Adicionar
+                </button>
+              </div>
+              <ul className="space-y-1">
+                {editing.checklist.length === 0 && (
+                  <li className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                    Nenhum item ainda. Quebre a tarefa em passos objetivos.
+                  </li>
+                )}
+                {editing.checklist.map((c) => (
+                  <li key={c.id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/50">
+                    <button
+                      onClick={() => toggleChecklistItem(editing.id, c.id)}
+                      className={`flex h-4 w-4 items-center justify-center rounded border ${
+                        c.done ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                      }`}
+                    >
+                      {c.done && <Check className="h-3 w-3" />}
+                    </button>
+                    <span className={`flex-1 text-sm ${c.done ? "text-muted-foreground line-through" : ""}`}>
+                      {c.text}
                     </span>
+                    <button
+                      onClick={() => removeChecklistItem(editing.id, c.id)}
+                      className="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {tab === "comentarios" && editing && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Deixe um comentário… (Ctrl+Enter para enviar)"
+                  rows={2}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && newComment.trim()) {
+                      addComment(editing.id, newComment);
+                      setNewComment("");
+                    }
+                  }}
+                  className="input flex-1 resize-none"
+                />
+                <button
+                  onClick={() => {
+                    if (newComment.trim()) {
+                      addComment(editing.id, newComment);
+                      setNewComment("");
+                    }
+                  }}
+                  className="self-end rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+                >
+                  Comentar
+                </button>
+              </div>
+              <ul className="space-y-3">
+                {editing.comments.length === 0 && (
+                  <li className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                    Sem comentários ainda.
+                  </li>
+                )}
+                {[...editing.comments].reverse().map((c) => {
+                  const u = users.find((x) => x.id === c.userId);
+                  return (
+                    <li key={c.id} className="flex gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                        {u?.avatar}
+                      </div>
+                      <div className="flex-1 rounded-md border border-border bg-background/60 px-3 py-2">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-medium">{u?.name}</span>
+                          <span className="text-muted-foreground">{formatRelative(c.at)}</span>
+                        </div>
+                        <div className="mt-1 whitespace-pre-wrap text-sm">{c.text}</div>
+                      </div>
+                    </li>
                   );
                 })}
-              </div>
-            )}
-          </div>
+              </ul>
+            </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Responsável">
-              <select
-                value={assigneeId}
-                onChange={(e) => setAssigneeId(e.target.value)}
-                className="input"
-              >
-                {assignables.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} {u.id === currentUser.id ? "(eu)" : ""}
-                  </option>
-                ))}
-              </select>
-              {currentUser.role === "adm" && (
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Como ADM, você só cria tarefas para si mesmo. Use @ para mencionar colegas.
-                </p>
-              )}
-            </Field>
-            <Field label="Setor">
-              <select value={sector} onChange={(e) => setSector(e.target.value)} className="input">
-                {sectors.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Frequência">
-              <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className="input">
-                {Object.entries(freqLabels).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Prioridade">
-              <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="input">
-                {Object.entries(priorityLabels).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Status">
-              <select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="input">
-                {Object.entries(statusLabels).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Prazo">
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="input"
-              />
-            </Field>
-            <Field label="Pontos (score)">
-              <input
-                type="number"
-                min={0}
-                value={score}
-                onChange={(e) => setScore(Number(e.target.value))}
-                className="input"
-              />
-            </Field>
-            <Field label="Tags (separadas por vírgula)">
-              <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
-            </Field>
-          </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
-            Tarefa recorrente (repete automaticamente)
-          </label>
+          {tab === "atividade" && editing && (
+            <ul className="space-y-3">
+              {[...editing.activity].reverse().map((a) => {
+                const u = users.find((x) => x.id === a.userId);
+                return (
+                  <li key={a.id} className="flex items-start gap-3 text-sm">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
+                      {u?.avatar ?? "?"}
+                    </div>
+                    <div className="flex-1">
+                      <span className="font-medium">{u?.name ?? "—"}</span>{" "}
+                      <span className="text-muted-foreground">{a.text}</span>
+                      <div className="text-[10px] text-muted-foreground/70">{formatRelative(a.at)}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-5 py-3">
@@ -311,7 +482,7 @@ export function TaskDialog({ open, onClose, editing }: Props) {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={onClose}
+              onClick={closeTaskDialog}
               className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-secondary"
             >
               Cancelar
