@@ -88,15 +88,21 @@ export function HeroOrb({ score, goal }: HeroOrbProps) {
       {[0, 120, 240].map((angle, i) => (
         <div
           key={i}
-          className="absolute h-2 w-2 rounded-full"
+          className="absolute inset-0 flex items-center justify-center"
           style={{
-            background: ["#22d3ee", "#f472b6", "#34d399"][i],
-            boxShadow: `0 0 12px ${["#22d3ee", "#f472b6", "#34d399"][i]}`,
-            transform: `rotate(${angle}deg) translateX(170px)`,
             animation: `orb-spin ${20 + i * 5}s linear infinite`,
-            transformOrigin: "center",
+            transform: `rotate(${angle}deg)`,
           }}
-        />
+        >
+          <div
+            className="h-2 w-2 rounded-full"
+            style={{
+              background: ["#22d3ee", "#f472b6", "#34d399"][i],
+              boxShadow: `0 0 16px ${["#22d3ee", "#f472b6", "#34d399"][i]}`,
+              transform: "translateX(170px)",
+            }}
+          />
+        </div>
       ))}
     </div>
   );
