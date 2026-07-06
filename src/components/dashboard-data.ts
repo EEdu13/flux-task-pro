@@ -13,6 +13,8 @@ export interface Task {
   dueLabel: string;
   recurring?: boolean;
   priority: "alta" | "media" | "baixa";
+  project?: string;
+  tags?: string[];
 }
 
 export interface Collaborator {
@@ -27,11 +29,11 @@ export interface Collaborator {
 
 export const sectors = [
   { id: "todos", name: "Todos os setores", icon: "🌐" },
-  { id: "comercial", name: "Comercial", icon: "📈" },
-  { id: "operacoes", name: "Operações", icon: "⚙️" },
-  { id: "marketing", name: "Marketing", icon: "✨" },
-  { id: "financeiro", name: "Financeiro", icon: "💎" },
-  { id: "rh", name: "Recursos Humanos", icon: "🧭" },
+  { id: "comercial", name: "Comercial", icon: "📈", color: "oklch(0.62 0.16 155)" },
+  { id: "operacoes", name: "Operações", icon: "⚙️", color: "oklch(0.62 0.16 230)" },
+  { id: "marketing", name: "Marketing", icon: "✨", color: "oklch(0.6 0.2 330)" },
+  { id: "financeiro", name: "Financeiro", icon: "💎", color: "oklch(0.78 0.15 75)" },
+  { id: "rh", name: "Recursos Humanos", icon: "🧭", color: "oklch(0.52 0.22 275)" },
 ];
 
 export const collaborators: Collaborator[] = [
