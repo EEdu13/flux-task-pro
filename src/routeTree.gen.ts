@@ -13,6 +13,7 @@ import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
 import { Route as MetasRouteImport } from './routes/metas'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as EquipeRouteImport } from './routes/equipe'
+import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as IndexRouteImport } from './routes/index'
 
 const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
@@ -35,6 +36,11 @@ const EquipeRoute = EquipeRouteImport.update({
   path: '/equipe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CalendarioRoute = CalendarioRouteImport.update({
+  id: '/calendario',
+  path: '/calendario',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -43,6 +49,7 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/calendario': typeof CalendarioRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/calendario': typeof CalendarioRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/calendario': typeof CalendarioRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
@@ -65,14 +74,28 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
+  fullPaths:
+    | '/'
+    | '/calendario'
+    | '/equipe'
+    | '/inbox'
+    | '/metas'
+    | '/minhas-tarefas'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
-  id: '__root__' | '/' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
+  to: '/' | '/calendario' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
+  id:
+    | '__root__'
+    | '/'
+    | '/calendario'
+    | '/equipe'
+    | '/inbox'
+    | '/metas'
+    | '/minhas-tarefas'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CalendarioRoute: typeof CalendarioRoute
   EquipeRoute: typeof EquipeRoute
   InboxRoute: typeof InboxRoute
   MetasRoute: typeof MetasRoute
@@ -109,6 +132,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EquipeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/calendario': {
+      id: '/calendario'
+      path: '/calendario'
+      fullPath: '/calendario'
+      preLoaderRoute: typeof CalendarioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -121,6 +151,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CalendarioRoute: CalendarioRoute,
   EquipeRoute: EquipeRoute,
   InboxRoute: InboxRoute,
   MetasRoute: MetasRoute,
