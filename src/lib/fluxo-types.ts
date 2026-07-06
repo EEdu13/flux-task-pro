@@ -15,6 +15,37 @@ export interface User {
   streak: number;
 }
 
+export interface Comment {
+  id: string;
+  userId: string;
+  text: string;
+  at: string;
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export type ActivityKind =
+  | "criada"
+  | "status"
+  | "atribuicao"
+  | "comentario"
+  | "checklist"
+  | "editada"
+  | "concluida"
+  | "mencao";
+
+export interface ActivityEntry {
+  id: string;
+  at: string;
+  userId: string;
+  kind: ActivityKind;
+  text: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -28,10 +59,14 @@ export interface Task {
   score: number;
   dueDate: string; // ISO
   recurring: boolean;
+  recurringUntil?: string | null;
   priority: Priority;
   tags: string[];
   createdAt: string;
   order: number; // for kanban ordering
+  comments: Comment[];
+  checklist: ChecklistItem[];
+  activity: ActivityEntry[];
 }
 
 export interface Notification {
@@ -40,9 +75,28 @@ export interface Notification {
   type: "mencao" | "atribuida" | "prazo" | "concluida";
   title: string;
   desc: string;
-  time: string;
+  at: string; // ISO
   read?: boolean;
   taskId?: string;
+}
+
+export interface Meta {
+  id: string;
+  scope: "user" | "sector";
+  scopeId: string;
+  period: Frequency;
+  metric: "tarefas" | "pontos";
+  target: number;
+}
+
+export interface CompletionEntry {
+  id: string;
+  taskId: string;
+  userId: string;
+  points: number;
+  priority: Priority;
+  onTime: boolean;
+  at: string;
 }
 
 export const sectors = [
@@ -76,4 +130,23 @@ export const priorityLabels: Record<Priority, string> = {
   alta: "Alta",
   media: "Média",
   baixa: "Baixa",
+};
+
+export const priorityMultiplier: Record<Priority, number> = {
+  alta: 1.5,
+  media: 1,
+  baixa: 0.75,
+};
+
+export const priorityColor: Record<Priority, string> = {
+  alta: "oklch(0.58 0.22 25)",
+  media: "oklch(0.72 0.15 70)",
+  baixa: "oklch(0.55 0.02 260)",
+};
+
+export const statusColor: Record<Status, string> = {
+  pendente: "oklch(0.55 0.02 260)",
+  andamento: "oklch(0.52 0.22 275)",
+  revisao: "oklch(0.78 0.15 75)",
+  concluida: "oklch(0.62 0.16 155)",
 };
