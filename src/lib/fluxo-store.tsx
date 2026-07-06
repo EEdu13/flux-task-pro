@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Notification, Status, Task, User } from "./fluxo-types";
+import type { Frequency, Notification, Status, Task, User } from "./fluxo-types";
 import { seedNotifications, seedTasks, seedUsers } from "./fluxo-seed";
 
 interface Store {
@@ -14,6 +14,7 @@ interface Store {
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: Status, targetIndex?: number) => void;
   markNotifRead: (id: string) => void;
+  markAllNotifsRead: () => void;
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
@@ -82,6 +83,14 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const advanceDate = (iso: string, freq: Frequency): string => {
+    const d = new Date(iso);
+    if (freq === "diaria") d.setDate(d.getDate() + 1);
+    else if (freq === "semanal") d.setDate(d.getDate() + 7);
+    else d.setMonth(d.getMonth() + 1);
+    return d.toISOString();
+  };
+
   const store: Store = {
     ...state,
     setCurrentUserId: (id) => setState((s) => ({ ...s, currentUserId: id })),
@@ -106,10 +115,71 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       }
     },
     updateTask: (id, patch) => {
-      setState((s) => ({
-        ...s,
-        tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-      }));
+      setState((s) => {
+        const prev = s.tasks.find((t) => t.id === id);
+        if (!prev) return s;
+        const next = { ...prev, ...patch } as Task;
+        let tasks = s.tasks.map((t) => (t.id === id ? next : t));
+        let users = s.users;
+        const newNotifs: Notification[] = [];
+        if (patch.mentions) {
+          const added = patch.mentions.filter((m) => !prev.mentions.includes(m) && m !== currentUser.id);
+          added.forEach((uid, i) =>
+            newNotifs.push({
+              id: `n${Date.now()}m${i}`,
+              userId: uid,
+              type: "mencao",
+              title: "Você foi mencionado",
+              desc: next.title,
+              time: "agora",
+              taskId: id,
+            }),
+          );
+        }
+        if (patch.status === "concluida" && prev.status !== "concluida") {
+          users = users.map((u) => (u.id === next.assigneeId ? { ...u, score: u.score + next.score } : u));
+          if (next.createdBy !== next.assigneeId) {
+            newNotifs.push({
+              id: `n${Date.now()}c`,
+              userId: next.createdBy,
+              type: "concluida",
+              title: "Tarefa concluída",
+              desc: next.title,
+              time: "agora",
+              taskId: id,
+            });
+          }
+          if (next.recurring) {
+            const clone: Task = {
+              ...next,
+              id: `t${Date.now()}r`,
+              status: "pendente",
+              dueDate: advanceDate(next.dueDate, next.frequency),
+              createdAt: new Date().toISOString(),
+              order:
+                Math.max(0, ...tasks.filter((x) => x.status === "pendente").map((x) => x.order)) + 1,
+            };
+            tasks = [clone, ...tasks];
+            if (clone.assigneeId !== currentUser.id) {
+              newNotifs.push({
+                id: `n${Date.now()}rn`,
+                userId: clone.assigneeId,
+                type: "atribuida",
+                title: "Nova ocorrência recorrente",
+                desc: clone.title,
+                time: "agora",
+                taskId: clone.id,
+              });
+            }
+          }
+        }
+        return {
+          ...s,
+          tasks,
+          users,
+          notifications: newNotifs.length ? [...newNotifs, ...s.notifications] : s.notifications,
+        };
+      });
     },
     deleteTask: (id) => {
       setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
@@ -124,26 +194,66 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         col.splice(idx, 0, { ...task, status });
         const reordered = col.map((t, i) => ({ ...t, order: i }));
         const restCols = others.filter((t) => t.status !== status);
-        // award score when moved to concluida
+        let tasks = [...restCols, ...reordered];
+        let users = s.users;
+        const newNotifs: Notification[] = [];
         if (status === "concluida" && task.status !== "concluida") {
-          const assignee = s.users.find((u) => u.id === task.assigneeId);
-          if (assignee) {
-            return {
-              ...s,
-              tasks: [...restCols, ...reordered],
-              users: s.users.map((u) =>
-                u.id === assignee.id ? { ...u, score: u.score + task.score } : u,
-              ),
+          users = users.map((u) => (u.id === task.assigneeId ? { ...u, score: u.score + task.score } : u));
+          if (task.createdBy !== task.assigneeId) {
+            newNotifs.push({
+              id: `n${Date.now()}c`,
+              userId: task.createdBy,
+              type: "concluida",
+              title: "Tarefa concluída",
+              desc: task.title,
+              time: "agora",
+              taskId: task.id,
+            });
+          }
+          if (task.recurring) {
+            const clone: Task = {
+              ...task,
+              id: `t${Date.now()}r`,
+              status: "pendente",
+              dueDate: advanceDate(task.dueDate, task.frequency),
+              createdAt: new Date().toISOString(),
+              order:
+                Math.max(0, ...tasks.filter((x) => x.status === "pendente").map((x) => x.order)) + 1,
             };
+            tasks = [clone, ...tasks];
+            if (clone.assigneeId !== currentUser.id) {
+              newNotifs.push({
+                id: `n${Date.now()}rn`,
+                userId: clone.assigneeId,
+                type: "atribuida",
+                title: "Nova ocorrência recorrente",
+                desc: clone.title,
+                time: "agora",
+                taskId: clone.id,
+              });
+            }
           }
         }
-        return { ...s, tasks: [...restCols, ...reordered] };
+        return {
+          ...s,
+          tasks,
+          users,
+          notifications: newNotifs.length ? [...newNotifs, ...s.notifications] : s.notifications,
+        };
       });
     },
     markNotifRead: (id) => {
       setState((s) => ({
         ...s,
         notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
+      }));
+    },
+    markAllNotifsRead: () => {
+      setState((s) => ({
+        ...s,
+        notifications: s.notifications.map((n) =>
+          n.userId === s.currentUserId ? { ...n, read: true } : n,
+        ),
       }));
     },
     canAssignTo,
