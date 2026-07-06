@@ -75,6 +75,8 @@ function Dashboard() {
     currentUser,
     setCurrentUserId,
     updateTask,
+    markNotifRead,
+    markAllNotifsRead,
   } = useFluxo();
 
   const [sector, setSector] = useState<string>("todos");
@@ -84,6 +86,7 @@ function Dashboard() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
   const [search, setSearch] = useState("");
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const visibleTasks = useMemo(() => {
     return tasks.filter((t) => {
@@ -129,6 +132,14 @@ function Dashboard() {
     setEditing(t);
     setDialogOpen(true);
   };
+
+  const openTaskById = (id?: string) => {
+    if (!id) return;
+    const t = tasks.find((x) => x.id === id);
+    if (t) openEdit(t);
+  };
+
+  const unreadCount = myNotifs.filter((n) => !n.read).length;
 
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">
@@ -233,12 +244,83 @@ function Dashboard() {
           >
             <Plus className="h-4 w-4" /> Nova
           </button>
-          <button className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground">
-            <Bell className="h-4 w-4" />
-            {myNotifs.filter((n) => !n.read).length > 0 && (
-              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-destructive" />
+          <div className="relative">
+            <button
+              onClick={() => setNotifOpen((v) => !v)}
+              className="relative flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              aria-label="Notificações"
+            >
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
+                <div className="absolute right-0 top-11 z-40 w-96 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+                    <div className="text-sm font-semibold">Notificações</div>
+                    <button
+                      onClick={() => markAllNotifsRead()}
+                      className="text-[11px] font-medium text-primary hover:underline"
+                    >
+                      Marcar todas como lidas
+                    </button>
+                  </div>
+                  <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">
+                    {myNotifs.length === 0 && (
+                      <li className="px-4 py-10 text-center text-xs text-muted-foreground">
+                        Você está em dia. Sem novas notificações.
+                      </li>
+                    )}
+                    {myNotifs.slice(0, 20).map((n) => (
+                      <li key={n.id}>
+                        <button
+                          onClick={() => {
+                            markNotifRead(n.id);
+                            setNotifOpen(false);
+                            openTaskById(n.taskId);
+                          }}
+                          className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-secondary/60 ${
+                            n.read ? "opacity-70" : ""
+                          }`}
+                        >
+                          <div
+                            className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                            style={{
+                              background:
+                                n.type === "prazo"
+                                  ? "oklch(0.58 0.22 25)"
+                                  : n.type === "mencao"
+                                  ? "oklch(0.6 0.2 330)"
+                                  : n.type === "concluida"
+                                  ? "oklch(0.62 0.16 155)"
+                                  : "oklch(0.52 0.22 275)",
+                            }}
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              {n.title}
+                              {!n.read && (
+                                <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
+                                  novo
+                                </span>
+                              )}
+                            </div>
+                            <div className="truncate text-xs text-muted-foreground">{n.desc}</div>
+                            <div className="mt-0.5 text-[10px] text-muted-foreground/70">{n.time}</div>
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
             )}
-          </button>
+          </div>
         </header>
 
         <main className="min-w-0 flex-1 p-6">
@@ -369,6 +451,14 @@ function Dashboard() {
                     <Bell className="h-4 w-4 text-primary" />
                     <h3 className="text-sm font-semibold">Meus avisos</h3>
                   </div>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={() => markAllNotifsRead()}
+                      className="text-[10px] font-medium text-primary hover:underline"
+                    >
+                      Marcar lidas
+                    </button>
+                  )}
                 </div>
                 <ul className="divide-y divide-border">
                   {myNotifs.length === 0 && (
@@ -377,8 +467,17 @@ function Dashboard() {
                     </li>
                   )}
                   {myNotifs.slice(0, 8).map((n) => (
-                    <li key={n.id} className="flex gap-3 px-4 py-3">
-                      <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
+                    <li key={n.id}>
+                      <button
+                        onClick={() => {
+                          markNotifRead(n.id);
+                          openTaskById(n.taskId);
+                        }}
+                        className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-secondary/60 ${
+                          n.read ? "opacity-60" : ""
+                        }`}
+                      >
+                        <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
                         style={{
                           background:
                             n.type === "prazo" ? "oklch(0.58 0.22 25)"
@@ -391,6 +490,7 @@ function Dashboard() {
                         <div className="text-xs text-muted-foreground">{n.desc}</div>
                         <div className="mt-1 text-[10px] text-muted-foreground/70">{n.time}</div>
                       </div>
+                      </button>
                     </li>
                   ))}
                 </ul>
