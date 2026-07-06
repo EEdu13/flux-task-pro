@@ -696,8 +696,26 @@ function KanbanBoard({ tasks: ts, onEdit, onCreate }: { tasks: Task[]; onEdit: (
                     </div>
                     <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
                     {t.mentions.length > 0 && (
-                      <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <AtSign className="h-2.5 w-2.5" /> {t.mentions.length} menções
+                      <div className="mt-1.5 flex items-center gap-1">
+                        <AtSign className="h-2.5 w-2.5 text-muted-foreground" />
+                        <div className="flex -space-x-1">
+                          {t.mentions.slice(0, 4).map((mid) => {
+                            const u = users.find((x) => x.id === mid);
+                            if (!u) return null;
+                            return (
+                              <span
+                                key={mid}
+                                title={u.name}
+                                className="flex h-4 w-4 items-center justify-center rounded-full border border-card bg-accent text-[8px] font-bold text-accent-foreground"
+                              >
+                                {u.avatar}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {t.mentions.length > 4 && (
+                          <span className="text-[10px] text-muted-foreground">+{t.mentions.length - 4}</span>
+                        )}
                       </div>
                     )}
                     <div className="mt-3 flex items-center justify-between">
