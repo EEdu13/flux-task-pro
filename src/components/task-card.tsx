@@ -1,78 +1,72 @@
-import { motion } from "framer-motion";
-import { Check, Clock, Repeat, Sparkles } from "lucide-react";
+import { Check, MessageSquare, Paperclip, Repeat } from "lucide-react";
 import type { Task } from "./dashboard-data";
 
-const priorityColor = {
-  alta: "oklch(0.7 0.2 25)",
-  media: "oklch(0.82 0.17 85)",
-  baixa: "oklch(0.78 0.18 155)",
+export const priorityMap = {
+  alta: { label: "Alta", color: "oklch(0.58 0.22 25)", bg: "oklch(0.58 0.22 25 / 0.1)" },
+  media: { label: "Média", color: "oklch(0.7 0.15 60)", bg: "oklch(0.7 0.15 60 / 0.12)" },
+  baixa: { label: "Baixa", color: "oklch(0.62 0.16 155)", bg: "oklch(0.62 0.16 155 / 0.12)" },
 };
 
-const statusMap = {
-  pendente: { label: "Pendente", color: "oklch(0.68 0.03 255)" },
-  andamento: { label: "Em andamento", color: "oklch(0.78 0.17 210)" },
-  concluida: { label: "Concluída", color: "oklch(0.78 0.18 155)" },
+export const statusMap = {
+  pendente: { label: "A fazer", color: "oklch(0.55 0.02 260)", bg: "oklch(0.94 0.005 250)" },
+  andamento: { label: "Em andamento", color: "oklch(0.52 0.22 275)", bg: "oklch(0.94 0.02 275)" },
+  concluida: { label: "Concluída", color: "oklch(0.5 0.15 155)", bg: "oklch(0.9 0.05 155)" },
 };
 
-export function TaskCard({ task, index }: { task: Task; index: number }) {
+export function TaskRow({ task }: { task: Task }) {
   const s = statusMap[task.status];
+  const p = priorityMap[task.priority];
+  const initials = task.assignee.split(" ").map((n) => n[0]).slice(0, 2).join("");
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.4, ease: "easeOut" }}
-      whileHover={{ y: -3, transition: { duration: 0.2 } }}
-      className="glass-panel group relative overflow-hidden rounded-2xl p-4 transition-shadow hover:shadow-[0_10px_40px_-10px_oklch(0.78_0.17_210/0.4)]"
-    >
-      {/* Priority strip */}
-      <div
-        className="absolute left-0 top-0 h-full w-1"
-        style={{ background: priorityColor[task.priority], boxShadow: `0 0 20px ${priorityColor[task.priority]}` }}
-      />
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 pl-2">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-            <span>{task.sector}</span>
-            {task.recurring && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-1.5 py-0.5 text-[9px] text-primary">
-                <Repeat className="h-2.5 w-2.5" /> Recorrente
-              </span>
-            )}
-          </div>
-          <h4 className="mt-1.5 text-sm font-medium leading-snug text-foreground">{task.title}</h4>
-          <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {task.dueLabel}
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.color }} />
-              {s.label}
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 px-2.5 py-1 text-xs font-semibold text-primary">
-            <Sparkles className="h-3 w-3" />
-            {task.score}
-          </div>
-          <div className="flex -space-x-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-[10px] font-bold text-primary-foreground ring-2 ring-card">
-              {task.assignee
-                .split(" ")
-                .map((n) => n[0])
-                .slice(0, 2)
-                .join("")}
-            </div>
-          </div>
-        </div>
-      </div>
-      {task.status !== "concluida" && (
-        <button className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-medium text-foreground transition-all hover:bg-primary hover:text-primary-foreground">
-          <Check className="h-3 w-3" />
-          Marcar como concluída
+    <tr className="group border-b border-border transition-colors hover:bg-secondary/60">
+      <td className="py-2.5 pl-4 pr-2">
+        <button className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-border transition hover:border-success hover:bg-success/10">
+          {task.status === "concluida" && <Check className="h-3 w-3" style={{ color: "oklch(0.5 0.15 155)" }} />}
         </button>
-      )}
-    </motion.div>
+      </td>
+      <td className="py-2.5 pr-4">
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-medium ${task.status === "concluida" ? "text-muted-foreground line-through" : "text-foreground"}`}>
+            {task.title}
+          </span>
+          {task.recurring && (
+            <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium" title="Tarefa recorrente"
+              style={{ background: "oklch(0.94 0.02 275)", color: "oklch(0.4 0.15 275)" }}>
+              <Repeat className="h-2.5 w-2.5" />
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground opacity-0 group-hover:opacity-100">
+            <span className="inline-flex items-center gap-1"><MessageSquare className="h-3 w-3" /> 2</span>
+            <span className="inline-flex items-center gap-1"><Paperclip className="h-3 w-3" /> 1</span>
+          </span>
+        </div>
+      </td>
+      <td className="py-2.5 pr-4">
+        <div className="flex items-center gap-2">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+            style={{ background: "oklch(0.52 0.22 275)" }}>
+            {initials}
+          </div>
+          <span className="text-xs text-foreground">{task.assignee}</span>
+        </div>
+      </td>
+      <td className="py-2.5 pr-4 text-xs text-muted-foreground">{task.dueLabel}</td>
+      <td className="py-2.5 pr-4">
+        <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium"
+          style={{ background: p.bg, color: p.color }}>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: p.color }} /> {p.label}
+        </span>
+      </td>
+      <td className="py-2.5 pr-4">
+        <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+          style={{ background: s.bg, color: s.color }}>
+          {s.label}
+        </span>
+      </td>
+      <td className="py-2.5 pr-4 text-xs">
+        <span className="rounded bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">{task.sector}</span>
+      </td>
+      <td className="py-2.5 pr-4 text-right text-xs font-semibold text-primary">+{task.score}</td>
+    </tr>
   );
 }
