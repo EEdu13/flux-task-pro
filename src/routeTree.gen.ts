@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
 import { Route as MetasRouteImport } from './routes/metas'
 import { Route as InboxRouteImport } from './routes/inbox'
@@ -16,6 +17,11 @@ import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as IndexRouteImport } from './routes/index'
 
+const RelatoriosRoute = RelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
   id: '/minhas-tarefas',
   path: '/minhas-tarefas',
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
+  '/relatorios': typeof RelatoriosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
+  '/relatorios': typeof RelatoriosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
+  '/relatorios': typeof RelatoriosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,8 +90,16 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/metas'
     | '/minhas-tarefas'
+    | '/relatorios'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/calendario' | '/equipe' | '/inbox' | '/metas' | '/minhas-tarefas'
+  to:
+    | '/'
+    | '/calendario'
+    | '/equipe'
+    | '/inbox'
+    | '/metas'
+    | '/minhas-tarefas'
+    | '/relatorios'
   id:
     | '__root__'
     | '/'
@@ -91,6 +108,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/metas'
     | '/minhas-tarefas'
+    | '/relatorios'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -100,10 +118,18 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
+  RelatoriosRoute: typeof RelatoriosRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/relatorios': {
+      id: '/relatorios'
+      path: '/relatorios'
+      fullPath: '/relatorios'
+      preLoaderRoute: typeof RelatoriosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/minhas-tarefas': {
       id: '/minhas-tarefas'
       path: '/minhas-tarefas'
@@ -156,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
+  RelatoriosRoute: RelatoriosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
