@@ -15,6 +15,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatDueBucket, formatRelative } from "@/lib/use-theme";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
+import { userScorePct, scoreTextClass, scoreBarColor } from "@/lib/score";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -70,6 +71,18 @@ function Home() {
   const maxPts = Math.max(1, ...last7.map((d) => d.points));
 
   const ranking = useMemo(() => [...users].sort((a, b) => b.score - a.score).slice(0, 5), [users]);
+  const myScore = useMemo(
+    () => userScorePct(currentUser.id, tasks, completions),
+    [currentUser.id, tasks, completions],
+  );
+  const userPct = useMemo(() => {
+    const m = new Map<string, { pct: number; assigned: number }>();
+    for (const u of users) {
+      const s = userScorePct(u.id, tasks, completions);
+      m.set(u.id, { pct: s.pct, assigned: s.assigned });
+    }
+    return m;
+  }, [users, tasks, completions]);
 
   const recentNotifs = notifications
     .filter((n) => n.userId === currentUser.id)
@@ -99,7 +112,19 @@ function Home() {
         <div className="grid gap-4 md:grid-cols-4">
           <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`+${pointsToday} pontos`} color="oklch(0.62 0.16 155)" />
           <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} vencem esta semana`} color="oklch(0.52 0.22 275)" />
-          <Kpi icon={Trophy} label="Meu score total" value={currentUser.score.toLocaleString("pt-BR")} sub="acumulado" color="oklch(0.78 0.15 75)" />
+          <Kpi
+            icon={Trophy}
+            label="Meu score do mês"
+            value={myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
+            sub={
+              myScore.assigned === 0
+                ? "sem tarefas atribuídas"
+                : myScore.pct >= 100
+                  ? "meta batida"
+                  : "abaixo da meta"
+            }
+            color={myScore.assigned === 0 ? "oklch(0.55 0.02 260)" : myScore.pct >= 100 ? "oklch(0.62 0.16 155)" : "oklch(0.58 0.22 25)"}
+          />
           <Kpi icon={Flame} label="Sequência" value={`${currentUser.streak} d`} sub="dias em ritmo" color="oklch(0.6 0.2 330)" />
         </div>
 
@@ -205,7 +230,7 @@ function Home() {
             </div>
             <ul className="mt-3 divide-y divide-border">
               {ranking.map((u, i) => {
-                const max = Math.max(...users.map((x) => x.score));
+                const s = userPct.get(u.id) ?? { pct: 0, assigned: 0 };
                 return (
                   <li key={u.id} className="flex items-center gap-3 py-2">
                     <span
@@ -224,10 +249,18 @@ function Home() {
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{u.name}</div>
                       <div className="mt-1 h-1 overflow-hidden rounded-full bg-secondary">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${(u.score / max) * 100}%` }} />
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, s.pct)}%`,
+                            background: scoreBarColor(s.pct, s.assigned),
+                          }}
+                        />
                       </div>
                     </div>
-                    <div className="text-right text-sm font-semibold">{u.score.toLocaleString("pt-BR")}</div>
+                    <div className={`text-right text-sm font-semibold tabular-nums ${scoreTextClass(s.pct, s.assigned)}`}>
+                      {s.assigned === 0 ? "—" : `${Math.round(s.pct)}%`}
+                    </div>
                   </li>
                 );
               })}
