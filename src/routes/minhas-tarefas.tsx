@@ -500,7 +500,6 @@ function KanbanBoard({
                         {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-primary">+{t.score}</span>
                         <div
                           className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
                           title={assignee?.name}
