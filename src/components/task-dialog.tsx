@@ -311,6 +311,56 @@ export function TaskDialog() {
                   <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
                   Tarefa recorrente (repete automaticamente ao concluir)
                 </label>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-muted-foreground">Atalhos:</span>
+                  {([
+                    { label: "Diária", freq: "diaria" as Frequency, days: 30 },
+                    { label: "Semanal", freq: "semanal" as Frequency, days: 90 },
+                    { label: "Mensal", freq: "mensal" as Frequency, days: 365 },
+                    { label: "Dias úteis", freq: "diaria" as Frequency, days: 30, weekdays: true },
+                  ] as { label: string; freq: Frequency; days: number; weekdays?: boolean }[]).map((p) => {
+                    const active = recurring && frequency === p.freq;
+                    return (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => {
+                          setRecurring(true);
+                          setFrequency(p.freq);
+                          const end = new Date();
+                          end.setDate(end.getDate() + p.days);
+                          setRecurringUntil(end.toISOString().slice(0, 10));
+                          if (p.weekdays) {
+                            const d = new Date(dueDate);
+                            const dow = d.getDay();
+                            if (dow === 0) d.setDate(d.getDate() + 1);
+                            if (dow === 6) d.setDate(d.getDate() + 2);
+                            setDueDate(d.toISOString().slice(0, 10));
+                          }
+                        }}
+                        className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
+                          active
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-card hover:border-primary/50"
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                  {recurring && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecurring(false);
+                        setRecurringUntil("");
+                      }}
+                      className="ml-auto text-[11px] text-muted-foreground hover:text-destructive"
+                    >
+                      remover recorrência
+                    </button>
+                  )}
+                </div>
                 {recurring && (
                   <div className="mt-2 flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Repetir até (opcional):</span>
@@ -329,6 +379,9 @@ export function TaskDialog() {
                         limpar
                       </button>
                     )}
+                    <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium">
+                      {freqLabels[frequency]}
+                    </span>
                   </div>
                 )}
               </div>

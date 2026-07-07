@@ -90,6 +90,35 @@ function MinhasTarefas() {
     });
   }, [tasks, users, currentUser, scope, sector, freq, priority, assignee, tag, search]);
 
+  const scopeCounts = useMemo(() => {
+    const inRole = (t: Task) => {
+      if (currentUser.role === "adm") {
+        return (
+          t.assigneeId === currentUser.id ||
+          t.createdBy === currentUser.id ||
+          t.mentions.includes(currentUser.id)
+        );
+      }
+      if (currentUser.role === "supervisor") {
+        const team = users.filter((u) => u.supervisorId === currentUser.id).map((u) => u.id);
+        team.push(currentUser.id);
+        return (
+          team.includes(t.assigneeId) ||
+          team.includes(t.createdBy) ||
+          t.mentions.includes(currentUser.id)
+        );
+      }
+      return true;
+    };
+    const active = tasks.filter((t) => inRole(t) && t.status !== "concluida");
+    return {
+      todas: active.length,
+      atribuidas: active.filter((t) => t.assigneeId === currentUser.id).length,
+      criadas: active.filter((t) => t.createdBy === currentUser.id).length,
+      mencionadas: active.filter((t) => t.mentions.includes(currentUser.id)).length,
+    } as Record<Scope, number>;
+  }, [tasks, users, currentUser]);
+
   const allTags = useMemo(() => Array.from(new Set(tasks.flatMap((t) => t.tags))), [tasks]);
 
   return (
@@ -106,6 +135,19 @@ function MinhasTarefas() {
                 }`}
               >
                 {scopeLabels[s]}
+                {scopeCounts[s] > 0 && (
+                  <span
+                    className={`ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                      s === "mencionadas"
+                        ? "bg-primary text-primary-foreground"
+                        : scope === s
+                          ? "bg-primary/15 text-primary"
+                          : "bg-secondary text-muted-foreground"
+                    }`}
+                  >
+                    {scopeCounts[s]}
+                  </span>
+                )}
                 {scope === s && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
               </button>
             ))}
