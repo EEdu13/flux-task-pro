@@ -358,7 +358,7 @@ function ExportMonthly({
     setBusy(true);
     const range = periodRange("mensal");
     const rows: string[] = [];
-    rows.push(["Colaborador", "Setor", "Frequência", "Tarefa", "Prazo", "Status", "Pontos"].join(";"));
+    rows.push(["Colaborador", "Setor", "Frequência", "Tarefa", "Prazo", "Status"].join(";"));
     for (const u of list) {
       const uTasks = tasks.filter(
         (t) =>
@@ -380,7 +380,6 @@ function ExportMonthly({
             escapeCsv(t.title),
             new Date(t.dueDate).toLocaleDateString("pt-BR"),
             b.state,
-            String(b.points).replace(".", ","),
           ].join(";"),
         );
       }
@@ -394,7 +393,6 @@ function ExportMonthly({
           "",
           "",
           `${pct.toFixed(0)}%`,
-          String(pts).replace(".", ","),
         ].join(";"),
       );
     }
@@ -486,7 +484,7 @@ function ExportMonthly({
       doc.setFontSize(10);
       doc.setTextColor(...muted);
       const introLines = doc.splitTextToSize(
-        "Este relatório consolida o desempenho no período, com base nas tarefas atribuídas, prazos cumpridos e pontuação obtida. Cada tarefa vale 1 ponto quando concluída no prazo, 0,5 ponto em caso de atraso e 0 ponto quando não realizada. O score final é a razão entre pontos obtidos e tarefas atribuídas.",
+        "Este relatório consolida o desempenho no período com base nas tarefas atribuídas e concluídas. Concluir no prazo conta como tarefa cheia, concluir em atraso conta pela metade, e não concluir não conta. O score é a razão entre tarefas cumpridas e tarefas atribuídas.",
         pageW - margin * 2,
       );
       doc.text(introLines, margin, y);
@@ -494,10 +492,10 @@ function ExportMonthly({
 
       // KPI cards
       const kpis = [
-        { label: "Score do time", value: `${teamPct.toFixed(0)}%`, accent: teamPct >= 80 ? success : muted },
+        { label: "Score do time", value: `${teamPct.toFixed(0)}%`, accent: teamPct >= 100 ? success : teamAssigned ? danger : muted },
         { label: "Tarefas atribuídas", value: String(teamAssigned), accent: dark },
-        { label: "Pontos obtidos", value: teamPoints.toLocaleString("pt-BR", { maximumFractionDigits: 1 }), accent: dark },
-        { label: "Concluídas no prazo", value: `${onTimeTotal}/${teamAssigned}`, accent: primary },
+        { label: "Concluídas", value: `${data.reduce((s, r) => s + r.onTime + r.late, 0)}/${teamAssigned}`, accent: primary },
+        { label: "No prazo", value: `${onTimeTotal}/${teamAssigned}`, accent: success },
       ];
       const cardW = (pageW - margin * 2 - 12 * 3) / 4;
       kpis.forEach((k, i) => {
@@ -520,7 +518,7 @@ function ExportMonthly({
       autoTable(doc, {
         startY: y,
         margin: { left: margin, right: margin },
-        head: [["#", "Colaborador", "Setor", "Tarefas", "Pontos", "Score", "Classificação"]],
+        head: [["#", "Colaborador", "Setor", "Atribuídas", "Concluídas", "Score", "Classificação"]],
         body: [...data]
           .sort((a, b) => b.pct - a.pct)
           .map((r, i) => {
@@ -529,7 +527,7 @@ function ExportMonthly({
               r.user.name,
               sectors.find((s) => s.id === r.user.sector)?.name ?? r.user.sector,
               String(r.assigned),
-              r.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 }),
+              String(r.onTime + r.late),
               `${r.pct.toFixed(0)}%`,
               tierFor(r.pct, r.assigned),
             ];
@@ -571,7 +569,7 @@ function ExportMonthly({
 
         // Score highlight box
         const boxColor: [number, number, number] =
-          row.assigned === 0 ? muted : row.pct >= 80 ? success : row.pct >= 50 ? primary : danger;
+          row.assigned === 0 ? muted : row.pct >= 100 ? success : danger;
         doc.setFillColor(...boxColor);
         doc.roundedRect(margin, yy, pageW - margin * 2, 76, 8, 8, "F");
         doc.setTextColor(255, 255, 255);
@@ -587,7 +585,7 @@ function ExportMonthly({
         doc.setFont("helvetica", "bold");
         doc.setFontSize(16);
         doc.text(
-          `${row.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / ${row.assigned} pts`,
+          `${row.onTime + row.late} / ${row.assigned} tarefas`,
           pageW - margin - 20,
           yy + 58,
           { align: "right" },
@@ -639,16 +637,15 @@ function ExportMonthly({
         autoTable(doc, {
           startY: yy,
           margin: { left: margin, right: margin },
-          head: [["Tarefa", "Frequência", "Prazo", "Status", "Pontos"]],
+          head: [["Tarefa", "Frequência", "Prazo", "Status"]],
           body:
             row.breakdown.length === 0
-              ? [[{ content: "Nenhuma tarefa atribuída no período.", colSpan: 5, styles: { halign: "center", textColor: muted } }]]
+              ? [[{ content: "Nenhuma tarefa atribuída no período.", colSpan: 4, styles: { halign: "center", textColor: muted } }]]
               : row.breakdown.map((x) => [
                   x.task.title,
                   x.task.frequency === "diaria" ? "Diária" : x.task.frequency === "mensal" ? "Mensal" : "Semanal",
                   new Date(x.task.dueDate).toLocaleDateString("pt-BR"),
                   stateLabel[x.state],
-                  x.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 }),
                 ]),
           styles: { font: "helvetica", fontSize: 9, cellPadding: 5, textColor: dark },
           headStyles: { fillColor: [243, 244, 246], textColor: dark, fontStyle: "bold" },
@@ -656,7 +653,6 @@ function ExportMonthly({
             1: { cellWidth: 60, halign: "center" },
             2: { cellWidth: 70, halign: "center" },
             3: { cellWidth: 70, halign: "center" },
-            4: { cellWidth: 50, halign: "center", fontStyle: "bold" },
           },
         });
 
