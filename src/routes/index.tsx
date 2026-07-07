@@ -46,8 +46,6 @@ function Home() {
     );
   }, [completions, currentUser.id]);
 
-  const pointsToday = doneToday.reduce((s, c) => s + c.points, 0);
-
   const last7 = useMemo(() => {
     const days: { label: string; done: number; points: number }[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -69,7 +67,7 @@ function Home() {
     return days;
   }, [completions]);
 
-  const maxPts = Math.max(1, ...last7.map((d) => d.points));
+  const maxDone = Math.max(1, ...last7.map((d) => d.done));
 
   const ranking = useMemo(() => [...users].sort((a, b) => b.score - a.score).slice(0, 5), [users]);
   const myScore = useMemo(
@@ -221,7 +219,7 @@ function Home() {
                   <div className="flex h-32 items-end">
                     <div
                       className="w-full rounded-t-md bg-primary/80 transition-all"
-                      style={{ height: `${Math.max(6, (d.points / maxPts) * 100)}%` }}
+                      style={{ height: `${Math.max(6, (d.done / maxDone) * 100)}%` }}
                       title={`${d.done} ${d.done === 1 ? "tarefa" : "tarefas"}`}
                     />
                   </div>
