@@ -310,10 +310,22 @@ function ExportMonthly({
 }) {
   const [busy, setBusy] = useState(false);
   const [busyPdf, setBusyPdf] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(users.map((u) => u.id)));
 
-  const buildUserData = () => {
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allSelected = selected.size === users.length && users.length > 0;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(users.map((u) => u.id)));
+  const selectedUsers = () => users.filter((u) => selected.has(u.id));
+
+  const buildUserData = (list: User[]) => {
     const range = periodRange("mensal");
-    return users.map((u) => {
+    return list.map((u) => {
       const uTasks = tasks.filter(
         (t) =>
           t.assigneeId === u.id &&
@@ -331,22 +343,23 @@ function ExportMonthly({
     });
   };
 
-  const bonusFor = (pct: number, assigned: number): { value: number; tier: string } => {
-    if (assigned === 0) return { value: 0, tier: "Sem tarefas no período" };
-    if (pct >= 100) return { value: 500, tier: "Excelência (100%)" };
-    if (pct >= 90) return { value: 300, tier: "Superação (90–99%)" };
-    if (pct >= 80) return { value: 150, tier: "Meta atingida (80–89%)" };
-    return { value: 0, tier: "Abaixo da meta" };
+  const tierFor = (pct: number, assigned: number): string => {
+    if (assigned === 0) return "Sem tarefas no período";
+    if (pct >= 100) return "Excelência";
+    if (pct >= 90) return "Superação";
+    if (pct >= 80) return "Meta atingida";
+    if (pct >= 50) return "Abaixo da meta";
+    return "Crítico";
   };
 
-  const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
   const exportCsv = () => {
+    const list = selectedUsers();
+    if (list.length === 0) return;
     setBusy(true);
     const range = periodRange("mensal");
     const rows: string[] = [];
     rows.push(["Colaborador", "Setor", "Frequência", "Tarefa", "Prazo", "Status", "Pontos"].join(";"));
-    for (const u of users) {
+    for (const u of list) {
       const uTasks = tasks.filter(
         (t) =>
           t.assigneeId === u.id &&
@@ -397,10 +410,12 @@ function ExportMonthly({
   };
 
   const exportPdf = () => {
+    const list = selectedUsers();
+    if (list.length === 0) return;
     setBusyPdf(true);
     try {
       const range = periodRange("mensal");
-      const data = buildUserData();
+      const data = buildUserData(list);
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
@@ -421,7 +436,7 @@ function ExportMonthly({
         doc.text("FLUXO", margin, 42);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        doc.text("Relatório de Produtividade & Premiação", margin, 60);
+        doc.text("Relatório de Produtividade", margin, 60);
         doc.setFontSize(9);
         doc.text(subtitle, margin, 76);
         doc.setTextColor(...dark);
@@ -451,7 +466,10 @@ function ExportMonthly({
       const teamAssigned = data.reduce((s, r) => s + r.assigned, 0);
       const teamPoints = data.reduce((s, r) => s + r.points, 0);
       const teamPct = teamAssigned ? (teamPoints / teamAssigned) * 100 : 0;
-      const totalBonus = data.reduce((s, r) => s + bonusFor(r.pct, r.assigned).value, 0);
+      const onTimeTotal = data.reduce(
+        (s, r) => s + r.breakdown.filter((b) => b.state === "on-time").length,
+        0,
+      );
 
       let y = 130;
       doc.setFont("helvetica", "bold");
@@ -468,7 +486,7 @@ function ExportMonthly({
       doc.setFontSize(10);
       doc.setTextColor(...muted);
       const introLines = doc.splitTextToSize(
-        "Este relatório consolida o desempenho da equipe no período, com base nas tarefas atribuídas, prazos cumpridos e pontuação obtida. A premiação sugerida abaixo segue a política vigente: 100% do score garante bonificação máxima; entre 80% e 99%, bonificação proporcional; abaixo de 80%, sem premiação no mês.",
+        "Este relatório consolida o desempenho no período, com base nas tarefas atribuídas, prazos cumpridos e pontuação obtida. Cada tarefa vale 1 ponto quando concluída no prazo, 0,5 ponto em caso de atraso e 0 ponto quando não realizada. O score final é a razão entre pontos obtidos e tarefas atribuídas.",
         pageW - margin * 2,
       );
       doc.text(introLines, margin, y);
@@ -477,9 +495,9 @@ function ExportMonthly({
       // KPI cards
       const kpis = [
         { label: "Score do time", value: `${teamPct.toFixed(0)}%`, accent: teamPct >= 80 ? success : muted },
-        { label: "Tarefas do mês", value: String(teamAssigned), accent: dark },
+        { label: "Tarefas atribuídas", value: String(teamAssigned), accent: dark },
         { label: "Pontos obtidos", value: teamPoints.toLocaleString("pt-BR", { maximumFractionDigits: 1 }), accent: dark },
-        { label: "Premiação total", value: brl(totalBonus), accent: primary },
+        { label: "Concluídas no prazo", value: `${onTimeTotal}/${teamAssigned}`, accent: primary },
       ];
       const cardW = (pageW - margin * 2 - 12 * 3) / 4;
       kpis.forEach((k, i) => {
@@ -502,11 +520,10 @@ function ExportMonthly({
       autoTable(doc, {
         startY: y,
         margin: { left: margin, right: margin },
-        head: [["#", "Colaborador", "Setor", "Tarefas", "Pontos", "Score", "Premiação"]],
+        head: [["#", "Colaborador", "Setor", "Tarefas", "Pontos", "Score", "Classificação"]],
         body: [...data]
           .sort((a, b) => b.pct - a.pct)
           .map((r, i) => {
-            const b = bonusFor(r.pct, r.assigned);
             return [
               String(i + 1),
               r.user.name,
@@ -514,7 +531,7 @@ function ExportMonthly({
               String(r.assigned),
               r.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 }),
               `${r.pct.toFixed(0)}%`,
-              brl(b.value),
+              tierFor(r.pct, r.assigned),
             ];
           }),
         styles: { font: "helvetica", fontSize: 9, cellPadding: 6, textColor: dark },
@@ -525,7 +542,7 @@ function ExportMonthly({
           3: { halign: "center" },
           4: { halign: "center" },
           5: { halign: "center", fontStyle: "bold" },
-          6: { halign: "right", fontStyle: "bold", textColor: primary },
+          6: { halign: "right", fontStyle: "bold", textColor: dark },
         },
       });
 
@@ -534,7 +551,7 @@ function ExportMonthly({
       for (const row of sorted) {
         doc.addPage();
         drawHeader(`Competência: ${range.label}`);
-        const b = bonusFor(row.pct, row.assigned);
+        const tier = tierFor(row.pct, row.assigned);
         let yy = 130;
 
         doc.setFont("helvetica", "bold");
@@ -552,23 +569,29 @@ function ExportMonthly({
         );
         yy += 24;
 
-        // Bonus highlight box
-        const boxColor: [number, number, number] = b.value > 0 ? success : row.assigned === 0 ? muted : danger;
+        // Score highlight box
+        const boxColor: [number, number, number] =
+          row.assigned === 0 ? muted : row.pct >= 80 ? success : row.pct >= 50 ? primary : danger;
         doc.setFillColor(...boxColor);
         doc.roundedRect(margin, yy, pageW - margin * 2, 76, 8, 8, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
-        doc.text("PREMIAÇÃO DO MÊS", margin + 20, yy + 22);
+        doc.text("SCORE DO MÊS", margin + 20, yy + 22);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(28);
-        doc.text(brl(b.value), margin + 20, yy + 54);
+        doc.setFontSize(32);
+        doc.text(`${row.pct.toFixed(0)}%`, margin + 20, yy + 56);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        doc.text(b.tier, pageW - margin - 20, yy + 30, { align: "right" });
+        doc.text(tier, pageW - margin - 20, yy + 30, { align: "right" });
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(22);
-        doc.text(`${row.pct.toFixed(0)}%`, pageW - margin - 20, yy + 58, { align: "right" });
+        doc.setFontSize(16);
+        doc.text(
+          `${row.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / ${row.assigned} pts`,
+          pageW - margin - 20,
+          yy + 58,
+          { align: "right" },
+        );
         doc.setTextColor(...dark);
         yy += 96;
 
@@ -652,43 +675,92 @@ function ExportMonthly({
       }
 
       drawFooter();
-      doc.save(`fluxo-premiacao-${range.label.replace(/\s+/g, "-").toLowerCase()}.pdf`);
+      const stamp = range.label.replace(/\s+/g, "-").toLowerCase();
+      const filename =
+        list.length === 1
+          ? `fluxo-score-${list[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${stamp}.pdf`
+          : `fluxo-score-${stamp}.pdf`;
+      doc.save(filename);
     } finally {
       setBusyPdf(false);
     }
   };
 
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-card px-5 py-4 shadow-sm">
-      <div className="max-w-xl">
-        <h2 className="text-sm font-semibold">Resumo mensal exportável</h2>
-        <p className="text-xs text-muted-foreground">
-          Gere o <strong>relatório de premiação em PDF</strong> — documento profissional com capa, ranking e uma página
-          por colaborador, pronto para arquivar ou entregar junto com o pagamento do bônus. O CSV segue disponível para
-          análise em planilha.
-        </p>
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          Política de premiação: <strong>100%</strong> → R$ 500 · <strong>90–99%</strong> → R$ 300 ·{" "}
-          <strong>80–89%</strong> → R$ 150 · <strong>&lt;80%</strong> → sem prêmio.
-        </p>
+    <section className="rounded-lg border border-dashed border-border bg-card px-5 py-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-xl">
+          <h2 className="text-sm font-semibold">Relatório mensal exportável</h2>
+          <p className="text-xs text-muted-foreground">
+            Selecione um ou mais colaboradores e gere um <strong>PDF profissional</strong> com capa, ranking e uma
+            página de detalhamento por pessoa. Também disponível como planilha CSV.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={exportPdf}
+            disabled={busyPdf || selected.size === 0}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+          >
+            <FileText className="h-4 w-4" />
+            {busyPdf ? "Gerando..." : `Exportar PDF (${selected.size})`}
+          </button>
+          <button
+            onClick={exportCsv}
+            disabled={busy || selected.size === 0}
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </button>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={exportPdf}
-          disabled={busyPdf}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
-        >
-          <FileText className="h-4 w-4" />
-          {busyPdf ? "Gerando..." : "Relatório de premiação (.pdf)"}
-        </button>
-        <button
-          onClick={exportCsv}
-          disabled={busy}
-          className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
-        >
-          <Download className="h-4 w-4" />
-          Planilha (.csv)
-        </button>
+
+      <div className="mt-4 rounded-md border border-border">
+        <div className="flex items-center justify-between border-b border-border bg-secondary/40 px-3 py-2 text-xs">
+          <label className="flex cursor-pointer items-center gap-2 font-medium">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            Selecionar todos
+          </label>
+          <span className="text-muted-foreground">
+            {selected.size} de {users.length} selecionado{selected.size === 1 ? "" : "s"}
+          </span>
+        </div>
+        <ul className="grid gap-0 sm:grid-cols-2">
+          {users.map((u) => {
+            const sector = sectors.find((s) => s.id === u.sector);
+            const checked = selected.has(u.id);
+            return (
+              <li key={u.id} className="border-b border-border last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0">
+                <label className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-secondary/40">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(u.id)}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  <div
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-semibold text-white"
+                    style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
+                  >
+                    {u.avatar}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{u.name}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {u.jobTitle} · {sector?.name ?? u.sector}
+                    </div>
+                  </div>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </section>
   );
