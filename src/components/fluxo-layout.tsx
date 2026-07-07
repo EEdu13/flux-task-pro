@@ -22,7 +22,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
-import { userScorePct, scoreBgClass } from "@/lib/score";
+import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
@@ -293,14 +293,25 @@ export function FluxoLayout({
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs">
+            <div
+              className="flex items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs"
+              title={`${myScore.points}/${myScore.assigned} pontos no mês`}
+            >
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                 {currentUser.avatar}
               </div>
               <span className="hidden font-medium sm:block">{currentUser.name.split(" ")[0]}</span>
+              <div className="hidden h-1 w-16 overflow-hidden rounded-full bg-secondary sm:block">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, Math.max(myScore.assigned === 0 ? 0 : 6, myScore.pct))}%`,
+                    background: scoreBarColor(myScore.pct, myScore.assigned),
+                  }}
+                />
+              </div>
               <span
                 className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${scoreBgClass(myScore.pct, myScore.assigned)}`}
-                title={`${myScore.points}/${myScore.assigned} pontos no mês`}
               >
                 <Trophy className="h-2.5 w-2.5" /> {myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
               </span>
