@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
-import { Route as MetasRouteImport } from './routes/metas'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as CalendarioRouteImport } from './routes/calendario'
@@ -25,11 +24,6 @@ const RelatoriosRoute = RelatoriosRouteImport.update({
 const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
   id: '/minhas-tarefas',
   path: '/minhas-tarefas',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MetasRoute = MetasRouteImport.update({
-  id: '/metas',
-  path: '/metas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InboxRoute = InboxRouteImport.update({
@@ -58,7 +52,6 @@ export interface FileRoutesByFullPath {
   '/calendario': typeof CalendarioRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
-  '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
 }
@@ -67,7 +60,6 @@ export interface FileRoutesByTo {
   '/calendario': typeof CalendarioRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
-  '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
 }
@@ -77,7 +69,6 @@ export interface FileRoutesById {
   '/calendario': typeof CalendarioRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
-  '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
 }
@@ -88,7 +79,6 @@ export interface FileRouteTypes {
     | '/calendario'
     | '/equipe'
     | '/inbox'
-    | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
   fileRoutesByTo: FileRoutesByTo
@@ -97,7 +87,6 @@ export interface FileRouteTypes {
     | '/calendario'
     | '/equipe'
     | '/inbox'
-    | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
   id:
@@ -106,7 +95,6 @@ export interface FileRouteTypes {
     | '/calendario'
     | '/equipe'
     | '/inbox'
-    | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
   fileRoutesById: FileRoutesById
@@ -116,7 +104,6 @@ export interface RootRouteChildren {
   CalendarioRoute: typeof CalendarioRoute
   EquipeRoute: typeof EquipeRoute
   InboxRoute: typeof InboxRoute
-  MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   RelatoriosRoute: typeof RelatoriosRoute
 }
@@ -135,13 +122,6 @@ declare module '@tanstack/react-router' {
       path: '/minhas-tarefas'
       fullPath: '/minhas-tarefas'
       preLoaderRoute: typeof MinhasTarefasRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/metas': {
-      id: '/metas'
-      path: '/metas'
-      fullPath: '/metas'
-      preLoaderRoute: typeof MetasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbox': {
@@ -180,20 +160,9 @@ const rootRouteChildren: RootRouteChildren = {
   CalendarioRoute: CalendarioRoute,
   EquipeRoute: EquipeRoute,
   InboxRoute: InboxRoute,
-  MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
   RelatoriosRoute: RelatoriosRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
