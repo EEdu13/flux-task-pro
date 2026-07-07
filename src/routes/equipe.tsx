@@ -5,6 +5,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors, type Role, type User } from "@/lib/fluxo-types";
 import { userScorePct, scoreTextClass } from "@/lib/score";
+import { ScoreBar } from "@/components/score-bar";
 
 export const Route = createFileRoute("/equipe")({
   head: () => ({
@@ -90,8 +91,13 @@ function EquipePage() {
                     </td>
                     <td className="py-2.5 pr-4 text-xs">{roleLabels[u.role]}</td>
                     <td className="py-2.5 pr-4 text-xs text-muted-foreground">{sup?.name ?? "—"}</td>
-                    <td className={`py-2.5 pr-4 text-right text-xs font-semibold tabular-nums ${scoreTextClass(s.pct, s.assigned)}`}>
-                      {s.assigned === 0 ? "—" : `${Math.round(s.pct)}%`}
+                    <td className="py-2.5 pr-4 text-right">
+                      <div className="ml-auto flex w-32 flex-col items-end gap-1">
+                        <span className={`text-xs font-semibold tabular-nums ${scoreTextClass(s.pct, s.assigned)}`}>
+                          {s.assigned === 0 ? "—" : `${Math.round(s.pct)}%`}
+                        </span>
+                        <ScoreBar pct={s.pct} assigned={s.assigned} showLabel={false} size="sm" />
+                      </div>
                     </td>
                     <td className="py-2.5 pr-4 text-right text-xs">{activeTasks}</td>
                     <td className="py-2.5 pr-4 text-right">

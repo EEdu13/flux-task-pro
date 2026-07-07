@@ -15,7 +15,8 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatDueBucket, formatRelative } from "@/lib/use-theme";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
-import { userScorePct, scoreTextClass, scoreBarColor } from "@/lib/score";
+import { userScorePct, scoreTextClass } from "@/lib/score";
+import { ScoreBar } from "@/components/score-bar";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -112,19 +113,31 @@ function Home() {
         <div className="grid gap-4 md:grid-cols-4">
           <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`+${pointsToday} pontos`} color="oklch(0.62 0.16 155)" />
           <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} vencem esta semana`} color="oklch(0.52 0.22 275)" />
-          <Kpi
-            icon={Trophy}
-            label="Meu score do mês"
-            value={myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
-            sub={
-              myScore.assigned === 0
-                ? "sem tarefas atribuídas"
-                : myScore.pct >= 100
-                  ? "meta batida"
-                  : "abaixo da meta"
-            }
-            color={myScore.assigned === 0 ? "oklch(0.55 0.02 260)" : myScore.pct >= 100 ? "oklch(0.62 0.16 155)" : "oklch(0.58 0.22 25)"}
-          />
+          <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Meu score do mês</span>
+              <Trophy
+                className="h-4 w-4"
+                style={{
+                  color:
+                    myScore.assigned === 0
+                      ? "oklch(0.55 0.02 260)"
+                      : myScore.pct >= 100
+                        ? "oklch(0.62 0.16 155)"
+                        : "oklch(0.58 0.22 25)",
+                }}
+              />
+            </div>
+            <div className={`mt-2 text-2xl font-semibold tabular-nums tracking-tight ${scoreTextClass(myScore.pct, myScore.assigned)}`}>
+              {myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
+            </div>
+            <div className="mt-2">
+              <ScoreBar pct={myScore.pct} assigned={myScore.assigned} showLabel={false} size="md" />
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              {myScore.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / {myScore.assigned} pts do mês
+            </div>
+          </div>
           <Kpi icon={Flame} label="Sequência" value={`${currentUser.streak} d`} sub="dias em ritmo" color="oklch(0.6 0.2 330)" />
         </div>
 
@@ -248,14 +261,8 @@ function Home() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{u.name}</div>
-                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-secondary">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min(100, s.pct)}%`,
-                            background: scoreBarColor(s.pct, s.assigned),
-                          }}
-                        />
+                      <div className="mt-1">
+                        <ScoreBar pct={s.pct} assigned={s.assigned} showLabel={false} size="sm" />
                       </div>
                     </div>
                     <div className={`text-right text-sm font-semibold tabular-nums ${scoreTextClass(s.pct, s.assigned)}`}>
