@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Download, Target, TrendingDown, TrendingUp } from "lucide-react";
+import { Download, FileText, Target, TrendingDown, TrendingUp } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, type Task, type User } from "@/lib/fluxo-types";
