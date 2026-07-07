@@ -283,7 +283,6 @@ function TaskList({
                   <th className="py-2 pr-4">Prioridade</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Setor</th>
-                  <th className="py-2 pr-4 text-right">Pontos</th>
                   <th className="py-2 pr-4 w-8"></th>
                 </tr>
               </thead>
@@ -347,7 +346,6 @@ function TaskList({
                       <td className="py-2.5 pr-4">
                         <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
                       </td>
-                      <td className="py-2.5 pr-4 text-right text-xs font-semibold">+{t.score}</td>
                       <td className="py-2.5 pr-4 text-right">
                         <button
                           onClick={() => onEdit(t.id)}
