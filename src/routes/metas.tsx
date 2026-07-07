@@ -121,8 +121,8 @@ function MetasPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Metas & Score</h1>
             <p className="text-sm text-muted-foreground">
-              Cada tarefa vale <strong>1 ponto no prazo</strong>, <strong>0,5 se concluída em atraso</strong> e{" "}
-              <strong>0 se não feita</strong>. O score é a % de pontos sobre as tarefas atribuídas no período.
+              Cada tarefa concluída no prazo conta cheia; concluída em atraso conta pela metade; não feita não conta.
+              O score é a % de tarefas cumpridas sobre as atribuídas no período.
             </p>
           </div>
           <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
@@ -142,10 +142,10 @@ function MetasPage() {
           <KpiCard label={`Período (${frequencyLabel(period)})`} value={range.label} mono />
           <KpiCard label="Tarefas do período" value={teamAssigned} />
           <KpiCard
-            label="Pontos acumulados"
-            value={teamPoints.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+            label="Concluídas"
+            value={`${scores.reduce((s, r) => s + r.onTime + r.late, 0)} / ${teamAssigned}`}
           />
-          <KpiCard label="Score do time" value={`${teamPct.toFixed(0)}%`} highlight={teamPct >= 80} />
+          <KpiCard label="Score do time" value={`${teamPct.toFixed(0)}%`} highlight={teamPct >= 100} />
         </div>
 
         <section className="rounded-lg border border-border bg-card shadow-sm">
@@ -189,11 +189,11 @@ function MetasPage() {
                           {sector?.name ?? row.user.sector}
                         </span>
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                        <span>
-                          {row.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / {row.assigned} pts
-                        </span>
-                        <span className="text-success">✓ {row.onTime} no prazo</span>
+                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                         <span>
+                           {row.onTime + row.late} de {row.assigned} {row.assigned === 1 ? "tarefa" : "tarefas"}
+                         </span>
+                         <span className="text-success">✓ {row.onTime} no prazo</span>
                         <span className="text-warning">◐ {row.late} em atraso</span>
                         <span>◌ {row.pending} pendente</span>
                         <span className="text-destructive">✗ {row.missed} perdida</span>
@@ -251,7 +251,7 @@ function UserBreakdown({
           Tarefas {frequencyLabel(period)}s de <strong>{range.label}</strong>
         </span>
         <span>
-          {row.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / {row.assigned} pontos possíveis
+          {row.onTime + row.late} de {row.assigned} concluídas
         </span>
       </div>
       {row.breakdown.length === 0 ? (
@@ -275,7 +275,7 @@ function UserBreakdown({
   );
 }
 
-function StateBadge({ state, points }: { state: TaskScore["state"]; points: number }) {
+function StateBadge({ state }: { state: TaskScore["state"]; points?: number }) {
   const map: Record<TaskScore["state"], { label: string; className: string }> = {
     "on-time": { label: "No prazo", className: "bg-success/15 text-success" },
     late: { label: "Em atraso", className: "bg-warning/15 text-warning" },
@@ -285,7 +285,7 @@ function StateBadge({ state, points }: { state: TaskScore["state"]; points: numb
   const m = map[state];
   return (
     <span className={`ml-3 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${m.className}`}>
-      {m.label} · {points} pt
+      {m.label}
     </span>
   );
 }
