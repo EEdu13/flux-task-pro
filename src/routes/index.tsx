@@ -99,7 +99,7 @@ function Home() {
             </h1>
             <p className="text-sm text-muted-foreground">
               Você tem <span className="font-medium text-foreground">{openTasks.length}</span> tarefas em aberto e concluiu{" "}
-              <span className="font-medium text-foreground">{doneToday.length}</span> hoje (+{pointsToday} pts).
+              <span className="font-medium text-foreground">{doneToday.length}</span> hoje.
             </p>
           </div>
           <Link
@@ -111,7 +111,7 @@ function Home() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-4">
-          <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`+${pointsToday} pontos`} color="oklch(0.62 0.16 155)" />
+          <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`${doneToday.length === 1 ? "tarefa concluída" : "tarefas concluídas"}`} color="oklch(0.62 0.16 155)" />
           <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} vencem esta semana`} color="oklch(0.52 0.22 275)" />
           <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
@@ -135,7 +135,7 @@ function Home() {
               <ScoreBar pct={myScore.pct} assigned={myScore.assigned} showLabel={false} size="md" />
             </div>
             <div className="mt-1 text-[11px] text-muted-foreground">
-              {myScore.points.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} / {myScore.assigned} pts do mês
+              {myScore.done} de {myScore.assigned} {myScore.assigned === 1 ? "tarefa" : "tarefas"} do mês
             </div>
           </div>
           <Kpi icon={Flame} label="Sequência" value={`${currentUser.streak} d`} sub="dias em ritmo" color="oklch(0.6 0.2 330)" />
@@ -222,7 +222,7 @@ function Home() {
                     <div
                       className="w-full rounded-t-md bg-primary/80 transition-all"
                       style={{ height: `${Math.max(6, (d.points / maxPts) * 100)}%` }}
-                      title={`${d.done} tarefas · ${d.points} pts`}
+                      title={`${d.done} ${d.done === 1 ? "tarefa" : "tarefas"}`}
                     />
                   </div>
                   <div className="mt-1 text-center text-[10px] text-muted-foreground">{d.label}</div>
@@ -230,7 +230,7 @@ function Home() {
               ))}
             </div>
             <div className="mt-3 text-xs text-muted-foreground">
-              {last7.reduce((s, d) => s + d.done, 0)} tarefas · {last7.reduce((s, d) => s + d.points, 0)} pontos
+              {last7.reduce((s, d) => s + d.done, 0)} tarefas concluídas
             </div>
           </section>
         </div>
