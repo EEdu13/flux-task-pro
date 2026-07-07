@@ -283,7 +283,6 @@ function TaskList({
                   <th className="py-2 pr-4">Prioridade</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Setor</th>
-                  <th className="py-2 pr-4 text-right">Pontos</th>
                   <th className="py-2 pr-4 w-8"></th>
                 </tr>
               </thead>
@@ -347,7 +346,6 @@ function TaskList({
                       <td className="py-2.5 pr-4">
                         <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
                       </td>
-                      <td className="py-2.5 pr-4 text-right text-xs font-semibold">+{t.score}</td>
                       <td className="py-2.5 pr-4 text-right">
                         <button
                           onClick={() => onEdit(t.id)}
@@ -502,7 +500,6 @@ function KanbanBoard({
                         {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-primary">+{t.score}</span>
                         <div
                           className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
                           title={assignee?.name}

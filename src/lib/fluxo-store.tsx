@@ -239,7 +239,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             {
               kind: "concluida",
               userId: currentUser.id,
-              text: `concluiu (+${points} pts, ${onTime ? "no prazo" : "com atraso"})`,
+              text: `concluiu (${onTime ? "no prazo" : "com atraso"})`,
             },
             currentUser.id,
           )

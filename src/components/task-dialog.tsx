@@ -298,9 +298,6 @@ export function TaskDialog() {
                 <Field label="Prazo">
                   <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
                 </Field>
-                <Field label="Pontos base">
-                  <input type="number" min={0} value={score} onChange={(e) => setScore(Number(e.target.value))} className="input" />
-                </Field>
                 <Field label="Tags (separadas por vírgula)">
                   <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
                 </Field>

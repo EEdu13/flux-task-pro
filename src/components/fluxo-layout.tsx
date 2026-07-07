@@ -295,7 +295,7 @@ export function FluxoLayout({
             </div>
             <div
               className="flex items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs"
-              title={`${myScore.points}/${myScore.assigned} pontos no mês`}
+              title={`${myScore.done} de ${myScore.assigned} tarefas do mês`}
             >
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                 {currentUser.avatar}

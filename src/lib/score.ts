@@ -21,7 +21,7 @@ export function userScorePct(
   tasks: Task[],
   completions: CompletionEntry[],
   ref = new Date(),
-): { pct: number; points: number; assigned: number } {
+): { pct: number; points: number; assigned: number; done: number } {
   const { start, end } = monthRange(ref);
   const assigned = tasks.filter((t) => {
     if (t.assigneeId !== userId) return false;
@@ -32,8 +32,9 @@ export function userScorePct(
     const c = completions.find((x) => x.taskId === t.id);
     return s + scoreTaskPoints(t, c?.at ?? null);
   }, 0);
+  const done = assigned.filter((t) => t.status === "concluida").length;
   const pct = assigned.length ? (points / assigned.length) * 100 : 0;
-  return { pct, points, assigned: assigned.length };
+  return { pct, points, assigned: assigned.length, done };
 }
 
 /**
