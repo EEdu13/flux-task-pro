@@ -4,6 +4,7 @@ import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors, type Role, type User } from "@/lib/fluxo-types";
+import { userScorePct, scoreTextClass } from "@/lib/score";
 
 export const Route = createFileRoute("/equipe")({
   head: () => ({
@@ -16,7 +17,7 @@ export const Route = createFileRoute("/equipe")({
 });
 
 function EquipePage() {
-  const { users, currentUser, createUser, updateUser, deleteUser, tasks } = useFluxo();
+  const { users, currentUser, createUser, updateUser, deleteUser, tasks, completions } = useFluxo();
   const [editing, setEditing] = useState<User | "new" | null>(null);
 
   const isGerente = currentUser.role === "gerente";
@@ -50,7 +51,7 @@ function EquipePage() {
                 <th className="py-2 pr-4">Setor</th>
                 <th className="py-2 pr-4">Perfil</th>
                 <th className="py-2 pr-4">Supervisor</th>
-                <th className="py-2 pr-4 text-right">Score</th>
+                <th className="py-2 pr-4 text-right">Score do mês</th>
                 <th className="py-2 pr-4 text-right">Tarefas ativas</th>
                 <th className="py-2 pr-4 w-16"></th>
               </tr>
@@ -60,6 +61,7 @@ function EquipePage() {
                 const sup = users.find((x) => x.id === u.supervisorId);
                 const sec = sectors.find((s) => s.id === u.sector);
                 const activeTasks = tasks.filter((t) => t.assigneeId === u.id && t.status !== "concluida").length;
+                const s = userScorePct(u.id, tasks, completions);
                 return (
                   <tr key={u.id} className="border-b border-border last:border-0 hover:bg-secondary/40">
                     <td className="py-2.5 pl-4 pr-4">
@@ -88,7 +90,9 @@ function EquipePage() {
                     </td>
                     <td className="py-2.5 pr-4 text-xs">{roleLabels[u.role]}</td>
                     <td className="py-2.5 pr-4 text-xs text-muted-foreground">{sup?.name ?? "—"}</td>
-                    <td className="py-2.5 pr-4 text-right text-xs font-semibold">{u.score.toLocaleString("pt-BR")}</td>
+                    <td className={`py-2.5 pr-4 text-right text-xs font-semibold tabular-nums ${scoreTextClass(s.pct, s.assigned)}`}>
+                      {s.assigned === 0 ? "—" : `${Math.round(s.pct)}%`}
+                    </td>
                     <td className="py-2.5 pr-4 text-right text-xs">{activeTasks}</td>
                     <td className="py-2.5 pr-4 text-right">
                       {isGerente && (

@@ -167,8 +167,8 @@ function MetasPage() {
             )}
             {ranked.map((row) => {
               const sector = sectors.find((s) => s.id === row.user.sector);
-              const good = row.pct >= 80;
-              const bad = row.assigned > 0 && row.pct < 50;
+              const good = row.pct >= 100;
+              const bad = row.assigned > 0 && row.pct < 100;
               const isOpen = openUserId === row.user.id;
               return (
                 <li key={row.user.id}>

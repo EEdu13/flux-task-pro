@@ -55,6 +55,7 @@ export function FluxoLayout({
     openNewTask,
     openTask,
     tasks,
+    completions,
   } = useFluxo();
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
@@ -62,6 +63,7 @@ export function FluxoLayout({
 
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
+  const myScore = userScorePct(currentUser.id, tasks, completions);
 
   // global keyboard shortcuts
   useEffect(() => {
@@ -296,8 +298,11 @@ export function FluxoLayout({
                 {currentUser.avatar}
               </div>
               <span className="hidden font-medium sm:block">{currentUser.name.split(" ")[0]}</span>
-              <span className="inline-flex items-center gap-0.5 rounded-full bg-warning/20 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                <Trophy className="h-2.5 w-2.5" /> {currentUser.score}
+              <span
+                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${scoreBgClass(myScore.pct, myScore.assigned)}`}
+                title={`${myScore.points}/${myScore.assigned} pontos no mês`}
+              >
+                <Trophy className="h-2.5 w-2.5" /> {myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
               </span>
             </div>
           </div>
