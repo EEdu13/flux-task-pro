@@ -339,7 +339,9 @@ function ExportMonthly({
       });
       const points = breakdown.reduce((s, b) => s + b.points, 0);
       const pct = uTasks.length ? (points / uTasks.length) * 100 : 0;
-      return { user: u, assigned: uTasks.length, points, pct, breakdown };
+      const onTime = breakdown.filter((b) => b.state === "on-time").length;
+      const late = breakdown.filter((b) => b.state === "late").length;
+      return { user: u, assigned: uTasks.length, points, pct, breakdown, onTime, late };
     });
   };
 
