@@ -33,7 +33,7 @@ function Relatorios() {
   const { tasks, users, completions } = useFluxo();
 
   const last30 = useMemo(() => {
-    const days: { label: string; concluidas: number; pontos: number }[] = [];
+    const days: { label: string; concluidas: number }[] = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
@@ -47,7 +47,6 @@ function Relatorios() {
       days.push({
         label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
         concluidas: items.length,
-        pontos: items.reduce((s, c) => s + c.points, 0),
       });
     }
     return days;
@@ -58,16 +57,15 @@ function Relatorios() {
       .map((u) => ({
         name: u.name.split(" ")[0]!,
         concluidas: completions.filter((c) => c.userId === u.id).length,
-        pontos: completions.filter((c) => c.userId === u.id).reduce((s, c) => s + c.points, 0),
       }))
-      .sort((a, b) => b.pontos - a.pontos)
+      .sort((a, b) => b.concluidas - a.concluidas)
       .slice(0, 8);
   }, [users, completions]);
 
   const bySector = useMemo(() => {
     return sectors.map((s) => {
       const uids = users.filter((u) => u.sector === s.id).map((u) => u.id);
-      const total = completions.filter((c) => uids.includes(c.userId)).reduce((sum, c) => sum + c.points, 0);
+      const total = completions.filter((c) => uids.includes(c.userId)).length;
       return { name: s.name, value: total, color: s.color };
     });
   }, [users, completions]);
@@ -89,7 +87,7 @@ function Relatorios() {
 
         <div className="grid gap-4 md:grid-cols-4">
           <Kpi label="Tarefas concluídas (30d)" value={completions.length} />
-          <Kpi label="Pontos gerados (30d)" value={completions.reduce((s, c) => s + c.points, 0).toLocaleString("pt-BR")} />
+          <Kpi label="No prazo (30d)" value={completions.filter((c) => c.onTime).length} />
           <Kpi label="No prazo" value={`${Math.round((completions.filter((c) => c.onTime).length / Math.max(1, completions.length)) * 100)}%`} />
           <Kpi label="Tarefas abertas" value={tasks.filter((t) => t.status !== "concluida").length} />
         </div>
@@ -105,7 +103,6 @@ function Relatorios() {
                 <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="concluidas" stroke="var(--color-chart-1)" strokeWidth={2} dot={false} name="Concluídas" />
-                <Line type="monotone" dataKey="pontos" stroke="var(--color-chart-2)" strokeWidth={2} dot={false} name="Pontos" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -113,7 +110,7 @@ function Relatorios() {
 
         <div className="grid gap-4 md:grid-cols-2">
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Top pessoas (pontos)</h2>
+            <h2 className="text-sm font-semibold">Top pessoas (tarefas concluídas)</h2>
             <div className="mt-3 h-72">
               <ResponsiveContainer>
                 <BarChart data={byUser} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
@@ -121,14 +118,14 @@ function Relatorios() {
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
-                  <Bar dataKey="pontos" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="concluidas" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </section>
 
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Pontos por setor</h2>
+            <h2 className="text-sm font-semibold">Tarefas por setor</h2>
             <div className="mt-3 h-72">
               <ResponsiveContainer>
                 <PieChart>
