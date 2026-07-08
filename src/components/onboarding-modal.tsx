@@ -10,8 +10,18 @@ function isValidEmail(v: string) {
 }
 function isValidPhone(v: string) {
   const digits = v.replace(/\D/g, "");
-  return digits.length >= 10 && digits.length <= 15;
+  if (digits.length < 10 || digits.length > 15) return false;
+  // rejeita repetição (1111111111) e sequências óbvias (1234567890 / 0987654321)
+  if (/^(\d)\1+$/.test(digits)) return false;
+  const unique = new Set(digits).size;
+  if (unique < 4) return false;
+  const asc = "01234567890123456789";
+  const desc = "98765432109876543210";
+  if (asc.includes(digits) || desc.includes(digits)) return false;
+  return true;
 }
+
+export const phoneValidator = { normalizePhone, isValidPhone, isValidEmail };
 
 export function OnboardingModal() {
   const { currentUser, updateCurrentUser } = useFluxo();
