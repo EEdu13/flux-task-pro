@@ -31,6 +31,7 @@ interface TaskDialogState {
   open: boolean;
   editingId?: string;
   initialStatus?: Status;
+  initialDueDate?: string;
 }
 
 interface Store {
@@ -67,7 +68,7 @@ interface Store {
   visibleUsersForAssign: () => User[];
   // global task dialog
   taskDialog: TaskDialogState;
-  openNewTask: (initialStatus?: Status) => void;
+  openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
   openTask: (id: string) => void;
   closeTaskDialog: () => void;
 }
