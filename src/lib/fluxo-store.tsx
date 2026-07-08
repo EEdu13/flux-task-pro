@@ -585,7 +585,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     visibleUsersForAssign,
 
     taskDialog,
-    openNewTask: (initialStatus) => setTaskDialog({ open: true, initialStatus }),
+    openNewTask: (opts) =>
+      setTaskDialog({
+        open: true,
+        initialStatus: opts?.status,
+        initialDueDate: opts?.dueDate,
+      }),
     openTask: (id) => setTaskDialog({ open: true, editingId: id }),
     closeTaskDialog: () => setTaskDialog({ open: false }),
   };
