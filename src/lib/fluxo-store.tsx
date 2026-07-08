@@ -308,6 +308,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
   const store: Store = {
     ...state,
+    login: (id) =>
+      setState((s) => ({
+        ...s,
+        isAuthenticated: true,
+        currentUserId: s.users.some((u) => u.id === id) ? id : s.currentUserId,
+      })),
+    logout: () => setState((s) => ({ ...s, isAuthenticated: false })),
     setCurrentUserId: (id) => setState((s) => ({ ...s, currentUserId: id })),
     currentUser,
 
@@ -459,12 +466,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       });
     },
 
-    addComment: (taskId, text) => {
-      if (!text.trim()) return;
+    addComment: (taskId, text, attachments) => {
+      if (!text.trim() && !(attachments && attachments.length)) return;
       setState((s) => {
         const t = s.tasks.find((x) => x.id === taskId);
         if (!t) return s;
-        const c = { id: rid("c"), userId: currentUser.id, text: text.trim(), at: nowIso() };
+        const c = {
+          id: rid("c"),
+          userId: currentUser.id,
+          text: text.trim(),
+          at: nowIso(),
+          attachments: attachments && attachments.length ? attachments : undefined,
+        };
         const updated = pushActivity(
           { ...t, comments: [...t.comments, c] },
           { kind: "comentario", userId: currentUser.id, text: "comentou" },
@@ -488,6 +501,37 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           notifications: [...notifs, ...s.notifications],
         };
       });
+    },
+
+    addTaskAttachments: (taskId, atts) => {
+      if (!atts.length) return;
+      setState((s) => ({
+        ...s,
+        tasks: s.tasks.map((t) =>
+          t.id === taskId
+            ? pushActivity(
+                { ...t, attachments: [...(t.attachments ?? []), ...atts] },
+                {
+                  kind: "editada",
+                  userId: currentUser.id,
+                  text: `anexou ${atts.length} arquivo${atts.length > 1 ? "s" : ""}`,
+                },
+                currentUser.id,
+              )
+            : t,
+        ),
+      }));
+    },
+
+    removeTaskAttachment: (taskId, attId) => {
+      setState((s) => ({
+        ...s,
+        tasks: s.tasks.map((t) =>
+          t.id === taskId
+            ? { ...t, attachments: (t.attachments ?? []).filter((a) => a.id !== attId) }
+            : t,
+        ),
+      }));
     },
 
     addChecklistItem: (taskId, text) => {
@@ -539,6 +583,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     updateUser: (id, patch) => {
       setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
+    },
+
+    updateCurrentUser: (patch) => {
+      setState((s) => ({
+        ...s,
+        users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, ...patch } : u)),
+      }));
     },
 
     deleteUser: (id) => {
