@@ -256,46 +256,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         : t,
     );
 
-    // spawn next recurring occurrence
-    if (next.recurring) {
-      const nextDue = advanceDate(next.dueDate, next.frequency);
-      const withinLimit = !next.recurringUntil || new Date(nextDue) <= new Date(next.recurringUntil);
-      if (withinLimit) {
-        const clone: Task = {
-          ...next,
-          id: rid("t"),
-          status: "pendente",
-          dueDate: nextDue,
-          createdAt: nowIso(),
-          order:
-            Math.max(0, ...tasks.filter((x) => x.status === "pendente").map((x) => x.order)) + 1,
-          comments: [],
-          checklist: next.checklist.map((c) => ({ ...c, done: false })),
-          activity: [
-            {
-              id: rid("a"),
-              at: nowIso(),
-              userId: currentUser.id,
-              kind: "criada",
-              text: "gerada automaticamente pela recorrência",
-            },
-          ],
-        };
-        tasks = [clone, ...tasks];
-        if (clone.assigneeId !== currentUser.id) {
-          newNotifs.push({
-            id: rid("n"),
-            userId: clone.assigneeId,
-            type: "atribuida",
-            title: "Nova ocorrência recorrente",
-            desc: clone.title,
-            at: nowIso(),
-            taskId: clone.id,
-          });
-        }
-      }
-    }
-    // suppress unused param
+    // Concluir NÃO duplica mais a tarefa. Recorrência agora é apenas um rótulo
+    // informativo; a próxima ocorrência deve ser criada manualmente.
     void prev;
     return {
       ...s,
