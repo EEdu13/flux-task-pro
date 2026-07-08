@@ -13,6 +13,19 @@ export interface User {
   supervisorId?: string; // for adm users, who supervises them
   score: number;
   streak: number;
+  email?: string;
+  phone?: string;
+  contactCompleted?: boolean;
+}
+
+export interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+  at: string;
+  userId: string;
 }
 
 export interface Comment {
@@ -20,6 +33,7 @@ export interface Comment {
   userId: string;
   text: string;
   at: string;
+  attachments?: Attachment[];
 }
 
 export interface ChecklistItem {
@@ -67,6 +81,7 @@ export interface Task {
   comments: Comment[];
   checklist: ChecklistItem[];
   activity: ActivityEntry[];
+  attachments?: Attachment[];
 }
 
 export interface Notification {

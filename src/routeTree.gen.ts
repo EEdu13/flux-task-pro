@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
 import { Route as MetasRouteImport } from './routes/metas'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as EquipeRouteImport } from './routes/equipe'
+import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -32,6 +34,11 @@ const MetasRoute = MetasRouteImport.update({
   path: '/metas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -40,6 +47,11 @@ const InboxRoute = InboxRouteImport.update({
 const EquipeRoute = EquipeRouteImport.update({
   id: '/equipe',
   path: '/equipe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CalendarioRoute = CalendarioRouteImport.update({
@@ -56,8 +68,10 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/calendario': typeof CalendarioRoute
+  '/configuracoes': typeof ConfiguracoesRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
+  '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
@@ -65,8 +79,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calendario': typeof CalendarioRoute
+  '/configuracoes': typeof ConfiguracoesRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
+  '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
@@ -75,8 +91,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/calendario': typeof CalendarioRoute
+  '/configuracoes': typeof ConfiguracoesRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
+  '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
@@ -86,8 +104,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/calendario'
+    | '/configuracoes'
     | '/equipe'
     | '/inbox'
+    | '/login'
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
@@ -95,8 +115,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/calendario'
+    | '/configuracoes'
     | '/equipe'
     | '/inbox'
+    | '/login'
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
@@ -104,8 +126,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/calendario'
+    | '/configuracoes'
     | '/equipe'
     | '/inbox'
+    | '/login'
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
@@ -114,8 +138,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CalendarioRoute: typeof CalendarioRoute
+  ConfiguracoesRoute: typeof ConfiguracoesRoute
   EquipeRoute: typeof EquipeRoute
   InboxRoute: typeof InboxRoute
+  LoginRoute: typeof LoginRoute
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   RelatoriosRoute: typeof RelatoriosRoute
@@ -144,6 +170,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MetasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/inbox': {
       id: '/inbox'
       path: '/inbox'
@@ -156,6 +189,13 @@ declare module '@tanstack/react-router' {
       path: '/equipe'
       fullPath: '/equipe'
       preLoaderRoute: typeof EquipeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/configuracoes': {
+      id: '/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/configuracoes'
+      preLoaderRoute: typeof ConfiguracoesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/calendario': {
@@ -178,8 +218,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CalendarioRoute: CalendarioRoute,
+  ConfiguracoesRoute: ConfiguracoesRoute,
   EquipeRoute: EquipeRoute,
   InboxRoute: InboxRoute,
+  LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
   RelatoriosRoute: RelatoriosRoute,
