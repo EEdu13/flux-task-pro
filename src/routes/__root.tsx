@@ -78,14 +78,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Fluxo · Gestor de tarefas de alto desempenho" },
-      { name: "description", content: "Plataforma futurista de gestão de tarefas, metas e desempenho de equipes por setor." },
+      { title: "Fluxo · Painel de desempenho" },
+      { name: "description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
       { name: "author", content: "Fluxo" },
-      { property: "og:title", content: "Fluxo · Task OS" },
-      { property: "og:description", content: "Metas diárias, semanais e mensais com score dinâmico para toda a equipe." },
+      { property: "og:title", content: "Fluxo · Painel de desempenho" },
+      { property: "og:description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Fluxo · Painel de desempenho" },
+      { name: "twitter:description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/74be6d4c-d20a-4ea5-b031-c61481212a47/id-preview-01378b6a--16ea518b-6e0d-4dec-904f-0cfdb1a55070.lovable.app-1783543670810.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/74be6d4c-d20a-4ea5-b031-c61481212a47/id-preview-01378b6a--16ea518b-6e0d-4dec-904f-0cfdb1a55070.lovable.app-1783543670810.png" },
     ],
     links: [
       {
