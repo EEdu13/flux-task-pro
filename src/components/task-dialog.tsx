@@ -151,9 +151,10 @@ export function TaskDialog() {
 
   const handleSubmit = () => {
     if (!title.trim()) return;
+    const preserveTitle = editing && editing.createdBy !== currentUser.id;
     const payload = {
-      title: title.trim(),
-      description: description.trim(),
+      title: preserveTitle ? editing!.title : title.trim(),
+      description: preserveTitle ? (editing!.description ?? "") : description.trim(),
       sector,
       createdBy: editing?.createdBy ?? currentUser.id,
       assigneeId,
