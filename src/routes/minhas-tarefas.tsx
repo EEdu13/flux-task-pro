@@ -194,7 +194,7 @@ function MinhasTarefas() {
 
         <div className="mt-4">
           {view === "quadro" ? (
-            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={openNewTask} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
+            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
           ) : (
             <TaskList tasks={visible} onEdit={openTask} onComplete={(id) => updateTask(id, { status: "concluida" })} />
           )}
