@@ -10,6 +10,7 @@ import {
 import type {
   ActivityEntry,
   ActivityKind,
+  Attachment,
   CompletionEntry,
   Frequency,
   Meta,
@@ -41,6 +42,9 @@ interface Store {
   metas: Meta[];
   completions: CompletionEntry[];
   currentUserId: string;
+  isAuthenticated: boolean;
+  login: (userId: string) => void;
+  logout: () => void;
   setCurrentUserId: (id: string) => void;
   currentUser: User;
   // task crud
@@ -49,14 +53,17 @@ interface Store {
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: Status, targetIndex?: number) => void;
   // task details
-  addComment: (taskId: string, text: string) => void;
+  addComment: (taskId: string, text: string, attachments?: Attachment[]) => void;
   addChecklistItem: (taskId: string, text: string) => void;
   toggleChecklistItem: (taskId: string, itemId: string) => void;
   removeChecklistItem: (taskId: string, itemId: string) => void;
+  addTaskAttachments: (taskId: string, atts: Attachment[]) => void;
+  removeTaskAttachment: (taskId: string, attId: string) => void;
   // users crud
   createUser: (u: Omit<User, "id" | "score" | "streak">) => void;
   updateUser: (id: string, patch: Partial<User>) => void;
   deleteUser: (id: string) => void;
+  updateCurrentUser: (patch: Partial<User>) => void;
   // metas
   upsertMeta: (m: Omit<Meta, "id">) => void;
   removeMeta: (id: string) => void;
@@ -84,6 +91,7 @@ interface Persisted {
   metas: Meta[];
   completions: CompletionEntry[];
   currentUserId: string;
+  isAuthenticated: boolean;
 }
 
 function load(): Persisted {
@@ -94,6 +102,7 @@ function load(): Persisted {
     metas: seedMetas,
     completions: seedCompletions,
     currentUserId: "u1",
+    isAuthenticated: false,
   };
   if (typeof window === "undefined") return defaults;
   try {
