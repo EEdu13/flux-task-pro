@@ -46,7 +46,6 @@ export function TaskDialog() {
   const [frequency, setFrequency] = useState<Frequency>("diaria");
   const [status, setStatus] = useState<Status>("pendente");
   const [priority, setPriority] = useState<Priority>("media");
-  const [score, setScore] = useState(20);
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
@@ -68,7 +67,6 @@ export function TaskDialog() {
       setFrequency(editing.frequency);
       setStatus(editing.status);
       setPriority(editing.priority);
-      setScore(editing.score);
       setDueDate(editing.dueDate.slice(0, 10));
       setRecurring(editing.recurring);
       setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
@@ -82,14 +80,13 @@ export function TaskDialog() {
       setFrequency("diaria");
       setStatus(taskDialog.initialStatus ?? "pendente");
       setPriority("media");
-      setScore(20);
-      setDueDate(new Date().toISOString().slice(0, 10));
+      setDueDate(taskDialog.initialDueDate ?? new Date().toISOString().slice(0, 10));
       setRecurring(false);
       setRecurringUntil("");
       setTags("");
       setMentions([]);
     }
-  }, [open, editing, currentUser.id, currentUser.sector, taskDialog.initialStatus]);
+  }, [open, editing, currentUser.id, currentUser.sector, taskDialog.initialStatus, taskDialog.initialDueDate]);
 
   if (!open) return null;
 
@@ -131,7 +128,7 @@ export function TaskDialog() {
       mentions,
       frequency,
       status,
-      score,
+      score: editing?.score ?? 20,
       dueDate: new Date(dueDate + "T17:00:00").toISOString(),
       recurring,
       recurringUntil: recurring && recurringUntil ? new Date(recurringUntil + "T23:59:59").toISOString() : null,
