@@ -31,7 +31,10 @@ export function OnboardingModal() {
 
   const submit = () => {
     if (!isValidEmail(email)) return setErr("Informe um email válido.");
-    if (!isValidPhone(phone)) return setErr("Informe um telefone válido (com DDD).");
+    if (!isValidPhone(phone))
+      return setErr(
+        "Informe um telefone real (com DDD). Números repetidos como 11111111111 não são aceitos."
+      );
     updateCurrentUser({
       email: email.trim(),
       phone: normalizePhone(phone),
