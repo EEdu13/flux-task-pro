@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SalasRouteImport } from './routes/salas'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
 import { Route as MetasRouteImport } from './routes/metas'
@@ -19,13 +18,9 @@ import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
 
-const SalasRoute = SalasRouteImport.update({
-  id: '/salas',
-  path: '/salas',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -71,10 +66,15 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SalasIndexRoute = SalasIndexRouteImport.update({
+  id: '/salas/',
+  path: '/salas/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SalasRoomNameRoute = SalasRoomNameRouteImport.update({
-  id: '/$roomName',
-  path: '/$roomName',
-  getParentRoute: () => SalasRoute,
+  id: '/salas/$roomName',
+  path: '/salas/$roomName',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -87,8 +87,8 @@ export interface FileRoutesByFullPath {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
-  '/salas': typeof SalasRouteWithChildren
   '/salas/$roomName': typeof SalasRoomNameRoute
+  '/salas/': typeof SalasIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -100,8 +100,8 @@ export interface FileRoutesByTo {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
-  '/salas': typeof SalasRouteWithChildren
   '/salas/$roomName': typeof SalasRoomNameRoute
+  '/salas': typeof SalasIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -114,8 +114,8 @@ export interface FileRoutesById {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
-  '/salas': typeof SalasRouteWithChildren
   '/salas/$roomName': typeof SalasRoomNameRoute
+  '/salas/': typeof SalasIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -129,8 +129,8 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
-    | '/salas'
     | '/salas/$roomName'
+    | '/salas/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -142,8 +142,8 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
-    | '/salas'
     | '/salas/$roomName'
+    | '/salas'
   id:
     | '__root__'
     | '/'
@@ -155,8 +155,8 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
-    | '/salas'
     | '/salas/$roomName'
+    | '/salas/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -169,18 +169,12 @@ export interface RootRouteChildren {
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   RelatoriosRoute: typeof RelatoriosRoute
-  SalasRoute: typeof SalasRouteWithChildren
+  SalasRoomNameRoute: typeof SalasRoomNameRoute
+  SalasIndexRoute: typeof SalasIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/salas': {
-      id: '/salas'
-      path: '/salas'
-      fullPath: '/salas'
-      preLoaderRoute: typeof SalasRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/relatorios': {
       id: '/relatorios'
       path: '/relatorios'
@@ -244,25 +238,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/salas/': {
+      id: '/salas/'
+      path: '/salas'
+      fullPath: '/salas/'
+      preLoaderRoute: typeof SalasIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/salas/$roomName': {
       id: '/salas/$roomName'
-      path: '/$roomName'
+      path: '/salas/$roomName'
       fullPath: '/salas/$roomName'
       preLoaderRoute: typeof SalasRoomNameRouteImport
-      parentRoute: typeof SalasRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
-
-interface SalasRouteChildren {
-  SalasRoomNameRoute: typeof SalasRoomNameRoute
-}
-
-const SalasRouteChildren: SalasRouteChildren = {
-  SalasRoomNameRoute: SalasRoomNameRoute,
-}
-
-const SalasRouteWithChildren = SalasRoute._addFileChildren(SalasRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -274,7 +265,8 @@ const rootRouteChildren: RootRouteChildren = {
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
   RelatoriosRoute: RelatoriosRoute,
-  SalasRoute: SalasRouteWithChildren,
+  SalasRoomNameRoute: SalasRoomNameRoute,
+  SalasIndexRoute: SalasIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

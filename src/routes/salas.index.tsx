@@ -45,7 +45,7 @@ function slugify(v: string) {
     .slice(0, 40);
 }
 
-export const Route = createFileRoute("/salas")({
+export const Route = createFileRoute("/salas/")({
   component: SalasPage,
   head: () => ({
     meta: [
