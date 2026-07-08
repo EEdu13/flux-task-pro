@@ -286,11 +286,22 @@ function MinhasTarefas() {
           {allTags.length > 0 && (
             <MiniSelect value={tag} onChange={setTag} options={[["todas", "Todas tags"], ...allTags.map((t) => [t, `#${t}`] as [string, string])]} />
           )}
-          <MiniSelect
-            value={datePreset}
-            onChange={(v) => setDatePreset(v as DatePreset)}
-            options={Object.entries(datePresetLabels) as [string, string][]}
-          />
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-md border border-border bg-secondary/40 p-0.5">
+            {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setDatePreset(p)}
+                className={`rounded px-2 py-1 text-xs font-medium transition ${
+                  datePreset === p
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {datePresetLabels[p]}
+              </button>
+            ))}
+          </div>
           {datePreset === "entre" && (
             <div className="inline-flex items-center gap-1">
               <input
