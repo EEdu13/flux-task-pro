@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Home,
   Inbox,
+  LogOut,
   Moon,
   Plus,
   Search,
@@ -22,6 +23,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
+import { OnboardingModal } from "@/components/onboarding-modal";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
@@ -32,6 +34,7 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/metas", label: "Metas & Score", icon: Target },
   { to: "/calendario", label: "Calendário", icon: Calendar },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
+  { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 export function FluxoLayout({
@@ -56,6 +59,8 @@ export function FluxoLayout({
     openTask,
     tasks,
     completions,
+    isAuthenticated,
+    logout,
   } = useFluxo();
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
@@ -66,6 +71,10 @@ export function FluxoLayout({
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
   const myScore = userScorePct(currentUser.id, tasks, completions);
+
+  useEffect(() => {
+    if (!isAuthenticated) navigate({ to: "/login" });
+  }, [isAuthenticated, navigate]);
 
   // global keyboard shortcuts
   useEffect(() => {
@@ -83,6 +92,9 @@ export function FluxoLayout({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openNewTask]);
+
+  if (!isAuthenticated) return null;
+  const needsOnboarding = !currentUser.contactCompleted || !currentUser.email || !currentUser.phone;
 
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">
@@ -148,7 +160,16 @@ export function FluxoLayout({
                 {roleLabels[currentUser.role]}
               </div>
             </div>
-            <Settings className="h-4 w-4 opacity-60" />
+            <button
+              onClick={() => {
+                logout();
+                navigate({ to: "/login" });
+              }}
+              title="Sair"
+              className="rounded p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
           <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
             Simular usuário
@@ -330,6 +351,7 @@ export function FluxoLayout({
       </div>
 
       <TaskDialog />
+      {needsOnboarding && <OnboardingModal />}
     </div>
   );
 }
