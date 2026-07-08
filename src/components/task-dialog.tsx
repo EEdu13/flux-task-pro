@@ -410,6 +410,47 @@ export function TaskDialog() {
                   </div>
                 )}
               </div>
+
+              {editing && (
+                <div className="rounded-md border border-border bg-secondary/40 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Paperclip className="h-3.5 w-3.5" />
+                      Anexos
+                      <span className="text-[11px] text-muted-foreground">
+                        ({editing.attachments?.length ?? 0})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => taskAttInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-primary/50"
+                    >
+                      <Plus className="h-3 w-3" /> Adicionar arquivo
+                    </button>
+                    <input
+                      ref={taskAttInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleTaskFilePick(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                  {editing.attachments && editing.attachments.length > 0 ? (
+                    <AttachmentList
+                      items={editing.attachments}
+                      onRemove={(id) => removeTaskAttachment(editing.id, id)}
+                    />
+                  ) : (
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Nenhum anexo. Envie imagens, PDFs, documentos (até 3 MB cada).
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -473,31 +514,54 @@ export function TaskDialog() {
 
           {tab === "comentarios" && editing && (
             <div className="space-y-4">
-              <div className="flex gap-2">
+              <div className="space-y-2 rounded-md border border-border bg-secondary/40 p-3">
                 <textarea
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
                   placeholder="Deixe um comentário… (Ctrl+Enter para enviar)"
                   rows={2}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && newComment.trim()) {
-                      addComment(editing.id, newComment);
-                      setNewComment("");
+                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault();
+                      submitComment();
                     }
                   }}
-                  className="input flex-1 resize-none"
+                  className="input w-full resize-none"
                 />
-                <button
-                  onClick={() => {
-                    if (newComment.trim()) {
-                      addComment(editing.id, newComment);
-                      setNewComment("");
+                {pendingCommentAtts.length > 0 && (
+                  <AttachmentList
+                    items={pendingCommentAtts}
+                    compact
+                    onRemove={(id) =>
+                      setPendingCommentAtts((p) => p.filter((a) => a.id !== id))
                     }
-                  }}
-                  className="self-end rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
-                >
-                  Comentar
-                </button>
+                  />
+                )}
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => commentAttInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    <Paperclip className="h-3.5 w-3.5" /> Anexar
+                  </button>
+                  <input
+                    ref={commentAttInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      handleCommentFilePick(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    onClick={submitComment}
+                    className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:brightness-110"
+                  >
+                    Comentar
+                  </button>
+                </div>
               </div>
               <ul className="space-y-3">
                 {editing.comments.length === 0 && (
@@ -516,8 +580,16 @@ export function TaskDialog() {
                         <div className="flex items-center gap-2 text-xs">
                           <span className="font-medium">{u?.name}</span>
                           <span className="text-muted-foreground">{formatRelative(c.at)}</span>
+                          {c.attachments && c.attachments.length > 0 && (
+                            <AttachmentBadge count={c.attachments.length} />
+                          )}
                         </div>
-                        <div className="mt-1 whitespace-pre-wrap text-sm">{c.text}</div>
+                        {c.text && <div className="mt-1 whitespace-pre-wrap text-sm">{c.text}</div>}
+                        {c.attachments && c.attachments.length > 0 && (
+                          <div className="mt-2">
+                            <AttachmentList items={c.attachments} />
+                          </div>
+                        )}
                       </div>
                     </li>
                   );
@@ -526,25 +598,77 @@ export function TaskDialog() {
             </div>
           )}
 
-          {tab === "atividade" && editing && (
-            <ul className="space-y-3">
-              {[...editing.activity].reverse().map((a) => {
-                const u = users.find((x) => x.id === a.userId);
-                return (
-                  <li key={a.id} className="flex items-start gap-3 text-sm">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
-                      {u?.avatar ?? "?"}
-                    </div>
-                    <div className="flex-1">
-                      <span className="font-medium">{u?.name ?? "—"}</span>{" "}
-                      <span className="text-muted-foreground">{a.text}</span>
-                      <div className="text-[10px] text-muted-foreground/70">{formatRelative(a.at)}</div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          {tab === "timeline" && editing && (() => {
+            type Item =
+              | { kind: "activity"; id: string; at: string; userId: string; text: string }
+              | {
+                  kind: "comment";
+                  id: string;
+                  at: string;
+                  userId: string;
+                  text: string;
+                  attachments?: Attachment[];
+                };
+            const items: Item[] = [
+              ...editing.activity.map((a) => ({
+                kind: "activity" as const,
+                id: a.id,
+                at: a.at,
+                userId: a.userId,
+                text: a.text,
+              })),
+              ...editing.comments.map((c) => ({
+                kind: "comment" as const,
+                id: c.id,
+                at: c.at,
+                userId: c.userId,
+                text: c.text,
+                attachments: c.attachments,
+              })),
+            ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+            return (
+              <ol className="relative space-y-4 border-l border-border pl-5">
+                {items.map((it) => {
+                  const u = users.find((x) => x.id === it.userId);
+                  const isComment = it.kind === "comment";
+                  return (
+                    <li key={`${it.kind}-${it.id}`} className="relative">
+                      <span
+                        className={`absolute -left-[26px] flex h-4 w-4 items-center justify-center rounded-full ring-2 ring-card ${
+                          isComment ? "bg-primary text-primary-foreground" : "bg-secondary"
+                        }`}
+                      >
+                        {isComment ? (
+                          <MessageSquare className="h-2.5 w-2.5" />
+                        ) : (
+                          <Activity className="h-2.5 w-2.5 text-muted-foreground" />
+                        )}
+                      </span>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium">{u?.name ?? "—"}</span>
+                        {!isComment && (
+                          <span className="text-muted-foreground">{it.text}</span>
+                        )}
+                        <span className="text-muted-foreground/70">
+                          · {formatRelative(it.at)}
+                        </span>
+                      </div>
+                      {isComment && (
+                        <div className="mt-1 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
+                          {it.text && <div className="whitespace-pre-wrap">{it.text}</div>}
+                          {it.attachments && it.attachments.length > 0 && (
+                            <div className="mt-2">
+                              <AttachmentList items={it.attachments} />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            );
+          })()}
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-5 py-3">
