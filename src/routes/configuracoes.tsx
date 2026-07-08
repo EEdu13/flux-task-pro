@@ -17,6 +17,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors } from "@/lib/fluxo-types";
 import { useTheme } from "@/lib/use-theme";
+import { phoneValidator } from "@/components/onboarding-modal";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
@@ -42,6 +43,7 @@ function SettingsPage() {
   const [jobTitle, setJobTitle] = useState(currentUser.jobTitle);
   const [sector, setSector] = useState(currentUser.sector);
   const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const [notif, setNotif] = useState({
     email: true,
@@ -51,13 +53,24 @@ function SettingsPage() {
   });
 
   const savePerfil = () => {
+    setErr(null);
+    const trimmedEmail = email.trim();
+    const trimmedPhone = phone.trim();
+    if (trimmedEmail && !phoneValidator.isValidEmail(trimmedEmail)) {
+      setErr("Informe um email válido.");
+      return;
+    }
+    if (trimmedPhone && !phoneValidator.isValidPhone(trimmedPhone)) {
+      setErr("Telefone inválido. Evite números repetidos como 11111111111.");
+      return;
+    }
     updateCurrentUser({
       name: name.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
+      email: trimmedEmail,
+      phone: trimmedPhone ? phoneValidator.normalizePhone(trimmedPhone) : "",
       jobTitle: jobTitle.trim(),
       sector,
-      contactCompleted: !!(email.trim() && phone.trim()),
+      contactCompleted: !!(trimmedEmail && trimmedPhone),
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -157,9 +170,15 @@ function SettingsPage() {
               </div>
 
               <div className="mt-5 flex items-center justify-between">
-                <p className="text-[11px] text-muted-foreground">
-                  Email e telefone serão usados para notificações e integração com WhatsApp.
-                </p>
+                <div className="text-[11px]">
+                  {err ? (
+                    <span className="text-destructive">{err}</span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Email e telefone serão usados para notificações e integração com WhatsApp.
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={savePerfil}
                   className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"

@@ -6,6 +6,8 @@ import {
   Building2,
   Calendar,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   Home,
   Inbox,
   LogOut,
@@ -67,6 +69,15 @@ export function FluxoLayout({
   const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("fluxo:sidebar-collapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
 
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
@@ -98,24 +109,40 @@ export function FluxoLayout({
 
   return (
     <div className="flex min-h-screen w-full bg-background text-foreground">
-      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground lg:flex">
-        <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
+      <aside
+        className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex ${
+          collapsed ? "w-16" : "w-60"
+        }`}
+      >
+        <div className={`flex h-14 items-center gap-2 border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "px-4"}`}>
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-bold">
             F
           </div>
-          <div className="flex-1">
-            <div className="text-sm font-semibold">Fluxo</div>
-            <div className="text-[10px] text-sidebar-foreground/60">Workspace Acme</div>
-          </div>
-          <ChevronDown className="h-4 w-4 opacity-60" />
+          {!collapsed && (
+            <>
+              <div className="flex-1">
+                <div className="text-sm font-semibold">Fluxo</div>
+                <div className="text-[10px] text-sidebar-foreground/60">Workspace Acme</div>
+              </div>
+              <ChevronDown className="h-4 w-4 opacity-60" />
+            </>
+          )}
         </div>
 
         <button
           onClick={() => openNewTask()}
-          className="mx-3 mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-sidebar-primary px-3 py-2 text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110"
+          title="Criar tarefa (N)"
+          className={`mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-sidebar-primary text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110 ${
+            collapsed ? "mx-2 h-9 w-9 self-center p-0" : "mx-3 px-3 py-2"
+          }`}
         >
-          <Plus className="h-4 w-4" /> Criar tarefa
-          <span className="ml-1 rounded bg-black/20 px-1 text-[9px] font-mono">N</span>
+          <Plus className="h-4 w-4" />
+          {!collapsed && (
+            <>
+              Criar tarefa
+              <span className="ml-1 rounded bg-black/20 px-1 text-[9px] font-mono">N</span>
+            </>
+          )}
         </button>
 
         <nav className="mt-4 flex flex-col gap-0.5 px-2">
@@ -131,25 +158,70 @@ export function FluxoLayout({
               <Link
                 key={n.to}
                 to={n.to}
-                className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition ${
+                title={collapsed ? n.label : undefined}
+                className={`flex items-center gap-2.5 rounded-md text-sm transition ${
+                  collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"
+                } ${
                   active
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                 }`}
               >
-                <n.icon className="h-4 w-4" />
-                <span className="flex-1">{n.label}</span>
-                {badge ? (
-                  <span className="rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
-                    {badge}
-                  </span>
-                ) : null}
+                <div className="relative">
+                  <n.icon className="h-4 w-4" />
+                  {collapsed && badge ? (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sidebar-primary px-1 text-[9px] font-bold text-sidebar-primary-foreground">
+                      {badge}
+                    </span>
+                  ) : null}
+                </div>
+                {!collapsed && (
+                  <>
+                    <span className="flex-1">{n.label}</span>
+                    {badge ? (
+                      <span className="rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
+                        {badge}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </Link>
             );
           })}
         </nav>
 
         <div className="mt-auto border-t border-sidebar-border p-3">
+          <button
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? "Expandir menu" : "Recolher menu"}
+            className={`mb-3 flex items-center gap-2 rounded-md text-xs text-sidebar-foreground/70 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
+              collapsed ? "mx-auto h-8 w-8 justify-center" : "w-full px-2 py-1.5"
+            }`}
+          >
+            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+            {!collapsed && <span>Recolher menu</span>}
+          </button>
+          {collapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                title={currentUser.name}
+              >
+                {currentUser.avatar}
+              </div>
+              <button
+                onClick={() => {
+                  logout();
+                  navigate({ to: "/login" });
+                }}
+                title="Sair"
+                className="rounded p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <>
           <div className="mb-2 flex items-center gap-2 rounded-md p-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
               {currentUser.avatar}
@@ -185,6 +257,8 @@ export function FluxoLayout({
               </option>
             ))}
           </select>
+            </>
+          )}
         </div>
       </aside>
 
