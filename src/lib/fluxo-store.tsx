@@ -12,7 +12,6 @@ import type {
   ActivityKind,
   Attachment,
   CompletionEntry,
-  Frequency,
   Meta,
   Notification,
   Status,
@@ -117,14 +116,6 @@ function load(): Persisted {
 
 const nowIso = () => new Date().toISOString();
 const rid = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-
-function advanceDate(iso: string, freq: Frequency): string {
-  const d = new Date(iso);
-  if (freq === "diaria") d.setDate(d.getDate() + 1);
-  else if (freq === "semanal") d.setDate(d.getDate() + 7);
-  else d.setMonth(d.getMonth() + 1);
-  return d.toISOString();
-}
 
 function pushActivity(task: Task, entry: Omit<ActivityEntry, "id" | "at">, userId: string): Task {
   return {
