@@ -121,20 +121,22 @@ function CalendarioPage() {
             const today =
               cell.date.toDateString() === new Date().toDateString();
             return (
-              <div
+              <button
+                type="button"
                 key={i}
-                className={`min-h-[7rem] bg-card p-1.5 text-left ${cell.inMonth ? "" : "opacity-40"}`}
+                onClick={() =>
+                  openNewTask({ dueDate: cell.date.toISOString().slice(0, 10) })
+                }
+                className={`min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
               >
                 <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => openNewTask()}
+                  <span
                     className={`text-[11px] font-semibold ${
                       today ? "rounded-full bg-primary px-1.5 text-primary-foreground" : "text-muted-foreground"
                     }`}
-                    title="Criar tarefa neste dia"
                   >
                     {cell.date.getDate()}
-                  </button>
+                  </span>
                   {cell.tasks.length > 0 && (
                     <span className="text-[10px] text-muted-foreground">{cell.tasks.length}</span>
                   )}
@@ -146,7 +148,10 @@ function CalendarioPage() {
                     return (
                       <button
                         key={t.id}
-                        onClick={() => openTask(t.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openTask(t.id);
+                        }}
                         className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition hover:bg-secondary"
                         style={{
                           background: `color-mix(in oklab, ${statusColor[t.status]} 12%, transparent)`,
@@ -163,7 +168,7 @@ function CalendarioPage() {
                     <div className="text-[10px] text-muted-foreground">+{cell.tasks.length - 3} mais</div>
                   )}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
