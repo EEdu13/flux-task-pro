@@ -43,6 +43,84 @@ export const Route = createFileRoute("/minhas-tarefas")({
 
 type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas";
 type ViewMode = "quadro" | "lista";
+type DatePreset =
+  | "todas"
+  | "ontem"
+  | "hoje"
+  | "amanha"
+  | "esta-semana"
+  | "prox-semana"
+  | "este-mes"
+  | "entre";
+
+const datePresetLabels: Record<DatePreset, string> = {
+  todas: "Qualquer data",
+  ontem: "Ontem",
+  hoje: "Hoje",
+  amanha: "Amanhã",
+  "esta-semana": "Esta semana",
+  "prox-semana": "Semana que vem",
+  "este-mes": "Este mês",
+  entre: "Entre datas…",
+};
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+function endOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+function startOfWeek(d: Date) {
+  const x = startOfDay(d);
+  const day = x.getDay(); // 0=dom
+  const diff = (day + 6) % 7; // segunda=0
+  x.setDate(x.getDate() - diff);
+  return x;
+}
+function dateRangeFor(preset: DatePreset, from?: string, to?: string): [number, number] | null {
+  const now = new Date();
+  if (preset === "todas") return null;
+  if (preset === "hoje") return [startOfDay(now).getTime(), endOfDay(now).getTime()];
+  if (preset === "ontem") {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return [startOfDay(d).getTime(), endOfDay(d).getTime()];
+  }
+  if (preset === "amanha") {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    return [startOfDay(d).getTime(), endOfDay(d).getTime()];
+  }
+  if (preset === "esta-semana") {
+    const s = startOfWeek(now);
+    const e = new Date(s);
+    e.setDate(e.getDate() + 6);
+    return [s.getTime(), endOfDay(e).getTime()];
+  }
+  if (preset === "prox-semana") {
+    const s = startOfWeek(now);
+    s.setDate(s.getDate() + 7);
+    const e = new Date(s);
+    e.setDate(e.getDate() + 6);
+    return [s.getTime(), endOfDay(e).getTime()];
+  }
+  if (preset === "este-mes") {
+    const s = new Date(now.getFullYear(), now.getMonth(), 1);
+    const e = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return [startOfDay(s).getTime(), endOfDay(e).getTime()];
+  }
+  if (preset === "entre") {
+    if (!from && !to) return null;
+    const s = from ? startOfDay(new Date(from)).getTime() : -Infinity;
+    const e = to ? endOfDay(new Date(to)).getTime() : Infinity;
+    return [s, e];
+  }
+  return null;
+}
 
 const scopeLabels: Record<Scope, string> = {
   todas: "Todas visíveis",
@@ -61,6 +139,9 @@ function MinhasTarefas() {
   const [priority, setPriority] = useState<Priority | "todas">("todas");
   const [assignee, setAssignee] = useState<string>("todos");
   const [tag, setTag] = useState<string>("todas");
+  const [datePreset, setDatePreset] = useState<DatePreset>("todas");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [search, setSearch] = useState(initialQ ?? "");
   useEffect(() => {
     if (initialQ !== undefined && initialQ !== search) {
@@ -71,6 +152,7 @@ function MinhasTarefas() {
   }, [initialQ]);
 
   const visible = useMemo(() => {
+    const range = dateRangeFor(datePreset, dateFrom, dateTo);
     return tasks.filter((t) => {
       if (currentUser.role === "adm") {
         const involved =
@@ -95,11 +177,15 @@ function MinhasTarefas() {
       if (priority !== "todas" && t.priority !== priority) return false;
       if (assignee !== "todos" && t.assigneeId !== assignee) return false;
       if (tag !== "todas" && !t.tags.includes(tag)) return false;
+      if (range) {
+        const due = new Date(t.dueDate).getTime();
+        if (due < range[0] || due > range[1]) return false;
+      }
       if (search && !`${t.title} ${t.description ?? ""} ${t.tags.join(" ")}`.toLowerCase().includes(search.toLowerCase()))
         return false;
       return true;
     });
-  }, [tasks, users, currentUser, scope, sector, freq, priority, assignee, tag, search]);
+  }, [tasks, users, currentUser, scope, sector, freq, priority, assignee, tag, search, datePreset, dateFrom, dateTo]);
 
   const scopeCounts = useMemo(() => {
     const inRole = (t: Task) => {
@@ -199,6 +285,28 @@ function MinhasTarefas() {
           <MiniSelect value={assignee} onChange={setAssignee} options={[["todos", "Qualquer responsável"], ...users.map((u) => [u.id, u.name] as [string, string])]} />
           {allTags.length > 0 && (
             <MiniSelect value={tag} onChange={setTag} options={[["todas", "Todas tags"], ...allTags.map((t) => [t, `#${t}`] as [string, string])]} />
+          )}
+          <MiniSelect
+            value={datePreset}
+            onChange={(v) => setDatePreset(v as DatePreset)}
+            options={Object.entries(datePresetLabels) as [string, string][]}
+          />
+          {datePreset === "entre" && (
+            <div className="inline-flex items-center gap-1">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="rounded-md border border-border bg-secondary px-2 py-1 text-xs"
+              />
+              <span className="text-xs text-muted-foreground">até</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="rounded-md border border-border bg-secondary px-2 py-1 text-xs"
+              />
+            </div>
           )}
           <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
         </div>
