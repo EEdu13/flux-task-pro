@@ -100,6 +100,7 @@ export function TaskDialog() {
   if (!open) return null;
 
   const assignables = visibleUsersForAssign();
+  const canEditContent = !editing || editing.createdBy === currentUser.id;
 
   const handleTaskFilePick = async (files: FileList | null) => {
     if (!files || !editing) return;
@@ -150,9 +151,10 @@ export function TaskDialog() {
 
   const handleSubmit = () => {
     if (!title.trim()) return;
+    const preserveTitle = editing && editing.createdBy !== currentUser.id;
     const payload = {
-      title: title.trim(),
-      description: description.trim(),
+      title: preserveTitle ? editing!.title : title.trim(),
+      description: preserveTitle ? (editing!.description ?? "") : description.trim(),
       sector,
       createdBy: editing?.createdBy ?? currentUser.id,
       assigneeId,
@@ -220,13 +222,19 @@ export function TaskDialog() {
           {tab === "detalhes" && (
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Título</label>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Título
+                  {!canEditContent && (
+                    <span className="ml-2 text-[10px] text-muted-foreground/70">(somente o criador pode editar)</span>
+                  )}
+                </label>
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="O que precisa ser feito?"
                   autoFocus
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  readOnly={!canEditContent}
+                  className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
                 />
               </div>
 
@@ -239,7 +247,8 @@ export function TaskDialog() {
                   value={description}
                   onChange={(e) => handleDescChange(e.target.value)}
                   rows={3}
-                  className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  readOnly={!canEditContent}
+                  className={`w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
                 />
                 {mentionQuery !== null && filteredMentions.length > 0 && (
                   <div className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
