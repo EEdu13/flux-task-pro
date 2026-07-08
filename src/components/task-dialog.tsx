@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check } from "lucide-react";
+import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
+import { filesToAttachments } from "@/lib/attachments";
+import type { Attachment } from "@/lib/fluxo-types";
+import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import {
   sectors,
   freqLabels,
@@ -12,7 +15,7 @@ import {
   type Status,
 } from "@/lib/fluxo-types";
 
-type Tab = "detalhes" | "checklist" | "comentarios" | "atividade";
+type Tab = "detalhes" | "checklist" | "comentarios" | "timeline";
 
 export function TaskDialog() {
   const {
@@ -27,6 +30,8 @@ export function TaskDialog() {
     addChecklistItem,
     toggleChecklistItem,
     removeChecklistItem,
+    addTaskAttachments,
+    removeTaskAttachment,
     taskDialog,
     closeTaskDialog,
   } = useFluxo();
@@ -54,11 +59,15 @@ export function TaskDialog() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [newComment, setNewComment] = useState("");
   const [newChecklist, setNewChecklist] = useState("");
+  const [pendingCommentAtts, setPendingCommentAtts] = useState<Attachment[]>([]);
   const descRef = useRef<HTMLTextAreaElement>(null);
+  const taskAttInputRef = useRef<HTMLInputElement>(null);
+  const commentAttInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setTab("detalhes");
+    setPendingCommentAtts([]);
     if (editing) {
       setTitle(editing.title);
       setDescription(editing.description ?? "");
@@ -91,6 +100,28 @@ export function TaskDialog() {
   if (!open) return null;
 
   const assignables = visibleUsersForAssign();
+
+  const handleTaskFilePick = async (files: FileList | null) => {
+    if (!files || !editing) return;
+    const { ok, rejected } = await filesToAttachments(files, currentUser.id);
+    if (ok.length) addTaskAttachments(editing.id, ok);
+    if (rejected.length) alert(`Arquivos ignorados (muito grandes):\n${rejected.join("\n")}`);
+  };
+
+  const handleCommentFilePick = async (files: FileList | null) => {
+    if (!files) return;
+    const { ok, rejected } = await filesToAttachments(files, currentUser.id);
+    if (ok.length) setPendingCommentAtts((prev) => [...prev, ...ok]);
+    if (rejected.length) alert(`Arquivos ignorados (muito grandes):\n${rejected.join("\n")}`);
+  };
+
+  const submitComment = () => {
+    if (!editing) return;
+    if (!newComment.trim() && !pendingCommentAtts.length) return;
+    addComment(editing.id, newComment, pendingCommentAtts);
+    setNewComment("");
+    setPendingCommentAtts([]);
+  };
 
   const handleDescChange = (val: string) => {
     setDescription(val);
@@ -167,7 +198,7 @@ export function TaskDialog() {
                 { id: "detalhes", label: "Detalhes", icon: null },
                 { id: "checklist", label: `Checklist${editing.checklist.length ? ` (${editing.checklist.filter((c) => c.done).length}/${editing.checklist.length})` : ""}`, icon: ListChecks },
                 { id: "comentarios", label: `Comentários${editing.comments.length ? ` (${editing.comments.length})` : ""}`, icon: MessageSquare },
-                { id: "atividade", label: "Atividade", icon: Activity },
+                { id: "timeline", label: "Timeline", icon: Activity },
               ] as { id: Tab; label: string; icon: typeof Activity | null }[]
             ).map((t) => (
               <button
