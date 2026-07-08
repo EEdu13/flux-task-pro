@@ -47,7 +47,7 @@ function Home() {
   }, [completions, currentUser.id]);
 
   const last7 = useMemo(() => {
-    const days: { label: string; done: number; points: number }[] = [];
+    const days: { label: string; done: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
@@ -61,7 +61,6 @@ function Home() {
       days.push({
         label: d.toLocaleDateString("pt-BR", { weekday: "short" }).slice(0, 3),
         done: items.length,
-        points: items.reduce((s, c) => s + c.points, 0),
       });
     }
     return days;
@@ -69,7 +68,6 @@ function Home() {
 
   const maxDone = Math.max(1, ...last7.map((d) => d.done));
 
-  const ranking = useMemo(() => [...users].sort((a, b) => b.score - a.score).slice(0, 5), [users]);
   const myScore = useMemo(
     () => userScorePct(currentUser.id, tasks, completions),
     [currentUser.id, tasks, completions],
@@ -82,6 +80,18 @@ function Home() {
     }
     return m;
   }, [users, tasks, completions]);
+  const ranking = useMemo(
+    () =>
+      [...users].sort((a, b) => {
+        const sa = userPct.get(a.id) ?? { pct: 0, assigned: 0 };
+        const sb = userPct.get(b.id) ?? { pct: 0, assigned: 0 };
+        if (sa.assigned === 0 && sb.assigned === 0) return 0;
+        if (sa.assigned === 0) return 1;
+        if (sb.assigned === 0) return -1;
+        return sb.pct - sa.pct;
+      }).slice(0, 5),
+    [users, userPct],
+  );
 
   const recentNotifs = notifications
     .filter((n) => n.userId === currentUser.id)
@@ -110,7 +120,7 @@ function Home() {
 
         <div className="grid gap-4 md:grid-cols-4">
           <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`${doneToday.length === 1 ? "tarefa concluída" : "tarefas concluídas"}`} color="oklch(0.62 0.16 155)" />
-          <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} vencem esta semana`} color="oklch(0.52 0.22 275)" />
+          <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} em foco agora`} color="oklch(0.52 0.22 275)" />
           <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Meu score do mês</span>

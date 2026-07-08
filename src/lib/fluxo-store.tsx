@@ -31,6 +31,7 @@ interface TaskDialogState {
   open: boolean;
   editingId?: string;
   initialStatus?: Status;
+  initialDueDate?: string;
 }
 
 interface Store {
@@ -67,7 +68,7 @@ interface Store {
   visibleUsersForAssign: () => User[];
   // global task dialog
   taskDialog: TaskDialogState;
-  openNewTask: (initialStatus?: Status) => void;
+  openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
   openTask: (id: string) => void;
   closeTaskDialog: () => void;
 }
@@ -584,7 +585,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     visibleUsersForAssign,
 
     taskDialog,
-    openNewTask: (initialStatus) => setTaskDialog({ open: true, initialStatus }),
+    openNewTask: (opts) =>
+      setTaskDialog({
+        open: true,
+        initialStatus: opts?.status,
+        initialDueDate: opts?.dueDate,
+      }),
     openTask: (id) => setTaskDialog({ open: true, editingId: id }),
     closeTaskDialog: () => setTaskDialog({ open: false }),
   };

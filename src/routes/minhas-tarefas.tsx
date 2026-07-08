@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AtSign,
   CheckCircle2,
@@ -29,6 +29,9 @@ import {
 } from "@/lib/fluxo-types";
 
 export const Route = createFileRoute("/minhas-tarefas")({
+  validateSearch: (search: Record<string, unknown>): { q?: string } => ({
+    q: typeof search.q === "string" ? (search.q as string) : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Minhas tarefas · Fluxo" },
@@ -50,6 +53,7 @@ const scopeLabels: Record<Scope, string> = {
 
 function MinhasTarefas() {
   const { tasks, users, currentUser, updateTask, moveTask, openNewTask, openTask } = useFluxo();
+  const { q: initialQ } = Route.useSearch();
   const [scope, setScope] = useState<Scope>("atribuidas");
   const [view, setView] = useState<ViewMode>("quadro");
   const [sector, setSector] = useState<string>("todos");
@@ -57,7 +61,14 @@ function MinhasTarefas() {
   const [priority, setPriority] = useState<Priority | "todas">("todas");
   const [assignee, setAssignee] = useState<string>("todos");
   const [tag, setTag] = useState<string>("todas");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialQ ?? "");
+  useEffect(() => {
+    if (initialQ !== undefined && initialQ !== search) {
+      setSearch(initialQ);
+      setScope("todas");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQ]);
 
   const visible = useMemo(() => {
     return tasks.filter((t) => {
@@ -194,7 +205,7 @@ function MinhasTarefas() {
 
         <div className="mt-4">
           {view === "quadro" ? (
-            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={openNewTask} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
+            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
           ) : (
             <TaskList tasks={visible} onEdit={openTask} onComplete={(id) => updateTask(id, { status: "concluida" })} />
           )}

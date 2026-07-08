@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   BarChart3,
@@ -59,7 +59,9 @@ export function FluxoLayout({
   } = useFluxo();
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const navigate = useNavigate();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
 
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
@@ -179,17 +181,23 @@ export function FluxoLayout({
             <span>/</span>
             <span className="font-medium text-foreground">{title}</span>
           </div>
-          <div className="ml-6 hidden flex-1 items-center gap-2 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm md:flex">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const q = globalSearch.trim();
+              navigate({ to: "/minhas-tarefas", search: q ? { q } : {} });
+            }}
+            className="ml-6 hidden flex-1 items-center gap-2 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm md:flex"
+          >
             <Search className="h-4 w-4 text-muted-foreground" />
             <input
-              placeholder="Buscar tarefa, pessoa, tag…"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Buscar tarefa, pessoa, tag… (Enter)"
               className="flex-1 bg-transparent placeholder:text-muted-foreground focus:outline-none"
-              onChange={() => {
-                /* global search — próximo turno */
-              }}
             />
-            <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">/</kbd>
-          </div>
+            <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Enter</kbd>
+          </form>
           <div className="ml-auto flex items-center gap-2">
             {actions}
             <button
