@@ -18,9 +18,10 @@ interface IncomingRoomCall {
 }
 
 export function IncomingCall() {
-  const { notifications, users, currentUser, dismissRoomCall } = useFluxo();
+  const { notifications, users, currentUser, dismissRoomCall, addMissedCallNotification } = useFluxo();
   const navigate = useNavigate();
   const seenRef = useRef<Set<string>>(new Set());
+  const trackedRef = useRef<Map<string, IncomingRoomCall>>(new Map());
   const [initialized, setInitialized] = useState(false);
   const [remoteCalls, setRemoteCalls] = useState<IncomingRoomCall[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -42,7 +43,17 @@ export function IncomingCall() {
     async function pollIncomingCalls() {
       try {
         const res = await listIncomingRoomCalls({ data: { userId: currentUser.id } });
-        if (!cancelled) setRemoteCalls(res.calls);
+        if (cancelled) return;
+        // detect missed: previously tracked & ringing, now gone from ringing list and not handled locally
+        const currentIds = new Set(res.calls.map((c) => c.id));
+        trackedRef.current.forEach((prev, id) => {
+          if (!currentIds.has(id) && !seenRef.current.has(`handled:remote:${id}`)) {
+            addMissedCallNotification(prev.caller_user_id, prev.room_name, prev.room_label);
+            seenRef.current.add(`handled:remote:${id}`);
+          }
+        });
+        trackedRef.current = new Map(res.calls.map((c) => [c.id, c]));
+        setRemoteCalls(res.calls);
       } catch {
         if (!cancelled) setRemoteCalls([]);
       }
