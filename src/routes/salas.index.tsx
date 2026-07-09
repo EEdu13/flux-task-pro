@@ -22,6 +22,7 @@ export const Route = createFileRoute("/salas/")({
 interface RoomInfo {
   name: string;
   label: string;
+  isPrivate: boolean;
   participants: { identity: string; name: string }[];
 }
 
@@ -75,6 +76,7 @@ function SalasPage() {
           mapped[sector] = list.map((r) => ({
             name: r.name,
             label,
+            isPrivate: r.isPrivate,
             participants: r.participants,
           }));
         }
@@ -142,25 +144,38 @@ function SalasPage() {
   }
 
   function roomsForSector(sector: string, label: string): RoomInfo[] {
-    const discovered = bySector[sector] ?? [{ name: sector, label, participants: [] }];
+    const discovered = bySector[sector] ?? [
+      { name: sector, label, isPrivate: false, participants: [] },
+    ];
     const map = new Map<string, RoomInfo>();
     for (const r of discovered) {
       const n = parseSalaIndex(r.name, sector);
       map.set(r.name, {
         name: r.name,
         label: `${label} · Sala ${n}`,
+        isPrivate: r.isPrivate,
         participants: r.participants,
       });
     }
     // ensure base "Sala 1" always exists
     if (!map.has(sector)) {
-      map.set(sector, { name: sector, label: `${label} · Sala 1`, participants: [] });
+      map.set(sector, {
+        name: sector,
+        label: `${label} · Sala 1`,
+        isPrivate: false,
+        participants: [],
+      });
     }
     // include user-created extras
     for (const n of extras[sector] ?? []) {
       const roomName = `${sector}-${n}`;
       if (!map.has(roomName)) {
-        map.set(roomName, { name: roomName, label: `${label} · Sala ${n}`, participants: [] });
+        map.set(roomName, {
+          name: roomName,
+          label: `${label} · Sala ${n}`,
+          isPrivate: false,
+          participants: [],
+        });
       }
     }
     return Array.from(map.values()).sort((a, b) =>
