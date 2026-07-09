@@ -125,10 +125,13 @@ function RoomPage() {
     startCall({ roomName, roomLabel, identity, name: currentUser.name, userId: currentUser.id });
   }, [access, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall]);
 
-  // Poll pending knocks + privacy state (only when already inside)
+  // Poll pending knocks + privacy state as soon as we have access (member/open),
+  // even while the LiveKit connection is still establishing, so incoming
+  // requests appear immediately for whoever is already in the room.
   const insideRoom = active?.roomName === roomName;
+  const canSeeKnocks = access.kind === "member" || access.kind === "open";
   useEffect(() => {
-    if (!insideRoom) return;
+    if (!canSeeKnocks) return;
     let cancelled = false;
     const tick = async () => {
       try {
@@ -144,12 +147,12 @@ function RoomPage() {
       }
     };
     tick();
-    const id = window.setInterval(tick, 3000);
+    const id = window.setInterval(tick, 1500);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [insideRoom, roomName, currentUser.id]);
+  }, [canSeeKnocks, roomName, currentUser.id]);
 
   const togglePrivacy = useCallback(async () => {
     const next = !isPrivate;
@@ -236,7 +239,7 @@ function RoomPage() {
                 Conectando à sala…
               </div>
             )}
-            {insideRoom && isPrivate && knocks.length > 0 && (
+            {canSeeKnocks && isPrivate && knocks.length > 0 && (
               <div className="pointer-events-auto absolute left-4 top-4 z-30 w-72 overflow-hidden rounded-lg border border-border bg-card/95 shadow-xl backdrop-blur">
                 <div className="border-b border-border bg-primary/5 px-3 py-2 text-xs font-semibold">
                   Pedidos para entrar ({knocks.length})
