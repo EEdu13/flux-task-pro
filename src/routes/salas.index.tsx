@@ -129,10 +129,12 @@ function SalasPage() {
                   </div>
                 )}
 
-                {members.length > 0 ? (
+                {(() => {
+                  const members = users;
+                  return (
                   <div>
                     <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Membros ({members.length})
+                      Time ({members.length}) — chame qualquer pessoa
                     </div>
                     <ul className="flex flex-col gap-1">
                       {members.map((m) => {
@@ -181,12 +183,8 @@ function SalasPage() {
                       })}
                     </ul>
                   </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">
-                    Nenhum membro cadastrado com setor <code className="rounded bg-muted px-1">{r.sector}</code>. Ajuste
-                    o setor de um usuário em Equipe para vê-lo aqui.
-                  </p>
-                )}
+                  );
+                })()}
 
                 <button
                   onClick={() => navigate({ to: "/salas/$roomName", params: { roomName: r.name } })}
