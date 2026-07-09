@@ -249,13 +249,19 @@ function SalasPage() {
                 <div className="flex flex-col gap-1.5">
                    {rooms.map((room) => {
                      const n = parseSalaIndex(room.name, r.name);
+                     const inUse = room.participants.length > 0;
+                     const stateClasses = room.isPrivate
+                       ? "border-amber-500/60 bg-amber-500/5 hover:border-amber-500 hover:bg-amber-500/10"
+                       : inUse
+                         ? "border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-500 hover:bg-emerald-500/10"
+                         : "border-border/70 bg-background hover:border-primary/50 hover:bg-primary/5";
                      return (
                        <button
                          key={room.name}
                          onClick={() =>
                            navigate({ to: "/salas/$roomName", params: { roomName: room.name } })
                          }
-                         className="group flex flex-col gap-1 rounded-md border border-border/70 bg-background px-2 py-1.5 text-left hover:border-primary/50 hover:bg-primary/5"
+                        className={`group flex flex-col gap-1 rounded-md border px-2 py-1.5 text-left transition ${stateClasses}`}
                        >
                          <span className="flex items-center justify-between gap-2">
                            <span className="flex min-w-0 items-center gap-2 text-xs">
@@ -263,10 +269,29 @@ function SalasPage() {
                                #{n}
                              </span>
                              <span className="truncate font-medium">Sala {n}</span>
-                             {room.participants.length > 0 && (
+                              {inUse && (
                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500">
                                  <Users2 className="h-3 w-3" />
                                  {room.participants.length}
+                               </span>
+                             )}
+                             {inUse && (
+                               <span
+                                 className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                                   room.isPrivate
+                                     ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                     : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                 }`}
+                               >
+                                 {room.isPrivate ? (
+                                   <>
+                                     <Lock className="h-2.5 w-2.5" /> Privado
+                                   </>
+                                 ) : (
+                                   <>
+                                     <LockOpen className="h-2.5 w-2.5" /> Aberto
+                                   </>
+                                 )}
                                </span>
                              )}
                            </span>
