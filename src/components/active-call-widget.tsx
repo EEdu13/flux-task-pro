@@ -25,8 +25,15 @@ import {
   Send,
   Download,
   Sparkles,
+  UserPlus,
+  Lock,
+  LockOpen,
+  Search,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
+import { useFluxo } from "@/lib/fluxo-store";
+import { useCallInviter } from "@/lib/call-inviter-context";
+import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
 import {
   filesToAttachments,
   formatBytes,
