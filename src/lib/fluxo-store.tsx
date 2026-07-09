@@ -75,6 +75,7 @@ interface Store {
   callCounts: Record<string, Record<string, Record<string, number>>>;
   topContactsForRoom: (roomName: string, limit?: number) => User[];
   dismissRoomCall: (notifId: string) => void;
+  addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
