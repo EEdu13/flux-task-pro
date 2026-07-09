@@ -358,6 +358,8 @@ export function FluxoLayout({
                               markNotifRead(n.id);
                               setNotifOpen(false);
                               if (n.taskId) openTask(n.taskId);
+                              if (n.roomName)
+                                navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
                             }}
                             className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-secondary/60 ${
                               n.read ? "opacity-70" : ""
