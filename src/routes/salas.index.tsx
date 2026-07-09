@@ -1,10 +1,26 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Lock, LockOpen, Phone, Plus, Radio, Search, Users2, X } from "lucide-react";
+import {
+  Headphones,
+  Lock,
+  LockOpen,
+  Phone,
+  Plus,
+  PowerOff,
+  Radio,
+  Search,
+  Users2,
+  X,
+} from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
-import { inviteToRoom, listSectorRooms, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import {
+  inviteToRoom,
+  listSectorRooms,
+  purgeAllRooms,
+  setRoomPrivacy,
+} from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
