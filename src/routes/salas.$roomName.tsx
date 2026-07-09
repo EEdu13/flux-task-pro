@@ -7,7 +7,7 @@ import {
   formatChatMessageLinks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { ArrowLeft, Loader2, PictureInPicture2, WifiOff } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, PictureInPicture2, WifiOff } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { getLiveKitToken } from "@/lib/livekit-token.functions";
@@ -60,6 +60,22 @@ function RoomPage() {
     }
   }
 
+  function openInPopup() {
+    if (typeof window === "undefined") return;
+    const w = 460;
+    const h = 320;
+    const left = Math.max(0, window.screen.availWidth - w - 24);
+    const top = Math.max(0, window.screen.availHeight - h - 80);
+    const url = `${window.location.origin}/salas/${encodeURIComponent(roomName)}`;
+    const popup = window.open(
+      url,
+      `fluxo-sala-${roomName}`,
+      `popup=yes,width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=no,menubar=no,toolbar=no,location=no,status=no`,
+    );
+    if (!popup) return;
+    setTimeout(() => navigate({ to: "/salas" }), 300);
+  }
+
   const identity = useMemo(() => `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`, [currentUser]);
 
   useEffect(() => {
@@ -88,6 +104,14 @@ function RoomPage() {
       breadcrumb="Salas Online"
       actions={
         <div className="flex items-center gap-2">
+          <button
+            onClick={openInPopup}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm hover:bg-secondary"
+            title="Abre a chamada em uma janela pequena no cantinho, para você usar o resto do app livremente"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Janela flutuante
+          </button>
           {pipSupported && connected && (
             <button
               onClick={togglePip}
