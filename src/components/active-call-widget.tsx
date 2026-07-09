@@ -118,6 +118,10 @@ function CallContents({
     { onlySubscribed: false },
   );
   const { localParticipant } = useLocalParticipant();
+  const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)
+    ?.videoTrack as LocalVideoTrack | undefined;
+  const [effect, setEffect] = useVideoEffect(cameraTrack);
+  const [effectMenu, setEffectMenu] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const chatStorageKey = `fluxo:chat:${roomName}`;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
