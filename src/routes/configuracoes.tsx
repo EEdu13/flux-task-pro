@@ -7,6 +7,7 @@ import {
   Moon,
   Palette,
   Phone,
+  PowerOff,
   Save,
   Sun,
   Trash2,
@@ -18,6 +19,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors } from "@/lib/fluxo-types";
 import { useTheme } from "@/lib/use-theme";
 import { phoneValidator } from "@/components/onboarding-modal";
+import { purgeAllRooms } from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
@@ -293,6 +295,20 @@ function SettingsPage() {
                     className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-3 py-2 text-xs font-semibold text-destructive-foreground hover:brightness-110"
                   >
                     <LogOut className="h-3.5 w-3.5" /> Sair da conta
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("Fechar TODAS as salas e desconectar todo mundo agora?")) return;
+                      try {
+                        const r = await purgeAllRooms();
+                        alert(`Fechadas: ${r.deleted.length} salas`);
+                      } catch (e) {
+                        alert("Falhou: " + String(e));
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                  >
+                    <PowerOff className="h-3.5 w-3.5" /> Fechar todas as salas
                   </button>
                   <button
                     onClick={() => {
