@@ -69,6 +69,8 @@ interface Store {
   // notifications
   markNotifRead: (id: string) => void;
   markAllNotifsRead: () => void;
+  // room calls
+  callUserToRoom: (targetUserId: string, roomName: string, roomLabel: string) => void;
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
@@ -593,6 +595,23 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           n.userId === s.currentUserId ? { ...n, read: true } : n,
         ),
       })),
+
+    callUserToRoom: (targetUserId, roomName, roomLabel) => {
+      setState((s) => {
+        if (targetUserId === s.currentUserId) return s;
+        const notif: Notification = {
+          id: rid("n"),
+          userId: targetUserId,
+          type: "mencao",
+          title: `📞 ${currentUser.name} está te chamando`,
+          desc: `Toque para entrar agora na sala ${roomLabel}`,
+          at: nowIso(),
+          roomName,
+          fromUserId: currentUser.id,
+        };
+        return { ...s, notifications: [notif, ...s.notifications] };
+      });
+    },
 
     canAssignTo,
     visibleUsersForAssign,
