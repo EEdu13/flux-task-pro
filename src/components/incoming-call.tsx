@@ -3,14 +3,26 @@ import { useNavigate } from "@tanstack/react-router";
 import { Phone, PhoneOff } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { listIncomingRoomCalls, updateRoomCallStatus } from "@/lib/livekit-token.functions";
 
 const RING_WINDOW_MS = 45_000;
+
+interface IncomingRoomCall {
+  id: string;
+  caller_user_id: string;
+  target_user_id: string;
+  room_name: string;
+  room_label: string;
+  status: string;
+  created_at: string;
+}
 
 export function IncomingCall() {
   const { notifications, users, currentUser, dismissRoomCall } = useFluxo();
   const navigate = useNavigate();
   const seenRef = useRef<Set<string>>(new Set());
   const [initialized, setInitialized] = useState(false);
+  const [remoteCalls, setRemoteCalls] = useState<IncomingRoomCall[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const ringIntervalRef = useRef<number | null>(null);
 
@@ -24,21 +36,58 @@ export function IncomingCall() {
     };
   }, []);
 
+  // Calls must work between different browsers/devices, so poll the backend instead of only local state.
+  useEffect(() => {
+    let cancelled = false;
+    async function pollIncomingCalls() {
+      try {
+        const res = await listIncomingRoomCalls({ data: { userId: currentUser.id } });
+        if (!cancelled) setRemoteCalls(res.calls);
+      } catch {
+        if (!cancelled) setRemoteCalls([]);
+      }
+    }
+    pollIncomingCalls();
+    const id = window.setInterval(pollIncomingCalls, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [currentUser.id]);
+
   const active = useMemo(() => {
     if (!initialized) return null;
+    const remote = remoteCalls.find((c) => !seenRef.current.has(`handled:remote:${c.id}`));
+    if (remote) {
+      return {
+        id: remote.id,
+        source: "remote" as const,
+        fromUserId: remote.caller_user_id,
+        roomName: remote.room_name,
+        roomLabel: remote.room_label,
+        at: remote.created_at,
+      };
+    }
     const now = Date.now();
-    return (
-      notifications.find(
-        (n) =>
-          n.userId === currentUser.id &&
-          n.roomName &&
-          n.fromUserId &&
-          !n.read &&
-          now - new Date(n.at).getTime() < RING_WINDOW_MS &&
-          !seenRef.current.has(`handled:${n.id}`),
-      ) ?? null
+    const local = notifications.find(
+      (n) =>
+        n.userId === currentUser.id &&
+        n.roomName &&
+        n.fromUserId &&
+        !n.read &&
+        now - new Date(n.at).getTime() < RING_WINDOW_MS &&
+        !seenRef.current.has(`handled:local:${n.id}`),
     );
-  }, [notifications, currentUser.id, initialized]);
+    if (!local) return null;
+    return {
+      id: local.id,
+      source: "local" as const,
+      fromUserId: local.fromUserId!,
+      roomName: local.roomName!,
+      roomLabel: local.roomName!,
+      at: local.at,
+    };
+  }, [notifications, remoteCalls, currentUser.id, initialized]);
 
   // Play ringtone while active
   useEffect(() => {
@@ -90,14 +139,28 @@ export function IncomingCall() {
   const caller = users.find((u) => u.id === active.fromUserId);
   const room = DEPARTMENT_ROOMS.find((r) => r.name === active.roomName);
 
-  const accept = () => {
-    seenRef.current.add(`handled:${active.id}`);
-    dismissRoomCall(active.id);
+  const accept = async () => {
+    seenRef.current.add(`handled:${active.source}:${active.id}`);
+    if (active.source === "remote") {
+      setRemoteCalls((calls) => calls.filter((c) => c.id !== active.id));
+      await updateRoomCallStatus({ data: { callId: active.id, status: "accepted", userId: currentUser.id } }).catch(
+        () => {},
+      );
+    } else {
+      dismissRoomCall(active.id);
+    }
     if (active.roomName) navigate({ to: "/salas/$roomName", params: { roomName: active.roomName } });
   };
-  const decline = () => {
-    seenRef.current.add(`handled:${active.id}`);
-    dismissRoomCall(active.id);
+  const decline = async () => {
+    seenRef.current.add(`handled:${active.source}:${active.id}`);
+    if (active.source === "remote") {
+      setRemoteCalls((calls) => calls.filter((c) => c.id !== active.id));
+      await updateRoomCallStatus({ data: { callId: active.id, status: "declined", userId: currentUser.id } }).catch(
+        () => {},
+      );
+    } else {
+      dismissRoomCall(active.id);
+    }
   };
 
   return (
@@ -114,7 +177,7 @@ export function IncomingCall() {
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">{caller?.name ?? "Alguém"} está chamando</div>
           <div className="truncate text-xs text-muted-foreground">
-            Sala {room?.label ?? active.roomName}
+            Sala {room?.label ?? active.roomLabel ?? active.roomName}
           </div>
         </div>
         <span className="flex h-2 w-2 animate-ping rounded-full bg-emerald-500" />

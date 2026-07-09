@@ -1,5 +1,26 @@
 import { createServerFn } from "@tanstack/react-start";
 
+type RoomCallStatus = "ringing" | "accepted" | "declined" | "missed";
+
+const sanitizeUserId = (value: unknown) => {
+  if (typeof value !== "string") throw new Error("Usuário inválido");
+  const id = value.trim().slice(0, 80);
+  if (!id || !/^[a-zA-Z0-9_\-]+$/.test(id)) throw new Error("Usuário inválido");
+  return id;
+};
+
+const sanitizeRoomName = (value: unknown) => {
+  if (typeof value !== "string") throw new Error("Sala inválida");
+  const roomName = value.trim().slice(0, 64);
+  if (!roomName || !/^[a-zA-Z0-9_\-]+$/.test(roomName)) throw new Error("Nome de sala inválido");
+  return roomName;
+};
+
+const sanitizeRoomLabel = (value: unknown, fallback: string) => {
+  const label = typeof value === "string" ? value.trim().slice(0, 80) : "";
+  return label || fallback;
+};
+
 export const getLiveKitToken = createServerFn({ method: "POST" })
   .inputValidator((input: { roomName: string; identity: string; name: string }) => {
     if (!input || typeof input.roomName !== "string" || typeof input.identity !== "string") {
@@ -69,4 +90,87 @@ export const listRoomsPresence = createServerFn({ method: "POST" })
       }),
     );
     return { presence };
+  });
+
+export const createRoomCall = createServerFn({ method: "POST" })
+  .inputValidator(
+    (input: { callerUserId: string; targetUserId: string; roomName: string; roomLabel: string }) => {
+      const callerUserId = sanitizeUserId(input?.callerUserId);
+      const targetUserId = sanitizeUserId(input?.targetUserId);
+      const roomName = sanitizeRoomName(input?.roomName);
+      const roomLabel = sanitizeRoomLabel(input?.roomLabel, roomName);
+      if (callerUserId === targetUserId) throw new Error("Você não pode chamar você mesmo");
+      return { callerUserId, targetUserId, roomName, roomLabel };
+    },
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const expiresAt = new Date(Date.now() - 45_000).toISOString();
+    await supabaseAdmin
+      .from("room_call_events")
+      .update({ status: "missed", handled_at: new Date().toISOString() })
+      .eq("status", "ringing")
+      .lt("created_at", expiresAt);
+
+    const { data: call, error } = await supabaseAdmin
+      .from("room_call_events")
+      .insert({
+        caller_user_id: data.callerUserId,
+        target_user_id: data.targetUserId,
+        room_name: data.roomName,
+        room_label: data.roomLabel,
+      })
+      .select("id, caller_user_id, target_user_id, room_name, room_label, status, created_at")
+      .single();
+
+    if (error) throw new Error("Não foi possível chamar essa pessoa agora");
+    return { call };
+  });
+
+export const listIncomingRoomCalls = createServerFn({ method: "POST" })
+  .inputValidator((input: { userId: string }) => ({ userId: sanitizeUserId(input?.userId) }))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const expiresAt = new Date(Date.now() - 45_000).toISOString();
+    await supabaseAdmin
+      .from("room_call_events")
+      .update({ status: "missed", handled_at: new Date().toISOString() })
+      .eq("status", "ringing")
+      .lt("created_at", expiresAt);
+
+    const { data: calls, error } = await supabaseAdmin
+      .from("room_call_events")
+      .select("id, caller_user_id, target_user_id, room_name, room_label, status, created_at")
+      .eq("target_user_id", data.userId)
+      .eq("status", "ringing")
+      .gte("created_at", expiresAt)
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    if (error) throw new Error("Não foi possível buscar chamadas");
+    return { calls: calls ?? [] };
+  });
+
+export const updateRoomCallStatus = createServerFn({ method: "POST" })
+  .inputValidator((input: { callId: string; status: RoomCallStatus; userId: string }) => {
+    if (!input || typeof input.callId !== "string") throw new Error("Chamada inválida");
+    const callId = input.callId.trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(callId)) {
+      throw new Error("Chamada inválida");
+    }
+    const allowed: RoomCallStatus[] = ["accepted", "declined", "missed"];
+    if (!allowed.includes(input.status)) throw new Error("Status inválido");
+    return { callId, status: input.status, userId: sanitizeUserId(input.userId) };
+  })
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("room_call_events")
+      .update({ status: data.status, handled_at: new Date().toISOString() })
+      .eq("id", data.callId)
+      .eq("target_user_id", data.userId)
+      .eq("status", "ringing");
+
+    if (error) throw new Error("Não foi possível atualizar a chamada");
+    return { ok: true };
   });
