@@ -5,8 +5,6 @@ import {
   Lock,
   LockOpen,
   Phone,
-  Plus,
-  PowerOff,
   Radio,
   Search,
   Users2,
@@ -18,7 +16,6 @@ import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import {
   inviteToRoom,
   listSectorRooms,
-  purgeAllRooms,
   setRoomPrivacy,
 } from "@/lib/livekit-token.functions";
 
@@ -42,24 +39,6 @@ interface RoomInfo {
   participants: { identity: string; name: string }[];
 }
 
-const EXTRA_KEY = "fluxo.extraRooms.v1";
-function loadExtras(): Record<string, number[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(EXTRA_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, number[]>) : {};
-  } catch {
-    return {};
-  }
-}
-function saveExtras(v: Record<string, number[]>) {
-  try {
-    window.localStorage.setItem(EXTRA_KEY, JSON.stringify(v));
-  } catch {
-    /* ignore */
-  }
-}
-
 function SalasPage() {
   const { users, currentUser, callUserToRoom } = useFluxo();
   const recentUsers = useFluxo().recentContactUsers(5);
@@ -68,7 +47,6 @@ function SalasPage() {
   const [called, setCalled] = useState<Record<string, number>>({});
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [openFor, setOpenFor] = useState<string | null>(null);
-  const [extras, setExtras] = useState<Record<string, number[]>>(() => loadExtras());
   // pending call target awaiting the private/open choice
   const [callChoice, setCallChoice] = useState<{
     userId: string;
@@ -76,8 +54,6 @@ function SalasPage() {
     roomLabel: string;
   } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => saveExtras(extras), [extras]);
 
   useEffect(() => {
     let cancelled = false;
