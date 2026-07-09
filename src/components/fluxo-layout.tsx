@@ -33,6 +33,7 @@ import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
 import { IncomingCall } from "@/components/incoming-call";
 import { toast } from "sonner";
+import { useCallInviter } from "@/lib/call-inviter-context";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
