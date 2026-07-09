@@ -7,7 +7,7 @@ import {
   formatChatMessageLinks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { ArrowLeft, Loader2, WifiOff } from "lucide-react";
+import { ArrowLeft, Loader2, PictureInPicture2, WifiOff } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { getLiveKitToken } from "@/lib/livekit-token.functions";
@@ -30,6 +30,35 @@ function RoomPage() {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [pipSupported, setPipSupported] = useState(false);
+  const [pipActive, setPipActive] = useState(false);
+
+  useEffect(() => {
+    setPipSupported(typeof document !== "undefined" && !!document.pictureInPictureEnabled);
+    const onLeave = () => setPipActive(false);
+    document.addEventListener("leavepictureinpicture", onLeave);
+    return () => document.removeEventListener("leavepictureinpicture", onLeave);
+  }, []);
+
+  async function togglePip() {
+    try {
+      const doc = document as Document & { pictureInPictureElement?: Element | null };
+      if (doc.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        setPipActive(false);
+        return;
+      }
+      const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video"));
+      const target =
+        videos.find((v) => !v.paused && v.readyState >= 2 && v.videoWidth > 0) ??
+        videos.find((v) => v.readyState >= 2 && v.videoWidth > 0);
+      if (!target) return;
+      await target.requestPictureInPicture();
+      setPipActive(true);
+    } catch (err) {
+      console.error("PiP falhou", err);
+    }
+  }
 
   const identity = useMemo(() => `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`, [currentUser]);
 
@@ -58,12 +87,24 @@ function RoomPage() {
       title={`Sala: ${roomName}`}
       breadcrumb="Salas Online"
       actions={
-        <button
-          onClick={() => navigate({ to: "/salas" })}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm hover:bg-secondary"
-        >
-          <ArrowLeft className="h-4 w-4" /> Sair da sala
-        </button>
+        <div className="flex items-center gap-2">
+          {pipSupported && connected && (
+            <button
+              onClick={togglePip}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm hover:bg-secondary"
+              title="Modo mini (Picture-in-Picture) — a chamada flutua enquanto você usa o app"
+            >
+              <PictureInPicture2 className="h-4 w-4" />
+              {pipActive ? "Sair do mini" : "Modo mini"}
+            </button>
+          )}
+          <button
+            onClick={() => navigate({ to: "/salas" })}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm hover:bg-secondary"
+          >
+            <ArrowLeft className="h-4 w-4" /> Sair da sala
+          </button>
+        </div>
       }
     >
       <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-7xl flex-col overflow-hidden rounded-xl border border-border bg-card">

@@ -75,6 +75,7 @@ interface Store {
   callCounts: Record<string, Record<string, Record<string, number>>>;
   topContactsForRoom: (roomName: string, limit?: number) => User[];
   dismissRoomCall: (notifId: string) => void;
+  addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
@@ -657,6 +658,35 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         ...s,
         notifications: s.notifications.map((n) => (n.id === notifId ? { ...n, read: true } : n)),
       })),
+
+    addMissedCallNotification: (fromUserId, roomName, roomLabel) => {
+      setState((s) => {
+        // avoid duplicates: same recipient+caller+room within last 60s
+        const cutoff = Date.now() - 60_000;
+        const dupe = s.notifications.some(
+          (n) =>
+            n.type === "chamada_perdida" &&
+            n.userId === s.currentUserId &&
+            n.fromUserId === fromUserId &&
+            n.roomName === roomName &&
+            new Date(n.at).getTime() > cutoff,
+        );
+        if (dupe) return s;
+        const caller = s.users.find((u) => u.id === fromUserId);
+        const notif: Notification = {
+          id: rid("n"),
+          userId: s.currentUserId,
+          type: "chamada_perdida",
+          title: `📞 Chamada perdida de ${caller?.name ?? "alguém"}`,
+          desc: `Toque para retornar a ligação na sala ${roomLabel}`,
+          at: nowIso(),
+          roomName,
+          roomLabel,
+          fromUserId,
+        };
+        return { ...s, notifications: [notif, ...s.notifications] };
+      });
+    },
 
     canAssignTo,
     visibleUsersForAssign,
