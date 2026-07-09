@@ -6,6 +6,7 @@ import {
   Building2,
   Calendar,
   ChevronDown,
+  ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Home,
@@ -28,13 +29,14 @@ import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
 import { OnboardingModal } from "@/components/onboarding-modal";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
+import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { listRoomsPresence } from "@/lib/livekit-token.functions";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
   { to: "/minhas-tarefas", label: "Minhas tarefas", icon: CheckSquare },
   { to: "/inbox", label: "Caixa de entrada", icon: Inbox },
   { to: "/equipe", label: "Equipe", icon: Users },
-  { to: "/salas", label: "Salas Online", icon: Headphones },
   { to: "/metas", label: "Metas & Score", icon: Target },
   { to: "/calendario", label: "Calendário", icon: Calendar },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
@@ -75,6 +77,35 @@ export function FluxoLayout({
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
   });
+  const [roomsOpen, setRoomsOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("fluxo:rooms-open") !== "0";
+  });
+  const [presence, setPresence] = useState<Record<string, { identity: string; name: string }[]>>({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("fluxo:rooms-open", roomsOpen ? "1" : "0");
+  }, [roomsOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const roomNames = DEPARTMENT_ROOMS.map((r) => r.name);
+    async function poll() {
+      try {
+        const res = await listRoomsPresence({ data: { rooms: roomNames } });
+        if (!cancelled) setPresence(res.presence);
+      } catch {
+        /* silent */
+      }
+    }
+    poll();
+    const id = window.setInterval(poll, 6000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -190,6 +221,108 @@ export function FluxoLayout({
               </Link>
             );
           })}
+
+          {/* Salas Online — with submenu */}
+          {(() => {
+            const salasActive = pathname === "/salas" || pathname.startsWith("/salas/");
+            const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
+            if (collapsed) {
+              return (
+                <Link
+                  to="/salas"
+                  title="Salas Online"
+                  className={`flex items-center justify-center rounded-md px-2 py-2 text-sm transition ${
+                    salasActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+                  }`}
+                >
+                  <div className="relative">
+                    <Headphones className="h-4 w-4" />
+                    {totalOnline > 0 && (
+                      <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
+                        {totalOnline}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              );
+            }
+            return (
+              <div>
+                <div
+                  className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition ${
+                    salasActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
+                  }`}
+                >
+                  <button
+                    onClick={() => setRoomsOpen((v) => !v)}
+                    className="flex h-4 w-4 items-center justify-center opacity-70 hover:opacity-100"
+                    aria-label={roomsOpen ? "Recolher salas" : "Expandir salas"}
+                  >
+                    {roomsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
+                  <Headphones className="h-4 w-4" />
+                  <Link to="/salas" className="flex-1 truncate">
+                    Salas Online
+                  </Link>
+                  {totalOnline > 0 && (
+                    <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      {totalOnline} online
+                    </span>
+                  )}
+                </div>
+                {roomsOpen && (
+                  <ul className="mt-0.5 flex flex-col gap-0.5 pl-3">
+                    {DEPARTMENT_ROOMS.map((r) => {
+                      const parts = presence[r.name] ?? [];
+                      const roomActive = pathname === `/salas/${r.name}`;
+                      return (
+                        <li key={r.name}>
+                          <Link
+                            to="/salas/$roomName"
+                            params={{ roomName: r.name }}
+                            className={`group flex items-center gap-2 rounded-md px-2 py-1 text-xs transition ${
+                              roomActive
+                                ? "bg-sidebar-accent/80 text-sidebar-accent-foreground"
+                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                parts.length > 0 ? "bg-emerald-400" : "bg-sidebar-foreground/25"
+                              }`}
+                            />
+                            <span className="flex-1 truncate uppercase tracking-wide">{r.label}</span>
+                            {parts.length > 0 && (
+                              <div className="flex -space-x-1.5">
+                                {parts.slice(0, 3).map((p) => (
+                                  <div
+                                    key={p.identity}
+                                    title={p.name}
+                                    className="flex h-5 w-5 items-center justify-center rounded-full border border-sidebar bg-primary text-[9px] font-bold text-primary-foreground"
+                                  >
+                                    {(p.name || p.identity).slice(0, 1).toUpperCase()}
+                                  </div>
+                                ))}
+                                {parts.length > 3 && (
+                                  <div className="flex h-5 w-5 items-center justify-center rounded-full border border-sidebar bg-secondary text-[9px] font-bold">
+                                    +{parts.length - 3}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
         </nav>
 
         <div className="mt-auto border-t border-sidebar-border p-3">
