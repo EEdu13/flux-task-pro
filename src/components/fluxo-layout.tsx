@@ -69,7 +69,6 @@ export function FluxoLayout({
     completions,
     isAuthenticated,
     logout,
-    callUserToRoom,
     topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
