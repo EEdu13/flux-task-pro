@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Headphones, Phone, Radio, Search, Users2 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -85,15 +85,11 @@ function SalasPage() {
           {DEPARTMENT_ROOMS.map((r) => {
             const parts = presence[r.name] ?? [];
             const query = (queries[r.name] ?? "").trim().toLowerCase();
-            const matches = useMemo(
-              () =>
-                query
-                  ? users
-                      .filter((u) => u.id !== currentUser.id && u.name.toLowerCase().includes(query))
-                      .slice(0, 6)
-                  : [],
-              [query, users, currentUser.id],
-            );
+            const matches = query
+              ? users
+                  .filter((u) => u.id !== currentUser.id && u.name.toLowerCase().includes(query))
+                  .slice(0, 6)
+              : [];
             return (
               <section
                 key={r.name}
