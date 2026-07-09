@@ -15,7 +15,7 @@ interface ActiveCallContextValue {
   minimized: boolean;
   loading: boolean;
   error: string | null;
-  startCall(args: { roomName: string; roomLabel?: string; identity: string; name: string }): Promise<void>;
+  startCall(args: { roomName: string; roomLabel?: string; identity: string; name: string; userId?: string }): Promise<void>;
   endCall(): void;
   setMinimized(v: boolean): void;
 }
@@ -30,7 +30,7 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const startCall = useCallback<ActiveCallContextValue["startCall"]>(
-    async ({ roomName, roomLabel, identity, name }) => {
+    async ({ roomName, roomLabel, identity, name, userId }) => {
       const prev = activeRef.current;
       if (prev && prev.roomName === roomName && prev.identity === identity) {
         setMinimized(false);
@@ -39,7 +39,7 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
       try {
-        const res = await getLiveKitToken({ data: { roomName, identity, name } });
+        const res = await getLiveKitToken({ data: { roomName, identity, name, userId: userId ?? "" } as { roomName: string; identity: string; name: string; userId?: string } });
         const next: ActiveCall = {
           roomName,
           roomLabel: roomLabel ?? roomName,
