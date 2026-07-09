@@ -74,6 +74,8 @@ interface Store {
   callUserToRoom: (targetUserId: string, roomName: string, roomLabel: string) => void;
   callCounts: Record<string, Record<string, Record<string, number>>>;
   topContactsForRoom: (roomName: string, limit?: number) => User[];
+  recentContactIds: string[];
+  recentContactUsers: (limit?: number) => User[];
   dismissRoomCall: (notifId: string) => void;
   addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
   // permissions
@@ -100,6 +102,7 @@ interface Persisted {
   isAuthenticated: boolean;
   callCounts: Record<string, Record<string, Record<string, number>>>;
   // shape: { [callerUserId]: { [roomName]: { [targetUserId]: count } } }
+  recentContactsByUser?: Record<string, string[]>;
 }
 
 function load(): Persisted {
@@ -112,6 +115,7 @@ function load(): Persisted {
     currentUserId: "u1",
     isAuthenticated: false,
     callCounts: {},
+    recentContactsByUser: {},
   };
   if (typeof window === "undefined") return defaults;
   try {
