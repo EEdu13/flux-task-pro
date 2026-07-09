@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -11,7 +11,7 @@ import {
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
-import { Maximize2, X } from "lucide-react";
+import { Maximize2, X, GripHorizontal } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 
 export const ACTIVE_CALL_MOUNT_ID = "active-call-mount";
@@ -21,11 +21,13 @@ function CallContents({
   roomLabel,
   onMaximize,
   onEnd,
+  onDragStart,
 }: {
   mini: boolean;
   roomLabel: string;
   onMaximize: () => void;
   onEnd: () => void;
+  onDragStart?: (e: React.PointerEvent) => void;
 }) {
   const tracks = useTracks(
     [
@@ -36,8 +38,14 @@ function CallContents({
   );
   return (
     <div className="flex h-full w-full flex-col bg-black text-white" data-lk-theme="default">
-      <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 px-2 py-1">
-        <span className="truncate text-xs font-medium">Sala · {roomLabel}</span>
+      <div
+        className={`flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 px-2 py-1 ${mini ? "cursor-move select-none" : ""}`}
+        onPointerDown={mini ? onDragStart : undefined}
+      >
+        <span className="flex items-center gap-1 truncate text-xs font-medium">
+          {mini && <GripHorizontal className="h-3.5 w-3.5 opacity-60" />}
+          Sala · {roomLabel}
+        </span>
         <div className="flex items-center gap-1">
           {mini && (
             <button
@@ -69,7 +77,7 @@ function CallContents({
         controls={{
           microphone: true,
           camera: true,
-          screenShare: !mini,
+          screenShare: true,
           chat: false,
           leave: false,
           settings: false,
@@ -80,11 +88,25 @@ function CallContents({
   );
 }
 
+const MINI_STORAGE_KEY = "fluxo:mini-call-box";
+const DEFAULT_MINI = { x: -1, y: -1, w: 384, h: 260 };
+const MIN_W = 260;
+const MIN_H = 180;
+
 export function ActiveCallWidget() {
   const { active, minimized, setMinimized, endCall } = useActiveCall();
   const location = useLocation();
   const navigate = useNavigate();
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [box, setBox] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_MINI;
+    try {
+      const raw = window.localStorage.getItem(MINI_STORAGE_KEY);
+      if (raw) return { ...DEFAULT_MINI, ...JSON.parse(raw) };
+    } catch {}
+    return DEFAULT_MINI;
+  });
+  const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: typeof DEFAULT_MINI } | null>(null);
 
   const roomPath = active ? `/salas/${active.roomName}` : null;
   const onRoomRoute = !!roomPath && location.pathname === roomPath;
@@ -136,8 +158,56 @@ export function ActiveCallWidget() {
     };
   }, [docked, location.pathname]);
 
+  // Persist mini box
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MINI_STORAGE_KEY, JSON.stringify(box));
+    } catch {}
+  }, [box]);
+
+  const onPointerMove = (e: PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    if (d.mode === "move") {
+      const w = d.box.w;
+      const h = d.box.h;
+      const x = Math.min(Math.max(0, d.box.x + dx), vw - w);
+      const y = Math.min(Math.max(0, d.box.y + dy), vh - h);
+      setBox({ ...d.box, x, y });
+    } else {
+      const w = Math.min(Math.max(MIN_W, d.box.w + dx), vw - d.box.x);
+      const h = Math.min(Math.max(MIN_H, d.box.h + dy), vh - d.box.y);
+      setBox({ ...d.box, w, h });
+    }
+  };
+  const onPointerUp = () => {
+    dragRef.current = null;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+  const startDrag = (mode: "move" | "resize") => (e: React.PointerEvent) => {
+    e.preventDefault();
+    // Resolve current effective box (in case x/y are -1 defaults)
+    const cur = { ...box };
+    if (cur.x < 0 || cur.y < 0) {
+      cur.x = window.innerWidth - cur.w - 16;
+      cur.y = window.innerHeight - cur.h - 16;
+    }
+    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, box: cur };
+    setBox(cur);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
   if (!active) return null;
 
+  const miniStyle: React.CSSProperties = box.x < 0 || box.y < 0
+    ? { position: "fixed", bottom: 16, right: 16, width: box.w, height: box.h, zIndex: 90 }
+    : { position: "fixed", top: box.y, left: box.x, width: box.w, height: box.h, zIndex: 90 };
   const style: React.CSSProperties = docked && rect
     ? {
         position: "fixed",
@@ -147,14 +217,7 @@ export function ActiveCallWidget() {
         height: rect.height,
         zIndex: 40,
       }
-    : {
-        position: "fixed",
-        bottom: 16,
-        right: 16,
-        width: 384,
-        height: 260,
-        zIndex: 90,
-      };
+    : miniStyle;
 
   const containerClass = docked
     ? "overflow-hidden rounded-xl border border-border bg-black shadow-lg"
@@ -175,6 +238,7 @@ export function ActiveCallWidget() {
         <CallContents
           mini={!docked}
           roomLabel={active.roomLabel}
+          onDragStart={!docked ? startDrag("move") : undefined}
           onMaximize={() => {
             setMinimized(false);
             if (!onRoomRoute) {
@@ -185,6 +249,17 @@ export function ActiveCallWidget() {
             endCall();
           }}
         />
+        {!docked && (
+          <div
+            onPointerDown={startDrag("resize")}
+            className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
+            style={{
+              background:
+                "linear-gradient(135deg, transparent 0 50%, rgba(255,255,255,0.5) 50% 60%, transparent 60% 70%, rgba(255,255,255,0.5) 70% 80%, transparent 80% 100%)",
+            }}
+            title="Redimensionar"
+          />
+        )}
       </LiveKitRoom>
     </div>,
     document.body,
