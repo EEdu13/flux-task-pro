@@ -12,6 +12,35 @@ export function isImage(type: string): boolean {
   return type.startsWith("image/");
 }
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [meta, b64] = dataUrl.split(",");
+  const mime = /data:([^;]+)/.exec(meta)?.[1] || "application/octet-stream";
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+// Chrome blocks top-level navigation to data: URLs and some browsers also
+// block downloads from large data URLs. Convert to a blob URL first, then
+// open in a new tab or trigger a download programmatically.
+export function openAttachment(a: { dataUrl: string; name: string }) {
+  const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
+  window.open(url, "_blank", "noopener,noreferrer");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function downloadAttachment(a: { dataUrl: string; name: string }) {
+  const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = a.name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();

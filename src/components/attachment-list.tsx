@@ -1,6 +1,6 @@
 import { FileText, Image as ImageIcon, X, Download } from "lucide-react";
 import type { Attachment } from "@/lib/fluxo-types";
-import { formatBytes, isImage } from "@/lib/attachments";
+import { formatBytes, isImage, openAttachment, downloadAttachment } from "@/lib/attachments";
 
 export function AttachmentList({
   items,
@@ -20,13 +20,18 @@ export function AttachmentList({
           className="group flex items-center gap-2 rounded-md border border-border bg-background/60 p-2 text-xs"
         >
           {isImage(a.type) ? (
-            <a href={a.dataUrl} target="_blank" rel="noreferrer" className="shrink-0">
+            <button
+              type="button"
+              onClick={() => openAttachment(a)}
+              className="shrink-0"
+              title="Abrir imagem"
+            >
               <img
                 src={a.dataUrl}
                 alt={a.name}
                 className="h-10 w-10 rounded object-cover"
               />
-            </a>
+            </button>
           ) : (
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-secondary">
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -36,14 +41,14 @@ export function AttachmentList({
             <div className="truncate font-medium">{a.name}</div>
             <div className="text-[10px] text-muted-foreground">{formatBytes(a.size)}</div>
           </div>
-          <a
-            href={a.dataUrl}
-            download={a.name}
+          <button
+            type="button"
+            onClick={() => downloadAttachment(a)}
             className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
             title="Baixar"
           >
             <Download className="h-3.5 w-3.5" />
-          </a>
+          </button>
           {onRemove && (
             <button
               onClick={() => onRemove(a.id)}

@@ -12,6 +12,8 @@ import {
   useLocalParticipant,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
+import type { LocalVideoTrack } from "livekit-client";
+import { BackgroundBlur, VirtualBackground } from "@livekit/track-processors";
 import "@livekit/components-styles";
 import {
   Maximize2,
@@ -22,10 +24,18 @@ import {
   Paperclip,
   Send,
   Download,
+  Sparkles,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
-import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
+import {
+  filesToAttachments,
+  formatBytes,
+  isImage,
+  openAttachment,
+  downloadAttachment,
+} from "@/lib/attachments";
 import type { Attachment } from "@/lib/fluxo-types";
+import videoBgOffice from "@/assets/video-bg-office.jpg";
 
 export const ACTIVE_CALL_MOUNT_ID = "active-call-mount";
 
@@ -39,6 +49,49 @@ type ChatMessage = {
 };
 
 type RaiseToast = { id: string; name: string };
+
+type VideoEffect = "none" | "blur" | "office";
+const EFFECT_STORAGE_KEY = "fluxo:video-effect";
+
+function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
+  const [effect, setEffectState] = useState<VideoEffect>(() => {
+    if (typeof window === "undefined") return "none";
+    const v = window.localStorage.getItem(EFFECT_STORAGE_KEY);
+    return v === "blur" || v === "office" ? v : "none";
+  });
+
+  useEffect(() => {
+    if (!cameraTrack) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (effect === "blur") {
+          await cameraTrack.setProcessor(BackgroundBlur(12));
+        } else if (effect === "office") {
+          await cameraTrack.setProcessor(VirtualBackground(videoBgOffice));
+        } else {
+          await cameraTrack.stopProcessor();
+        }
+      } catch (e) {
+        if (!cancelled) console.warn("Falha ao aplicar efeito de vídeo", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cameraTrack, effect]);
+
+  const setEffect = (v: VideoEffect) => {
+    setEffectState(v);
+    try {
+      window.localStorage.setItem(EFFECT_STORAGE_KEY, v);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return [effect, setEffect] as const;
+}
 
 function CallContents({
   mini,
@@ -65,6 +118,10 @@ function CallContents({
     { onlySubscribed: false },
   );
   const { localParticipant } = useLocalParticipant();
+  const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)
+    ?.videoTrack as LocalVideoTrack | undefined;
+  const [effect, setEffect] = useVideoEffect(cameraTrack);
+  const [effectMenu, setEffectMenu] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const chatStorageKey = `fluxo:chat:${roomName}`;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -221,6 +278,47 @@ function CallContents({
         />
         <div className="flex items-center gap-1.5">
           {!mini && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setEffectMenu((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                  effect !== "none"
+                    ? "border-primary/60 bg-primary/20 text-white"
+                    : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                }`}
+                title="Fundo de vídeo"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Fundo
+              </button>
+              {effectMenu && (
+                <div className="absolute bottom-full right-0 z-30 mb-1 w-48 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
+                  {([
+                    { id: "none", label: "Sem efeito" },
+                    { id: "blur", label: "Fundo desfocado" },
+                    { id: "office", label: "Escritório" },
+                  ] as { id: VideoEffect; label: string }[]).map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => {
+                        setEffect(o.id);
+                        setEffectMenu(false);
+                      }}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-white/10 ${
+                        effect === o.id ? "bg-white/5 text-primary" : "text-white"
+                      }`}
+                    >
+                      <span>{o.label}</span>
+                      {effect === o.id && <span className="text-[10px]">●</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {!mini && (
             <button
               type="button"
               onClick={raiseHand}
@@ -365,22 +463,34 @@ function ChatPanel({
                   {m.attachment && (
                     <div className={`${m.text ? "mt-1.5" : ""}`}>
                       {isImage(m.attachment.type) ? (
-                        <a
-                          href={m.attachment.dataUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block overflow-hidden rounded-md"
-                        >
-                          <img
-                            src={m.attachment.dataUrl}
-                            alt={m.attachment.name}
-                            className="max-h-40 w-auto rounded-md"
-                          />
-                        </a>
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => openAttachment(m.attachment!)}
+                            className="block overflow-hidden rounded-md"
+                            title="Abrir imagem"
+                          >
+                            <img
+                              src={m.attachment.dataUrl}
+                              alt={m.attachment.name}
+                              className="max-h-40 w-auto rounded-md"
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadAttachment(m.attachment!)}
+                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+                              mine ? "bg-black/20" : "bg-black/40"
+                            } hover:opacity-90`}
+                          >
+                            <Download className="h-3 w-3" />
+                            Baixar
+                          </button>
+                        </div>
                       ) : (
-                        <a
-                          href={m.attachment.dataUrl}
-                          download={m.attachment.name}
+                        <button
+                          type="button"
+                          onClick={() => downloadAttachment(m.attachment!)}
                           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
                             mine ? "bg-black/20" : "bg-black/40"
                           } hover:opacity-90`}
@@ -388,7 +498,7 @@ function ChatPanel({
                           <Download className="h-3 w-3" />
                           <span className="max-w-[140px] truncate">{m.attachment.name}</span>
                           <span className="opacity-70">({formatBytes(m.attachment.size)})</span>
-                        </a>
+                        </button>
                       )}
                     </div>
                   )}
