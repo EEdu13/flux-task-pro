@@ -5,8 +5,6 @@ import {
   Lock,
   LockOpen,
   Phone,
-  Plus,
-  PowerOff,
   Radio,
   Search,
   Users2,
@@ -18,7 +16,6 @@ import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import {
   inviteToRoom,
   listSectorRooms,
-  purgeAllRooms,
   setRoomPrivacy,
 } from "@/lib/livekit-token.functions";
 
@@ -42,24 +39,6 @@ interface RoomInfo {
   participants: { identity: string; name: string }[];
 }
 
-const EXTRA_KEY = "fluxo.extraRooms.v1";
-function loadExtras(): Record<string, number[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(EXTRA_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, number[]>) : {};
-  } catch {
-    return {};
-  }
-}
-function saveExtras(v: Record<string, number[]>) {
-  try {
-    window.localStorage.setItem(EXTRA_KEY, JSON.stringify(v));
-  } catch {
-    /* ignore */
-  }
-}
-
 function SalasPage() {
   const { users, currentUser, callUserToRoom } = useFluxo();
   const recentUsers = useFluxo().recentContactUsers(5);
@@ -68,7 +47,6 @@ function SalasPage() {
   const [called, setCalled] = useState<Record<string, number>>({});
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [openFor, setOpenFor] = useState<string | null>(null);
-  const [extras, setExtras] = useState<Record<string, number[]>>(() => loadExtras());
   // pending call target awaiting the private/open choice
   const [callChoice, setCallChoice] = useState<{
     userId: string;
@@ -76,8 +54,6 @@ function SalasPage() {
     roomLabel: string;
   } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => saveExtras(extras), [extras]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,51 +136,19 @@ function SalasPage() {
   }
 
   function roomsForSector(sector: string, label: string): RoomInfo[] {
-    const discovered = bySector[sector] ?? [
-      { name: sector, label, isPrivate: false, participants: [] },
+    const discovered = new Map<string, RoomInfo>();
+    for (const r of bySector[sector] ?? []) discovered.set(r.name, r);
+    // fixed: exactly two rooms per sector — Sala 1 and Sala 2
+    const fixed: RoomInfo[] = [
+      { name: sector, label: `${label} · Sala 1`, isPrivate: false, participants: [] },
+      { name: `${sector}-2`, label: `${label} · Sala 2`, isPrivate: false, participants: [] },
     ];
-    const map = new Map<string, RoomInfo>();
-    for (const r of discovered) {
-      const n = parseSalaIndex(r.name, sector);
-      map.set(r.name, {
-        name: r.name,
-        label: `${label} · Sala ${n}`,
-        isPrivate: r.isPrivate,
-        participants: r.participants,
-      });
-    }
-    // ensure base "Sala 1" always exists
-    if (!map.has(sector)) {
-      map.set(sector, {
-        name: sector,
-        label: `${label} · Sala 1`,
-        isPrivate: false,
-        participants: [],
-      });
-    }
-    // include user-created extras
-    for (const n of extras[sector] ?? []) {
-      const roomName = `${sector}-${n}`;
-      if (!map.has(roomName)) {
-        map.set(roomName, {
-          name: roomName,
-          label: `${label} · Sala ${n}`,
-          isPrivate: false,
-          participants: [],
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) =>
-      a.name.localeCompare(b.name, "pt-BR", { numeric: true }),
-    );
-  }
-
-  function addExtraRoom(sector: string) {
-    const rooms = roomsForSector(sector, "");
-    const used = new Set(rooms.map((r) => parseSalaIndex(r.name, sector)));
-    let n = 2;
-    while (used.has(n)) n++;
-    setExtras((e) => ({ ...e, [sector]: [...(e[sector] ?? []), n] }));
+    return fixed.map((base) => {
+      const d = discovered.get(base.name);
+      return d
+        ? { name: base.name, label: base.label, isPrivate: d.isPrivate, participants: d.participants }
+        : base;
+    });
   }
 
   return (
@@ -214,29 +158,13 @@ function SalasPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Salas Online</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Cada departamento tem Sala 1 fixa; crie extras quando a sala principal estiver
-              ocupada.
+              Cada departamento tem duas salas fixas: Sala 1 e Sala 2.
             </p>
           </div>
           <div className="text-xs text-muted-foreground">
             Você entrará como{" "}
             <span className="font-medium text-foreground">{currentUser.name}</span>.
           </div>
-          <button
-            onClick={async () => {
-              if (!window.confirm("Fechar TODAS as salas e desconectar todo mundo agora?")) return;
-              try {
-                const r = await purgeAllRooms();
-                setBySector({});
-                window.alert(`Fechadas: ${r.deleted.length} salas`);
-              } catch (e) {
-                window.alert("Falhou: " + String(e));
-              }
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20"
-          >
-            <PowerOff className="h-3.5 w-3.5" /> Fechar todas as salas
-          </button>
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -351,12 +279,6 @@ function SalasPage() {
                        </button>
                      );
                    })}
-                  <button
-                    onClick={() => addExtraRoom(r.name)}
-                    className="inline-flex items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 text-[10px] font-medium text-muted-foreground hover:border-primary hover:text-primary"
-                  >
-                    <Plus className="h-3 w-3" /> Nova sala
-                  </button>
                 </div>
 
                 <div className="relative">
