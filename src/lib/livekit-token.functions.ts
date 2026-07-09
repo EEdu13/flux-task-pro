@@ -5,14 +5,14 @@ type RoomCallStatus = "ringing" | "accepted" | "declined" | "missed";
 const sanitizeUserId = (value: unknown) => {
   if (typeof value !== "string") throw new Error("Usuário inválido");
   const id = value.trim().slice(0, 80);
-  if (!id || !/^[a-zA-Z0-9_\-]+$/.test(id)) throw new Error("Usuário inválido");
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Usuário inválido");
   return id;
 };
 
 const sanitizeRoomName = (value: unknown) => {
   if (typeof value !== "string") throw new Error("Sala inválida");
   const roomName = value.trim().slice(0, 64);
-  if (!roomName || !/^[a-zA-Z0-9_\-]+$/.test(roomName)) throw new Error("Nome de sala inválido");
+  if (!roomName || !/^[a-zA-Z0-9_-]+$/.test(roomName)) throw new Error("Nome de sala inválido");
   return roomName;
 };
 
@@ -30,7 +30,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
     const identity = input.identity.trim().slice(0, 64);
     const name = (input.name ?? identity).trim().slice(0, 64);
     if (!roomName || !identity) throw new Error("Sala e identidade são obrigatórios");
-    if (!/^[a-zA-Z0-9_\-]+$/.test(roomName)) throw new Error("Nome de sala inválido");
+    if (!/^[a-zA-Z0-9_-]+$/.test(roomName)) throw new Error("Nome de sala inválido");
     const userId =
       typeof (input as { userId?: string }).userId === "string"
         ? (input as { userId?: string }).userId!.trim().slice(0, 80)
@@ -85,7 +85,7 @@ export const listRoomsPresence = createServerFn({ method: "POST" })
   .inputValidator((input: { rooms: string[] }) => {
     if (!input || !Array.isArray(input.rooms)) throw new Error("rooms inválido");
     const rooms = input.rooms
-      .filter((r) => typeof r === "string" && /^[a-zA-Z0-9_\-]+$/.test(r))
+      .filter((r) => typeof r === "string" && /^[a-zA-Z0-9_-]+$/.test(r))
       .slice(0, 30);
     return { rooms };
   })
@@ -120,7 +120,7 @@ export const listSectorRooms = createServerFn({ method: "POST" })
   .inputValidator((input: { sectors: string[] }) => {
     if (!input || !Array.isArray(input.sectors)) throw new Error("sectors inválido");
     const sectors = input.sectors
-      .filter((s) => typeof s === "string" && /^[a-zA-Z0-9_\-]+$/.test(s))
+      .filter((s) => typeof s === "string" && /^[a-zA-Z0-9_-]+$/.test(s))
       .slice(0, 30);
     return { sectors };
   })

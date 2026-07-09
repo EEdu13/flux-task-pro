@@ -38,7 +38,7 @@ function loadExtras(): Record<string, number[]> {
 function saveExtras(v: Record<string, number[]>) {
   try {
     window.localStorage.setItem(EXTRA_KEY, JSON.stringify(v));
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 function SalasPage() {
