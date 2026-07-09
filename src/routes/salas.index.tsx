@@ -1,10 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { Headphones, Phone, Radio, Search, Users2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Headphones, Lock, LockOpen, Phone, Plus, Radio, Search, Users2, X } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
-import { listRoomsPresence } from "@/lib/livekit-token.functions";
+import {
+  inviteToRoom,
+  listSectorRooms,
+  setRoomPrivacy,
+} from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
@@ -16,22 +20,54 @@ export const Route = createFileRoute("/salas/")({
   }),
 });
 
+interface RoomInfo {
+  name: string;
+  label: string;
+  participants: { identity: string; name: string }[];
+}
+
+const EXTRA_KEY = "fluxo.extraRooms.v1";
+function loadExtras(): Record<string, number[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(EXTRA_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, number[]>) : {};
+  } catch {
+    return {};
+  }
+}
+function saveExtras(v: Record<string, number[]>) {
+  try {
+    window.localStorage.setItem(EXTRA_KEY, JSON.stringify(v));
+  } catch {}
+}
+
 function SalasPage() {
   const { users, currentUser, callUserToRoom } = useFluxo();
+  const recentUsers = useFluxo().recentContactUsers(5);
   const navigate = useNavigate();
-  const [presence, setPresence] = useState<Record<string, { identity: string; name: string }[]>>({});
+  const [bySector, setBySector] = useState<Record<string, RoomInfo[]>>({});
   const [called, setCalled] = useState<Record<string, number>>({});
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [openFor, setOpenFor] = useState<string | null>(null);
+  const [extras, setExtras] = useState<Record<string, number[]>>(() => loadExtras());
+  // pending call target awaiting the private/open choice
+  const [callChoice, setCallChoice] = useState<{
+    userId: string;
+    roomName: string;
+    roomLabel: string;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => saveExtras(extras), [extras]);
 
   useEffect(() => {
     let cancelled = false;
-    const roomNames = DEPARTMENT_ROOMS.map((r) => r.name);
+    const sectors = DEPARTMENT_ROOMS.map((r) => r.name);
     async function poll() {
       try {
-        const res = await listRoomsPresence({ data: { rooms: roomNames } });
-        if (!cancelled) setPresence(res.presence);
+        const res = await listSectorRooms({ data: { sectors } });
+        if (!cancelled) setBySector(res.bySector);
       } catch {
         /* silent */
       }
@@ -53,17 +89,76 @@ function SalasPage() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  function handleCall(userId: string, roomName: string, roomLabel: string) {
+  function askCall(userId: string, roomName: string, roomLabel: string) {
+    setCallChoice({ userId, roomName, roomLabel });
+    setOpenFor(null);
+  }
+
+  async function confirmCall(kind: "private" | "open") {
+    if (!callChoice) return;
+    const { userId, roomName, roomLabel } = callChoice;
+    if (kind === "private") {
+      try {
+        await setRoomPrivacy({ data: { roomName, isPrivate: true, userId: currentUser.id } });
+        await inviteToRoom({
+          data: { roomName, targetUserId: userId, inviterUserId: currentUser.id },
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      try {
+        await setRoomPrivacy({ data: { roomName, isPrivate: false, userId: currentUser.id } });
+      } catch {
+        /* ignore */
+      }
+    }
     callUserToRoom(userId, roomName, roomLabel);
     const key = `${userId}:${roomName}`;
     setCalled((c) => ({ ...c, [key]: Date.now() }));
-    setTimeout(() => setCalled((c) => {
-      const next = { ...c };
-      delete next[key];
-      return next;
-    }), 3500);
-    setOpenFor(null);
+    setTimeout(
+      () =>
+        setCalled((c) => {
+          const next = { ...c };
+          delete next[key];
+          return next;
+        }),
+      3500,
+    );
     setQueries((q) => ({ ...q, [roomName]: "" }));
+    setCallChoice(null);
+    navigate({ to: "/salas/$roomName", params: { roomName } });
+  }
+
+  function roomsForSector(sector: string, label: string): RoomInfo[] {
+    const discovered = bySector[sector] ?? [{ name: sector, label, participants: [] }];
+    const map = new Map<string, RoomInfo>();
+    for (const r of discovered) {
+      const n = parseSalaIndex(r.name, sector);
+      map.set(r.name, { name: r.name, label: `${label} · Sala ${n}`, participants: r.participants });
+    }
+    // ensure base "Sala 1" always exists
+    if (!map.has(sector)) {
+      map.set(sector, { name: sector, label: `${label} · Sala 1`, participants: [] });
+    }
+    // include user-created extras
+    for (const n of extras[sector] ?? []) {
+      const roomName = `${sector}-${n}`;
+      if (!map.has(roomName)) {
+        map.set(roomName, { name: roomName, label: `${label} · Sala ${n}`, participants: [] });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR", { numeric: true }),
+    );
+  }
+
+  function addExtraRoom(sector: string) {
+    const rooms = roomsForSector(sector, "");
+    const used = new Set(rooms.map((r) => parseSalaIndex(r.name, sector)));
+    let n = 2;
+    while (used.has(n)) n++;
+    setExtras((e) => ({ ...e, [sector]: [...(e[sector] ?? []), n] }));
   }
 
   return (
@@ -73,7 +168,7 @@ function SalasPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Salas Online</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Uma sala por departamento. Entre com um clique ou busque alguém pelo nome e chame direto.
+              Cada departamento tem Sala 1 fixa; crie extras quando a sala principal estiver ocupada.
             </p>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -81,15 +176,16 @@ function SalasPage() {
           </div>
         </header>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {DEPARTMENT_ROOMS.map((r) => {
-            const parts = presence[r.name] ?? [];
+            const rooms = roomsForSector(r.name, r.label);
             const query = (queries[r.name] ?? "").trim().toLowerCase();
             const matches = query
               ? users
                   .filter((u) => u.id !== currentUser.id && u.name.toLowerCase().includes(query))
                   .slice(0, 6)
               : [];
+            const totalOnline = rooms.reduce((a, b) => a + b.participants.length, 0);
             return (
               <section
                 key={r.name}
@@ -101,45 +197,59 @@ function SalasPage() {
                       <Headphones className="h-5 w-5" />
                     </div>
                     <div>
-                      <button
-                        onClick={() => navigate({ to: "/salas/$roomName", params: { roomName: r.name } })}
-                        className="text-base font-semibold uppercase tracking-wide hover:text-primary"
-                      >
+                      <div className="text-base font-semibold uppercase tracking-wide">
                         {r.label}
-                      </button>
+                      </div>
                       <div className="text-xs text-muted-foreground">{r.desc}</div>
                     </div>
                   </div>
                   <span
                     className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      parts.length > 0
+                      totalOnline > 0
                         ? "bg-emerald-500/15 text-emerald-500"
                         : "bg-secondary text-muted-foreground"
                     }`}
                   >
-                    <Radio className="h-2.5 w-2.5" /> {parts.length} online
+                    <Radio className="h-2.5 w-2.5" /> {totalOnline} online
                   </span>
                 </div>
 
-                {parts.length > 0 && (
-                  <div className="flex items-center gap-2 rounded-md bg-emerald-500/5 px-2 py-1.5">
-                    <Users2 className="h-3.5 w-3.5 text-emerald-500" />
-                    <div className="flex flex-wrap gap-1.5">
-                      {parts.map((p) => (
-                        <span
-                          key={p.identity}
-                          className="inline-flex items-center gap-1 rounded-full bg-background px-1.5 py-0.5 text-[10px]"
-                          title={p.name}
-                        >
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
-                            {(p.name || p.identity).slice(0, 1).toUpperCase()}
+                <div className="flex flex-col gap-1.5">
+                  {rooms.map((room) => {
+                    const n = parseSalaIndex(room.name, r.name);
+                    return (
+                      <button
+                        key={room.name}
+                        onClick={() =>
+                          navigate({ to: "/salas/$roomName", params: { roomName: room.name } })
+                        }
+                        className="group flex items-center justify-between gap-2 rounded-md border border-border/70 bg-background px-2 py-1.5 text-left hover:border-primary/50 hover:bg-primary/5"
+                      >
+                        <span className="flex min-w-0 items-center gap-2 text-xs">
+                          <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
+                            #{n}
                           </span>
-                          {p.name}
+                          <span className="truncate font-medium">Sala {n}</span>
+                          {room.participants.length > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500">
+                              <Users2 className="h-3 w-3" />
+                              {room.participants.length}
+                            </span>
+                          )}
                         </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                        <span className="text-[10px] font-medium text-muted-foreground group-hover:text-primary">
+                          Entrar
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => addExtraRoom(r.name)}
+                    className="inline-flex items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 text-[10px] font-medium text-muted-foreground hover:border-primary hover:text-primary"
+                  >
+                    <Plus className="h-3 w-3" /> Nova sala
+                  </button>
+                </div>
 
                 <div className="relative">
                   <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -166,7 +276,7 @@ function SalasPage() {
                         return (
                           <li key={m.id}>
                             <button
-                              onClick={() => handleCall(m.id, r.name, r.label)}
+                              onClick={() => askCall(m.id, r.name, r.label)}
                               disabled={wasCalled}
                               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-secondary disabled:opacity-60"
                             >
@@ -191,19 +301,105 @@ function SalasPage() {
                       Ninguém encontrado.
                     </div>
                   )}
+                  {recentUsers.length > 0 && !query && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <span className="mr-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Recentes:
+                      </span>
+                      {recentUsers.map((m) => {
+                        const callKey = `${m.id}:${r.name}`;
+                        const wasCalled = !!called[callKey];
+                        return (
+                          <button
+                            key={m.id}
+                            onClick={() => askCall(m.id, r.name, r.label)}
+                            disabled={wasCalled}
+                            title={`Chamar ${m.name} para ${r.label}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:border-primary hover:bg-primary/5 disabled:opacity-60"
+                          >
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
+                              {m.avatar}
+                            </span>
+                            <span className="max-w-[80px] truncate">{m.name.split(" ")[0]}</span>
+                            <Phone className="h-2.5 w-2.5 text-primary" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-
-                <button
-                  onClick={() => navigate({ to: "/salas/$roomName", params: { roomName: r.name } })}
-                  className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:brightness-110"
-                >
-                  <Headphones className="h-3.5 w-3.5" /> Entrar na sala {r.label}
-                </button>
               </section>
             );
           })}
         </div>
+
+        {callChoice && (
+          <CallChoiceModal
+            targetName={users.find((u) => u.id === callChoice.userId)?.name ?? "convidado"}
+            roomLabel={callChoice.roomLabel}
+            onCancel={() => setCallChoice(null)}
+            onConfirm={confirmCall}
+          />
+        )}
       </div>
     </FluxoLayout>
+  );
+}
+
+function parseSalaIndex(name: string, sector: string): number {
+  if (name === sector) return 1;
+  const m = name.match(new RegExp(`^${sector}-(\\d+)$`));
+  return m ? Number(m[1]) : 1;
+}
+
+function CallChoiceModal({
+  targetName,
+  roomLabel,
+  onCancel,
+  onConfirm,
+}: {
+  targetName: string;
+  roomLabel: string;
+  onCancel: () => void;
+  onConfirm: (kind: "private" | "open") => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold">Chamar {targetName}</div>
+          <button onClick={onCancel} className="rounded p-1 text-muted-foreground hover:bg-secondary">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="px-4 py-3 text-xs text-muted-foreground">
+          Como você quer entrar na sala <span className="font-medium text-foreground">{roomLabel}</span>?
+        </div>
+        <div className="grid gap-2 px-4 pb-4 sm:grid-cols-2">
+          <button
+            onClick={() => onConfirm("private")}
+            className="flex flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left hover:border-primary hover:bg-primary/5"
+          >
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+              <Lock className="h-4 w-4 text-primary" /> Chat privado
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Só vocês dois. Novas pessoas precisam pedir para entrar e serem aceitas.
+            </span>
+          </button>
+          <button
+            onClick={() => onConfirm("open")}
+            className="flex flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left hover:border-primary hover:bg-primary/5"
+          >
+            <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
+              <LockOpen className="h-4 w-4 text-emerald-500" /> Chat aberto
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Sala pública. Qualquer pessoa do time pode entrar quando quiser.
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
