@@ -148,8 +148,9 @@ export const listSectorRooms = createServerFn({ method: "POST" })
     // For each sector, collect rooms named `${sector}` or `${sector}-<n>` with n>=2.
     const bySector: Record<
       string,
-      { name: string; participants: { identity: string; name: string }[] }[]
+      { name: string; isPrivate: boolean; participants: { identity: string; name: string }[] }[]
     > = {};
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await Promise.all(
       data.sectors.map(async (sector) => {
         const matches = new Set<string>([sector]);
@@ -158,19 +159,27 @@ export const listSectorRooms = createServerFn({ method: "POST" })
         const names = Array.from(matches).sort((a, b) =>
           a.localeCompare(b, "pt-BR", { numeric: true }),
         );
+        const { data: states } = await supabaseAdmin
+          .from("room_state")
+          .select("room_name, is_private")
+          .in("room_name", names);
+        const privacyMap = new Map<string, boolean>(
+          (states ?? []).map((s) => [s.room_name, !!s.is_private]),
+        );
         const withParts = await Promise.all(
           names.map(async (name) => {
             try {
               const parts = await svc.listParticipants(name);
               return {
                 name,
+                isPrivate: privacyMap.get(name) ?? false,
                 participants: parts.map((p) => ({
                   identity: p.identity,
                   name: p.name || p.identity,
                 })),
               };
             } catch {
-              return { name, participants: [] };
+              return { name, isPrivate: privacyMap.get(name) ?? false, participants: [] };
             }
           }),
         );
