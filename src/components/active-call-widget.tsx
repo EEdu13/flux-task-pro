@@ -21,12 +21,14 @@ function CallContents({
   roomLabel,
   onMaximize,
   onEnd,
+  onMinimize,
   onDragStart,
 }: {
   mini: boolean;
   roomLabel: string;
   onMaximize: () => void;
   onEnd: () => void;
+  onMinimize?: () => void;
   onDragStart?: (e: React.PointerEvent) => void;
 }) {
   const tracks = useTracks(
@@ -72,17 +74,42 @@ function CallContents({
           <ParticipantTile />
         </GridLayout>
       </div>
-      <ControlBar
-        variation="minimal"
-        controls={{
-          microphone: true,
-          camera: true,
-          screenShare: true,
-          chat: false,
-          leave: false,
-          settings: false,
-        }}
-      />
+      <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/70 px-2 py-1">
+        <ControlBar
+          variation="minimal"
+          controls={{
+            microphone: true,
+            camera: true,
+            screenShare: true,
+            chat: false,
+            leave: false,
+            settings: false,
+          }}
+          style={{ border: "none", padding: 0, background: "transparent" }}
+        />
+        <div className="flex items-center gap-1.5">
+          {!mini && onMinimize && (
+            <button
+              type="button"
+              onClick={onMinimize}
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-white/10"
+              title="Minimiza a chamada para o cantinho e mantém você conectado"
+            >
+              <Maximize2 className="h-3.5 w-3.5 rotate-180" />
+              Modo mini
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onEnd}
+            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+            title="Encerrar chamada"
+          >
+            <X className="h-3.5 w-3.5" />
+            Sair
+          </button>
+        </div>
+      </div>
       <RoomAudioRenderer />
     </div>
   );
@@ -239,6 +266,10 @@ export function ActiveCallWidget() {
           mini={!docked}
           roomLabel={active.roomLabel}
           onDragStart={!docked ? startDrag("move") : undefined}
+          onMinimize={docked ? () => {
+            setMinimized(true);
+            navigate({ to: "/salas" });
+          } : undefined}
           onMaximize={() => {
             setMinimized(false);
             if (!onRoomRoute) {
@@ -247,6 +278,9 @@ export function ActiveCallWidget() {
           }}
           onEnd={() => {
             endCall();
+            if (onRoomRoute) {
+              navigate({ to: "/salas" });
+            }
           }}
         />
         {!docked && (

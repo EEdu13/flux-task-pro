@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import { ArrowLeft, PictureInPicture2, WifiOff } from "lucide-react";
+import { WifiOff } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useActiveCall } from "@/lib/active-call-context";
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/salas/$roomName")({
 function RoomPage() {
   const { roomName } = Route.useParams();
   const { currentUser } = useFluxo();
-  const { startCall, endCall, setMinimized, active, error } = useActiveCall();
+  const { startCall, endCall, active, error } = useActiveCall();
   const navigate = useNavigate();
 
   const identity = useMemo(() => `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`, [currentUser]);
@@ -39,30 +39,6 @@ function RoomPage() {
     <FluxoLayout
       title={`Sala: ${roomLabel}`}
       breadcrumb="Salas Online"
-      actions={
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setMinimized(true);
-              navigate({ to: "/salas" });
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm hover:bg-secondary"
-            title="Minimiza a chamada para o cantinho e mantém você conectado"
-          >
-            <PictureInPicture2 className="h-4 w-4" />
-            Modo mini
-          </button>
-          <button
-            onClick={() => {
-              endCall();
-              navigate({ to: "/salas" });
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm hover:bg-secondary"
-          >
-            <ArrowLeft className="h-4 w-4" /> Sair da sala
-          </button>
-        </div>
-      }
     >
       <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl">
         {error ? (
