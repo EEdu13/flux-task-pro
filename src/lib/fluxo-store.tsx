@@ -71,6 +71,9 @@ interface Store {
   markAllNotifsRead: () => void;
   // room calls
   callUserToRoom: (targetUserId: string, roomName: string, roomLabel: string) => void;
+  callCounts: Record<string, Record<string, Record<string, number>>>;
+  topContactsForRoom: (roomName: string, limit?: number) => User[];
+  dismissRoomCall: (notifId: string) => void;
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
