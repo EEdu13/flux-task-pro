@@ -8,13 +8,37 @@ import {
   GridLayout,
   ParticipantTile,
   useTracks,
+  useDataChannel,
+  useLocalParticipant,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
-import { Maximize2, X, GripHorizontal } from "lucide-react";
+import {
+  Maximize2,
+  X,
+  GripHorizontal,
+  MessageSquare,
+  Hand,
+  Paperclip,
+  Send,
+  Download,
+} from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
+import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
+import type { Attachment } from "@/lib/fluxo-types";
 
 export const ACTIVE_CALL_MOUNT_ID = "active-call-mount";
+
+type ChatMessage = {
+  id: string;
+  from: string;
+  fromName: string;
+  text?: string;
+  attachment?: { name: string; size: number; type: string; dataUrl: string };
+  at: number;
+};
+
+type RaiseToast = { id: string; name: string };
 
 function CallContents({
   mini,
@@ -38,6 +62,71 @@ function CallContents({
     ],
     { onlySubscribed: false },
   );
+  const { localParticipant } = useLocalParticipant();
+  const [chatOpen, setChatOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [raises, setRaises] = useState<RaiseToast[]>([]);
+  const [unread, setUnread] = useState(0);
+  const chatOpenRef = useRef(chatOpen);
+  useEffect(() => {
+    chatOpenRef.current = chatOpen;
+    if (chatOpen) setUnread(0);
+  }, [chatOpen]);
+
+  const pushRaise = (name: string) => {
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    setRaises((r) => [...r, { id, name }]);
+    setTimeout(() => setRaises((r) => r.filter((x) => x.id !== id)), 4500);
+  };
+
+  const { send } = useDataChannel("fluxo-room", (msg) => {
+    try {
+      const data = JSON.parse(new TextDecoder().decode(msg.payload)) as
+        | { kind: "chat"; msg: ChatMessage }
+        | { kind: "raise"; name: string };
+      if (data.kind === "chat") {
+        setMessages((m) => [...m, data.msg]);
+        if (!chatOpenRef.current) setUnread((n) => n + 1);
+      } else if (data.kind === "raise") {
+        pushRaise(data.name);
+      }
+    } catch {
+      /* ignore */
+    }
+  });
+
+  const broadcast = (payload: object) => {
+    if (!send) return;
+    try {
+      send(new TextEncoder().encode(JSON.stringify(payload)), { reliable: true });
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const sendMessage = (text: string, attachment?: ChatMessage["attachment"]) => {
+    const trimmed = text.trim();
+    if (!trimmed && !attachment) return;
+    const msg: ChatMessage = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      from: localParticipant.identity,
+      fromName: localParticipant.name || localParticipant.identity || "Eu",
+      text: trimmed || undefined,
+      attachment,
+      at: Date.now(),
+    };
+    setMessages((m) => [...m, msg]);
+    broadcast({ kind: "chat", msg });
+  };
+
+  const raiseHand = () => {
+    const name = localParticipant.name || localParticipant.identity || "Alguém";
+    pushRaise(name);
+    broadcast({ kind: "raise", name });
+  };
+
+  const showChat = chatOpen && !mini;
+
   return (
     <div className="flex h-full w-full flex-col bg-black text-white" data-lk-theme="default">
       <div
@@ -69,10 +158,33 @@ function CallContents({
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <GridLayout tracks={tracks} style={{ height: "100%" }}>
-          <ParticipantTile />
-        </GridLayout>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-w-0 flex-1">
+          <GridLayout tracks={tracks} style={{ height: "100%" }}>
+            <ParticipantTile />
+          </GridLayout>
+          {raises.length > 0 && (
+            <div className="pointer-events-none absolute inset-x-0 top-2 z-20 flex flex-col items-center gap-1.5">
+              {raises.map((r) => (
+                <div
+                  key={r.id}
+                  className="pointer-events-auto flex items-center gap-2 rounded-full bg-amber-400/95 px-3 py-1.5 text-xs font-semibold text-black shadow-lg"
+                >
+                  <Hand className="h-3.5 w-3.5" />
+                  {r.name} levantou a mão
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {showChat && (
+          <ChatPanel
+            messages={messages}
+            selfId={localParticipant.identity}
+            onSend={sendMessage}
+            onClose={() => setChatOpen(false)}
+          />
+        )}
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/70 px-2 py-1">
         <ControlBar
@@ -88,6 +200,37 @@ function CallContents({
           style={{ border: "none", padding: 0, background: "transparent" }}
         />
         <div className="flex items-center gap-1.5">
+          {!mini && (
+            <button
+              type="button"
+              onClick={raiseHand}
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-400/40 bg-amber-400/10 px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-400/20"
+              title="Levantar a mão — avisa todo mundo na sala"
+            >
+              <Hand className="h-3.5 w-3.5" />
+              Mão
+            </button>
+          )}
+          {!mini && (
+            <button
+              type="button"
+              onClick={() => setChatOpen((v) => !v)}
+              className={`relative inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                chatOpen
+                  ? "border-primary/60 bg-primary/20 text-white"
+                  : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+              }`}
+              title="Chat da sala"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Chat
+              {!chatOpen && unread > 0 && (
+                <span className="ml-0.5 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  {unread}
+                </span>
+              )}
+            </button>
+          )}
           {!mini && onMinimize && (
             <button
               type="button"
@@ -112,6 +255,190 @@ function CallContents({
       </div>
       <RoomAudioRenderer />
     </div>
+  );
+}
+
+function ChatPanel({
+  messages,
+  selfId,
+  onSend,
+  onClose,
+}: {
+  messages: ChatMessage[];
+  selfId: string;
+  onSend: (text: string, attachment?: ChatMessage["attachment"]) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [pending, setPending] = useState<Attachment | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [messages.length]);
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setError(null);
+    const { ok, rejected } = await filesToAttachments([files[0]], selfId);
+    if (rejected.length) setError(`Arquivo muito grande: ${rejected.join(", ")}`);
+    if (ok[0]) setPending(ok[0]);
+  }
+
+  function submit() {
+    if (!text.trim() && !pending) return;
+    onSend(
+      text,
+      pending
+        ? { name: pending.name, size: pending.size, type: pending.type, dataUrl: pending.dataUrl }
+        : undefined,
+    );
+    setText("");
+    setPending(null);
+    setError(null);
+  }
+
+  return (
+    <aside className="flex w-72 shrink-0 flex-col border-l border-white/10 bg-neutral-950/95 text-white">
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2 text-xs font-semibold">
+        <span className="flex items-center gap-1.5">
+          <MessageSquare className="h-3.5 w-3.5" />
+          Chat da sala
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 hover:bg-white/10"
+          title="Fechar chat"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-2 text-xs">
+        {messages.length === 0 ? (
+          <div className="mt-6 text-center text-[11px] text-white/50">
+            Nenhuma mensagem ainda. Diga oi 👋
+          </div>
+        ) : (
+          messages.map((m) => {
+            const mine = m.from === selfId;
+            return (
+              <div key={m.id} className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                <div className="mb-0.5 flex items-center gap-1 text-[10px] text-white/50">
+                  <span className="font-medium text-white/70">{mine ? "Você" : m.fromName}</span>
+                  <span>·</span>
+                  <span>
+                    {new Date(m.at).toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <div
+                  className={`max-w-[90%] rounded-lg px-2 py-1.5 leading-snug ${
+                    mine ? "bg-primary text-primary-foreground" : "bg-white/10 text-white"
+                  }`}
+                >
+                  {m.text && <div className="whitespace-pre-wrap break-words">{m.text}</div>}
+                  {m.attachment && (
+                    <div className={`${m.text ? "mt-1.5" : ""}`}>
+                      {isImage(m.attachment.type) ? (
+                        <a
+                          href={m.attachment.dataUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block overflow-hidden rounded-md"
+                        >
+                          <img
+                            src={m.attachment.dataUrl}
+                            alt={m.attachment.name}
+                            className="max-h-40 w-auto rounded-md"
+                          />
+                        </a>
+                      ) : (
+                        <a
+                          href={m.attachment.dataUrl}
+                          download={m.attachment.name}
+                          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+                            mine ? "bg-black/20" : "bg-black/40"
+                          } hover:opacity-90`}
+                        >
+                          <Download className="h-3 w-3" />
+                          <span className="max-w-[140px] truncate">{m.attachment.name}</span>
+                          <span className="opacity-70">({formatBytes(m.attachment.size)})</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+      {pending && (
+        <div className="flex items-center gap-2 border-t border-white/10 bg-white/5 px-3 py-1.5 text-[11px]">
+          <Paperclip className="h-3 w-3" />
+          <span className="min-w-0 flex-1 truncate">{pending.name}</span>
+          <span className="text-white/50">{formatBytes(pending.size)}</span>
+          <button
+            type="button"
+            onClick={() => setPending(null)}
+            className="rounded p-0.5 hover:bg-white/10"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="border-t border-white/10 bg-red-500/20 px-3 py-1 text-[10px] text-red-200">
+          {error}
+        </div>
+      )}
+      <div className="flex items-end gap-1 border-t border-white/10 bg-black/50 px-2 py-1.5">
+        <input
+          ref={fileRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            void handleFiles(e.target.files);
+            e.currentTarget.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="rounded p-1.5 hover:bg-white/10"
+          title="Anexar arquivo (máx. 3 MB)"
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+        </button>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={1}
+          placeholder="Escrever mensagem…"
+          className="min-h-[28px] flex-1 resize-none rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs outline-none placeholder:text-white/40 focus:border-primary/60"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!text.trim() && !pending}
+          className="rounded-md bg-primary p-1.5 text-primary-foreground disabled:opacity-40"
+          title="Enviar (Enter)"
+        >
+          <Send className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </aside>
   );
 }
 
