@@ -26,6 +26,7 @@ import {
   seedTasks,
   seedUsers,
 } from "./fluxo-seed";
+import { createRoomCall } from "./livekit-token.functions";
 
 interface TaskDialogState {
   open: boolean;
@@ -603,6 +604,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       })),
 
     callUserToRoom: (targetUserId, roomName, roomLabel) => {
+      if (targetUserId !== currentUser.id) {
+        createRoomCall({
+          data: {
+            callerUserId: currentUser.id,
+            targetUserId,
+            roomName,
+            roomLabel,
+          },
+        }).catch((err) => {
+          console.error("Falha ao chamar usuário", err);
+        });
+      }
       setState((s) => {
         if (targetUserId === s.currentUserId) return s;
         const notif: Notification = {
