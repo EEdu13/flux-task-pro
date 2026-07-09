@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { AtSign, Bell, Check, CheckCircle2, Clock, Inbox as InboxIcon } from "lucide-react";
+import { AtSign, Bell, Check, CheckCircle2, Clock, Inbox as InboxIcon, PhoneMissed } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
@@ -22,10 +22,11 @@ const filters = [
   { id: "atribuida", label: "Atribuídas" },
   { id: "prazo", label: "Prazos" },
   { id: "concluida", label: "Concluídas" },
+  { id: "chamada_perdida", label: "Chamadas" },
 ] as const;
 
 function InboxPage() {
-  const { notifications, currentUser, markNotifRead, markAllNotifsRead, openTask } = useFluxo();
+  const { notifications, currentUser, markNotifRead, markAllNotifsRead, openTask, callUserToRoom } = useFluxo();
   const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("todas");
   const navigate = useNavigate();
 
@@ -40,6 +41,7 @@ function InboxPage() {
     if (type === "prazo") return Clock;
     if (type === "mencao") return AtSign;
     if (type === "concluida") return CheckCircle2;
+    if (type === "chamada_perdida") return PhoneMissed;
     return Bell;
   };
 
@@ -90,6 +92,11 @@ function InboxPage() {
                 <button
                   onClick={() => {
                     markNotifRead(n.id);
+                    if (n.type === "chamada_perdida" && n.fromUserId && n.roomName) {
+                      callUserToRoom(n.fromUserId, n.roomName, n.roomLabel ?? n.roomName);
+                      navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
+                      return;
+                    }
                     if (n.taskId) openTask(n.taskId);
                     if (n.roomName)
                       navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
