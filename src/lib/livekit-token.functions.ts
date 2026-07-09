@@ -331,7 +331,7 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
           for (const p of parts) {
             // participant identity is "<userId>-<name>"; take the userId prefix
             const uid = (p.identity || "").split("-")[0];
-            if (uid && /^[a-zA-Z0-9_]+$/.test(uid)) memberIds.add(uid);
+            if (uid && /^[a-zA-Z0-9_-]+$/.test(uid)) memberIds.add(uid);
           }
         } catch {
           /* ignore — worst case only the caller is grandfathered */
