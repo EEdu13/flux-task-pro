@@ -278,6 +278,9 @@ export function ActiveCallWidget() {
           }}
           onEnd={() => {
             endCall();
+            if (onRoomRoute) {
+              navigate({ to: "/salas" });
+            }
           }}
         />
         {!docked && (
