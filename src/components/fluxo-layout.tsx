@@ -31,6 +31,8 @@ import { OnboardingModal } from "@/components/onboarding-modal";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
+import { IncomingCall } from "@/components/incoming-call";
+import { toast } from "sonner";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
@@ -67,6 +69,8 @@ export function FluxoLayout({
     completions,
     isAuthenticated,
     logout,
+    callUserToRoom,
+    topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
@@ -279,15 +283,27 @@ export function FluxoLayout({
                     {DEPARTMENT_ROOMS.map((r) => {
                       const parts = presence[r.name] ?? [];
                       const roomActive = pathname === `/salas/${r.name}`;
+                      const onlineUserIds = new Set(
+                        parts.map((p) => p.identity.split("-")[0]).filter(Boolean),
+                      );
+                      const top = topContactsForRoom(r.name, 5);
+                      // Merge: top-called first, then any online people not yet listed
+                      const shown = [...top];
+                      for (const p of parts) {
+                        const uid = p.identity.split("-")[0];
+                        if (uid && uid !== currentUser.id && !shown.some((u) => u.id === uid)) {
+                          const u = users.find((x) => x.id === uid);
+                          if (u) shown.push(u);
+                        }
+                      }
+                      const bubbles = shown.slice(0, 3);
                       return (
                         <li key={r.name}>
-                          <Link
-                            to="/salas/$roomName"
-                            params={{ roomName: r.name }}
+                          <div
                             className={`group flex items-center gap-2 rounded-md px-2 py-1 text-xs transition ${
                               roomActive
                                 ? "bg-sidebar-accent/80 text-sidebar-accent-foreground"
-                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50"
                             }`}
                           >
                             <span
@@ -295,26 +311,54 @@ export function FluxoLayout({
                                 parts.length > 0 ? "bg-emerald-400" : "bg-sidebar-foreground/25"
                               }`}
                             />
-                            <span className="flex-1 truncate uppercase tracking-wide">{r.label}</span>
-                            {parts.length > 0 && (
+                            <Link
+                              to="/salas/$roomName"
+                              params={{ roomName: r.name }}
+                              className="flex-1 truncate uppercase tracking-wide hover:text-sidebar-accent-foreground"
+                              title={`Entrar na sala ${r.label}${parts.length ? ` (${parts.length} online)` : ""}`}
+                            >
+                              {r.label}
+                            </Link>
+                            {bubbles.length > 0 && (
                               <div className="flex -space-x-1.5">
-                                {parts.slice(0, 3).map((p) => (
-                                  <div
-                                    key={p.identity}
-                                    title={p.name}
-                                    className="flex h-5 w-5 items-center justify-center rounded-full border border-sidebar bg-primary text-[9px] font-bold text-primary-foreground"
-                                  >
-                                    {(p.name || p.identity).slice(0, 1).toUpperCase()}
-                                  </div>
-                                ))}
-                                {parts.length > 3 && (
-                                  <div className="flex h-5 w-5 items-center justify-center rounded-full border border-sidebar bg-secondary text-[9px] font-bold">
-                                    +{parts.length - 3}
-                                  </div>
-                                )}
+                                {bubbles.map((u) => {
+                                  const isOnline = onlineUserIds.has(u.id);
+                                  return (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (isOnline) {
+                                          navigate({
+                                            to: "/salas/$roomName",
+                                            params: { roomName: r.name },
+                                          });
+                                          return;
+                                        }
+                                        callUserToRoom(u.id, r.name, r.label);
+                                        toast.success(
+                                          `Chamando ${u.name.split(" ")[0]} para ${r.label}…`,
+                                        );
+                                      }}
+                                      title={
+                                        isOnline
+                                          ? `${u.name} está na sala — entrar`
+                                          : `Chamar ${u.name} para a sala ${r.label}`
+                                      }
+                                      className="relative flex h-5 w-5 items-center justify-center rounded-full border border-sidebar bg-primary text-[9px] font-bold text-primary-foreground transition hover:scale-110 hover:z-10"
+                                    >
+                                      {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                                      {isOnline && (
+                                        <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-sidebar" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
-                          </Link>
+                          </div>
                         </li>
                       );
                     })}
@@ -563,6 +607,7 @@ export function FluxoLayout({
 
       <TaskDialog />
       {needsOnboarding && <OnboardingModal />}
+      <IncomingCall />
     </div>
   );
 }

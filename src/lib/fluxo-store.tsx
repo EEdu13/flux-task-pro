@@ -71,6 +71,9 @@ interface Store {
   markAllNotifsRead: () => void;
   // room calls
   callUserToRoom: (targetUserId: string, roomName: string, roomLabel: string) => void;
+  callCounts: Record<string, Record<string, Record<string, number>>>;
+  topContactsForRoom: (roomName: string, limit?: number) => User[];
+  dismissRoomCall: (notifId: string) => void;
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
@@ -93,6 +96,8 @@ interface Persisted {
   completions: CompletionEntry[];
   currentUserId: string;
   isAuthenticated: boolean;
+  callCounts: Record<string, Record<string, Record<string, number>>>;
+  // shape: { [callerUserId]: { [roomName]: { [targetUserId]: count } } }
 }
 
 function load(): Persisted {
@@ -104,6 +109,7 @@ function load(): Persisted {
     completions: seedCompletions,
     currentUserId: "u1",
     isAuthenticated: false,
+    callCounts: {},
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -609,9 +615,35 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           roomName,
           fromUserId: currentUser.id,
         };
-        return { ...s, notifications: [notif, ...s.notifications] };
+        const prevCounts = s.callCounts[currentUser.id] ?? {};
+        const roomMap = prevCounts[roomName] ?? {};
+        const nextCallCounts = {
+          ...s.callCounts,
+          [currentUser.id]: {
+            ...prevCounts,
+            [roomName]: { ...roomMap, [targetUserId]: (roomMap[targetUserId] ?? 0) + 1 },
+          },
+        };
+        return { ...s, notifications: [notif, ...s.notifications], callCounts: nextCallCounts };
       });
     },
+
+    topContactsForRoom: (roomName, limit = 3) => {
+      const roomMap = state.callCounts[state.currentUserId]?.[roomName] ?? {};
+      return state.users
+        .filter((u) => u.id !== state.currentUserId)
+        .map((u) => ({ u, c: roomMap[u.id] ?? 0 }))
+        .filter((x) => x.c > 0)
+        .sort((a, b) => b.c - a.c)
+        .slice(0, limit)
+        .map((x) => x.u);
+    },
+
+    dismissRoomCall: (notifId) =>
+      setState((s) => ({
+        ...s,
+        notifications: s.notifications.map((n) => (n.id === notifId ? { ...n, read: true } : n)),
+      })),
 
     canAssignTo,
     visibleUsersForAssign,
