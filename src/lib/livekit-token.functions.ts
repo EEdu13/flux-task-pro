@@ -44,8 +44,9 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
     if (!apiKey || !apiSecret || !url) {
       throw new Error("LiveKit não configurado no servidor");
     }
-    // Enforce privacy: if room is marked private, only allow members in.
-    if (data.userId) {
+    // Enforce privacy on EVERY token issuance. If the room is private, we
+    // require a userId AND a matching room_members row. No exceptions.
+    {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: state } = await supabaseAdmin
         .from("room_state")
@@ -53,6 +54,9 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
         .eq("room_name", data.roomName)
         .maybeSingle();
       if (state?.is_private) {
+        if (!data.userId) {
+          throw new Error("Sala privada: sessão inválida");
+        }
         const { data: member } = await supabaseAdmin
           .from("room_members")
           .select("id")
