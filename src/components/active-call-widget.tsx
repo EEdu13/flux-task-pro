@@ -22,10 +22,18 @@ import {
   Paperclip,
   Send,
   Download,
+  Sparkles,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
-import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
+import {
+  filesToAttachments,
+  formatBytes,
+  isImage,
+  openAttachment,
+  downloadAttachment,
+} from "@/lib/attachments";
 import type { Attachment } from "@/lib/fluxo-types";
+import videoBgOffice from "@/assets/video-bg-office.jpg";
 
 export const ACTIVE_CALL_MOUNT_ID = "active-call-mount";
 
