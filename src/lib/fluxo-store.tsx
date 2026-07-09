@@ -19,13 +19,7 @@ import type {
   User,
 } from "./fluxo-types";
 import { priorityMultiplier } from "./fluxo-types";
-import {
-  seedCompletions,
-  seedMetas,
-  seedNotifications,
-  seedTasks,
-  seedUsers,
-} from "./fluxo-seed";
+import { seedCompletions, seedMetas, seedNotifications, seedTasks, seedUsers } from "./fluxo-seed";
 import { createRoomCall } from "./livekit-token.functions";
 
 interface TaskDialogState {
@@ -48,7 +42,9 @@ interface Store {
   setCurrentUserId: (id: string) => void;
   currentUser: User;
   // task crud
-  createTask: (t: Omit<Task, "id" | "createdAt" | "order" | "comments" | "checklist" | "activity">) => void;
+  createTask: (
+    t: Omit<Task, "id" | "createdAt" | "order" | "comments" | "checklist" | "activity">,
+  ) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: Status, targetIndex?: number) => void;
@@ -74,6 +70,8 @@ interface Store {
   callUserToRoom: (targetUserId: string, roomName: string, roomLabel: string) => void;
   callCounts: Record<string, Record<string, Record<string, number>>>;
   topContactsForRoom: (roomName: string, limit?: number) => User[];
+  recentContactIds: string[];
+  recentContactUsers: (limit?: number) => User[];
   dismissRoomCall: (notifId: string) => void;
   addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
   // permissions
@@ -100,6 +98,7 @@ interface Persisted {
   isAuthenticated: boolean;
   callCounts: Record<string, Record<string, Record<string, number>>>;
   // shape: { [callerUserId]: { [roomName]: { [targetUserId]: count } } }
+  recentContactsByUser?: Record<string, string[]>;
 }
 
 function load(): Persisted {
@@ -112,6 +111,7 @@ function load(): Persisted {
     currentUserId: "u1",
     isAuthenticated: false,
     callCounts: {},
+    recentContactsByUser: {},
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -125,15 +125,13 @@ function load(): Persisted {
 }
 
 const nowIso = () => new Date().toISOString();
-const rid = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const rid = (prefix = "id") =>
+  `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 function pushActivity(task: Task, entry: Omit<ActivityEntry, "id" | "at">, userId: string): Task {
   return {
     ...task,
-    activity: [
-      ...task.activity,
-      { ...entry, id: rid("a"), at: nowIso(), userId },
-    ],
+    activity: [...task.activity, { ...entry, id: rid("a"), at: nowIso(), userId }],
   };
 }
 
@@ -162,7 +160,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       const now = Date.now();
       const day = 24 * 3600e3;
       const existing = new Set(
-        s.notifications.filter((n) => n.type === "prazo" && n.taskId).map((n) => `${n.taskId}:${n.userId}`),
+        s.notifications
+          .filter((n) => n.type === "prazo" && n.taskId)
+          .map((n) => `${n.taskId}:${n.userId}`),
       );
       const extra: Notification[] = [];
       for (const t of s.tasks) {
@@ -196,7 +196,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
   const visibleUsersForAssign = (): User[] => {
     if (currentUser.role === "gerente") return state.users;
     if (currentUser.role === "supervisor") {
-      return state.users.filter((u) => u.id === currentUser.id || u.supervisorId === currentUser.id);
+      return state.users.filter(
+        (u) => u.id === currentUser.id || u.supervisorId === currentUser.id,
+      );
     }
     return state.users.filter((u) => u.id === currentUser.id);
   };
@@ -204,11 +206,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
   const canAssignTo = (targetUserId: string) =>
     visibleUsersForAssign().some((u) => u.id === targetUserId);
 
-  const handleCompletionSideEffects = (
-    s: Persisted,
-    prev: Task,
-    next: Task,
-  ): Persisted => {
+  const handleCompletionSideEffects = (s: Persisted, prev: Task, next: Task): Persisted => {
     const onTime = new Date(next.dueDate).getTime() >= Date.now();
     const points = computeScore(next.score, next.priority, onTime);
 
@@ -243,7 +241,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    let tasks = s.tasks.map((t) =>
+    const tasks = s.tasks.map((t) =>
       t.id === next.id
         ? pushActivity(
             { ...next },
@@ -310,7 +308,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           id: rid("n"),
           userId: uid,
           type: task.mentions.includes(uid) && uid !== task.assigneeId ? "mencao" : "atribuida",
-          title: task.mentions.includes(uid) && uid !== task.assigneeId ? "Você foi mencionado" : "Nova tarefa",
+          title:
+            task.mentions.includes(uid) && uid !== task.assigneeId
+              ? "Você foi mencionado"
+              : "Nova tarefa",
           desc: task.title,
           at: nowIso(),
           taskId: id,
@@ -331,7 +332,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         const newNotifs: Notification[] = [];
         // added mentions
         if (patch.mentions) {
-          const added = patch.mentions.filter((m) => !prev.mentions.includes(m) && m !== currentUser.id);
+          const added = patch.mentions.filter(
+            (m) => !prev.mentions.includes(m) && m !== currentUser.id,
+          );
           added.forEach((uid) =>
             newNotifs.push({
               id: rid("n"),
@@ -345,7 +348,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           );
         }
         // reassignment
-        if (patch.assigneeId && patch.assigneeId !== prev.assigneeId && patch.assigneeId !== currentUser.id) {
+        if (
+          patch.assigneeId &&
+          patch.assigneeId !== prev.assigneeId &&
+          patch.assigneeId !== currentUser.id
+        ) {
           newNotifs.push({
             id: rid("n"),
             userId: patch.assigneeId,
@@ -504,7 +511,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         tasks: s.tasks.map((t) =>
           t.id === taskId
             ? pushActivity(
-                { ...t, checklist: [...t.checklist, { id: rid("ck"), text: text.trim(), done: false }] },
+                {
+                  ...t,
+                  checklist: [...t.checklist, { id: rid("ck"), text: text.trim(), done: false }],
+                },
                 { kind: "checklist", userId: currentUser.id, text: `adicionou "${text.trim()}"` },
                 currentUser.id,
               )
@@ -545,7 +555,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     },
 
     updateUser: (id, patch) => {
-      setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
+      setState((s) => ({
+        ...s,
+        users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)),
+      }));
     },
 
     updateCurrentUser: (patch) => {
@@ -576,12 +589,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     upsertMeta: (m) => {
       setState((s) => {
         const existing = s.metas.find(
-          (x) => x.scope === m.scope && x.scopeId === m.scopeId && x.period === m.period && x.metric === m.metric,
+          (x) =>
+            x.scope === m.scope &&
+            x.scopeId === m.scopeId &&
+            x.period === m.period &&
+            x.metric === m.metric,
         );
         if (existing) {
           return {
             ...s,
-            metas: s.metas.map((x) => (x.id === existing.id ? { ...existing, target: m.target } : x)),
+            metas: s.metas.map((x) =>
+              x.id === existing.id ? { ...existing, target: m.target } : x,
+            ),
           };
         }
         return { ...s, metas: [...s.metas, { ...m, id: rid("m") }] };
@@ -638,7 +657,21 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             [roomName]: { ...roomMap, [targetUserId]: (roomMap[targetUserId] ?? 0) + 1 },
           },
         };
-        return { ...s, notifications: [notif, ...s.notifications], callCounts: nextCallCounts };
+        const prevRecents = s.recentContactsByUser?.[currentUser.id] ?? [];
+        const nextRecents = [
+          targetUserId,
+          ...prevRecents.filter((id) => id !== targetUserId),
+        ].slice(0, 10);
+        const recentContactsByUser = {
+          ...(s.recentContactsByUser ?? {}),
+          [currentUser.id]: nextRecents,
+        };
+        return {
+          ...s,
+          notifications: [notif, ...s.notifications],
+          callCounts: nextCallCounts,
+          recentContactsByUser,
+        };
       });
     },
 
@@ -651,6 +684,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => b.c - a.c)
         .slice(0, limit)
         .map((x) => x.u);
+    },
+
+    recentContactIds: state.recentContactsByUser?.[state.currentUserId] ?? [],
+    recentContactUsers: (limit = 5) => {
+      const ids = state.recentContactsByUser?.[state.currentUserId] ?? [];
+      const out: User[] = [];
+      for (const id of ids) {
+        const u = state.users.find((x) => x.id === id);
+        if (u && u.id !== state.currentUserId) out.push(u);
+        if (out.length >= limit) break;
+      }
+      return out;
     },
 
     dismissRoomCall: (notifId) =>

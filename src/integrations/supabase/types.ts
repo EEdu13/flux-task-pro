@@ -47,6 +47,87 @@ export type Database = {
         }
         Relationships: []
       }
+      room_knocks: {
+        Row: {
+          created_at: string
+          handled_at: string | null
+          handled_by: string | null
+          id: string
+          requester_name: string
+          requester_user_id: string
+          room_name: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          requester_name: string
+          requester_user_id: string
+          room_name: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          requester_name?: string
+          requester_user_id?: string
+          room_name?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      room_members: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          id: string
+          room_name: string
+          user_id: string
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          room_name: string
+          user_id: string
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          room_name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      room_state: {
+        Row: {
+          created_at: string
+          is_private: boolean
+          room_name: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          is_private?: boolean
+          room_name: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          is_private?: boolean
+          room_name?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
