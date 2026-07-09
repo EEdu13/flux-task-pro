@@ -76,7 +76,6 @@ function SalasPage() {
         <div className="grid gap-3 md:grid-cols-2">
           {DEPARTMENT_ROOMS.map((r) => {
             const parts = presence[r.name] ?? [];
-            const members = users.filter((u) => u.sector === r.sector);
             return (
               <section
                 key={r.name}
