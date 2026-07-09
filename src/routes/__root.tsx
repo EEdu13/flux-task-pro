@@ -13,6 +13,8 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FluxoProvider } from "@/lib/fluxo-store";
 import { Toaster } from "@/components/ui/sonner";
+import { ActiveCallProvider } from "@/lib/active-call-context";
+import { ActiveCallWidget } from "@/components/active-call-widget";
 
 function NotFoundComponent() {
   return (
@@ -126,9 +128,12 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <FluxoProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-        <Toaster />
+        <ActiveCallProvider>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+          <ActiveCallWidget />
+          <Toaster />
+        </ActiveCallProvider>
       </FluxoProvider>
     </QueryClientProvider>
   );
