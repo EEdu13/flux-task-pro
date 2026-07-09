@@ -245,34 +245,34 @@ function RoomPage() {
       </div>
       {canSeeKnocks && isPrivate && knocks.length > 0 && typeof document !== "undefined" &&
         createPortal(
-          <div className="pointer-events-auto fixed left-4 top-24 z-[120] w-72 overflow-hidden rounded-lg border border-border bg-card/95 shadow-2xl backdrop-blur">
-            <div className="border-b border-border bg-primary/10 px-3 py-2 text-xs font-semibold">
-              Pedidos para entrar ({knocks.length})
+          <div className="pointer-events-none fixed inset-x-0 top-20 z-[120] flex justify-center px-4">
+            <div className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl border-2 border-primary bg-card/98 shadow-2xl backdrop-blur ring-4 ring-primary/30 animate-in fade-in slide-in-from-top-4">
+              <div className="border-b border-border bg-primary/15 px-5 py-3 text-sm font-bold uppercase tracking-wide text-primary">
+                🔔 Pedidos para entrar ({knocks.length})
+              </div>
+              <ul className="max-h-[60vh] divide-y divide-border overflow-auto">
+                {knocks.map((k) => (
+                  <li key={k.id} className="flex items-center gap-3 px-5 py-4">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/20 text-base font-bold text-primary">
+                      {k.requester_name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-base font-medium">{k.requester_name}</span>
+                    <button
+                      onClick={() => answerKnock(k.id, true)}
+                      className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-600"
+                    >
+                      <Check className="h-4 w-4" /> Aceitar
+                    </button>
+                    <button
+                      onClick={() => answerKnock(k.id, false)}
+                      className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-red-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="max-h-64 divide-y divide-border overflow-auto">
-              {knocks.map((k) => (
-                <li key={k.id} className="flex items-center gap-2 px-3 py-2 text-xs">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-[11px] font-bold">
-                    {k.requester_name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{k.requester_name}</span>
-                  <button
-                    onClick={() => answerKnock(k.id, true)}
-                    title="Aceitar"
-                    className="rounded-md bg-emerald-500 p-1 text-white hover:bg-emerald-600"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => answerKnock(k.id, false)}
-                    title="Recusar"
-                    className="rounded-md bg-red-500 p-1 text-white hover:bg-red-600"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
           </div>,
           document.body,
         )}
