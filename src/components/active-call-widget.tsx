@@ -43,6 +43,7 @@ type RaiseToast = { id: string; name: string };
 function CallContents({
   mini,
   roomLabel,
+  roomName,
   onMaximize,
   onEnd,
   onMinimize,
@@ -50,6 +51,7 @@ function CallContents({
 }: {
   mini: boolean;
   roomLabel: string;
+  roomName: string;
   onMaximize: () => void;
   onEnd: () => void;
   onMinimize?: () => void;
@@ -64,7 +66,25 @@ function CallContents({
   );
   const { localParticipant } = useLocalParticipant();
   const [chatOpen, setChatOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const chatStorageKey = `fluxo:chat:${roomName}`;
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(chatStorageKey);
+      return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      // cap to last 200 to keep storage bounded
+      const trimmed = messages.slice(-200);
+      window.localStorage.setItem(chatStorageKey, JSON.stringify(trimmed));
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [messages, chatStorageKey]);
   const [raises, setRaises] = useState<RaiseToast[]>([]);
   const [unread, setUnread] = useState(0);
   const chatOpenRef = useRef(chatOpen);
@@ -592,6 +612,7 @@ export function ActiveCallWidget() {
         <CallContents
           mini={!docked}
           roomLabel={active.roomLabel}
+          roomName={active.roomName}
           onDragStart={!docked ? startDrag("move") : undefined}
           onMinimize={docked ? () => {
             setMinimized(true);
