@@ -12,6 +12,8 @@ import {
   useLocalParticipant,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
+import type { LocalVideoTrack } from "livekit-client";
+import { BackgroundBlur, VirtualBackground } from "@livekit/track-processors";
 import "@livekit/components-styles";
 import {
   Maximize2,
@@ -47,6 +49,49 @@ type ChatMessage = {
 };
 
 type RaiseToast = { id: string; name: string };
+
+type VideoEffect = "none" | "blur" | "office";
+const EFFECT_STORAGE_KEY = "fluxo:video-effect";
+
+function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
+  const [effect, setEffectState] = useState<VideoEffect>(() => {
+    if (typeof window === "undefined") return "none";
+    const v = window.localStorage.getItem(EFFECT_STORAGE_KEY);
+    return v === "blur" || v === "office" ? v : "none";
+  });
+
+  useEffect(() => {
+    if (!cameraTrack) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (effect === "blur") {
+          await cameraTrack.setProcessor(BackgroundBlur(12));
+        } else if (effect === "office") {
+          await cameraTrack.setProcessor(VirtualBackground(videoBgOffice));
+        } else {
+          await cameraTrack.stopProcessor();
+        }
+      } catch (e) {
+        if (!cancelled) console.warn("Falha ao aplicar efeito de vídeo", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cameraTrack, effect]);
+
+  const setEffect = (v: VideoEffect) => {
+    setEffectState(v);
+    try {
+      window.localStorage.setItem(EFFECT_STORAGE_KEY, v);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return [effect, setEffect] as const;
+}
 
 function CallContents({
   mini,
