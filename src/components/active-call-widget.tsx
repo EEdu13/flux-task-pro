@@ -278,6 +278,47 @@ function CallContents({
         />
         <div className="flex items-center gap-1.5">
           {!mini && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setEffectMenu((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                  effect !== "none"
+                    ? "border-primary/60 bg-primary/20 text-white"
+                    : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                }`}
+                title="Fundo de vídeo"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Fundo
+              </button>
+              {effectMenu && (
+                <div className="absolute bottom-full right-0 z-30 mb-1 w-48 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
+                  {([
+                    { id: "none", label: "Sem efeito" },
+                    { id: "blur", label: "Fundo desfocado" },
+                    { id: "office", label: "Escritório" },
+                  ] as { id: VideoEffect; label: string }[]).map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => {
+                        setEffect(o.id);
+                        setEffectMenu(false);
+                      }}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-white/10 ${
+                        effect === o.id ? "bg-white/5 text-primary" : "text-white"
+                      }`}
+                    >
+                      <span>{o.label}</span>
+                      {effect === o.id && <span className="text-[10px]">●</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {!mini && (
             <button
               type="button"
               onClick={raiseHand}
