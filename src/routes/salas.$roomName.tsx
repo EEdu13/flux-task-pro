@@ -63,10 +63,12 @@ function RoomPage() {
     setAccess({ kind: "checking" });
   }, [roomName]);
 
-  // Check access + auto-knock if needed
+  // Check access + auto-knock if needed. If any request errors, keep
+  // "checking" and retry — never silently fall back to "open".
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retry: number | undefined;
+    const run = async () => {
       try {
         const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
         if (cancelled) return;
@@ -87,11 +89,14 @@ function RoomPage() {
           }
         }
       } catch {
-        if (!cancelled) setAccess({ kind: "open" });
+        if (cancelled) return;
+        retry = window.setTimeout(run, 1500);
       }
-    })();
+    };
+    run();
     return () => {
       cancelled = true;
+      if (retry) window.clearTimeout(retry);
     };
   }, [roomName, currentUser.id, currentUser.name]);
 

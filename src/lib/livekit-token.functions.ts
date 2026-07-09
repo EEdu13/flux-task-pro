@@ -44,8 +44,9 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
     if (!apiKey || !apiSecret || !url) {
       throw new Error("LiveKit não configurado no servidor");
     }
-    // Enforce privacy: if room is marked private, only allow members in.
-    if (data.userId) {
+    // Enforce privacy on EVERY token issuance. If the room is private, we
+    // require a userId AND a matching room_members row. No exceptions.
+    {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: state } = await supabaseAdmin
         .from("room_state")
@@ -53,6 +54,9 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
         .eq("room_name", data.roomName)
         .maybeSingle();
       if (state?.is_private) {
+        if (!data.userId) {
+          throw new Error("Sala privada: sessão inválida");
+        }
         const { data: member } = await supabaseAdmin
           .from("room_members")
           .select("id")
@@ -310,13 +314,39 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
       { onConflict: "room_name" },
     );
     if (data.isPrivate) {
-      // caller becomes a member automatically
-      await supabaseAdmin
-        .from("room_members")
-        .upsert(
-          { room_name: data.roomName, user_id: data.userId, added_by: data.userId },
-          { onConflict: "room_name,user_id" },
-        );
+      // Grandfather everyone currently connected to LiveKit as a member so
+      // they aren't kicked, but nobody new can enter without a knock.
+      const apiKey = process.env.LIVEKIT_API_KEY;
+      const apiSecret = process.env.LIVEKIT_API_SECRET;
+      const wsUrl = process.env.LIVEKIT_URL;
+      const memberIds = new Set<string>([data.userId]);
+      if (apiKey && apiSecret && wsUrl) {
+        try {
+          const httpUrl = wsUrl
+            .replace(/^wss:\/\//, "https://")
+            .replace(/^ws:\/\//, "http://");
+          const { RoomServiceClient } = await import("livekit-server-sdk");
+          const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+          const parts = await svc.listParticipants(data.roomName);
+          for (const p of parts) {
+            // participant identity is "<userId>-<name>"; take the userId prefix
+            const uid = (p.identity || "").split("-")[0];
+            if (uid && /^[a-zA-Z0-9_-]+$/.test(uid)) memberIds.add(uid);
+          }
+        } catch {
+          /* ignore — worst case only the caller is grandfathered */
+        }
+      }
+      const rows = Array.from(memberIds).map((uid) => ({
+        room_name: data.roomName,
+        user_id: uid,
+        added_by: data.userId,
+      }));
+      if (rows.length > 0) {
+        await supabaseAdmin
+          .from("room_members")
+          .upsert(rows, { onConflict: "room_name,user_id" });
+      }
     } else {
       // room reopened: wipe pending knocks and member list
       await supabaseAdmin.from("room_knocks").delete().eq("room_name", data.roomName);
