@@ -226,7 +226,7 @@ function SalasPage() {
             onClick={async () => {
               if (!window.confirm("Fechar TODAS as salas e desconectar todo mundo agora?")) return;
               try {
-                const r = await purgeAllRooms({ data: {} });
+                const r = await purgeAllRooms();
                 setBySector({});
                 window.alert(`Fechadas: ${r.deleted.length} salas`);
               } catch (e) {
