@@ -241,7 +241,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    let tasks = s.tasks.map((t) =>
+    const tasks = s.tasks.map((t) =>
       t.id === next.id
         ? pushActivity(
             { ...next },
