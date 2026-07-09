@@ -373,22 +373,34 @@ function ChatPanel({
                   {m.attachment && (
                     <div className={`${m.text ? "mt-1.5" : ""}`}>
                       {isImage(m.attachment.type) ? (
-                        <a
-                          href={m.attachment.dataUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block overflow-hidden rounded-md"
-                        >
-                          <img
-                            src={m.attachment.dataUrl}
-                            alt={m.attachment.name}
-                            className="max-h-40 w-auto rounded-md"
-                          />
-                        </a>
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => openAttachment(m.attachment!)}
+                            className="block overflow-hidden rounded-md"
+                            title="Abrir imagem"
+                          >
+                            <img
+                              src={m.attachment.dataUrl}
+                              alt={m.attachment.name}
+                              className="max-h-40 w-auto rounded-md"
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadAttachment(m.attachment!)}
+                            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+                              mine ? "bg-black/20" : "bg-black/40"
+                            } hover:opacity-90`}
+                          >
+                            <Download className="h-3 w-3" />
+                            Baixar
+                          </button>
+                        </div>
                       ) : (
-                        <a
-                          href={m.attachment.dataUrl}
-                          download={m.attachment.name}
+                        <button
+                          type="button"
+                          onClick={() => downloadAttachment(m.attachment!)}
                           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
                             mine ? "bg-black/20" : "bg-black/40"
                           } hover:opacity-90`}
@@ -396,7 +408,7 @@ function ChatPanel({
                           <Download className="h-3 w-3" />
                           <span className="max-w-[140px] truncate">{m.attachment.name}</span>
                           <span className="opacity-70">({formatBytes(m.attachment.size)})</span>
-                        </a>
+                        </button>
                       )}
                     </div>
                   )}
