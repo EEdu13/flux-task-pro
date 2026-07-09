@@ -255,14 +255,11 @@ function SalasPage() {
                   </div>
                   {openFor === r.name && matches.length > 0 && (
                     <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg">
-                      {matches.map((m) => {
-                        const callKey = `${m.id}:${r.name}`;
-                        const wasCalled = !!called[callKey];
-                        return (
+                       {matches.map((m) => {
+                         return (
                           <li key={m.id}>
                             <button
                               onClick={() => askCall(m.id, r.name, r.label)}
-                              disabled={wasCalled}
                               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-secondary disabled:opacity-60"
                             >
                               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
@@ -273,7 +270,7 @@ function SalasPage() {
                                 <span className="ml-1 text-muted-foreground">· {m.jobTitle}</span>
                               </span>
                               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                                <Phone className="h-3 w-3" /> {wasCalled ? "Chamando…" : "Chamar"}
+                                <Phone className="h-3 w-3" /> Chamar
                               </span>
                             </button>
                           </li>
@@ -292,13 +289,10 @@ function SalasPage() {
                         Recentes:
                       </span>
                       {recentUsers.map((m) => {
-                        const callKey = `${m.id}:${r.name}`;
-                        const wasCalled = !!called[callKey];
                         return (
                           <button
                             key={m.id}
                             onClick={() => askCall(m.id, r.name, r.label)}
-                            disabled={wasCalled}
                             title={`Chamar ${m.name} para ${r.label}`}
                             className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:border-primary hover:bg-primary/5 disabled:opacity-60"
                           >
@@ -318,14 +312,6 @@ function SalasPage() {
           })}
         </div>
 
-        {callChoice && (
-          <CallChoiceModal
-            targetName={users.find((u) => u.id === callChoice.userId)?.name ?? "convidado"}
-            roomLabel={callChoice.roomLabel}
-            onCancel={() => setCallChoice(null)}
-            onConfirm={confirmCall}
-          />
-        )}
       </div>
     </FluxoLayout>
   );
@@ -337,58 +323,3 @@ function parseSalaIndex(name: string, sector: string): number {
   return m ? Number(m[1]) : 1;
 }
 
-function CallChoiceModal({
-  targetName,
-  roomLabel,
-  onCancel,
-  onConfirm,
-}: {
-  targetName: string;
-  roomLabel: string;
-  onCancel: () => void;
-  onConfirm: (kind: "private" | "open") => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <div className="text-sm font-semibold">Chamar {targetName}</div>
-          <button
-            onClick={onCancel}
-            className="rounded p-1 text-muted-foreground hover:bg-secondary"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="px-4 py-3 text-xs text-muted-foreground">
-          Como você quer entrar na sala{" "}
-          <span className="font-medium text-foreground">{roomLabel}</span>?
-        </div>
-        <div className="grid gap-2 px-4 pb-4 sm:grid-cols-2">
-          <button
-            onClick={() => onConfirm("private")}
-            className="flex flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left hover:border-primary hover:bg-primary/5"
-          >
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
-              <Lock className="h-4 w-4 text-primary" /> Chat privado
-            </span>
-            <span className="text-[11px] text-muted-foreground">
-              Só vocês dois. Novas pessoas precisam pedir para entrar e serem aceitas.
-            </span>
-          </button>
-          <button
-            onClick={() => onConfirm("open")}
-            className="flex flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left hover:border-primary hover:bg-primary/5"
-          >
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold">
-              <LockOpen className="h-4 w-4 text-emerald-500" /> Chat aberto
-            </span>
-            <span className="text-[11px] text-muted-foreground">
-              Sala pública. Qualquer pessoa do time pode entrar quando quiser.
-            </span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
