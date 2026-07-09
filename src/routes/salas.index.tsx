@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Headphones, Phone, Radio, Users2 } from "lucide-react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Headphones, Phone, Radio, Search, Users2 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
@@ -21,6 +21,9 @@ function SalasPage() {
   const navigate = useNavigate();
   const [presence, setPresence] = useState<Record<string, { identity: string; name: string }[]>>({});
   const [called, setCalled] = useState<Record<string, number>>({});
+  const [queries, setQueries] = useState<Record<string, string>>({});
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,10 +44,14 @@ function SalasPage() {
     };
   }, []);
 
-  function isUserOnline(roomName: string, userId: string) {
-    const parts = presence[roomName] ?? [];
-    return parts.some((p) => p.identity.startsWith(`${userId}-`));
-  }
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target as Node)) setOpenFor(null);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
 
   function handleCall(userId: string, roomName: string, roomLabel: string) {
     callUserToRoom(userId, roomName, roomLabel);
@@ -55,17 +62,18 @@ function SalasPage() {
       delete next[key];
       return next;
     }), 3500);
+    setOpenFor(null);
+    setQueries((q) => ({ ...q, [roomName]: "" }));
   }
 
   return (
     <FluxoLayout title="Salas Online" breadcrumb="Colaboração">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <div ref={containerRef} className="mx-auto flex max-w-6xl flex-col gap-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Salas Online</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Uma sala por departamento. Veja quem está online, entre com um clique ou chame alguém para uma ligação
-              rápida.
+              Uma sala por departamento. Entre com um clique ou busque alguém pelo nome e chame direto.
             </p>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -73,9 +81,19 @@ function SalasPage() {
           </div>
         </header>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {DEPARTMENT_ROOMS.map((r) => {
             const parts = presence[r.name] ?? [];
+            const query = (queries[r.name] ?? "").trim().toLowerCase();
+            const matches = useMemo(
+              () =>
+                query
+                  ? users
+                      .filter((u) => u.id !== currentUser.id && u.name.toLowerCase().includes(query))
+                      .slice(0, 6)
+                  : [],
+              [query, users, currentUser.id],
+            );
             return (
               <section
                 key={r.name}
@@ -87,13 +105,12 @@ function SalasPage() {
                       <Headphones className="h-5 w-5" />
                     </div>
                     <div>
-                      <Link
-                        to="/salas/$roomName"
-                        params={{ roomName: r.name }}
+                      <button
+                        onClick={() => navigate({ to: "/salas/$roomName", params: { roomName: r.name } })}
                         className="text-base font-semibold uppercase tracking-wide hover:text-primary"
                       >
                         {r.label}
-                      </Link>
+                      </button>
                       <div className="text-xs text-muted-foreground">{r.desc}</div>
                     </div>
                   </div>
@@ -128,62 +145,57 @@ function SalasPage() {
                   </div>
                 )}
 
-                {(() => {
-                  const members = users;
-                  return (
-                  <div>
-                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Time ({members.length}) — chame qualquer pessoa
-                    </div>
-                    <ul className="flex flex-col gap-1">
-                      {members.map((m) => {
-                        const online = isUserOnline(r.name, m.id);
-                        const isSelf = m.id === currentUser.id;
+                <div className="relative">
+                  <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Chamar alguém para esta sala
+                  </div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      value={queries[r.name] ?? ""}
+                      onChange={(e) => {
+                        setQueries((q) => ({ ...q, [r.name]: e.target.value }));
+                        setOpenFor(r.name);
+                      }}
+                      onFocus={() => setOpenFor(r.name)}
+                      placeholder="Digite o nome…"
+                      className="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs outline-none focus:border-primary"
+                    />
+                  </div>
+                  {openFor === r.name && matches.length > 0 && (
+                    <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+                      {matches.map((m) => {
                         const callKey = `${m.id}:${r.name}`;
                         const wasCalled = !!called[callKey];
                         return (
-                          <li
-                            key={m.id}
-                            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-secondary/50"
-                          >
-                            <div className="relative">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
+                          <li key={m.id}>
+                            <button
+                              onClick={() => handleCall(m.id, r.name, r.label)}
+                              disabled={wasCalled}
+                              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-secondary disabled:opacity-60"
+                            >
+                              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
                                 {m.avatar}
-                              </div>
-                              <span
-                                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
-                                  online ? "bg-emerald-500" : "bg-muted-foreground/40"
-                                }`}
-                              />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-xs font-medium">
-                                {m.name} {isSelf && <span className="text-muted-foreground">(você)</span>}
-                              </div>
-                              <div className="truncate text-[10px] text-muted-foreground">{m.jobTitle}</div>
-                            </div>
-                            {online ? (
-                              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
-                                na sala
                               </span>
-                            ) : isSelf ? null : (
-                              <button
-                                onClick={() => handleCall(m.id, r.name, r.label)}
-                                disabled={wasCalled}
-                                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary transition hover:bg-primary/20 disabled:opacity-60"
-                                title={`Chamar ${m.name.split(" ")[0]} para a sala ${r.label}`}
-                              >
-                                <Phone className="h-3 w-3" />
-                                {wasCalled ? "Chamando…" : "Chamar"}
-                              </button>
-                            )}
+                              <span className="min-w-0 flex-1 truncate">
+                                <span className="font-medium">{m.name}</span>
+                                <span className="ml-1 text-muted-foreground">· {m.jobTitle}</span>
+                              </span>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                                <Phone className="h-3 w-3" /> {wasCalled ? "Chamando…" : "Chamar"}
+                              </span>
+                            </button>
                           </li>
                         );
                       })}
                     </ul>
-                  </div>
-                  );
-                })()}
+                  )}
+                  {openFor === r.name && query && matches.length === 0 && (
+                    <div className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover p-3 text-center text-[11px] text-muted-foreground shadow-lg">
+                      Ninguém encontrado.
+                    </div>
+                  )}
+                </div>
 
                 <button
                   onClick={() => navigate({ to: "/salas/$roomName", params: { roomName: r.name } })}
