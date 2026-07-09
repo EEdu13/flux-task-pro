@@ -279,12 +279,6 @@ function SalasPage() {
                        </button>
                      );
                    })}
-                  <button
-                    onClick={() => addExtraRoom(r.name)}
-                    className="inline-flex items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 text-[10px] font-medium text-muted-foreground hover:border-primary hover:text-primary"
-                  >
-                    <Plus className="h-3 w-3" /> Nova sala
-                  </button>
                 </div>
 
                 <div className="relative">
