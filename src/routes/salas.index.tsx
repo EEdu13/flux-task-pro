@@ -1,10 +1,26 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Lock, LockOpen, Phone, Plus, Radio, Search, Users2, X } from "lucide-react";
+import {
+  Headphones,
+  Lock,
+  LockOpen,
+  Phone,
+  Plus,
+  PowerOff,
+  Radio,
+  Search,
+  Users2,
+  X,
+} from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
-import { inviteToRoom, listSectorRooms, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import {
+  inviteToRoom,
+  listSectorRooms,
+  purgeAllRooms,
+  setRoomPrivacy,
+} from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
@@ -206,6 +222,21 @@ function SalasPage() {
             Você entrará como{" "}
             <span className="font-medium text-foreground">{currentUser.name}</span>.
           </div>
+          <button
+            onClick={async () => {
+              if (!window.confirm("Fechar TODAS as salas e desconectar todo mundo agora?")) return;
+              try {
+                const r = await purgeAllRooms();
+                setBySector({});
+                window.alert(`Fechadas: ${r.deleted.length} salas`);
+              } catch (e) {
+                window.alert("Falhou: " + String(e));
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20"
+          >
+            <PowerOff className="h-3.5 w-3.5" /> Fechar todas as salas
+          </button>
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
