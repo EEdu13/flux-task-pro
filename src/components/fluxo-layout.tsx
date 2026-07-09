@@ -33,6 +33,7 @@ import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
 import { IncomingCall } from "@/components/incoming-call";
 import { toast } from "sonner";
+import { useCallInviter } from "@/lib/call-inviter-context";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
@@ -69,12 +70,12 @@ export function FluxoLayout({
     completions,
     isAuthenticated,
     logout,
-    callUserToRoom,
     topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const navigate = useNavigate();
+  const { ask: askInvite } = useCallInviter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -337,7 +338,7 @@ export function FluxoLayout({
                                           });
                                           return;
                                         }
-                                        callUserToRoom(u.id, r.name, r.label);
+                                        askInvite(u.id, r.name, r.label);
                                         toast.success(
                                           `Chamando ${u.name.split(" ")[0]} para ${r.label}…`,
                                         );

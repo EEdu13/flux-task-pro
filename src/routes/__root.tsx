@@ -15,6 +15,7 @@ import { FluxoProvider } from "@/lib/fluxo-store";
 import { Toaster } from "@/components/ui/sonner";
 import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
+import { CallInviterProvider } from "@/lib/call-inviter-context";
 
 function NotFoundComponent() {
   return (
@@ -129,10 +130,12 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <FluxoProvider>
         <ActiveCallProvider>
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
-          <ActiveCallWidget />
-          <Toaster />
+          <CallInviterProvider>
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
+            <ActiveCallWidget />
+            <Toaster />
+          </CallInviterProvider>
         </ActiveCallProvider>
       </FluxoProvider>
     </QueryClientProvider>

@@ -25,8 +25,15 @@ import {
   Send,
   Download,
   Sparkles,
+  UserPlus,
+  Lock,
+  LockOpen,
+  Search,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
+import { useFluxo } from "@/lib/fluxo-store";
+import { useCallInviter } from "@/lib/call-inviter-context";
+import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
 import {
   filesToAttachments,
   formatBytes,
@@ -122,6 +129,56 @@ function CallContents({
     ?.videoTrack as LocalVideoTrack | undefined;
   const [effect, setEffect] = useVideoEffect(cameraTrack);
   const [effectMenu, setEffectMenu] = useState(false);
+  const { users, currentUser } = useFluxo();
+  const { ask: askInvite } = useCallInviter();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [privBusy, setPrivBusy] = useState(false);
+
+  // Poll privacy state so the lock button reflects reality.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
+        if (!cancelled) setIsPrivate(res.isPrivate);
+      } catch {
+        /* ignore */
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [roomName, currentUser.id]);
+
+  async function togglePrivacy() {
+    if (privBusy) return;
+    const next = !isPrivate;
+    setIsPrivate(next);
+    setPrivBusy(true);
+    try {
+      await setRoomPrivacy({ data: { roomName, isPrivate: next, userId: currentUser.id } });
+    } catch {
+      setIsPrivate(!next);
+    } finally {
+      setPrivBusy(false);
+    }
+  }
+
+  const inviteMatches = inviteQuery.trim()
+    ? users
+        .filter(
+          (u) =>
+            u.id !== currentUser.id &&
+            u.name.toLowerCase().includes(inviteQuery.trim().toLowerCase()),
+        )
+        .slice(0, 6)
+    : users.filter((u) => u.id !== currentUser.id).slice(0, 6);
+
   const [chatOpen, setChatOpen] = useState(false);
   const chatStorageKey = `fluxo:chat:${roomName}`;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -277,6 +334,84 @@ function CallContents({
           style={{ border: "none", padding: 0, background: "transparent" }}
         />
         <div className="flex items-center gap-1.5">
+          {!mini && (
+            <button
+              type="button"
+              onClick={togglePrivacy}
+              disabled={privBusy}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                isPrivate
+                  ? "border-amber-400/60 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25"
+                  : "border-emerald-400/50 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
+              } disabled:opacity-60`}
+              title={
+                isPrivate
+                  ? "Sala privada — clique para abrir"
+                  : "Sala aberta — clique para privar (só quem for aceito entra)"
+              }
+            >
+              {isPrivate ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
+              {isPrivate ? "Privada" : "Aberta"}
+            </button>
+          )}
+          {!mini && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setInviteOpen((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                  inviteOpen
+                    ? "border-primary/60 bg-primary/20 text-white"
+                    : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                }`}
+                title="Chamar alguém para esta sala"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                Convidar
+              </button>
+              {inviteOpen && (
+                <div className="absolute bottom-full right-0 z-30 mb-1 w-64 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
+                  <div className="relative border-b border-white/10 p-2">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />
+                    <input
+                      autoFocus
+                      value={inviteQuery}
+                      onChange={(e) => setInviteQuery(e.target.value)}
+                      placeholder="Buscar colaborador…"
+                      className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-2 text-xs text-white outline-none placeholder:text-white/40 focus:border-primary/60"
+                    />
+                  </div>
+                  <ul className="max-h-56 overflow-auto py-1">
+                    {inviteMatches.length === 0 ? (
+                      <li className="px-3 py-3 text-center text-[11px] text-white/50">
+                        Ninguém encontrado.
+                      </li>
+                    ) : (
+                      inviteMatches.map((u) => (
+                        <li key={u.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              askInvite(u.id, roomName, roomLabel);
+                              setInviteOpen(false);
+                              setInviteQuery("");
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-white/10"
+                          >
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-[10px] font-bold">
+                              {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                            <UserPlus className="h-3 w-3 text-primary" />
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
           {!mini && (
             <div className="relative">
               <button
