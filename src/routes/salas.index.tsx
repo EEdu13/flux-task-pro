@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Headphones,
   Lock,
@@ -8,16 +8,12 @@ import {
   Radio,
   Search,
   Users2,
-  X,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
-import {
-  inviteToRoom,
-  listSectorRooms,
-  setRoomPrivacy,
-} from "@/lib/livekit-token.functions";
+import { listSectorRooms } from "@/lib/livekit-token.functions";
+import { useCallInviter } from "@/lib/call-inviter-context";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
@@ -40,19 +36,13 @@ interface RoomInfo {
 }
 
 function SalasPage() {
-  const { users, currentUser, callUserToRoom } = useFluxo();
+  const { users, currentUser } = useFluxo();
   const recentUsers = useFluxo().recentContactUsers(5);
   const navigate = useNavigate();
+  const { ask } = useCallInviter();
   const [bySector, setBySector] = useState<Record<string, RoomInfo[]>>({});
-  const [called, setCalled] = useState<Record<string, number>>({});
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [openFor, setOpenFor] = useState<string | null>(null);
-  // pending call target awaiting the private/open choice
-  const [callChoice, setCallChoice] = useState<{
-    userId: string;
-    roomName: string;
-    roomLabel: string;
-  } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -95,44 +85,9 @@ function SalasPage() {
   }, []);
 
   function askCall(userId: string, roomName: string, roomLabel: string) {
-    setCallChoice({ userId, roomName, roomLabel });
+    ask(userId, roomName, roomLabel);
     setOpenFor(null);
-  }
-
-  async function confirmCall(kind: "private" | "open") {
-    if (!callChoice) return;
-    const { userId, roomName, roomLabel } = callChoice;
-    if (kind === "private") {
-      try {
-        await setRoomPrivacy({ data: { roomName, isPrivate: true, userId: currentUser.id } });
-        await inviteToRoom({
-          data: { roomName, targetUserId: userId, inviterUserId: currentUser.id },
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    } else {
-      try {
-        await setRoomPrivacy({ data: { roomName, isPrivate: false, userId: currentUser.id } });
-      } catch {
-        /* ignore */
-      }
-    }
-    callUserToRoom(userId, roomName, roomLabel);
-    const key = `${userId}:${roomName}`;
-    setCalled((c) => ({ ...c, [key]: Date.now() }));
-    setTimeout(
-      () =>
-        setCalled((c) => {
-          const next = { ...c };
-          delete next[key];
-          return next;
-        }),
-      3500,
-    );
     setQueries((q) => ({ ...q, [roomName]: "" }));
-    setCallChoice(null);
-    navigate({ to: "/salas/$roomName", params: { roomName } });
   }
 
   function roomsForSector(sector: string, label: string): RoomInfo[] {
