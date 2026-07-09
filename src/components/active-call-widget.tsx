@@ -129,6 +129,56 @@ function CallContents({
     ?.videoTrack as LocalVideoTrack | undefined;
   const [effect, setEffect] = useVideoEffect(cameraTrack);
   const [effectMenu, setEffectMenu] = useState(false);
+  const { users, currentUser } = useFluxo();
+  const { ask: askInvite } = useCallInviter();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [privBusy, setPrivBusy] = useState(false);
+
+  // Poll privacy state so the lock button reflects reality.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
+        if (!cancelled) setIsPrivate(res.isPrivate);
+      } catch {
+        /* ignore */
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [roomName, currentUser.id]);
+
+  async function togglePrivacy() {
+    if (privBusy) return;
+    const next = !isPrivate;
+    setIsPrivate(next);
+    setPrivBusy(true);
+    try {
+      await setRoomPrivacy({ data: { roomName, isPrivate: next, userId: currentUser.id } });
+    } catch {
+      setIsPrivate(!next);
+    } finally {
+      setPrivBusy(false);
+    }
+  }
+
+  const inviteMatches = inviteQuery.trim()
+    ? users
+        .filter(
+          (u) =>
+            u.id !== currentUser.id &&
+            u.name.toLowerCase().includes(inviteQuery.trim().toLowerCase()),
+        )
+        .slice(0, 6)
+    : users.filter((u) => u.id !== currentUser.id).slice(0, 6);
+
   const [chatOpen, setChatOpen] = useState(false);
   const chatStorageKey = `fluxo:chat:${roomName}`;
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
