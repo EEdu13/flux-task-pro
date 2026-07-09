@@ -67,7 +67,17 @@ function SalasPage() {
     async function poll() {
       try {
         const res = await listSectorRooms({ data: { sectors } });
-        if (!cancelled) setBySector(res.bySector);
+        if (cancelled) return;
+        const mapped: Record<string, RoomInfo[]> = {};
+        for (const [sector, list] of Object.entries(res.bySector)) {
+          const label = DEPARTMENT_ROOMS.find((d) => d.name === sector)?.label ?? sector;
+          mapped[sector] = list.map((r) => ({
+            name: r.name,
+            label,
+            participants: r.participants,
+          }));
+        }
+        setBySector(mapped);
       } catch {
         /* silent */
       }
