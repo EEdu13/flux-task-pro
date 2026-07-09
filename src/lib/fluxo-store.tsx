@@ -93,6 +93,8 @@ interface Persisted {
   completions: CompletionEntry[];
   currentUserId: string;
   isAuthenticated: boolean;
+  callCounts: Record<string, Record<string, Record<string, number>>>;
+  // shape: { [callerUserId]: { [roomName]: { [targetUserId]: count } } }
 }
 
 function load(): Persisted {
@@ -104,6 +106,7 @@ function load(): Persisted {
     completions: seedCompletions,
     currentUserId: "u1",
     isAuthenticated: false,
+    callCounts: {},
   };
   if (typeof window === "undefined") return defaults;
   try {
