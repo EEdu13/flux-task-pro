@@ -163,6 +163,7 @@ export function ActiveCallWidget() {
   return createPortal(
     <div style={style} className={containerClass}>
       <LiveKitRoom
+        key={active.roomName + "|" + active.identity}
         token={active.token}
         serverUrl={active.serverUrl}
         connect
