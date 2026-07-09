@@ -93,6 +93,8 @@ export interface Notification {
   at: string; // ISO
   read?: boolean;
   taskId?: string;
+  roomName?: string;
+  fromUserId?: string;
 }
 
 export interface Meta {

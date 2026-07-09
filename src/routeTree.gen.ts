@@ -72,9 +72,9 @@ const SalasIndexRoute = SalasIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const SalasRoomNameRoute = SalasRoomNameRouteImport.update({
-  id: '/$roomName',
-  path: '/$roomName',
-  getParentRoute: () => SalasRoute,
+  id: '/salas/$roomName',
+  path: '/salas/$roomName',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -169,6 +169,7 @@ export interface RootRouteChildren {
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   RelatoriosRoute: typeof RelatoriosRoute
+  SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
 }
 
@@ -246,10 +247,10 @@ declare module '@tanstack/react-router' {
     }
     '/salas/$roomName': {
       id: '/salas/$roomName'
-      path: '/$roomName'
+      path: '/salas/$roomName'
       fullPath: '/salas/$roomName'
       preLoaderRoute: typeof SalasRoomNameRouteImport
-      parentRoute: typeof SalasRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -264,18 +265,9 @@ const rootRouteChildren: RootRouteChildren = {
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
   RelatoriosRoute: RelatoriosRoute,
+  SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

@@ -1,99 +1,60 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Headphones, Lock, Plus, Radio, Users2 } from "lucide-react";
+import { Headphones, Phone, Radio, Users2 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-
-type Room = {
-  name: string;
-  label: string;
-  desc: string;
-  privateRoom: boolean;
-};
-
-const DEFAULT_ROOMS: Room[] = [
-  { name: "geral", label: "Geral", desc: "Sala aberta para o time todo", privateRoom: false },
-  { name: "comercial", label: "Comercial", desc: "Reuniões do time comercial", privateRoom: false },
-  { name: "operacoes", label: "Operações", desc: "Alinhamentos de operações", privateRoom: false },
-  { name: "1on1", label: "1:1 Privado", desc: "Conversas rápidas 1 a 1", privateRoom: true },
-];
-
-const STORAGE_KEY = "fluxo:custom-rooms";
-
-function loadCustom(): Room[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Room[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCustom(rooms: Room[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
-}
-
-function slugify(v: string) {
-  return v
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-}
+import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { listRoomsPresence } from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
   head: () => ({
     meta: [
       { title: "Salas Online · Fluxo" },
-      { name: "description", content: "Salas de voz e vídeo do time — reuniões rápidas estilo Discord empresarial." },
+      { name: "description", content: "Salas de voz e vídeo do time por departamento — estilo Discord." },
     ],
   }),
 });
 
 function SalasPage() {
-  const { currentUser } = useFluxo();
+  const { users, currentUser, callUserToRoom } = useFluxo();
   const navigate = useNavigate();
-  const [custom, setCustom] = useState<Room[]>([]);
-  const [creating, setCreating] = useState(false);
-  const [newLabel, setNewLabel] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [newPrivate, setNewPrivate] = useState(false);
-  const [joinName, setJoinName] = useState("");
+  const [presence, setPresence] = useState<Record<string, { identity: string; name: string }[]>>({});
+  const [called, setCalled] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    setCustom(loadCustom());
+    let cancelled = false;
+    const roomNames = DEPARTMENT_ROOMS.map((r) => r.name);
+    async function poll() {
+      try {
+        const res = await listRoomsPresence({ data: { rooms: roomNames } });
+        if (!cancelled) setPresence(res.presence);
+      } catch {
+        /* silent */
+      }
+    }
+    poll();
+    const id = window.setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, []);
 
-  const rooms = [...DEFAULT_ROOMS, ...custom];
-
-  function createRoom(e: React.FormEvent) {
-    e.preventDefault();
-    const slug = slugify(newLabel);
-    if (!slug) return;
-    if (rooms.some((r) => r.name === slug)) {
-      navigate({ to: "/salas/$roomName", params: { roomName: slug } });
-      return;
-    }
-    const next = [...custom, { name: slug, label: newLabel.trim(), desc: newDesc.trim(), privateRoom: newPrivate }];
-    setCustom(next);
-    saveCustom(next);
-    setNewLabel("");
-    setNewDesc("");
-    setNewPrivate(false);
-    setCreating(false);
-    navigate({ to: "/salas/$roomName", params: { roomName: slug } });
+  function isUserOnline(roomName: string, userId: string) {
+    const parts = presence[roomName] ?? [];
+    return parts.some((p) => p.identity.startsWith(`${userId}-`));
   }
 
-  function joinByName(e: React.FormEvent) {
-    e.preventDefault();
-    const slug = slugify(joinName);
-    if (!slug) return;
-    navigate({ to: "/salas/$roomName", params: { roomName: slug } });
+  function handleCall(userId: string, roomName: string, roomLabel: string) {
+    callUserToRoom(userId, roomName, roomLabel);
+    const key = `${userId}:${roomName}`;
+    setCalled((c) => ({ ...c, [key]: Date.now() }));
+    setTimeout(() => setCalled((c) => {
+      const next = { ...c };
+      delete next[key];
+      return next;
+    }), 3500);
   }
 
   return (
@@ -103,103 +64,140 @@ function SalasPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Salas Online</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Entre em uma sala de voz e vídeo para conversar com o time. Estilo Discord, direto no navegador.
+              Uma sala por departamento. Veja quem está online, entre com um clique ou chame alguém para uma ligação
+              rápida.
             </p>
           </div>
-          <button
-            onClick={() => setCreating((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:brightness-110"
-          >
-            <Plus className="h-4 w-4" /> Nova sala
-          </button>
+          <div className="text-xs text-muted-foreground">
+            Você entrará como <span className="font-medium text-foreground">{currentUser.name}</span>.
+          </div>
         </header>
 
-        {creating && (
-          <form
-            onSubmit={createRoom}
-            className="grid gap-3 rounded-lg border border-border bg-card p-4 md:grid-cols-[1fr_1fr_auto_auto]"
-          >
-            <input
-              autoFocus
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="Nome da sala (ex: Planejamento Q4)"
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-            <input
-              value={newDesc}
-              onChange={(e) => setNewDesc(e.target.value)}
-              placeholder="Descrição (opcional)"
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-            <label className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <input type="checkbox" checked={newPrivate} onChange={(e) => setNewPrivate(e.target.checked)} />
-              Privada
-            </label>
-            <button
-              type="submit"
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:brightness-110"
-            >
-              Criar e entrar
-            </button>
-          </form>
-        )}
-
-        <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Salas do workspace</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {rooms.map((r) => (
-              <Link
+        <div className="grid gap-3 md:grid-cols-2">
+          {DEPARTMENT_ROOMS.map((r) => {
+            const parts = presence[r.name] ?? [];
+            const members = users.filter((u) => u.sector === r.sector);
+            return (
+              <section
                 key={r.name}
-                to="/salas/$roomName"
-                params={{ roomName: r.name }}
-                className="group flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-primary/60 hover:shadow-md"
+                className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-primary/40"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    {r.privateRoom ? <Lock className="h-5 w-5" /> : <Headphones className="h-5 w-5" />}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Headphones className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <Link
+                        to="/salas/$roomName"
+                        params={{ roomName: r.name }}
+                        className="text-base font-semibold uppercase tracking-wide hover:text-primary"
+                      >
+                        {r.label}
+                      </Link>
+                      <div className="text-xs text-muted-foreground">{r.desc}</div>
+                    </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    <Radio className="h-2.5 w-2.5" /> {r.privateRoom ? "Privada" : "Aberta"}
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      parts.length > 0
+                        ? "bg-emerald-500/15 text-emerald-500"
+                        : "bg-secondary text-muted-foreground"
+                    }`}
+                  >
+                    <Radio className="h-2.5 w-2.5" /> {parts.length} online
                   </span>
                 </div>
-                <div>
-                  <div className="text-base font-semibold group-hover:text-primary">{r.label}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">{r.desc || `sala/${r.name}`}</div>
-                </div>
-                <div className="mt-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Users2 className="h-3.5 w-3.5" /> Entre para ver quem está online
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
 
-        <section className="rounded-lg border border-dashed border-border bg-card/50 p-4">
-          <h2 className="text-sm font-semibold">Entrar por código</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Recebeu um nome/código de sala? Digite abaixo para entrar direto — quem souber o nome pode entrar.
-          </p>
-          <form onSubmit={joinByName} className="mt-3 flex gap-2">
-            <input
-              value={joinName}
-              onChange={(e) => setJoinName(e.target.value)}
-              placeholder="ex: reuniao-quinta"
-              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
-            />
-            <button
-              type="submit"
-              className="rounded-md bg-secondary px-4 py-2 text-sm font-medium hover:bg-secondary/80"
-            >
-              Entrar
-            </button>
-          </form>
-        </section>
+                {parts.length > 0 && (
+                  <div className="flex items-center gap-2 rounded-md bg-emerald-500/5 px-2 py-1.5">
+                    <Users2 className="h-3.5 w-3.5 text-emerald-500" />
+                    <div className="flex flex-wrap gap-1.5">
+                      {parts.map((p) => (
+                        <span
+                          key={p.identity}
+                          className="inline-flex items-center gap-1 rounded-full bg-background px-1.5 py-0.5 text-[10px]"
+                          title={p.name}
+                        >
+                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                            {(p.name || p.identity).slice(0, 1).toUpperCase()}
+                          </span>
+                          {p.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-        <p className="text-[11px] text-muted-foreground">
-          Você entrará como <span className="font-medium text-foreground">{currentUser.name}</span>. Para simular outra
-          pessoa, troque o usuário no menu lateral.
-        </p>
+                {members.length > 0 ? (
+                  <div>
+                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Membros ({members.length})
+                    </div>
+                    <ul className="flex flex-col gap-1">
+                      {members.map((m) => {
+                        const online = isUserOnline(r.name, m.id);
+                        const isSelf = m.id === currentUser.id;
+                        const callKey = `${m.id}:${r.name}`;
+                        const wasCalled = !!called[callKey];
+                        return (
+                          <li
+                            key={m.id}
+                            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-secondary/50"
+                          >
+                            <div className="relative">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
+                                {m.avatar}
+                              </div>
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${
+                                  online ? "bg-emerald-500" : "bg-muted-foreground/40"
+                                }`}
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-xs font-medium">
+                                {m.name} {isSelf && <span className="text-muted-foreground">(você)</span>}
+                              </div>
+                              <div className="truncate text-[10px] text-muted-foreground">{m.jobTitle}</div>
+                            </div>
+                            {online ? (
+                              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
+                                na sala
+                              </span>
+                            ) : isSelf ? null : (
+                              <button
+                                onClick={() => handleCall(m.id, r.name, r.label)}
+                                disabled={wasCalled}
+                                className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary transition hover:bg-primary/20 disabled:opacity-60"
+                                title={`Chamar ${m.name.split(" ")[0]} para a sala ${r.label}`}
+                              >
+                                <Phone className="h-3 w-3" />
+                                {wasCalled ? "Chamando…" : "Chamar"}
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Nenhum membro cadastrado com setor <code className="rounded bg-muted px-1">{r.sector}</code>. Ajuste
+                    o setor de um usuário em Equipe para vê-lo aqui.
+                  </p>
+                )}
+
+                <button
+                  onClick={() => navigate({ to: "/salas/$roomName", params: { roomName: r.name } })}
+                  className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:brightness-110"
+                >
+                  <Headphones className="h-3.5 w-3.5" /> Entrar na sala {r.label}
+                </button>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </FluxoLayout>
   );
