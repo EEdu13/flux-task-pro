@@ -75,6 +75,7 @@ export function FluxoLayout({
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const navigate = useNavigate();
+  const { ask: askInvite } = useCallInviter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -337,7 +338,7 @@ export function FluxoLayout({
                                           });
                                           return;
                                         }
-                                        callUserToRoom(u.id, r.name, r.label);
+                                        askInvite(u.id, r.name, r.label);
                                         toast.success(
                                           `Chamando ${u.name.split(" ")[0]} para ${r.label}…`,
                                         );
