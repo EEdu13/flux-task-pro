@@ -232,34 +232,54 @@ function SalasPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  {rooms.map((room) => {
-                    const n = parseSalaIndex(room.name, r.name);
-                    return (
-                      <button
-                        key={room.name}
-                        onClick={() =>
-                          navigate({ to: "/salas/$roomName", params: { roomName: room.name } })
-                        }
-                        className="group flex items-center justify-between gap-2 rounded-md border border-border/70 bg-background px-2 py-1.5 text-left hover:border-primary/50 hover:bg-primary/5"
-                      >
-                        <span className="flex min-w-0 items-center gap-2 text-xs">
-                          <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
-                            #{n}
-                          </span>
-                          <span className="truncate font-medium">Sala {n}</span>
-                          {room.participants.length > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-500">
-                              <Users2 className="h-3 w-3" />
-                              {room.participants.length}
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-[10px] font-medium text-muted-foreground group-hover:text-primary">
-                          Entrar
-                        </span>
-                      </button>
-                    );
-                  })}
+                   {rooms.map((room) => {
+                     const n = parseSalaIndex(room.name, r.name);
+                     return (
+                       <button
+                         key={room.name}
+                         onClick={() =>
+                           navigate({ to: "/salas/$roomName", params: { roomName: room.name } })
+                         }
+                         className="group flex flex-col gap-1 rounded-md border border-border/70 bg-background px-2 py-1.5 text-left hover:border-primary/50 hover:bg-primary/5"
+                       >
+                         <span className="flex items-center justify-between gap-2">
+                           <span className="flex min-w-0 items-center gap-2 text-xs">
+                             <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
+                               #{n}
+                             </span>
+                             <span className="truncate font-medium">Sala {n}</span>
+                             {room.participants.length > 0 && (
+                               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500">
+                                 <Users2 className="h-3 w-3" />
+                                 {room.participants.length}
+                               </span>
+                             )}
+                           </span>
+                           <span className="text-[10px] font-medium text-muted-foreground group-hover:text-primary">
+                             Entrar
+                           </span>
+                         </span>
+                         {room.participants.length > 0 && (
+                           <div className="flex flex-wrap gap-1 pl-1">
+                             {room.participants.slice(0, 5).map((p) => (
+                               <span
+                                 key={p.identity}
+                                 className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                               >
+                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                 {p.name || p.identity}
+                               </span>
+                             ))}
+                             {room.participants.length > 5 && (
+                               <span className="text-[10px] text-muted-foreground">
+                                 +{room.participants.length - 5}
+                               </span>
+                             )}
+                           </div>
+                         )}
+                       </button>
+                     );
+                   })}
                   <button
                     onClick={() => addExtraRoom(r.name)}
                     className="inline-flex items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 text-[10px] font-medium text-muted-foreground hover:border-primary hover:text-primary"
