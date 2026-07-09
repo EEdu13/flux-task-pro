@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { getLiveKitToken } from "@/lib/livekit-token.functions";
 
 export interface ActiveCall {
@@ -24,28 +24,15 @@ const Ctx = createContext<ActiveCallContextValue | null>(null);
 
 export function ActiveCallProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<ActiveCall | null>(null);
+  const activeRef = useRef<ActiveCall | null>(null);
   const [minimized, setMinimized] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const startCall = useCallback<ActiveCallContextValue["startCall"]>(
     async ({ roomName, roomLabel, identity, name }) => {
-      // Reuse existing call if same room + identity — avoids re-joining.
-      setActive((prev) => {
-        if (prev && prev.roomName === roomName && prev.identity === identity) {
-          return prev;
-        }
-        return prev;
-      });
-      // Read latest active via functional check
-      let already = false;
-      setActive((prev) => {
-        if (prev && prev.roomName === roomName && prev.identity === identity) {
-          already = true;
-        }
-        return prev;
-      });
-      if (already) {
+      const prev = activeRef.current;
+      if (prev && prev.roomName === roomName && prev.identity === identity) {
         setMinimized(false);
         return;
       }
@@ -53,14 +40,16 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
       setError(null);
       try {
         const res = await getLiveKitToken({ data: { roomName, identity, name } });
-        setActive({
+        const next: ActiveCall = {
           roomName,
           roomLabel: roomLabel ?? roomName,
           token: res.token,
           serverUrl: res.url,
           identity,
           name,
-        });
+        };
+        activeRef.current = next;
+        setActive(next);
         setMinimized(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Falha ao entrar na sala");
@@ -72,6 +61,7 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
   );
 
   const endCall = useCallback(() => {
+    activeRef.current = null;
     setActive(null);
     setMinimized(false);
     setError(null);
