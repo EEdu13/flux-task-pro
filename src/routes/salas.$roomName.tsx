@@ -39,10 +39,15 @@ function RoomPage() {
   const navigate = useNavigate();
   const [access, setAccess] = useState<AccessState>({ kind: "checking" });
   const [isPrivate, setIsPrivate] = useState(false);
-  const [knocks, setKnocks] = useState<{ id: string; requester_user_id: string; requester_name: string }[]>([]);
+  const [knocks, setKnocks] = useState<
+    { id: string; requester_user_id: string; requester_name: string }[]
+  >([]);
   const startedRef = useRef(false);
 
-  const identity = useMemo(() => `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`, [currentUser]);
+  const identity = useMemo(
+    () => `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`,
+    [currentUser],
+  );
   const roomLabel = useMemo(() => {
     const sector = roomName.split("-")[0];
     const base = DEPARTMENT_ROOMS.find((r) => r.name === sector)?.label ?? sector;
@@ -186,17 +191,10 @@ function RoomPage() {
   ) : null;
 
   return (
-    <FluxoLayout
-      title={`Sala: ${roomLabel}`}
-      breadcrumb="Salas Online"
-      actions={layoutActions}
-    >
+    <FluxoLayout title={`Sala: ${roomLabel}`} breadcrumb="Salas Online" actions={layoutActions}>
       <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl">
         {access.kind === "knocking" ? (
-          <WaitingScreen
-            roomLabel={roomLabel}
-            onCancel={() => navigate({ to: "/salas" })}
-          />
+          <WaitingScreen roomLabel={roomLabel} onCancel={() => navigate({ to: "/salas" })} />
         ) : access.kind === "denied" ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card text-center">
             <Lock className="h-10 w-10 text-destructive" />
@@ -214,7 +212,9 @@ function RoomPage() {
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card text-center">
             <WifiOff className="h-10 w-10 text-destructive" />
-            <div className="text-sm font-medium text-destructive">Não foi possível entrar na sala</div>
+            <div className="text-sm font-medium text-destructive">
+              Não foi possível entrar na sala
+            </div>
             <div className="max-w-md text-xs text-muted-foreground">{error}</div>
             <button
               onClick={() => {
@@ -283,8 +283,8 @@ function WaitingScreen({ roomLabel, onCancel }: { roomLabel: string; onCancel: (
       </div>
       <div className="text-sm font-medium">Aguardando aprovação…</div>
       <div className="max-w-md text-xs text-muted-foreground">
-        A sala <span className="font-medium text-foreground">{roomLabel}</span> é privada. Enviamos um pedido para
-        quem já está dentro. Assim que alguém aceitar, você entra automaticamente.
+        A sala <span className="font-medium text-foreground">{roomLabel}</span> é privada. Enviamos
+        um pedido para quem já está dentro. Assim que alguém aceitar, você entra automaticamente.
       </div>
       <button
         onClick={onCancel}

@@ -31,9 +31,10 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
     const name = (input.name ?? identity).trim().slice(0, 64);
     if (!roomName || !identity) throw new Error("Sala e identidade são obrigatórios");
     if (!/^[a-zA-Z0-9_\-]+$/.test(roomName)) throw new Error("Nome de sala inválido");
-    const userId = typeof (input as { userId?: string }).userId === "string"
-      ? (input as { userId?: string }).userId!.trim().slice(0, 80)
-      : "";
+    const userId =
+      typeof (input as { userId?: string }).userId === "string"
+        ? (input as { userId?: string }).userId!.trim().slice(0, 80)
+        : "";
     return { roomName, identity, name, userId };
   })
   .handler(async ({ data }) => {
@@ -141,18 +142,29 @@ export const listSectorRooms = createServerFn({ method: "POST" })
       liveRooms = [];
     }
     // For each sector, collect rooms named `${sector}` or `${sector}-<n>` with n>=2.
-    const bySector: Record<string, { name: string; participants: { identity: string; name: string }[] }[]> = {};
+    const bySector: Record<
+      string,
+      { name: string; participants: { identity: string; name: string }[] }[]
+    > = {};
     await Promise.all(
       data.sectors.map(async (sector) => {
         const matches = new Set<string>([sector]);
         const re = new RegExp(`^${sector}(?:-([2-9]|[1-9][0-9]))?$`);
         for (const r of liveRooms) if (re.test(r)) matches.add(r);
-        const names = Array.from(matches).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+        const names = Array.from(matches).sort((a, b) =>
+          a.localeCompare(b, "pt-BR", { numeric: true }),
+        );
         const withParts = await Promise.all(
           names.map(async (name) => {
             try {
               const parts = await svc.listParticipants(name);
-              return { name, participants: parts.map((p) => ({ identity: p.identity, name: p.name || p.identity })) };
+              return {
+                name,
+                participants: parts.map((p) => ({
+                  identity: p.identity,
+                  name: p.name || p.identity,
+                })),
+              };
             } catch {
               return { name, participants: [] };
             }
@@ -166,7 +178,12 @@ export const listSectorRooms = createServerFn({ method: "POST" })
 
 export const createRoomCall = createServerFn({ method: "POST" })
   .inputValidator(
-    (input: { callerUserId: string; targetUserId: string; roomName: string; roomLabel: string }) => {
+    (input: {
+      callerUserId: string;
+      targetUserId: string;
+      roomName: string;
+      roomLabel: string;
+    }) => {
       const callerUserId = sanitizeUserId(input?.callerUserId);
       const targetUserId = sanitizeUserId(input?.targetUserId);
       const roomName = sanitizeRoomName(input?.roomName);
@@ -227,7 +244,9 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
   .inputValidator((input: { callId: string; status: RoomCallStatus; userId: string }) => {
     if (!input || typeof input.callId !== "string") throw new Error("Chamada inválida");
     const callId = input.callId.trim();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(callId)) {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(callId)
+    ) {
       throw new Error("Chamada inválida");
     }
     const allowed: RoomCallStatus[] = ["accepted", "declined", "missed"];
@@ -257,7 +276,11 @@ export const getRoomAccess = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: state }, { data: member }] = await Promise.all([
-      supabaseAdmin.from("room_state").select("is_private").eq("room_name", data.roomName).maybeSingle(),
+      supabaseAdmin
+        .from("room_state")
+        .select("is_private")
+        .eq("room_name", data.roomName)
+        .maybeSingle(),
       supabaseAdmin
         .from("room_members")
         .select("id")
@@ -277,17 +300,15 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin
-      .from("room_state")
-      .upsert(
-        {
-          room_name: data.roomName,
-          is_private: data.isPrivate,
-          updated_by: data.userId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "room_name" },
-      );
+    await supabaseAdmin.from("room_state").upsert(
+      {
+        room_name: data.roomName,
+        is_private: data.isPrivate,
+        updated_by: data.userId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "room_name" },
+    );
     if (data.isPrivate) {
       // caller becomes a member automatically
       await supabaseAdmin
@@ -358,7 +379,8 @@ export const knockRoom = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (existing) return { status: existing.status as "pending" | "approved", knockId: existing.id };
+    if (existing)
+      return { status: existing.status as "pending" | "approved", knockId: existing.id };
 
     const { data: inserted, error } = await supabaseAdmin
       .from("room_knocks")
@@ -390,7 +412,9 @@ export const getKnockStatus = createServerFn({ method: "POST" })
   });
 
 export const listRoomKnocks = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string }) => ({ roomName: sanitizeRoomName(input?.roomName) }))
+  .inputValidator((input: { roomName: string }) => ({
+    roomName: sanitizeRoomName(input?.roomName),
+  }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: knocks } = await supabaseAdmin
@@ -406,7 +430,11 @@ export const resolveKnock = createServerFn({ method: "POST" })
   .inputValidator((input: { knockId: string; approve: boolean; resolverUserId: string }) => {
     const id = typeof input?.knockId === "string" ? input.knockId.trim() : "";
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Pedido inválido");
-    return { knockId: id, approve: !!input?.approve, resolverUserId: sanitizeUserId(input?.resolverUserId) };
+    return {
+      knockId: id,
+      approve: !!input?.approve,
+      resolverUserId: sanitizeUserId(input?.resolverUserId),
+    };
   })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -425,16 +453,14 @@ export const resolveKnock = createServerFn({ method: "POST" })
       })
       .eq("id", knock.id);
     if (data.approve) {
-      await supabaseAdmin
-        .from("room_members")
-        .upsert(
-          {
-            room_name: knock.room_name,
-            user_id: knock.requester_user_id,
-            added_by: data.resolverUserId,
-          },
-          { onConflict: "room_name,user_id" },
-        );
+      await supabaseAdmin.from("room_members").upsert(
+        {
+          room_name: knock.room_name,
+          user_id: knock.requester_user_id,
+          added_by: data.resolverUserId,
+        },
+        { onConflict: "room_name,user_id" },
+      );
     }
     return { ok: true };
   });

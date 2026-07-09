@@ -4,18 +4,17 @@ import { Headphones, Lock, LockOpen, Phone, Plus, Radio, Search, Users2, X } fro
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
-import {
-  inviteToRoom,
-  listSectorRooms,
-  setRoomPrivacy,
-} from "@/lib/livekit-token.functions";
+import { inviteToRoom, listSectorRooms, setRoomPrivacy } from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
   head: () => ({
     meta: [
       { title: "Salas Online · Fluxo" },
-      { name: "description", content: "Salas de voz e vídeo do time por departamento — estilo Discord." },
+      {
+        name: "description",
+        content: "Salas de voz e vídeo do time por departamento — estilo Discord.",
+      },
     ],
   }),
 });
@@ -145,7 +144,11 @@ function SalasPage() {
     const map = new Map<string, RoomInfo>();
     for (const r of discovered) {
       const n = parseSalaIndex(r.name, sector);
-      map.set(r.name, { name: r.name, label: `${label} · Sala ${n}`, participants: r.participants });
+      map.set(r.name, {
+        name: r.name,
+        label: `${label} · Sala ${n}`,
+        participants: r.participants,
+      });
     }
     // ensure base "Sala 1" always exists
     if (!map.has(sector)) {
@@ -178,11 +181,13 @@ function SalasPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Salas Online</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Cada departamento tem Sala 1 fixa; crie extras quando a sala principal estiver ocupada.
+              Cada departamento tem Sala 1 fixa; crie extras quando a sala principal estiver
+              ocupada.
             </p>
           </div>
           <div className="text-xs text-muted-foreground">
-            Você entrará como <span className="font-medium text-foreground">{currentUser.name}</span>.
+            Você entrará como{" "}
+            <span className="font-medium text-foreground">{currentUser.name}</span>.
           </div>
         </header>
 
@@ -378,12 +383,16 @@ function CallChoiceModal({
       <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="text-sm font-semibold">Chamar {targetName}</div>
-          <button onClick={onCancel} className="rounded p-1 text-muted-foreground hover:bg-secondary">
+          <button
+            onClick={onCancel}
+            className="rounded p-1 text-muted-foreground hover:bg-secondary"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-4 py-3 text-xs text-muted-foreground">
-          Como você quer entrar na sala <span className="font-medium text-foreground">{roomLabel}</span>?
+          Como você quer entrar na sala{" "}
+          <span className="font-medium text-foreground">{roomLabel}</span>?
         </div>
         <div className="grid gap-2 px-4 pb-4 sm:grid-cols-2">
           <button

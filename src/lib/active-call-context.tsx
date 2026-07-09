@@ -15,7 +15,13 @@ interface ActiveCallContextValue {
   minimized: boolean;
   loading: boolean;
   error: string | null;
-  startCall(args: { roomName: string; roomLabel?: string; identity: string; name: string; userId?: string }): Promise<void>;
+  startCall(args: {
+    roomName: string;
+    roomLabel?: string;
+    identity: string;
+    name: string;
+    userId?: string;
+  }): Promise<void>;
   endCall(): void;
   setMinimized(v: boolean): void;
 }
@@ -39,7 +45,14 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
       try {
-        const res = await getLiveKitToken({ data: { roomName, identity, name, userId: userId ?? "" } as { roomName: string; identity: string; name: string; userId?: string } });
+        const res = await getLiveKitToken({
+          data: { roomName, identity, name, userId: userId ?? "" } as {
+            roomName: string;
+            identity: string;
+            name: string;
+            userId?: string;
+          },
+        });
         const next: ActiveCall = {
           roomName,
           roomLabel: roomLabel ?? roomName,
