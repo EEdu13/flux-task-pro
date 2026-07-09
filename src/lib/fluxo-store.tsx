@@ -642,7 +642,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             [roomName]: { ...roomMap, [targetUserId]: (roomMap[targetUserId] ?? 0) + 1 },
           },
         };
-        return { ...s, notifications: [notif, ...s.notifications], callCounts: nextCallCounts };
+        const prevRecents = s.recentContactsByUser?.[currentUser.id] ?? [];
+        const nextRecents = [targetUserId, ...prevRecents.filter((id) => id !== targetUserId)].slice(0, 10);
+        const recentContactsByUser = {
+          ...(s.recentContactsByUser ?? {}),
+          [currentUser.id]: nextRecents,
+        };
+        return {
+          ...s,
+          notifications: [notif, ...s.notifications],
+          callCounts: nextCallCounts,
+          recentContactsByUser,
+        };
       });
     },
 
@@ -655,6 +666,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => b.c - a.c)
         .slice(0, limit)
         .map((x) => x.u);
+    },
+
+    recentContactIds: state.recentContactsByUser?.[state.currentUserId] ?? [],
+    recentContactUsers: (limit = 5) => {
+      const ids = state.recentContactsByUser?.[state.currentUserId] ?? [];
+      const out: User[] = [];
+      for (const id of ids) {
+        const u = state.users.find((x) => x.id === id);
+        if (u && u.id !== state.currentUserId) out.push(u);
+        if (out.length >= limit) break;
+      }
+      return out;
     },
 
     dismissRoomCall: (notifId) =>
