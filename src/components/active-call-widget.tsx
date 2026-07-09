@@ -335,6 +335,84 @@ function CallContents({
         />
         <div className="flex items-center gap-1.5">
           {!mini && (
+            <button
+              type="button"
+              onClick={togglePrivacy}
+              disabled={privBusy}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
+                isPrivate
+                  ? "border-amber-400/60 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25"
+                  : "border-emerald-400/50 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
+              } disabled:opacity-60`}
+              title={
+                isPrivate
+                  ? "Sala privada — clique para abrir"
+                  : "Sala aberta — clique para privar (só quem for aceito entra)"
+              }
+            >
+              {isPrivate ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
+              {isPrivate ? "Privada" : "Aberta"}
+            </button>
+          )}
+          {!mini && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setInviteOpen((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                  inviteOpen
+                    ? "border-primary/60 bg-primary/20 text-white"
+                    : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+                }`}
+                title="Chamar alguém para esta sala"
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                Convidar
+              </button>
+              {inviteOpen && (
+                <div className="absolute bottom-full right-0 z-30 mb-1 w-64 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
+                  <div className="relative border-b border-white/10 p-2">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />
+                    <input
+                      autoFocus
+                      value={inviteQuery}
+                      onChange={(e) => setInviteQuery(e.target.value)}
+                      placeholder="Buscar colaborador…"
+                      className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-2 text-xs text-white outline-none placeholder:text-white/40 focus:border-primary/60"
+                    />
+                  </div>
+                  <ul className="max-h-56 overflow-auto py-1">
+                    {inviteMatches.length === 0 ? (
+                      <li className="px-3 py-3 text-center text-[11px] text-white/50">
+                        Ninguém encontrado.
+                      </li>
+                    ) : (
+                      inviteMatches.map((u) => (
+                        <li key={u.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              askInvite(u.id, roomName, roomLabel);
+                              setInviteOpen(false);
+                              setInviteQuery("");
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-white/10"
+                          >
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-[10px] font-bold">
+                              {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                            <UserPlus className="h-3 w-3 text-primary" />
+                          </button>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {!mini && (
             <div className="relative">
               <button
                 type="button"
