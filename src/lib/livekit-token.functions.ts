@@ -279,6 +279,36 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const purgeAllRooms = createServerFn({ method: "POST" })
+  .handler(async () => {
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_URL;
+    if (!apiKey || !apiSecret || !wsUrl) throw new Error("LiveKit não configurado");
+    const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+    const { RoomServiceClient } = await import("livekit-server-sdk");
+    const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+    const rooms = await svc.listRooms();
+    const names = rooms.map((r) => r.name);
+    await Promise.all(
+      names.map(async (n) => {
+        try {
+          await svc.deleteRoom(n);
+        } catch {
+          /* ignore */
+        }
+      }),
+    );
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("room_knocks").delete().neq("room_name", "");
+    await supabaseAdmin.from("room_members").delete().neq("room_name", "");
+    await supabaseAdmin
+      .from("room_state")
+      .update({ is_private: false, updated_at: new Date().toISOString() })
+      .neq("room_name", "");
+    return { deleted: names };
+  });
+
 // ================= Room privacy / membership / knocks =================
 
 export const getRoomAccess = createServerFn({ method: "POST" })
