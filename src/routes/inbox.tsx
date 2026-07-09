@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AtSign, Bell, Check, CheckCircle2, Clock, Inbox as InboxIcon } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
@@ -27,6 +27,7 @@ const filters = [
 function InboxPage() {
   const { notifications, currentUser, markNotifRead, markAllNotifsRead, openTask } = useFluxo();
   const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("todas");
+  const navigate = useNavigate();
 
   const mine = notifications.filter((n) => n.userId === currentUser.id);
   const items = mine.filter((n) => {
@@ -90,6 +91,8 @@ function InboxPage() {
                   onClick={() => {
                     markNotifRead(n.id);
                     if (n.taskId) openTask(n.taskId);
+                    if (n.roomName)
+                      navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
                   }}
                   className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-secondary/50 ${
                     n.read ? "opacity-70" : ""
