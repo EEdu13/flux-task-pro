@@ -20,6 +20,7 @@ import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
+import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
 
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
@@ -76,6 +77,11 @@ const SalasRoomNameRoute = SalasRoomNameRouteImport.update({
   path: '/salas/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
+  id: '/api/public/purge-rooms',
+  path: '/api/public/purge-rooms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/relatorios': typeof RelatoriosRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
+  '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/relatorios': typeof RelatoriosRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
+  '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/relatorios': typeof RelatoriosRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
+  '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/salas/$roomName'
     | '/salas/'
+    | '/api/public/purge-rooms'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/salas/$roomName'
     | '/salas'
+    | '/api/public/purge-rooms'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/salas/$roomName'
     | '/salas/'
+    | '/api/public/purge-rooms'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   RelatoriosRoute: typeof RelatoriosRoute
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
+  ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalasRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/purge-rooms': {
+      id: '/api/public/purge-rooms'
+      path: '/api/public/purge-rooms'
+      fullPath: '/api/public/purge-rooms'
+      preLoaderRoute: typeof ApiPublicPurgeRoomsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,17 +287,8 @@ const rootRouteChildren: RootRouteChildren = {
   RelatoriosRoute: RelatoriosRoute,
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
+  ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
