@@ -87,13 +87,14 @@ export interface Task {
 export interface Notification {
   id: string;
   userId: string; // recipient
-  type: "mencao" | "atribuida" | "prazo" | "concluida";
+  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida";
   title: string;
   desc: string;
   at: string; // ISO
   read?: boolean;
   taskId?: string;
   roomName?: string;
+  roomLabel?: string;
   fromUserId?: string;
 }
 
