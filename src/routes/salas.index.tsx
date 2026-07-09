@@ -222,6 +222,21 @@ function SalasPage() {
             Você entrará como{" "}
             <span className="font-medium text-foreground">{currentUser.name}</span>.
           </div>
+          <button
+            onClick={async () => {
+              if (!window.confirm("Fechar TODAS as salas e desconectar todo mundo agora?")) return;
+              try {
+                const r = await purgeAllRooms({ data: {} });
+                setBySector({});
+                window.alert(`Fechadas: ${r.deleted.length} salas`);
+              } catch (e) {
+                window.alert("Falhou: " + String(e));
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20"
+          >
+            <PowerOff className="h-3.5 w-3.5" /> Fechar todas as salas
+          </button>
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
