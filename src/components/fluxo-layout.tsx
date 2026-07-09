@@ -31,6 +31,8 @@ import { OnboardingModal } from "@/components/onboarding-modal";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
+import { IncomingCall } from "@/components/incoming-call";
+import { toast } from "sonner";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
@@ -67,6 +69,8 @@ export function FluxoLayout({
     completions,
     isAuthenticated,
     logout,
+    callUserToRoom,
+    topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
@@ -563,6 +567,7 @@ export function FluxoLayout({
 
       <TaskDialog />
       {needsOnboarding && <OnboardingModal />}
+      <IncomingCall />
     </div>
   );
 }
