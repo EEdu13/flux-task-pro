@@ -13,7 +13,6 @@ import type {
   Attachment,
   CompletionEntry,
   MeetingMinute,
-  MinuteTopic,
   Meta,
   Notification,
   Status,
