@@ -358,7 +358,7 @@ function MinhasTarefas() {
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
             />
           ) : view === "quadro" ? (
-            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
+            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} onTogglePack={(id, v) => updateTask(id, { inPack: v })} />
           ) : (
             <TaskList
               tasks={visible}
