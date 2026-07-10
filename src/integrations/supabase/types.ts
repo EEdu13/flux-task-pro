@@ -106,23 +106,32 @@ export type Database = {
       }
       room_state: {
         Row: {
+          active_speakers: Json
           created_at: string
           is_private: boolean
+          pin: string | null
           room_name: string
+          speakers_updated_at: string | null
           updated_at: string
           updated_by: string | null
         }
         Insert: {
+          active_speakers?: Json
           created_at?: string
           is_private?: boolean
+          pin?: string | null
           room_name: string
+          speakers_updated_at?: string | null
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
+          active_speakers?: Json
           created_at?: string
           is_private?: boolean
+          pin?: string | null
           room_name?: string
+          speakers_updated_at?: string | null
           updated_at?: string
           updated_by?: string | null
         }
