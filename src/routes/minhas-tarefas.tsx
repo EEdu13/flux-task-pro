@@ -358,7 +358,7 @@ function MinhasTarefas() {
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
             />
           ) : view === "quadro" ? (
-            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
+            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} onTogglePack={(id, v) => updateTask(id, { inPack: v })} />
           ) : (
             <TaskList
               tasks={visible}
@@ -525,7 +525,7 @@ function TaskList({
                             className={`rounded p-1 transition ${
                               t.inPack
                                 ? "text-amber-500 hover:bg-amber-500/10"
-                                : "text-muted-foreground opacity-0 hover:bg-secondary hover:text-amber-500 group-hover:opacity-100"
+                                : "text-muted-foreground hover:bg-secondary hover:text-amber-500"
                             }`}
                           >
                             <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
@@ -556,12 +556,14 @@ function KanbanBoard({
   onCreate,
   onMove,
   onQuickComplete,
+  onTogglePack,
 }: {
   tasks: Task[];
   onEdit: (id: string) => void;
   onCreate: (initial?: Status) => void;
   onMove: (id: string, status: Status, targetIndex?: number) => void;
   onQuickComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
 }) {
   const { users } = useFluxo();
   const [dragOver, setDragOver] = useState<{ col: Status; index: number } | null>(null);
@@ -645,7 +647,21 @@ function KanbanBoard({
                         {sec?.name}
                       </span>
                       {t.recurring && <Repeat className="h-2.5 w-2.5" />}
-                      <span className="ml-auto h-1.5 w-1.5 rounded-full" style={{ background: priorityColor[t.priority] }} />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTogglePack(t.id, !t.inPack);
+                        }}
+                        title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
+                        className={`ml-auto rounded p-0.5 transition ${
+                          t.inPack
+                            ? "text-amber-500"
+                            : "text-muted-foreground hover:text-amber-500"
+                        }`}
+                      >
+                        <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
+                      </button>
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: priorityColor[t.priority] }} />
                     </div>
                     <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
                     {(t.mentions.length > 0 || t.checklist.length > 0) && (
