@@ -68,6 +68,30 @@ const datePresetLabels: Record<DatePreset, string> = {
   entre: "Entre datas…",
 };
 
+// ---- Pack (daily commitment) helpers ----------------------------------
+// Pack items are permanent per-user commitments. Completion is tracked per
+// day in localStorage so that every day the checklist resets.
+function packTodayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function packStorageKey(userId: string) {
+  return `fluxo.pack.done.v1:${userId}:${packTodayKey()}`;
+}
+function loadPackDone(userId: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(packStorageKey(userId));
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+function savePackDone(userId: string, ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(packStorageKey(userId), JSON.stringify(Array.from(ids)));
+}
+
 function startOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -148,6 +172,20 @@ function MinhasTarefas() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [search, setSearch] = useState(initialQ ?? "");
+  // Per-day pack completion (kept in localStorage, resets daily).
+  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
+  useEffect(() => {
+    setPackDone(loadPackDone(currentUser.id));
+  }, [currentUser.id]);
+  const togglePackDone = (id: string) => {
+    setPackDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      savePackDone(currentUser.id, next);
+      return next;
+    });
+  };
   useEffect(() => {
     if (initialQ !== undefined && initialQ !== search) {
       setSearch(initialQ);
@@ -177,7 +215,10 @@ function MinhasTarefas() {
       if (scope === "atribuidas" && t.assigneeId !== currentUser.id) return false;
       if (scope === "criadas" && t.createdBy !== currentUser.id) return false;
       if (scope === "mencionadas" && !t.mentions.includes(currentUser.id)) return false;
-      if (scope === "pack" && !(t.assigneeId === currentUser.id && t.inPack)) return false;
+      if (scope === "pack") {
+        // Pack items are permanent daily commitments — show regardless of task status.
+        if (!(t.assigneeId === currentUser.id && t.inPack)) return false;
+      }
       if (sector !== "todos" && t.sector !== sector) return false;
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
@@ -222,6 +263,15 @@ function MinhasTarefas() {
       pack: active.filter((t) => t.assigneeId === currentUser.id && t.inPack).length,
     } as Record<Scope, number>;
   }, [tasks, users, currentUser]);
+  // Override pack count with today's remaining (not yet checked today).
+  const packRemainingToday = useMemo(
+    () =>
+      tasks.filter(
+        (t) => t.assigneeId === currentUser.id && t.inPack && !packDone.has(t.id),
+      ).length,
+    [tasks, currentUser.id, packDone],
+  );
+  scopeCounts.pack = packRemainingToday;
 
   const allTags = useMemo(() => Array.from(new Set(tasks.flatMap((t) => t.tags))), [tasks]);
 
@@ -354,7 +404,8 @@ function MinhasTarefas() {
             <PackView
               tasks={visible}
               onEdit={openTask}
-              onComplete={(id) => updateTask(id, { status: "concluida" })}
+              packDone={packDone}
+              onToggleDone={togglePackDone}
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
             />
           ) : view === "quadro" ? (
