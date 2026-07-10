@@ -4,6 +4,7 @@ import {
   AtSign,
   CheckCircle2,
   CheckSquare,
+  Flame,
   Clock,
   Filter,
   LayoutGrid,
@@ -11,6 +12,8 @@ import {
   Pencil,
   Plus,
   Repeat,
+  Star,
+  Sparkles,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -42,7 +45,7 @@ export const Route = createFileRoute("/minhas-tarefas")({
   component: MinhasTarefas,
 });
 
-type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas";
+type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas" | "pack";
 type ViewMode = "quadro" | "lista";
 type DatePreset =
   | "todas"
@@ -128,6 +131,7 @@ const scopeLabels: Record<Scope, string> = {
   atribuidas: "Atribuídas a mim",
   criadas: "Criadas por mim",
   mencionadas: "Mencionaram-me",
+  pack: "Meu pack",
 };
 
 function MinhasTarefas() {
@@ -173,6 +177,7 @@ function MinhasTarefas() {
       if (scope === "atribuidas" && t.assigneeId !== currentUser.id) return false;
       if (scope === "criadas" && t.createdBy !== currentUser.id) return false;
       if (scope === "mencionadas" && !t.mentions.includes(currentUser.id)) return false;
+      if (scope === "pack" && !(t.assigneeId === currentUser.id && t.inPack)) return false;
       if (sector !== "todos" && t.sector !== sector) return false;
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
