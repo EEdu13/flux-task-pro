@@ -32,10 +32,11 @@ interface NotepadState {
   tabs: Tab[];
 }
 
-const LS_KEY = "fluxo.notepad.v1";
+const LS_PREFIX = "fluxo.notepad.v2:";
+const lsKey = (userId: string) => `${LS_PREFIX}${userId}`;
 const rid = () => `nt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-function loadState(): NotepadState {
+function loadState(userId: string): NotepadState {
   if (typeof window === "undefined") {
     return {
       open: false,
@@ -48,7 +49,7 @@ function loadState(): NotepadState {
     };
   }
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(lsKey(userId));
     if (raw) {
       const p = JSON.parse(raw) as NotepadState;
       if (p.tabs.length === 0) {
@@ -75,7 +76,7 @@ function loadState(): NotepadState {
 
 export function FloatingNotepad() {
   const { createTask, currentUser, isAuthenticated } = useFluxo();
-  const [state, setState] = useState<NotepadState>(() => loadState());
+  const [state, setState] = useState<NotepadState>(() => loadState(currentUser.id));
   const [dragging, setDragging] = useState<null | { dx: number; dy: number }>(null);
   const [resizing, setResizing] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -83,15 +84,22 @@ export function FloatingNotepad() {
   const [suggestions, setSuggestions] = useState<NoteTaskSuggestion[] | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // persist
+  // reload when the active user changes (each user has their own notepad)
+  useEffect(() => {
+    setState(loadState(currentUser.id));
+    setSuggestions(null);
+    setRenamingId(null);
+  }, [currentUser.id]);
+
+  // persist per-user
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(state));
+      localStorage.setItem(lsKey(currentUser.id), JSON.stringify(state));
     } catch {
       /* ignore quota */
     }
-  }, [state]);
+  }, [state, currentUser.id]);
 
   // toggle event from other components
   useEffect(() => {
