@@ -281,6 +281,34 @@ function CallContents({
 
   const showChat = chatOpen && !mini;
 
+  // Screen-share tile drives presenter mode
+  const screenTracks = tracks.filter((t) => t.source === Track.Source.ScreenShare);
+  const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
+  const hasScreen = screenTracks.length > 0;
+  const useFocus =
+    hasScreen && (presenterMode === "auto" || presenterMode === "focus") && !mini;
+
+  // Keyboard shortcuts (ignored in mini mode to avoid trapping global keys)
+  useCallShortcuts({
+    enabled: !mini,
+    onToggleMic: () => {
+      localParticipant.setMicrophoneEnabled(!localParticipant.isMicrophoneEnabled).catch(() => {});
+    },
+    onToggleCam: () => {
+      localParticipant.setCameraEnabled(!localParticipant.isCameraEnabled).catch(() => {});
+    },
+    onEnd,
+    onToggleChat: () => setChatOpen((v) => !v),
+    onRaiseHand: raiseHand,
+    onTogglePresenter: () =>
+      setPresenterMode((m) => (m === "grid" ? "focus" : m === "focus" ? "auto" : "grid")),
+  });
+
+  // Chat lines shape for MeetingExtras (for the AI summary)
+  const chatLines = messages
+    .filter((m) => m.text)
+    .map((m) => ({ at: m.at, from: m.fromName, text: m.text! }));
+
   return (
     <div className="flex h-full w-full flex-col bg-black text-white" data-lk-theme="default">
       <div
@@ -314,9 +342,31 @@ function CallContents({
       </div>
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative min-w-0 flex-1">
-          <GridLayout tracks={tracks} style={{ height: "100%" }}>
-            <ParticipantTile />
-          </GridLayout>
+          {useFocus ? (
+            <FocusLayoutContainer style={{ height: "100%" }}>
+              <CarouselLayout tracks={cameraTracks}>
+                <ParticipantTile />
+              </CarouselLayout>
+              <FocusLayout trackRef={screenTracks[0]} />
+            </FocusLayoutContainer>
+          ) : (
+            <GridLayout tracks={tracks} style={{ height: "100%" }}>
+              <ParticipantTile />
+            </GridLayout>
+          )}
+          {hasScreen && !mini && (
+            <button
+              type="button"
+              onClick={() =>
+                setPresenterMode((m) => (m === "grid" ? "focus" : m === "focus" ? "grid" : "grid"))
+              }
+              className="absolute left-2 top-2 z-20 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white/90 backdrop-blur hover:bg-black/80"
+              title="Alternar entre foco no apresentador e grade"
+            >
+              {useFocus ? <LayoutGrid className="h-3 w-3" /> : <Presentation className="h-3 w-3" />}
+              {useFocus ? "Modo grade" : "Modo apresentador"}
+            </button>
+          )}
           {raises.length > 0 && (
             <div className="pointer-events-none absolute inset-x-0 top-2 z-20 flex flex-col items-center gap-1.5">
               {raises.map((r) => (
