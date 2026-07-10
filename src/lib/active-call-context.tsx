@@ -8,6 +8,8 @@ export interface ActiveCall {
   serverUrl: string;
   identity: string;
   name: string;
+  meetingTitle: string;
+  autoMinute: boolean;
 }
 
 interface ActiveCallContextValue {
@@ -21,9 +23,12 @@ interface ActiveCallContextValue {
     identity: string;
     name: string;
     userId?: string;
+    meetingTitle?: string;
+    autoMinute?: boolean;
   }): Promise<void>;
   endCall(): void;
   setMinimized(v: boolean): void;
+  setMeetingTitle(t: string): void;
 }
 
 const Ctx = createContext<ActiveCallContextValue | null>(null);
@@ -36,10 +41,15 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const startCall = useCallback<ActiveCallContextValue["startCall"]>(
-    async ({ roomName, roomLabel, identity, name, userId }) => {
+    async ({ roomName, roomLabel, identity, name, userId, meetingTitle, autoMinute }) => {
       const prev = activeRef.current;
       if (prev && prev.roomName === roomName && prev.identity === identity) {
         setMinimized(false);
+        if (meetingTitle && meetingTitle !== prev.meetingTitle) {
+          const next = { ...prev, meetingTitle };
+          activeRef.current = next;
+          setActive(next);
+        }
         return;
       }
       setLoading(true);
@@ -60,6 +70,8 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
           serverUrl: res.url,
           identity,
           name,
+          meetingTitle: (meetingTitle && meetingTitle.trim()) || (roomLabel ?? roomName),
+          autoMinute: autoMinute ?? true,
         };
         activeRef.current = next;
         setActive(next);
@@ -80,8 +92,17 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
     setError(null);
   }, []);
 
+  const setMeetingTitle = useCallback((t: string) => {
+    const cur = activeRef.current;
+    if (!cur) return;
+    const title = t.trim() || cur.roomLabel;
+    const next = { ...cur, meetingTitle: title };
+    activeRef.current = next;
+    setActive(next);
+  }, []);
+
   return (
-    <Ctx.Provider value={{ active, minimized, loading, error, startCall, endCall, setMinimized }}>
+    <Ctx.Provider value={{ active, minimized, loading, error, startCall, endCall, setMinimized, setMeetingTitle }}>
       {children}
     </Ctx.Provider>
   );
