@@ -37,13 +37,16 @@ import {
   Presentation,
   Copy,
   Keyboard,
+  Pencil,
+  Check,
+  FileText,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
 import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
 import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
-import { MeetingExtras } from "@/components/meeting-extras";
+import { MeetingExtras, type MeetingExtrasHandle } from "@/components/meeting-extras";
 import {
   filesToAttachments,
   formatBytes,
@@ -141,6 +144,46 @@ function CallContents({
   const [effect, setEffect] = useVideoEffect(cameraTrack);
   const [effectMenu, setEffectMenu] = useState(false);
   const { users, currentUser } = useFluxo();
+  const { active: activeCall, setMeetingTitle } = useActiveCall();
+  const meetingTitle = activeCall?.meetingTitle || roomLabel;
+  const autoMinute = activeCall?.autoMinute ?? true;
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(meetingTitle);
+  useEffect(() => {
+    if (!titleEditing) setTitleDraft(meetingTitle);
+  }, [meetingTitle, titleEditing]);
+  const meetingRef = useRef<MeetingExtrasHandle | null>(null);
+  const [endConfirm, setEndConfirm] = useState<null | "prompt" | "saving">(null);
+  const [endError, setEndError] = useState<string | null>(null);
+
+  const requestEnd = useCallback(() => {
+    const h = meetingRef.current;
+    if (h && h.hasContent() && !h.hasSavedMinute()) {
+      setEndError(null);
+      setEndConfirm("prompt");
+      return;
+    }
+    onEnd();
+  }, [onEnd]);
+
+  const saveThenEnd = useCallback(async () => {
+    const h = meetingRef.current;
+    if (!h) {
+      onEnd();
+      return;
+    }
+    setEndError(null);
+    setEndConfirm("saving");
+    const ok = await h.generateAndSave();
+    if (!ok) {
+      setEndError("Não foi possível gerar a ata. Tente novamente ou saia sem salvar.");
+      setEndConfirm("prompt");
+      return;
+    }
+    setEndConfirm(null);
+    onEnd();
+  }, [onEnd]);
+
   const { ask: askInvite } = useCallInviter();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
@@ -297,7 +340,7 @@ function CallContents({
     onToggleCam: () => {
       localParticipant.setCameraEnabled(!localParticipant.isCameraEnabled).catch(() => {});
     },
-    onEnd,
+    onEnd: requestEnd,
     onToggleChat: () => setChatOpen((v) => !v),
     onRaiseHand: raiseHand,
     onTogglePresenter: () =>
@@ -315,9 +358,58 @@ function CallContents({
         className={`flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 px-2 py-1 ${mini ? "cursor-move select-none" : ""}`}
         onPointerDown={mini ? onDragStart : undefined}
       >
-        <span className="flex items-center gap-1 truncate text-xs font-medium">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-medium">
           {mini && <GripHorizontal className="h-3.5 w-3.5 opacity-60" />}
-          Sala · {roomLabel}
+          {mini || !titleEditing ? (
+            <>
+              <span className="truncate">
+                <span className="opacity-60">{roomLabel} · </span>
+                <span className="font-semibold text-white">{meetingTitle}</span>
+              </span>
+              {!mini && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTitleDraft(meetingTitle);
+                    setTitleEditing(true);
+                  }}
+                  className="rounded p-0.5 text-white/60 hover:bg-white/10 hover:text-white"
+                  title="Renomear reunião (aparece na ata)"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+            </>
+          ) : (
+            <form
+              className="flex min-w-0 flex-1 items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setMeetingTitle(titleDraft);
+                setTitleEditing(false);
+              }}
+            >
+              <input
+                autoFocus
+                value={titleDraft}
+                maxLength={120}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={() => {
+                  setMeetingTitle(titleDraft);
+                  setTitleEditing(false);
+                }}
+                className="min-w-0 flex-1 rounded border border-white/20 bg-white/5 px-1.5 py-0.5 text-xs text-white outline-none focus:border-primary"
+                placeholder="Título da reunião"
+              />
+              <button
+                type="submit"
+                className="rounded p-0.5 text-emerald-300 hover:bg-white/10"
+                title="Salvar título"
+              >
+                <Check className="h-3 w-3" />
+              </button>
+            </form>
+          )}
         </span>
         <div className="flex items-center gap-1">
           {mini && (
@@ -332,7 +424,7 @@ function CallContents({
           )}
           <button
             type="button"
-            onClick={onEnd}
+            onClick={requestEnd}
             className="rounded p-1 text-red-300 hover:bg-red-500/20"
             title="Encerrar chamada"
           >
@@ -416,8 +508,11 @@ function CallContents({
           )}
           {!mini && (
             <MeetingExtras
+              ref={meetingRef}
               roomName={roomName}
               roomLabel={roomLabel}
+              meetingTitle={meetingTitle}
+              autoStartTranscription={autoMinute}
               chatLines={chatLines}
             />
           )}
@@ -623,7 +718,7 @@ function CallContents({
           )}
           <button
             type="button"
-            onClick={onEnd}
+            onClick={requestEnd}
             className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-500"
             title="Encerrar chamada"
           >
@@ -633,6 +728,55 @@ function CallContents({
         </div>
       </div>
       <RoomAudioRenderer />
+      {endConfirm && !mini && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-md rounded-xl border border-white/10 bg-neutral-900 p-5 text-white shadow-2xl">
+            <div className="flex items-center gap-2 text-base font-semibold">
+              <FileText className="h-5 w-5 text-amber-300" />
+              Salvar ata desta reunião?
+            </div>
+            <p className="mt-2 text-xs text-white/70">
+              Há falas transcritas / mensagens de chat que ainda não viraram ata. Se você encerrar
+              sem salvar, todo esse conteúdo será perdido — a ata e o plano de ação em{" "}
+              <b>Atas &amp; Planos</b> só aparecem se você salvar agora.
+            </p>
+            {endError && (
+              <div className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">
+                {endError}
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={endConfirm === "saving"}
+                onClick={() => setEndConfirm(null)}
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10 disabled:opacity-50"
+              >
+                Continuar reunião
+              </button>
+              <button
+                type="button"
+                disabled={endConfirm === "saving"}
+                onClick={() => {
+                  setEndConfirm(null);
+                  onEnd();
+                }}
+                className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+              >
+                Sair sem salvar
+              </button>
+              <button
+                type="button"
+                disabled={endConfirm === "saving"}
+                onClick={saveThenEnd}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-95 disabled:opacity-70"
+              >
+                {endConfirm === "saving" ? "Salvando ata…" : "Salvar ata e sair"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
