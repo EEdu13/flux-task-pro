@@ -171,7 +171,9 @@ export function InlineTaskCreator({
                     <td className="py-1 pl-3 text-[10px] text-muted-foreground">{idx + 1}</td>
                     <td className="py-1 pr-3">
                       <input
-                        ref={(el) => (inputRefs.current[row.id] = el)}
+                        ref={(el) => {
+                          inputRefs.current[row.id] = el;
+                        }}
                         value={row.title}
                         onChange={(e) => update(row.id, { title: e.target.value })}
                         onKeyDown={(e) => {
