@@ -7,6 +7,7 @@ import {
   Flame,
   Clock,
   Filter,
+  Inbox,
   LayoutGrid,
   List,
   Pencil,
@@ -815,16 +816,22 @@ function Badge({ label, color, dot }: { label: string; color: string; dot?: bool
 
 function PackView({
   tasks,
+  externalTasks,
   onEdit,
   packDone,
   onToggleDone,
   onTogglePack,
+  onCompleteExternal,
+  currentUserId,
 }: {
   tasks: Task[];
+  externalTasks: Task[];
   onEdit: (id: string) => void;
   packDone: Set<string>;
   onToggleDone: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
+  onCompleteExternal: (id: string) => void;
+  currentUserId: string;
 }) {
   const done = tasks.filter((t) => packDone.has(t.id));
   const pending = tasks.filter((t) => !packDone.has(t.id));
@@ -910,6 +917,112 @@ function PackView({
             </>
           )}
         </div>
+      )}
+
+      {/* --- Tarefas externas do dia ------------------------------------ */}
+      <div className="pt-6">
+        <div className="mb-2 flex items-center gap-2">
+          <Inbox className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Chegaram pra hoje</h3>
+          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {externalTasks.length}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            · fora do pack — atribuídas, menções ou criadas com prazo até hoje
+          </span>
+        </div>
+        {externalTasks.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-xs text-muted-foreground">
+            Nada de fora do pack pra hoje. Foque no essencial.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {externalTasks.map((t) => (
+              <ExternalRow
+                key={t.id}
+                task={t}
+                currentUserId={currentUserId}
+                onEdit={onEdit}
+                onComplete={onCompleteExternal}
+                onTogglePack={onTogglePack}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExternalRow({
+  task,
+  currentUserId,
+  onEdit,
+  onComplete,
+  onTogglePack,
+}: {
+  task: Task;
+  currentUserId: string;
+  onEdit: (id: string) => void;
+  onComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
+}) {
+  const sec = sectors.find((s) => s.id === task.sector);
+  const isMention =
+    task.mentions.includes(currentUserId) && task.assigneeId !== currentUserId;
+  const isMine = task.assigneeId === currentUserId;
+  const dueMs = new Date(task.dueDate).getTime();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const isLate = dueMs < startOfToday.getTime();
+  const origin = isMention ? "Mencionaram você" : isMine ? "Atribuída a você" : "Criada por você";
+  return (
+    <div className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm transition hover:shadow-md">
+      <button
+        onClick={() => onComplete(task.id)}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-border transition hover:border-emerald-500 hover:bg-emerald-500/10"
+        title="Marcar concluída"
+      />
+      <button onClick={() => onEdit(task.id)} className="flex-1 text-left">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{task.title}</span>
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
+              isMention
+                ? "bg-primary/15 text-primary"
+                : isLate
+                  ? "bg-destructive/15 text-destructive"
+                  : "bg-secondary text-muted-foreground"
+            }`}
+          >
+            {isLate ? "Atrasada" : origin}
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>
+            Prazo{" "}
+            {new Date(task.dueDate).toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "short",
+            })}
+          </span>
+          {task.recurring && (
+            <span className="inline-flex items-center gap-0.5">
+              <Repeat className="h-2.5 w-2.5" /> Recorrente
+            </span>
+          )}
+          <Badge label={priorityLabels[task.priority]} color={priorityColor[task.priority]} />
+        </div>
+      </button>
+      <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
+      {isMine && (
+        <button
+          onClick={() => onTogglePack(task.id, true)}
+          title="Adicionar ao Meu pack"
+          className="rounded p-1.5 text-muted-foreground opacity-70 transition hover:bg-amber-500/10 hover:text-amber-500 hover:opacity-100"
+        >
+          <Star className="h-4 w-4" />
+        </button>
       )}
     </div>
   );
