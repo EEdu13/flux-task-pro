@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
+import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { formatDueBucket } from "@/lib/use-theme";
 import {
   freqLabels,
@@ -323,6 +324,9 @@ function MinhasTarefas() {
         </div>
 
         <div className="mt-4">
+          <div className="mb-3">
+            <InlineTaskCreator />
+          </div>
           {view === "quadro" ? (
             <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
           ) : (
