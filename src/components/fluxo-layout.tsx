@@ -236,6 +236,18 @@ export function FluxoLayout({
             );
           })}
 
+          <button
+            type="button"
+            onClick={openNotepad}
+            title={collapsed ? "Bloco de notas" : undefined}
+            className={`flex items-center gap-2.5 rounded-md text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground ${
+              collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"
+            }`}
+          >
+            <StickyNote className="h-4 w-4 text-amber-400" />
+            {!collapsed && <span className="flex-1 text-left">Bloco de notas</span>}
+          </button>
+
           {/* Salas Online — with submenu */}
           {(() => {
             const salasActive = pathname === "/salas" || pathname.startsWith("/salas/");
