@@ -12,6 +12,8 @@ import type {
   ActivityKind,
   Attachment,
   CompletionEntry,
+  MeetingMinute,
+  MinuteTopic,
   Meta,
   Notification,
   Status,
@@ -74,6 +76,12 @@ interface Store {
   recentContactUsers: (limit?: number) => User[];
   dismissRoomCall: (notifId: string) => void;
   addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
+  // meeting minutes
+  minutes: MeetingMinute[];
+  saveMinute: (m: Omit<MeetingMinute, "id" | "createdAt" | "createdBy">) => MeetingMinute;
+  deleteMinute: (id: string) => void;
+  minuteTopicToTask: (minuteId: string, topicId: string) => string | undefined;
+  visibleMinutes: () => MeetingMinute[];
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
@@ -99,6 +107,7 @@ interface Persisted {
   callCounts: Record<string, Record<string, Record<string, number>>>;
   // shape: { [callerUserId]: { [roomName]: { [targetUserId]: count } } }
   recentContactsByUser?: Record<string, string[]>;
+  minutes?: MeetingMinute[];
 }
 
 function load(): Persisted {
@@ -112,6 +121,7 @@ function load(): Persisted {
     isAuthenticated: false,
     callCounts: {},
     recentContactsByUser: {},
+    minutes: [],
   };
   if (typeof window === "undefined") return defaults;
   try {
