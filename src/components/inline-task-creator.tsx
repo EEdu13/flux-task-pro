@@ -51,6 +51,7 @@ export function InlineTaskCreator({
     makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector }),
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const focusRow = (id: string) => {
     requestAnimationFrame(() => {
@@ -92,33 +93,34 @@ export function InlineTaskCreator({
     return true;
   };
 
-  const handleEnter = (row: DraftRow) => {
-    const ok = commitRow(row);
-    if (!ok) {
-      toast.error("Digite um título");
-      return;
+  const jumpNext = (rowId: string) => {
+    const idx = rows.findIndex((r) => r.id === rowId);
+    const nxt = rows[idx + 1];
+    if (nxt) {
+      focusRow(nxt.id);
+    } else {
+      addRow(rowId);
     }
-    // reset the row (Notion style: same row cleared, new row appended and focused)
-    setRows((rs) => {
-      const next = rs.map((r) =>
-        r.id === row.id ? { ...r, title: "" } : r,
-      );
-      const fresh = makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector });
-      focusRow(fresh.id);
-      return [...next.filter((r) => r.id !== row.id), fresh];
-    });
-    toast.success("Tarefa criada", { duration: 1200 });
   };
 
-  const submitAll = () => {
-    const valid = rows.filter((r) => r.title.trim());
-    if (valid.length === 0) {
-      toast.error("Nenhum título preenchido");
+  const validRows = rows.filter((r) => r.title.trim());
+
+  const requestSubmitAll = () => {
+    if (validRows.length === 0) {
+      toast.error("Preencha ao menos um título");
       return;
     }
+    setConfirmOpen(true);
+  };
+
+  const confirmSubmitAll = () => {
+    const valid = rows.filter((r) => r.title.trim());
     valid.forEach(commitRow);
-    toast.success(`${valid.length} tarefa${valid.length > 1 ? "s" : ""} criada${valid.length > 1 ? "s" : ""}`);
+    toast.success(
+      `${valid.length} tarefa${valid.length > 1 ? "s" : ""} criada${valid.length > 1 ? "s" : ""}`,
+    );
     setRows([makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })]);
+    setConfirmOpen(false);
   };
 
   const remove = (id: string) => {
