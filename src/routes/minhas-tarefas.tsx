@@ -403,10 +403,25 @@ function MinhasTarefas() {
           {scope === "pack" ? (
             <PackView
               tasks={visible}
+              externalTasks={tasks.filter((t) => {
+                if (t.assigneeId !== currentUser.id && !t.mentions.includes(currentUser.id))
+                  return false;
+                if (t.inPack && t.assigneeId === currentUser.id) return false; // já está no pack
+                if (t.status === "concluida") return false;
+                const due = new Date(t.dueDate);
+                const now = new Date();
+                return (
+                  due.getFullYear() === now.getFullYear() &&
+                  due.getMonth() === now.getMonth() &&
+                  due.getDate() === now.getDate()
+                ) || due.getTime() < now.setHours(0, 0, 0, 0); // hoje ou atrasadas
+              })}
               onEdit={openTask}
               packDone={packDone}
               onToggleDone={togglePackDone}
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
+              onCompleteExternal={(id) => updateTask(id, { status: "concluida" })}
+              currentUserId={currentUser.id}
             />
           ) : view === "quadro" ? (
             <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} onTogglePack={(id, v) => updateTask(id, { inPack: v })} />
