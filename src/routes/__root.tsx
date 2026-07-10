@@ -16,6 +16,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
 import { CallInviterProvider } from "@/lib/call-inviter-context";
+import { RoomPresenceProvider } from "@/lib/room-presence-context";
 
 function NotFoundComponent() {
   return (
@@ -129,14 +130,16 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <FluxoProvider>
-        <ActiveCallProvider>
-          <CallInviterProvider>
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
-            <ActiveCallWidget />
-            <Toaster />
-          </CallInviterProvider>
-        </ActiveCallProvider>
+        <RoomPresenceProvider>
+          <ActiveCallProvider>
+            <CallInviterProvider>
+              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+              <Outlet />
+              <ActiveCallWidget />
+              <Toaster />
+            </CallInviterProvider>
+          </ActiveCallProvider>
+        </RoomPresenceProvider>
       </FluxoProvider>
     </QueryClientProvider>
   );
