@@ -14,6 +14,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listSectorRooms } from "@/lib/livekit-token.functions";
 import { useCallInviter } from "@/lib/call-inviter-context";
+import { useRoomPresence } from "@/lib/room-presence-context";
 
 export const Route = createFileRoute("/salas/")({
   component: SalasPage,
@@ -33,6 +34,7 @@ interface RoomInfo {
   label: string;
   isPrivate: boolean;
   participants: { identity: string; name: string }[];
+  activeSpeakers?: string[];
 }
 
 function SalasPage() {
@@ -40,6 +42,7 @@ function SalasPage() {
   const recentUsers = useFluxo().recentContactUsers(5);
   const navigate = useNavigate();
   const { ask } = useCallInviter();
+  const { speakersByRoom } = useRoomPresence();
   const [bySector, setBySector] = useState<Record<string, RoomInfo[]>>({});
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [openFor, setOpenFor] = useState<string | null>(null);
@@ -60,6 +63,7 @@ function SalasPage() {
             label,
             isPrivate: r.isPrivate,
             participants: r.participants,
+            activeSpeakers: r.activeSpeakers,
           }));
         }
         setBySector(mapped);
@@ -164,6 +168,7 @@ function SalasPage() {
                    {rooms.map((room) => {
                      const n = parseSalaIndex(room.name, r.name);
                      const inUse = room.participants.length > 0;
+                     const speaking = new Set(speakersByRoom[room.name] ?? room.activeSpeakers ?? []);
                      const stateClasses = room.isPrivate
                        ? "border-amber-500/60 bg-amber-500/5 hover:border-amber-500 hover:bg-amber-500/10"
                        : inUse
@@ -218,9 +223,20 @@ function SalasPage() {
                              {room.participants.slice(0, 5).map((p) => (
                                <span
                                  key={p.identity}
-                                 className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                                 className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition ${
+                                   speaking.has(p.identity)
+                                     ? "bg-primary/20 text-primary ring-2 ring-primary/60"
+                                     : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                 }`}
+                                 title={speaking.has(p.identity) ? "Falando agora" : undefined}
                                >
-                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                 <span
+                                   className={`h-1.5 w-1.5 rounded-full ${
+                                     speaking.has(p.identity)
+                                       ? "animate-pulse bg-primary"
+                                       : "bg-emerald-500"
+                                   }`}
+                                 />
                                  {p.name || p.identity}
                                </span>
                              ))}
