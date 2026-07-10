@@ -219,6 +219,7 @@ function MinhasTarefas() {
       atribuidas: active.filter((t) => t.assigneeId === currentUser.id).length,
       criadas: active.filter((t) => t.createdBy === currentUser.id).length,
       mencionadas: active.filter((t) => t.mentions.includes(currentUser.id)).length,
+      pack: active.filter((t) => t.assigneeId === currentUser.id && t.inPack).length,
     } as Record<Scope, number>;
   }, [tasks, users, currentUser]);
 
@@ -234,14 +235,23 @@ function MinhasTarefas() {
                 key={s}
                 onClick={() => setScope(s)}
                 className={`relative px-4 py-2 text-sm font-medium transition ${
-                  scope === s ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  scope === s
+                    ? s === "pack"
+                      ? "text-amber-500"
+                      : "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {scopeLabels[s]}
+                <span className="inline-flex items-center gap-1.5">
+                  {s === "pack" && <Flame className="h-3.5 w-3.5" />}
+                  {scopeLabels[s]}
+                </span>
                 {scopeCounts[s] > 0 && (
                   <span
                     className={`ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                      s === "mencionadas"
+                      s === "pack"
+                        ? "bg-amber-500 text-white"
+                        : s === "mencionadas"
                         ? "bg-primary text-primary-foreground"
                         : scope === s
                           ? "bg-primary/15 text-primary"
@@ -251,7 +261,13 @@ function MinhasTarefas() {
                     {scopeCounts[s]}
                   </span>
                 )}
-                {scope === s && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+                {scope === s && (
+                  <span
+                    className={`absolute inset-x-2 -bottom-px h-0.5 rounded-full ${
+                      s === "pack" ? "bg-amber-500" : "bg-primary"
+                    }`}
+                  />
+                )}
               </button>
             ))}
           </div>
