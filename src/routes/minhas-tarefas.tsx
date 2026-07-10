@@ -414,10 +414,12 @@ function TaskList({
   tasks,
   onEdit,
   onComplete,
+  onTogglePack,
 }: {
   tasks: Task[];
   onEdit: (id: string) => void;
   onComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
 }) {
   const { users } = useFluxo();
   const groups: { key: string; label: string; items: Task[] }[] = [
@@ -516,12 +518,25 @@ function TaskList({
                         <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
                       </td>
                       <td className="py-2.5 pr-4 text-right">
-                        <button
-                          onClick={() => onEdit(t.id)}
-                          className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => onTogglePack(t.id, !t.inPack)}
+                            title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
+                            className={`rounded p-1 transition ${
+                              t.inPack
+                                ? "text-amber-500 hover:bg-amber-500/10"
+                                : "text-muted-foreground opacity-0 hover:bg-secondary hover:text-amber-500 group-hover:opacity-100"
+                            }`}
+                          >
+                            <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
+                          </button>
+                          <button
+                            onClick={() => onEdit(t.id)}
+                            className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
