@@ -403,7 +403,63 @@ function CallContents({
           }}
           style={{ border: "none", padding: 0, background: "transparent" }}
         />
-        <div className="flex items-center gap-1.5">
+        <div className="relative flex items-center gap-1.5">
+          {!mini && isPrivate && roomPin && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard?.writeText(roomPin).catch(() => {})}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/60 bg-amber-400/15 px-2 py-1.5 font-mono text-xs font-bold tracking-widest text-amber-200 hover:bg-amber-400/25"
+              title="PIN da sala — clique para copiar e compartilhar"
+            >
+              <Copy className="h-3 w-3" /> {roomPin}
+            </button>
+          )}
+          {!mini && (
+            <MeetingExtras
+              roomName={roomName}
+              roomLabel={roomLabel}
+              chatLines={chatLines}
+            />
+          )}
+          {!mini && (
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white hover:bg-white/10"
+              title="Atalhos de teclado"
+            >
+              <Keyboard className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {shortcutsOpen && !mini && (
+            <div className="absolute bottom-full right-0 z-40 mb-1 w-64 rounded-md border border-white/10 bg-neutral-900 p-3 text-xs text-white shadow-xl">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                  Atalhos
+                </span>
+                <button onClick={() => setShortcutsOpen(false)} className="rounded p-0.5 hover:bg-white/10">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <ul className="space-y-1.5">
+                {[
+                  ["M", "Mutar / desmutar mic"],
+                  ["V", "Ligar / desligar câmera"],
+                  ["C", "Abrir / fechar chat"],
+                  ["H", "Levantar a mão"],
+                  ["P", "Alternar modo apresentador"],
+                  ["E", "Encerrar chamada"],
+                ].map(([key, desc]) => (
+                  <li key={key} className="flex items-center justify-between gap-2">
+                    <span className="text-white/70">{desc}</span>
+                    <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
+                      {key}
+                    </kbd>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {!mini && (
             <button
               type="button"
