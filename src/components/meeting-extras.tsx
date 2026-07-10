@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRoomContext, useLocalParticipant, useParticipants } from "@livekit/components-react";
 import { RoomEvent, Track } from "livekit-client";
 import type { RemoteAudioTrack, LocalAudioTrack } from "livekit-client";
@@ -244,20 +252,25 @@ function useTranscription(pushLine: (l: Line) => void, participantName: string) 
 }
 
 export interface MeetingExtrasHandle {
-  transcript: Line[];
-  addChatLine: (l: Line) => void;
-  triggerSummary: () => void;
+  hasContent: () => boolean;
+  hasSavedMinute: () => boolean;
+  generateAndSave: () => Promise<boolean>;
+  openPanel: () => void;
 }
 
-export function MeetingExtras({
-  roomName,
-  roomLabel,
-  chatLines,
-}: {
-  roomName: string;
-  roomLabel: string;
-  chatLines: Line[];
-}) {
+export const MeetingExtras = forwardRef<
+  MeetingExtrasHandle,
+  {
+    roomName: string;
+    roomLabel: string;
+    meetingTitle?: string;
+    autoStartTranscription?: boolean;
+    chatLines: Line[];
+  }
+>(function MeetingExtras(
+  { roomName, roomLabel, meetingTitle, autoStartTranscription, chatLines },
+  ref,
+) {
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
   const participants = useParticipants();
@@ -304,10 +317,24 @@ export function MeetingExtras({
   const meName = localParticipant.name || localParticipant.identity || "Eu";
   const tr = useTranscription(pushLine, meName);
 
+  // Auto-start transcription if requested (once).
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (!autoStartTranscription) return;
+    if (!tr.supported) return;
+    autoStartedRef.current = true;
+    tr.setEnabled(true);
+  }, [autoStartTranscription, tr]);
+
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [summaryState, setSummaryState] = useState<
     { kind: "idle" } | { kind: "loading" } | { kind: "done"; md: string } | { kind: "error"; msg: string }
   >({ kind: "idle" });
+  const savedRef = useRef(false);
+
+  const effectiveLabel = (meetingTitle && meetingTitle.trim()) || roomLabel;
 
   const generate = useCallback(async () => {
     setSummaryState({ kind: "loading" });
@@ -315,7 +342,7 @@ export function MeetingExtras({
       const participantNames = participants.map((p) => p.name || p.identity);
       const res = await summarizeMeeting({
         data: {
-          roomLabel,
+          roomLabel: effectiveLabel,
           participants: participantNames,
           transcript,
           chat: chatLines,
@@ -336,19 +363,42 @@ export function MeetingExtras({
       }));
       saveMinute({
         roomName,
-        roomLabel,
+        roomLabel: effectiveLabel,
         participantIds,
         participantNames,
         markdown: res.markdown,
         topics,
       });
+      savedRef.current = true;
+      return true;
     } catch (e) {
       setSummaryState({
         kind: "error",
         msg: e instanceof Error ? e.message : "Falha ao gerar ata",
       });
+      return false;
     }
-  }, [roomLabel, roomName, participants, transcript, chatLines, users, saveMinute]);
+  }, [effectiveLabel, roomName, participants, transcript, chatLines, users, saveMinute]);
+
+  const hasContent = useCallback(
+    () => transcript.length > 0 || chatLines.length > 0,
+    [transcript.length, chatLines.length],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      hasContent,
+      hasSavedMinute: () => savedRef.current,
+      generateAndSave: async () => {
+        if (savedRef.current) return true;
+        if (!hasContent()) return true;
+        return await generate();
+      },
+      openPanel: () => setTranscriptOpen(true),
+    }),
+    [hasContent, generate],
+  );
 
   const recDuration = useMemo(() => {
     if (!rec.recording || !rec.startedAt) return "";
@@ -405,6 +455,9 @@ export function MeetingExtras({
             {transcript.length}
           </span>
         )}
+        {hasContent() && !savedRef.current && (
+          <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-amber-400" title="Ata não salva" />
+        )}
       </button>
 
       {transcriptOpen && (
@@ -412,8 +465,22 @@ export function MeetingExtras({
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="flex items-center gap-1.5 text-sm font-semibold">
               <FileText className="h-4 w-4" /> Ata da reunião
+              {hasContent() && !savedRef.current && (
+                <span className="rounded-full border border-amber-400/50 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
+                  Não salva
+                </span>
+              )}
             </span>
-            <button onClick={() => setTranscriptOpen(false)} className="rounded p-1 hover:bg-white/10">
+            <button
+              onClick={() => {
+                if (hasContent() && !savedRef.current) {
+                  setCloseConfirmOpen(true);
+                } else {
+                  setTranscriptOpen(false);
+                }
+              }}
+              className="rounded p-1 hover:bg-white/10"
+            >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -492,6 +559,50 @@ export function MeetingExtras({
           </div>
         </div>
       )}
+
+      {closeConfirmOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-neutral-900 p-4 text-white shadow-2xl">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <FileText className="h-4 w-4 text-amber-300" />
+              Salvar ata antes de fechar?
+            </div>
+            <p className="mt-2 text-xs text-white/70">
+              Você tem falas transcritas ou mensagens de chat que ainda não viraram ata. Se fechar
+              sem salvar, esse conteúdo será perdido quando a reunião terminar.
+            </p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCloseConfirmOpen(false)}
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
+              >
+                Continuar aberto
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCloseConfirmOpen(false);
+                  setTranscriptOpen(false);
+                }}
+                className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30"
+              >
+                Fechar sem salvar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setCloseConfirmOpen(false);
+                  await generate();
+                }}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-95"
+              >
+                Salvar ata agora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
-}
+});
