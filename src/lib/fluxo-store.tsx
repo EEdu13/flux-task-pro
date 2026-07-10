@@ -12,6 +12,7 @@ import type {
   ActivityKind,
   Attachment,
   CompletionEntry,
+  MeetingMinute,
   Meta,
   Notification,
   Status,
@@ -74,6 +75,12 @@ interface Store {
   recentContactUsers: (limit?: number) => User[];
   dismissRoomCall: (notifId: string) => void;
   addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
+  // meeting minutes
+  minutes: MeetingMinute[];
+  saveMinute: (m: Omit<MeetingMinute, "id" | "createdAt" | "createdBy">) => MeetingMinute;
+  deleteMinute: (id: string) => void;
+  minuteTopicToTask: (minuteId: string, topicId: string) => string | undefined;
+  visibleMinutes: () => MeetingMinute[];
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
@@ -99,6 +106,7 @@ interface Persisted {
   callCounts: Record<string, Record<string, Record<string, number>>>;
   // shape: { [callerUserId]: { [roomName]: { [targetUserId]: count } } }
   recentContactsByUser?: Record<string, string[]>;
+  minutes?: MeetingMinute[];
 }
 
 function load(): Persisted {
@@ -112,6 +120,7 @@ function load(): Persisted {
     isAuthenticated: false,
     callCounts: {},
     recentContactsByUser: {},
+    minutes: [],
   };
   if (typeof window === "undefined") return defaults;
   try {
@@ -745,6 +754,77 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       }),
     openTask: (id) => setTaskDialog({ open: true, editingId: id }),
     closeTaskDialog: () => setTaskDialog({ open: false }),
+
+    minutes: state.minutes ?? [],
+    saveMinute: (m) => {
+      const minute: MeetingMinute = {
+        ...m,
+        id: rid("min"),
+        createdAt: nowIso(),
+        createdBy: currentUser.id,
+      };
+      setState((s) => ({ ...s, minutes: [minute, ...(s.minutes ?? [])] }));
+      return minute;
+    },
+    deleteMinute: (id) =>
+      setState((s) => ({ ...s, minutes: (s.minutes ?? []).filter((x) => x.id !== id) })),
+    minuteTopicToTask: (minuteId, topicId) => {
+      const minute = (state.minutes ?? []).find((m) => m.id === minuteId);
+      const topic = minute?.topics.find((t) => t.id === topicId);
+      if (!minute || !topic) return undefined;
+      if (topic.taskId) return topic.taskId;
+      const newTaskId = rid("t");
+      setState((s) => {
+        const maxOrder =
+          Math.max(0, ...s.tasks.filter((x) => x.status === "pendente").map((x) => x.order)) + 1;
+        const task: Task = {
+          id: newTaskId,
+          title: topic.text.slice(0, 140),
+          description: `Gerado automaticamente da ata "${minute.roomLabel}" em ${new Date(
+            minute.createdAt,
+          ).toLocaleDateString("pt-BR")}.`,
+          sector: currentUser.sector,
+          createdBy: currentUser.id,
+          assigneeId: currentUser.id,
+          mentions: [],
+          frequency: "diaria",
+          status: "pendente",
+          score: 10,
+          dueDate: new Date(Date.now() + 3 * 24 * 3600e3).toISOString(),
+          recurring: false,
+          priority: "media",
+          tags: ["ata"],
+          createdAt: nowIso(),
+          order: maxOrder,
+          comments: [],
+          checklist: [],
+          activity: [
+            {
+              id: rid("a"),
+              at: nowIso(),
+              userId: currentUser.id,
+              kind: "criada",
+              text: `criou esta tarefa a partir da ata "${minute.roomLabel}"`,
+            },
+          ],
+        };
+        const minutes = (s.minutes ?? []).map((mm) =>
+          mm.id === minuteId
+            ? {
+                ...mm,
+                topics: mm.topics.map((t) => (t.id === topicId ? { ...t, taskId: newTaskId } : t)),
+              }
+            : mm,
+        );
+        return { ...s, tasks: [task, ...s.tasks], minutes };
+      });
+      return newTaskId;
+    },
+    visibleMinutes: () =>
+      (state.minutes ?? []).filter(
+        (m) =>
+          m.createdBy === currentUser.id || m.participantIds.includes(currentUser.id),
+      ),
   };
 
   return <StoreCtx.Provider value={store}>{children}</StoreCtx.Provider>;
