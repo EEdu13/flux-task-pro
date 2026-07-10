@@ -30,6 +30,8 @@ import { roleLabels } from "@/lib/fluxo-types";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
 import { OnboardingModal } from "@/components/onboarding-modal";
+import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { X } from "lucide-react";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
@@ -87,6 +89,7 @@ export function FluxoLayout({
   const { ask: askInvite } = useCallInviter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
+  const [gridOpen, setGridOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
@@ -144,7 +147,7 @@ export function FluxoLayout({
       if (inField) return;
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
-        openNewTask();
+        setGridOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -177,7 +180,7 @@ export function FluxoLayout({
         </div>
 
         <button
-          onClick={() => openNewTask()}
+          onClick={() => setGridOpen(true)}
           title="Criar tarefa (N)"
           className={`mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-sidebar-primary text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110 ${
             collapsed ? "mx-2 h-9 w-9 self-center p-0" : "mx-3 px-3 py-2"
@@ -497,7 +500,7 @@ export function FluxoLayout({
           <div className="ml-auto flex items-center gap-2">
             {actions}
             <button
-              onClick={() => openNewTask()}
+              onClick={() => setGridOpen(true)}
               className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:brightness-110"
             >
               <Plus className="h-4 w-4" /> Nova
@@ -630,6 +633,43 @@ export function FluxoLayout({
       <TaskDialog />
       {needsOnboarding && <OnboardingModal />}
       <IncomingCall />
+      {gridOpen && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm">
+          <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <Plus className="h-4 w-4 text-primary" />
+                <div className="text-sm font-semibold">Criar tarefas em grade</div>
+                <span className="hidden text-[11px] text-muted-foreground sm:inline">
+                  Digite, Tab para próxima linha, Enter para criar todas
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setGridOpen(false);
+                    openNewTask();
+                  }}
+                  className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
+                  title="Prefiro o formulário detalhado"
+                >
+                  Modo detalhado
+                </button>
+                <button
+                  onClick={() => setGridOpen(false)}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted"
+                  title="Fechar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <InlineTaskCreator />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
