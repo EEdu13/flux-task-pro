@@ -801,16 +801,18 @@ function Badge({ label, color, dot }: { label: string; color: string; dot?: bool
 function PackView({
   tasks,
   onEdit,
-  onComplete,
+  packDone,
+  onToggleDone,
   onTogglePack,
 }: {
   tasks: Task[];
   onEdit: (id: string) => void;
-  onComplete: (id: string) => void;
+  packDone: Set<string>;
+  onToggleDone: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
 }) {
-  const done = tasks.filter((t) => t.status === "concluida");
-  const pending = tasks.filter((t) => t.status !== "concluida");
+  const done = tasks.filter((t) => packDone.has(t.id));
+  const pending = tasks.filter((t) => !packDone.has(t.id));
   const total = tasks.length;
   const pct = total === 0 ? 0 : Math.round((done.length / total) * 100);
   const today = new Date().toLocaleDateString("pt-BR", {
@@ -869,8 +871,9 @@ function PackView({
             <PackRow
               key={t.id}
               task={t}
+              isDone={false}
               onEdit={onEdit}
-              onComplete={onComplete}
+              onToggleDone={onToggleDone}
               onTogglePack={onTogglePack}
             />
           ))}
@@ -883,8 +886,9 @@ function PackView({
                 <PackRow
                   key={t.id}
                   task={t}
+                  isDone
                   onEdit={onEdit}
-                  onComplete={onComplete}
+                  onToggleDone={onToggleDone}
                   onTogglePack={onTogglePack}
                 />
               ))}
@@ -898,17 +902,18 @@ function PackView({
 
 function PackRow({
   task,
+  isDone,
   onEdit,
-  onComplete,
+  onToggleDone,
   onTogglePack,
 }: {
   task: Task;
+  isDone: boolean;
   onEdit: (id: string) => void;
-  onComplete: (id: string) => void;
+  onToggleDone: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
 }) {
   const sec = sectors.find((s) => s.id === task.sector);
-  const isDone = task.status === "concluida";
   return (
     <div
       className={`group flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm transition hover:shadow-md ${
@@ -916,13 +921,13 @@ function PackRow({
       }`}
     >
       <button
-        onClick={() => !isDone && onComplete(task.id)}
+        onClick={() => onToggleDone(task.id)}
         className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
           isDone
             ? "border-emerald-500 bg-emerald-500 text-white"
             : "border-amber-500/60 hover:bg-amber-500/10"
         }`}
-        title={isDone ? "Concluída" : "Marcar concluída"}
+        title={isDone ? "Desmarcar" : "Concluir hoje"}
       >
         {isDone && <CheckCircle2 className="h-4 w-4" />}
       </button>
