@@ -15,6 +15,33 @@ import {
 } from "lucide-react";
 import { updateActiveSpeakers } from "@/lib/livekit-token.functions";
 import { summarizeMeeting } from "@/lib/meeting-summary.functions";
+import { useFluxo } from "@/lib/fluxo-store";
+import type { MinuteTopic } from "@/lib/fluxo-types";
+
+/** Parse the AI markdown to extract actionable topics (decisions, next steps, attention). */
+function parseTopics(md: string): Omit<MinuteTopic, "id">[] {
+  const topics: Omit<MinuteTopic, "id">[] = [];
+  const sections: Array<{ re: RegExp; kind: MinuteTopic["kind"] }> = [
+    { re: /###\s*Decis[õo]es tomadas([\s\S]*?)(?=\n###|$)/i, kind: "decisao" },
+    { re: /###\s*Pr[óo]ximos passos[^\n]*([\s\S]*?)(?=\n###|$)/i, kind: "proximo" },
+    { re: /###\s*Pontos de aten[cç][ãa]o([\s\S]*?)(?=\n###|$)/i, kind: "atencao" },
+  ];
+  for (const { re, kind } of sections) {
+    const m = md.match(re);
+    if (!m) continue;
+    const body = m[1];
+    const lines = body.split(/\r?\n/);
+    for (const line of lines) {
+      const bullet = line.match(/^\s*-\s*(?:\[[ x]\]\s*)?(.+?)\s*$/);
+      if (!bullet) continue;
+      const text = bullet[1].trim();
+      if (!text) continue;
+      if (/^nenhum[ao]/i.test(text)) continue;
+      topics.push({ text, kind });
+    }
+  }
+  return topics;
+}
 
 type Line = { at: number; from: string; text: string };
 
@@ -234,6 +261,7 @@ export function MeetingExtras({
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
   const participants = useParticipants();
+  const { users, saveMinute } = useFluxo();
   useActiveSpeakerBroadcast(roomName);
 
   const [transcript, setTranscript] = useState<Line[]>([]);
@@ -294,13 +322,33 @@ export function MeetingExtras({
         },
       });
       setSummaryState({ kind: "done", md: res.markdown });
+      // Persist minute in the store, visible only to participants.
+      const participantIds = Array.from(
+        new Set(
+          participants
+            .map((p) => (p.identity || "").split("-")[0])
+            .filter((id) => users.some((u) => u.id === id)),
+        ),
+      );
+      const topics = parseTopics(res.markdown).map((t) => ({
+        ...t,
+        id: `top-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      }));
+      saveMinute({
+        roomName,
+        roomLabel,
+        participantIds,
+        participantNames,
+        markdown: res.markdown,
+        topics,
+      });
     } catch (e) {
       setSummaryState({
         kind: "error",
         msg: e instanceof Error ? e.message : "Falha ao gerar ata",
       });
     }
-  }, [roomLabel, participants, transcript, chatLines]);
+  }, [roomLabel, roomName, participants, transcript, chatLines, users, saveMinute]);
 
   const recDuration = useMemo(() => {
     if (!rec.recording || !rec.startedAt) return "";
