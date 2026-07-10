@@ -267,7 +267,17 @@ function RoomPage() {
   return (
     <FluxoLayout title={`Sala: ${roomLabel}`} breadcrumb="Salas Online" actions={layoutActions}>
       <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl">
-        {access.kind === "knocking" ? (
+        {access.kind === "pin-required" ? (
+          <PinScreen
+            roomLabel={roomLabel}
+            value={pinInput}
+            onChange={setPinInput}
+            error={pinError}
+            attempts={pinAttempts}
+            onSubmit={tryPin}
+            onCancel={() => navigate({ to: "/salas" })}
+          />
+        ) : access.kind === "knocking" ? (
           <WaitingScreen roomLabel={roomLabel} onCancel={() => navigate({ to: "/salas" })} />
         ) : access.kind === "denied" ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card text-center">
@@ -300,11 +310,22 @@ function RoomPage() {
               Voltar
             </button>
           </div>
+        ) : showPreCall && (access.kind === "open" || access.kind === "member") ? (
+          <PreCall
+            roomLabel={roomLabel}
+            onEnter={() => setShowPreCall(false)}
+            onCancel={() => navigate({ to: "/salas" })}
+          />
         ) : (
           <div
             id={ACTIVE_CALL_MOUNT_ID}
             className="relative h-full w-full overflow-hidden rounded-xl border border-border bg-card"
           >
+            {pinShown && (
+              <div className="absolute right-3 top-3 z-30 rounded-md border border-amber-500/50 bg-black/70 px-2 py-1 text-[10px] font-mono text-amber-300">
+                PIN: <span className="font-bold tracking-widest">{pinShown}</span>
+              </div>
+            )}
             {connecting && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
                 Conectando à sala…
@@ -368,6 +389,74 @@ function WaitingScreen({ roomLabel, onCancel }: { roomLabel: string; onCancel: (
       >
         Cancelar
       </button>
+    </div>
+  );
+}
+
+function PinScreen({
+  roomLabel,
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+  error,
+  attempts,
+}: {
+  roomLabel: string;
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  error: string | null;
+  attempts: number;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-border bg-card p-6 text-center">
+      <KeyRound className="h-10 w-10 text-amber-500" />
+      <div>
+        <div className="text-sm font-semibold">Sala trancada</div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          A sala <span className="font-medium text-foreground">{roomLabel}</span> exige PIN. Digite
+          o código que você recebeu — ou peça pra bater na porta.
+        </div>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit();
+        }}
+        className="flex w-full max-w-xs flex-col items-center gap-2"
+      >
+        <input
+          autoFocus
+          inputMode="numeric"
+          maxLength={8}
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
+          placeholder="000000"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-center font-mono text-2xl tracking-[0.5em] outline-none focus:border-primary"
+        />
+        {error && (
+          <div className="text-[11px] text-destructive">
+            {error} {attempts > 0 && `(tentativa ${attempts}/3)`}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-border bg-secondary px-3 py-1.5 text-sm hover:bg-secondary/70"
+          >
+            Voltar
+          </button>
+          <button
+            type="submit"
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-95"
+          >
+            Entrar
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
