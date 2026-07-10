@@ -345,15 +345,29 @@ function MinhasTarefas() {
         </div>
 
         <div className="mt-4">
-          <div className="mb-3">
-            <InlineTaskCreator />
-          </div>
-          {view === "quadro" ? (
+          {scope !== "pack" && (
+            <div className="mb-3">
+              <InlineTaskCreator />
+            </div>
+          )}
+          {scope === "pack" ? (
+            <PackView
+              tasks={visible}
+              onEdit={openTask}
+              onComplete={(id) => updateTask(id, { status: "concluida" })}
+              onTogglePack={(id, v) => updateTask(id, { inPack: v })}
+            />
+          ) : view === "quadro" ? (
             <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
           ) : (
-            <TaskList tasks={visible} onEdit={openTask} onComplete={(id) => updateTask(id, { status: "concluida" })} />
+            <TaskList
+              tasks={visible}
+              onEdit={openTask}
+              onComplete={(id) => updateTask(id, { status: "concluida" })}
+              onTogglePack={(id, v) => updateTask(id, { inPack: v })}
+            />
           )}
-          {visible.length === 0 && (
+          {visible.length === 0 && scope !== "pack" && (
             <div className="mt-4 rounded-lg border border-dashed border-border bg-card py-16 text-center">
               <Filter className="mx-auto h-6 w-6 text-muted-foreground" />
               <p className="mt-2 text-sm font-medium">Nenhuma tarefa neste recorte</p>
