@@ -181,9 +181,10 @@ export function InlineTaskCreator({
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            handleEnter(row);
-                          } else if (e.key === "Tab" && !e.shiftKey && idx === rows.length - 1 && row.title.trim() === "") {
-                            // allow default
+                            requestSubmitAll();
+                          } else if (e.key === "Tab" && !e.shiftKey) {
+                            e.preventDefault();
+                            jumpNext(row.id);
                           } else if (e.key === "Backspace" && row.title === "" && rows.length > 1) {
                             e.preventDefault();
                             remove(row.id);
@@ -286,16 +287,54 @@ export function InlineTaskCreator({
             </button>
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <span>
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> cria ·{" "}
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">Tab</kbd> próxima linha ·{" "}
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> cria todas ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">↑↓</kbd> navega ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">⌫</kbd> remove linha vazia
               </span>
               <button
                 type="button"
-                onClick={submitAll}
+                onClick={requestSubmitAll}
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
               >
                 Criar todas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Criar todas as tarefas?</h3>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Você vai criar <strong>{validRows.length}</strong> tarefa{validRows.length > 1 ? "s" : ""} de uma vez. Confira antes de confirmar:
+            </p>
+            <ul className="mt-2 max-h-52 overflow-y-auto rounded-md border border-border bg-secondary/40 p-2 text-xs">
+              {validRows.map((r, i) => (
+                <li key={r.id} className="flex items-center gap-2 border-b border-border/40 py-1 last:border-0">
+                  <span className="text-[10px] text-muted-foreground">{i + 1}.</span>
+                  <span className="flex-1 truncate font-medium">{r.title}</span>
+                  <span className="text-[10px] uppercase text-muted-foreground">{r.priority}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmSubmitAll}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+              >
+                Criar {validRows.length}
               </button>
             </div>
           </div>
