@@ -74,7 +74,7 @@ function loadState(): NotepadState {
 }
 
 export function FloatingNotepad() {
-  const { createTask, currentUser } = useFluxo();
+  const { createTask, currentUser, isAuthenticated } = useFluxo();
   const [state, setState] = useState<NotepadState>(() => loadState());
   const [dragging, setDragging] = useState<null | { dx: number; dy: number }>(null);
   const [resizing, setResizing] = useState(false);
@@ -222,7 +222,7 @@ export function FloatingNotepad() {
     setSuggestions([]);
   };
 
-  if (!state.open) return null;
+  if (!isAuthenticated || !state.open) return null;
 
   return (
     <div
