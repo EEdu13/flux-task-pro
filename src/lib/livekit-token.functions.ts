@@ -2,6 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 
 type RoomCallStatus = "ringing" | "accepted" | "declined" | "missed";
 
+function generatePin(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 const sanitizeUserId = (value: unknown) => {
   if (typeof value !== "string") throw new Error("Usuário inválido");
   const id = value.trim().slice(0, 80);
@@ -22,7 +26,7 @@ const sanitizeRoomLabel = (value: unknown, fallback: string) => {
 };
 
 export const getLiveKitToken = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; identity: string; name: string }) => {
+  .inputValidator((input: { roomName: string; identity: string; name: string; pin?: string }) => {
     if (!input || typeof input.roomName !== "string" || typeof input.identity !== "string") {
       throw new Error("Parâmetros inválidos");
     }
@@ -35,7 +39,8 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       typeof (input as { userId?: string }).userId === "string"
         ? (input as { userId?: string }).userId!.trim().slice(0, 80)
         : "";
-    return { roomName, identity, name, userId };
+    const pin = typeof input.pin === "string" ? input.pin.replace(/\D/g, "").slice(0, 8) : "";
+    return { roomName, identity, name, userId, pin };
   })
   .handler(async ({ data }) => {
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -50,7 +55,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: state } = await supabaseAdmin
         .from("room_state")
-        .select("is_private")
+        .select("is_private, pin")
         .eq("room_name", data.roomName)
         .maybeSingle();
       if (state?.is_private) {
@@ -64,7 +69,17 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
           .eq("user_id", data.userId)
           .maybeSingle();
         if (!member) {
-          throw new Error("Sala privada: peça para entrar antes.");
+          // Auto-join with correct PIN
+          if (data.pin && state.pin && data.pin === state.pin) {
+            await supabaseAdmin
+              .from("room_members")
+              .upsert(
+                { room_name: data.roomName, user_id: data.userId, added_by: data.userId },
+                { onConflict: "room_name,user_id" },
+              );
+          } else {
+            throw new Error("Sala privada: peça para entrar antes.");
+          }
         }
       }
     }
@@ -148,7 +163,12 @@ export const listSectorRooms = createServerFn({ method: "POST" })
     // For each sector, collect rooms named `${sector}` or `${sector}-<n>` with n>=2.
     const bySector: Record<
       string,
-      { name: string; isPrivate: boolean; participants: { identity: string; name: string }[] }[]
+      {
+        name: string;
+        isPrivate: boolean;
+        participants: { identity: string; name: string }[];
+        activeSpeakers: string[];
+      }[]
     > = {};
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await Promise.all(
@@ -161,11 +181,22 @@ export const listSectorRooms = createServerFn({ method: "POST" })
         );
         const { data: states } = await supabaseAdmin
           .from("room_state")
-          .select("room_name, is_private")
+          .select("room_name, is_private, active_speakers, speakers_updated_at")
           .in("room_name", names);
         const privacyMap = new Map<string, boolean>(
           (states ?? []).map((s) => [s.room_name, !!s.is_private]),
         );
+        const now = Date.now();
+        const speakersMap = new Map<string, string[]>();
+        for (const s of states ?? []) {
+          const ts = s.speakers_updated_at ? Date.parse(s.speakers_updated_at) : 0;
+          if (ts && now - ts < 5000 && Array.isArray(s.active_speakers)) {
+            speakersMap.set(
+              s.room_name,
+              (s.active_speakers as unknown[]).filter((x): x is string => typeof x === "string"),
+            );
+          }
+        }
         const withParts = await Promise.all(
           names.map(async (name) => {
             try {
@@ -177,9 +208,15 @@ export const listSectorRooms = createServerFn({ method: "POST" })
                   identity: p.identity,
                   name: p.name || p.identity,
                 })),
+                activeSpeakers: speakersMap.get(name) ?? [],
               };
             } catch {
-              return { name, isPrivate: privacyMap.get(name) ?? false, participants: [] };
+              return {
+                name,
+                isPrivate: privacyMap.get(name) ?? false,
+                participants: [],
+                activeSpeakers: speakersMap.get(name) ?? [],
+              };
             }
           }),
         );
@@ -321,7 +358,7 @@ export const getRoomAccess = createServerFn({ method: "POST" })
     const [{ data: state }, { data: member }] = await Promise.all([
       supabaseAdmin
         .from("room_state")
-        .select("is_private")
+        .select("is_private, pin")
         .eq("room_name", data.roomName)
         .maybeSingle(),
       supabaseAdmin
@@ -332,7 +369,15 @@ export const getRoomAccess = createServerFn({ method: "POST" })
         .maybeSingle(),
     ]);
     const isPrivate = !!state?.is_private;
-    return { isPrivate, isMember: !!member, canJoin: !isPrivate || !!member };
+    // Only reveal the PIN to a current member; strangers just know one exists.
+    const pin = isPrivate && member ? (state?.pin ?? null) : null;
+    return {
+      isPrivate,
+      isMember: !!member,
+      canJoin: !isPrivate || !!member,
+      pin,
+      hasPin: !!(isPrivate && state?.pin),
+    };
   });
 
 export const setRoomPrivacy = createServerFn({ method: "POST" })
@@ -343,10 +388,12 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const pin = data.isPrivate ? generatePin() : null;
     await supabaseAdmin.from("room_state").upsert(
       {
         room_name: data.roomName,
         is_private: data.isPrivate,
+        pin,
         updated_by: data.userId,
         updated_at: new Date().toISOString(),
       },
@@ -391,7 +438,7 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
       await supabaseAdmin.from("room_knocks").delete().eq("room_name", data.roomName);
       await supabaseAdmin.from("room_members").delete().eq("room_name", data.roomName);
     }
-    return { ok: true };
+    return { ok: true, pin };
   });
 
 export const inviteToRoom = createServerFn({ method: "POST" })
@@ -531,5 +578,31 @@ export const resolveKnock = createServerFn({ method: "POST" })
         { onConflict: "room_name,user_id" },
       );
     }
+    return { ok: true };
+  });
+
+// Publish who is currently speaking so it can show on the room card outside.
+export const updateActiveSpeakers = createServerFn({ method: "POST" })
+  .inputValidator((input: { roomName: string; speakers: string[] }) => {
+    const roomName = sanitizeRoomName(input?.roomName);
+    const speakers = Array.isArray(input?.speakers)
+      ? input.speakers
+          .filter((s): s is string => typeof s === "string")
+          .map((s) => s.trim().slice(0, 80))
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+    return { roomName, speakers };
+  })
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("room_state").upsert(
+      {
+        room_name: data.roomName,
+        active_speakers: data.speakers,
+        speakers_updated_at: new Date().toISOString(),
+      },
+      { onConflict: "room_name" },
+    );
     return { ok: true };
   });

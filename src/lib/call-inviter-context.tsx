@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { X, Lock, LockOpen } from "lucide-react";
+import { X, Lock, LockOpen, Copy } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { inviteToRoom, setRoomPrivacy } from "@/lib/livekit-token.functions";
 
@@ -21,6 +21,7 @@ export function CallInviterProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+  const [flashPin, setFlashPin] = useState<{ pin: string; roomLabel: string } | null>(null);
 
   const ask = useCallback((userId: string, roomName: string, roomLabel: string) => {
     setPending({ userId, roomName, roomLabel });
@@ -33,10 +34,13 @@ export function CallInviterProvider({ children }: { children: ReactNode }) {
     try {
       if (kind === "private") {
         try {
-          await setRoomPrivacy({ data: { roomName, isPrivate: true, userId: currentUser.id } });
+          const res = await setRoomPrivacy({
+            data: { roomName, isPrivate: true, userId: currentUser.id },
+          });
           await inviteToRoom({
             data: { roomName, targetUserId: userId, inviterUserId: currentUser.id },
           });
+          if (res?.pin) setFlashPin({ pin: res.pin, roomLabel });
         } catch (e) {
           console.error(e);
         }
@@ -62,6 +66,36 @@ export function CallInviterProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{ ask }}>
       {children}
+      {flashPin && (
+        <div className="fixed inset-x-0 top-4 z-[130] flex justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-md rounded-xl border-2 border-amber-500 bg-card p-4 shadow-2xl">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+                Sala trancada com PIN
+              </span>
+              <button onClick={() => setFlashPin(null)} className="rounded p-1 hover:bg-secondary">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              A sala <span className="font-medium text-foreground">{flashPin.roomLabel}</span> agora
+              exige PIN. Convidados já entram direto — compartilhe o PIN abaixo se precisar deixar
+              mais alguém entrar.
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <span className="font-mono text-2xl font-bold tracking-widest">{flashPin.pin}</span>
+              <button
+                onClick={() => {
+                  navigator.clipboard?.writeText(flashPin.pin).catch(() => {});
+                }}
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground"
+              >
+                <Copy className="h-3 w-3" /> Copiar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {pending && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">

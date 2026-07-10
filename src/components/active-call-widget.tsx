@@ -6,12 +6,16 @@ import {
   RoomAudioRenderer,
   ControlBar,
   GridLayout,
+  FocusLayout,
+  FocusLayoutContainer,
+  CarouselLayout,
   ParticipantTile,
   useTracks,
   useDataChannel,
   useLocalParticipant,
+  useRoomContext,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { Track, RoomEvent } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
 import { BackgroundBlur, VirtualBackground } from "@livekit/track-processors";
 import "@livekit/components-styles";
@@ -29,11 +33,17 @@ import {
   Lock,
   LockOpen,
   Search,
+  LayoutGrid,
+  Presentation,
+  Copy,
+  Keyboard,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
 import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { MeetingExtras } from "@/components/meeting-extras";
 import {
   filesToAttachments,
   formatBytes,
@@ -125,6 +135,7 @@ function CallContents({
     { onlySubscribed: false },
   );
   const { localParticipant } = useLocalParticipant();
+  const room = useRoomContext();
   const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)
     ?.videoTrack as LocalVideoTrack | undefined;
   const [effect, setEffect] = useVideoEffect(cameraTrack);
@@ -134,7 +145,10 @@ function CallContents({
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
+  const [roomPin, setRoomPin] = useState<string | null>(null);
   const [privBusy, setPrivBusy] = useState(false);
+  const [presenterMode, setPresenterMode] = useState<"auto" | "grid" | "focus">("auto");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Poll privacy state so the lock button reflects reality.
   useEffect(() => {
@@ -142,7 +156,10 @@ function CallContents({
     const tick = async () => {
       try {
         const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
-        if (!cancelled) setIsPrivate(res.isPrivate);
+        if (!cancelled) {
+          setIsPrivate(res.isPrivate);
+          setRoomPin(res.pin ?? null);
+        }
       } catch {
         /* ignore */
       }
@@ -161,7 +178,10 @@ function CallContents({
     setIsPrivate(next);
     setPrivBusy(true);
     try {
-      await setRoomPrivacy({ data: { roomName, isPrivate: next, userId: currentUser.id } });
+      const res = await setRoomPrivacy({
+        data: { roomName, isPrivate: next, userId: currentUser.id },
+      });
+      setRoomPin(res?.pin ?? null);
     } catch {
       setIsPrivate(!next);
     } finally {
@@ -261,6 +281,34 @@ function CallContents({
 
   const showChat = chatOpen && !mini;
 
+  // Screen-share tile drives presenter mode
+  const screenTracks = tracks.filter((t) => t.source === Track.Source.ScreenShare);
+  const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
+  const hasScreen = screenTracks.length > 0;
+  const useFocus =
+    hasScreen && (presenterMode === "auto" || presenterMode === "focus") && !mini;
+
+  // Keyboard shortcuts (ignored in mini mode to avoid trapping global keys)
+  useCallShortcuts({
+    enabled: !mini,
+    onToggleMic: () => {
+      localParticipant.setMicrophoneEnabled(!localParticipant.isMicrophoneEnabled).catch(() => {});
+    },
+    onToggleCam: () => {
+      localParticipant.setCameraEnabled(!localParticipant.isCameraEnabled).catch(() => {});
+    },
+    onEnd,
+    onToggleChat: () => setChatOpen((v) => !v),
+    onRaiseHand: raiseHand,
+    onTogglePresenter: () =>
+      setPresenterMode((m) => (m === "grid" ? "focus" : m === "focus" ? "auto" : "grid")),
+  });
+
+  // Chat lines shape for MeetingExtras (for the AI summary)
+  const chatLines = messages
+    .filter((m) => m.text)
+    .map((m) => ({ at: m.at, from: m.fromName, text: m.text! }));
+
   return (
     <div className="flex h-full w-full flex-col bg-black text-white" data-lk-theme="default">
       <div
@@ -294,9 +342,31 @@ function CallContents({
       </div>
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative min-w-0 flex-1">
-          <GridLayout tracks={tracks} style={{ height: "100%" }}>
-            <ParticipantTile />
-          </GridLayout>
+          {useFocus ? (
+            <FocusLayoutContainer style={{ height: "100%" }}>
+              <CarouselLayout tracks={cameraTracks}>
+                <ParticipantTile />
+              </CarouselLayout>
+              <FocusLayout trackRef={screenTracks[0]} />
+            </FocusLayoutContainer>
+          ) : (
+            <GridLayout tracks={tracks} style={{ height: "100%" }}>
+              <ParticipantTile />
+            </GridLayout>
+          )}
+          {hasScreen && !mini && (
+            <button
+              type="button"
+              onClick={() =>
+                setPresenterMode((m) => (m === "grid" ? "focus" : m === "focus" ? "grid" : "grid"))
+              }
+              className="absolute left-2 top-2 z-20 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-white/90 backdrop-blur hover:bg-black/80"
+              title="Alternar entre foco no apresentador e grade"
+            >
+              {useFocus ? <LayoutGrid className="h-3 w-3" /> : <Presentation className="h-3 w-3" />}
+              {useFocus ? "Modo grade" : "Modo apresentador"}
+            </button>
+          )}
           {raises.length > 0 && (
             <div className="pointer-events-none absolute inset-x-0 top-2 z-20 flex flex-col items-center gap-1.5">
               {raises.map((r) => (
@@ -333,7 +403,63 @@ function CallContents({
           }}
           style={{ border: "none", padding: 0, background: "transparent" }}
         />
-        <div className="flex items-center gap-1.5">
+        <div className="relative flex items-center gap-1.5">
+          {!mini && isPrivate && roomPin && (
+            <button
+              type="button"
+              onClick={() => navigator.clipboard?.writeText(roomPin).catch(() => {})}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/60 bg-amber-400/15 px-2 py-1.5 font-mono text-xs font-bold tracking-widest text-amber-200 hover:bg-amber-400/25"
+              title="PIN da sala — clique para copiar e compartilhar"
+            >
+              <Copy className="h-3 w-3" /> {roomPin}
+            </button>
+          )}
+          {!mini && (
+            <MeetingExtras
+              roomName={roomName}
+              roomLabel={roomLabel}
+              chatLines={chatLines}
+            />
+          )}
+          {!mini && (
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white hover:bg-white/10"
+              title="Atalhos de teclado"
+            >
+              <Keyboard className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {shortcutsOpen && !mini && (
+            <div className="absolute bottom-full right-0 z-40 mb-1 w-64 rounded-md border border-white/10 bg-neutral-900 p-3 text-xs text-white shadow-xl">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                  Atalhos
+                </span>
+                <button onClick={() => setShortcutsOpen(false)} className="rounded p-0.5 hover:bg-white/10">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              <ul className="space-y-1.5">
+                {[
+                  ["M", "Mutar / desmutar mic"],
+                  ["V", "Ligar / desligar câmera"],
+                  ["C", "Abrir / fechar chat"],
+                  ["H", "Levantar a mão"],
+                  ["P", "Alternar modo apresentador"],
+                  ["E", "Encerrar chamada"],
+                ].map(([key, desc]) => (
+                  <li key={key} className="flex items-center justify-between gap-2">
+                    <span className="text-white/70">{desc}</span>
+                    <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
+                      {key}
+                    </kbd>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {!mini && (
             <button
               type="button"
