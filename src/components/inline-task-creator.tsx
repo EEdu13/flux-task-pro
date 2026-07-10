@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
   priorityLabels,
@@ -7,6 +7,8 @@ import {
   type Priority,
   type Status,
 } from "@/lib/fluxo-types";
+import type { Attachment } from "@/lib/fluxo-types";
+import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
 import { toast } from "sonner";
 
 interface DraftRow {
@@ -16,6 +18,7 @@ interface DraftRow {
   assigneeId: string;
   priority: Priority;
   sector: string;
+  attachments: Attachment[];
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -34,6 +37,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     assigneeId: defaults.assigneeId ?? "",
     priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
+    attachments: [],
   };
 }
 
@@ -52,6 +56,11 @@ export function InlineTaskCreator({
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [dragRowId, setDragRowId] = useState<string | null>(null);
+  const [cardDrag, setCardDrag] = useState(false);
+  const dragDepth = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingFileRowId = useRef<string | null>(null);
 
   const focusRow = (id: string) => {
     requestAnimationFrame(() => {
@@ -89,6 +98,7 @@ export function InlineTaskCreator({
       recurring: false,
       priority: row.priority,
       tags: [],
+      attachments: row.attachments.length ? row.attachments : undefined,
     });
     return true;
   };
@@ -130,8 +140,86 @@ export function InlineTaskCreator({
   const update = (id: string, patch: Partial<DraftRow>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
+  const addFilesToRow = async (rowId: string, files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    const { ok, rejected } = await filesToAttachments(list, currentUser.id);
+    if (rejected.length) {
+      toast.error(`Ignorado(s): ${rejected.join(", ")}`);
+    }
+    if (!ok.length) return;
+    setRows((rs) =>
+      rs.map((r) => (r.id === rowId ? { ...r, attachments: [...r.attachments, ...ok] } : r)),
+    );
+    toast.success(`${ok.length} anexo${ok.length > 1 ? "s" : ""} adicionado${ok.length > 1 ? "s" : ""}`);
+  };
+
+  const handleCardDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setCardDrag(false);
+    setDragRowId(null);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    // pick the last row with a title, otherwise the last row (or a new one)
+    let target = [...rows].reverse().find((r) => r.title.trim());
+    if (!target) target = rows[rows.length - 1];
+    if (!target) {
+      const draft = makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector });
+      setRows((rs) => [...rs, draft]);
+      target = draft;
+    }
+    await addFilesToRow(target.id, files);
+  };
+
+  const removeAttachment = (rowId: string, attId: string) =>
+    setRows((rs) =>
+      rs.map((r) =>
+        r.id === rowId ? { ...r, attachments: r.attachments.filter((a) => a.id !== attId) } : r,
+      ),
+    );
+
+  const openFilePicker = (rowId: string) => {
+    pendingFileRowId.current = rowId;
+    fileInputRef.current?.click();
+  };
+
   return (
-    <div className="rounded-lg border border-border bg-card shadow-sm">
+    <div
+      className={`relative rounded-lg border bg-card shadow-sm transition ${
+        cardDrag ? "border-primary ring-2 ring-primary/30" : "border-border"
+      }`}
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        dragDepth.current += 1;
+        setCardDrag(true);
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) {
+          setCardDrag(false);
+          setDragRowId(null);
+        }
+      }}
+      onDrop={handleCardDrop}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={async (e) => {
+          const rowId = pendingFileRowId.current;
+          pendingFileRowId.current = null;
+          if (rowId && e.target.files) await addFilesToRow(rowId, e.target.files);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }}
+      />
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -142,7 +230,7 @@ export function InlineTaskCreator({
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-sm font-semibold">Criação rápida (estilo planilha)</span>
           <span className="text-[11px] text-muted-foreground">
-            Digite o título e aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para criar e ir à próxima linha
+            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Tab</kbd> para próxima linha · arraste arquivos para anexar
           </span>
         </div>
         {open && rows.some((r) => r.title.trim()) && (
@@ -169,7 +257,31 @@ export function InlineTaskCreator({
               </thead>
               <tbody>
                 {rows.map((row, idx) => (
-                  <tr key={row.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">
+                  <tr
+                    key={row.id}
+                    onDragEnter={(e) => {
+                      if (!e.dataTransfer.types.includes("Files")) return;
+                      setDragRowId(row.id);
+                    }}
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer.types.includes("Files")) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                      setDragRowId(row.id);
+                    }}
+                    onDrop={async (e) => {
+                      if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      dragDepth.current = 0;
+                      setCardDrag(false);
+                      setDragRowId(null);
+                      await addFilesToRow(row.id, e.dataTransfer.files);
+                    }}
+                    className={`border-b border-border/60 last:border-0 hover:bg-secondary/30 ${
+                      dragRowId === row.id ? "bg-primary/10" : ""
+                    }`}
+                  >
                     <td className="py-1 pl-3 text-[10px] text-muted-foreground">{idx + 1}</td>
                     <td className="py-1 pr-3">
                       <input
@@ -207,6 +319,31 @@ export function InlineTaskCreator({
                         placeholder="Nova tarefa…"
                         className="w-full bg-transparent px-1 py-1.5 outline-none placeholder:text-muted-foreground/60"
                       />
+                      {row.attachments.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {row.attachments.map((a) => (
+                            <span
+                              key={a.id}
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/70 px-1.5 py-0.5 text-[10px]"
+                              title={`${a.name} · ${formatBytes(a.size)}`}
+                            >
+                              {isImage(a.type) ? (
+                                <ImageIcon className="h-2.5 w-2.5 text-primary" />
+                              ) : (
+                                <FileText className="h-2.5 w-2.5 text-muted-foreground" />
+                              )}
+                              <span className="max-w-[120px] truncate">{a.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeAttachment(row.id, a.id)}
+                                className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="py-1 pr-3">
                       <input
@@ -263,6 +400,15 @@ export function InlineTaskCreator({
                       </td>
                     )}
                     <td className="py-1 pr-2 text-right">
+                      <div className="inline-flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openFilePicker(row.id)}
+                          className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                          title="Anexar arquivo (ou arraste)"
+                        >
+                          <Paperclip className="h-3.5 w-3.5" />
+                        </button>
                       <button
                         type="button"
                         onClick={() => remove(row.id)}
@@ -271,12 +417,20 @@ export function InlineTaskCreator({
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {cardDrag && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5">
+              <div className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow">
+                Solte para anexar {dragRowId ? "nesta linha" : "à última tarefa"}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
             <button
               type="button"
