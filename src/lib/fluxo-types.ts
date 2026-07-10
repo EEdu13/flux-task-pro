@@ -84,6 +84,25 @@ export interface Task {
   attachments?: Attachment[];
 }
 
+export interface MinuteTopic {
+  id: string;
+  text: string;
+  kind: "decisao" | "proximo" | "atencao";
+  taskId?: string; // if converted to task
+}
+
+export interface MeetingMinute {
+  id: string;
+  roomName: string;
+  roomLabel: string;
+  createdAt: string; // ISO
+  createdBy: string; // userId who generated
+  participantIds: string[]; // user ids (best-effort match)
+  participantNames: string[];
+  markdown: string;
+  topics: MinuteTopic[];
+}
+
 export interface Notification {
   id: string;
   userId: string; // recipient
