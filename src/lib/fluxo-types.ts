@@ -34,6 +34,11 @@ export interface Comment {
   text: string;
   at: string;
   attachments?: Attachment[];
+  /**
+   * Marks the task as part of "Meu pack" — the user's daily non-negotiables.
+   * Only meaningful for the task's assignee.
+   */
+  inPack?: boolean;
 }
 
 export interface ChecklistItem {
