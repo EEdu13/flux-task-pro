@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Video, VideoOff, Loader2 } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, Loader2, FileText } from "lucide-react";
 
 const PREF_KEY = "fluxo:precall-prefs";
 
@@ -34,6 +34,8 @@ export interface PreCallResult {
   camOn: boolean;
   micDeviceId?: string;
   camDeviceId?: string;
+  title: string;
+  autoMinute: boolean;
 }
 
 export function PreCall({
@@ -46,6 +48,8 @@ export function PreCall({
   onCancel: () => void;
 }) {
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  const [title, setTitle] = useState<string>(roomLabel);
+  const [autoMinute, setAutoMinute] = useState<boolean>(true);
   const [devices, setDevices] = useState<{ mics: MediaDeviceInfo[]; cams: MediaDeviceInfo[] }>({
     mics: [],
     cams: [],
@@ -135,6 +139,39 @@ export function PreCall({
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Antes de entrar</div>
         <div className="mt-1 text-lg font-semibold">{roomLabel}</div>
       </div>
+      <div className="w-full max-w-xl">
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          Título da reunião <span className="text-destructive">*</span>
+        </label>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Ex.: Alinhamento semanal do Comercial"
+          maxLength={120}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Esse título vai identificar a ata em <b>Atas &amp; Planos</b>. Você pode renomear depois.
+        </p>
+      </div>
+      <label className="flex w-full max-w-xl cursor-pointer items-start gap-2 rounded-md border border-border bg-background/50 p-3">
+        <input
+          type="checkbox"
+          checked={autoMinute}
+          onChange={(e) => setAutoMinute(e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-primary"
+        />
+        <span className="flex-1 text-xs">
+          <span className="flex items-center gap-1 font-semibold">
+            <FileText className="h-3.5 w-3.5 text-primary" />
+            Iniciar ata automática (transcrição ao vivo)
+          </span>
+          <span className="mt-0.5 block text-muted-foreground">
+            A IA vai gravar as falas em texto para gerar a ata da reunião ao final. Recomendado para
+            reuniões da diretoria.
+          </span>
+        </span>
+      </label>
       <div className="relative aspect-video w-full max-w-xl overflow-hidden rounded-lg border border-border bg-black">
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
@@ -243,9 +280,12 @@ export function PreCall({
               camOn: prefs.camOn,
               micDeviceId: prefs.micDeviceId,
               camDeviceId: prefs.camDeviceId,
+              title: title.trim() || roomLabel,
+              autoMinute,
             });
           }}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-95"
+          disabled={!title.trim()}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-95 disabled:opacity-50"
         >
           Entrar na sala
         </button>
