@@ -69,11 +69,13 @@ function RoomPage() {
   useEffect(() => {
     startedRef.current = false;
     setAccess({ kind: "checking" });
-    setShowPreCall(true);
+    // If we already have an active call for this room (e.g. returning from
+    // minimized mode), skip the pre-call screen.
+    setShowPreCall(!(active && active.roomName === roomName));
     setPinInput("");
     setPinError(null);
     setPinAttempts(0);
-  }, [roomName]);
+  }, [roomName, active]);
 
   // Check access + auto-knock if needed. If any request errors, keep
   // "checking" and retry — never silently fall back to "open".
@@ -142,11 +144,16 @@ function RoomPage() {
   // Start the call once we have access AND user finished pre-call
   useEffect(() => {
     if (startedRef.current) return;
+    // Already connected to this room — no need to (re)start.
+    if (active && active.roomName === roomName) {
+      startedRef.current = true;
+      return;
+    }
     if (access.kind !== "open" && access.kind !== "member") return;
     if (showPreCall) return;
     startedRef.current = true;
     startCall({ roomName, roomLabel, identity, name: currentUser.name, userId: currentUser.id });
-  }, [access, showPreCall, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall]);
+  }, [access, showPreCall, active, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall]);
 
   // Poll pending knocks + privacy state as soon as we have access (member/open),
   // even while the LiveKit connection is still establishing, so incoming
