@@ -17,6 +17,8 @@ import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
 import { CallInviterProvider } from "@/lib/call-inviter-context";
 import { RoomPresenceProvider } from "@/lib/room-presence-context";
+import { QuickFab } from "@/components/quick-fab";
+import { FloatingNotepad } from "@/components/floating-notepad";
 
 function NotFoundComponent() {
   return (
@@ -136,6 +138,8 @@ function RootComponent() {
               {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
               <Outlet />
               <ActiveCallWidget />
+              <QuickFab />
+              <FloatingNotepad />
               <Toaster />
             </CallInviterProvider>
           </ActiveCallProvider>
