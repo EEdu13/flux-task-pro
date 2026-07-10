@@ -633,6 +633,43 @@ export function FluxoLayout({
       <TaskDialog />
       {needsOnboarding && <OnboardingModal />}
       <IncomingCall />
+      {gridOpen && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm">
+          <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <Plus className="h-4 w-4 text-primary" />
+                <div className="text-sm font-semibold">Criar tarefas em grade</div>
+                <span className="hidden text-[11px] text-muted-foreground sm:inline">
+                  Digite, Tab para próxima linha, Enter para criar todas
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setGridOpen(false);
+                    openNewTask();
+                  }}
+                  className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
+                  title="Prefiro o formulário detalhado"
+                >
+                  Modo detalhado
+                </button>
+                <button
+                  onClick={() => setGridOpen(false)}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted"
+                  title="Fechar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <InlineTaskCreator />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
