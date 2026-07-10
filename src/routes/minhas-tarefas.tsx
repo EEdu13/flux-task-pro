@@ -525,7 +525,7 @@ function TaskList({
                             className={`rounded p-1 transition ${
                               t.inPack
                                 ? "text-amber-500 hover:bg-amber-500/10"
-                                : "text-muted-foreground opacity-0 hover:bg-secondary hover:text-amber-500 group-hover:opacity-100"
+                                : "text-muted-foreground hover:bg-secondary hover:text-amber-500"
                             }`}
                           >
                             <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
