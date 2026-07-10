@@ -20,7 +20,7 @@ function todayEnd() {
 }
 
 export function QuickFab() {
-  const { createTask, visibleUsersForAssign, currentUser } = useFluxo();
+  const { createTask, visibleUsersForAssign, currentUser, isAuthenticated } = useFluxo();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("menu");
   const [title, setTitle] = useState("");
@@ -102,6 +102,8 @@ export function QuickFab() {
     setMode("menu");
     setOpen(false);
   };
+
+  if (!isAuthenticated) return null;
 
   return (
     <div ref={rootRef} className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2">
