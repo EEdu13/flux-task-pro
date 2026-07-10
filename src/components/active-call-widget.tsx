@@ -6,12 +6,16 @@ import {
   RoomAudioRenderer,
   ControlBar,
   GridLayout,
+  FocusLayout,
+  FocusLayoutContainer,
+  CarouselLayout,
   ParticipantTile,
   useTracks,
   useDataChannel,
   useLocalParticipant,
+  useRoomContext,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { Track, RoomEvent } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
 import { BackgroundBlur, VirtualBackground } from "@livekit/track-processors";
 import "@livekit/components-styles";
@@ -29,11 +33,17 @@ import {
   Lock,
   LockOpen,
   Search,
+  LayoutGrid,
+  Presentation,
+  Copy,
+  Keyboard,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
 import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { MeetingExtras } from "@/components/meeting-extras";
 import {
   filesToAttachments,
   formatBytes,
@@ -125,6 +135,7 @@ function CallContents({
     { onlySubscribed: false },
   );
   const { localParticipant } = useLocalParticipant();
+  const room = useRoomContext();
   const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)
     ?.videoTrack as LocalVideoTrack | undefined;
   const [effect, setEffect] = useVideoEffect(cameraTrack);
@@ -134,7 +145,10 @@ function CallContents({
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
+  const [roomPin, setRoomPin] = useState<string | null>(null);
   const [privBusy, setPrivBusy] = useState(false);
+  const [presenterMode, setPresenterMode] = useState<"auto" | "grid" | "focus">("auto");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Poll privacy state so the lock button reflects reality.
   useEffect(() => {
@@ -142,7 +156,10 @@ function CallContents({
     const tick = async () => {
       try {
         const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
-        if (!cancelled) setIsPrivate(res.isPrivate);
+        if (!cancelled) {
+          setIsPrivate(res.isPrivate);
+          setRoomPin(res.pin ?? null);
+        }
       } catch {
         /* ignore */
       }
@@ -161,7 +178,10 @@ function CallContents({
     setIsPrivate(next);
     setPrivBusy(true);
     try {
-      await setRoomPrivacy({ data: { roomName, isPrivate: next, userId: currentUser.id } });
+      const res = await setRoomPrivacy({
+        data: { roomName, isPrivate: next, userId: currentUser.id },
+      });
+      setRoomPin(res?.pin ?? null);
     } catch {
       setIsPrivate(!next);
     } finally {
