@@ -47,6 +47,10 @@ function RoomPage() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinAttempts, setPinAttempts] = useState(0);
   const [showPreCall, setShowPreCall] = useState(true);
+  const [pendingPreCall, setPendingPreCall] = useState<{
+    title: string;
+    autoMinute: boolean;
+  } | null>(null);
   const [pinShown, setPinShown] = useState<string | null>(null);
   const [knocks, setKnocks] = useState<
     { id: string; requester_user_id: string; requester_name: string }[]
@@ -152,8 +156,16 @@ function RoomPage() {
     if (access.kind !== "open" && access.kind !== "member") return;
     if (showPreCall) return;
     startedRef.current = true;
-    startCall({ roomName, roomLabel, identity, name: currentUser.name, userId: currentUser.id });
-  }, [access, showPreCall, active, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall]);
+    startCall({
+      roomName,
+      roomLabel,
+      identity,
+      name: currentUser.name,
+      userId: currentUser.id,
+      meetingTitle: pendingPreCall?.title,
+      autoMinute: pendingPreCall?.autoMinute ?? true,
+    });
+  }, [access, showPreCall, active, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall, pendingPreCall]);
 
   // Poll pending knocks + privacy state as soon as we have access (member/open),
   // even while the LiveKit connection is still establishing, so incoming
@@ -320,7 +332,10 @@ function RoomPage() {
         ) : showPreCall && (access.kind === "open" || access.kind === "member") ? (
           <PreCall
             roomLabel={roomLabel}
-            onEnter={() => setShowPreCall(false)}
+            onEnter={(r) => {
+              setPendingPreCall({ title: r.title, autoMinute: r.autoMinute });
+              setShowPreCall(false);
+            }}
             onCancel={() => navigate({ to: "/salas" })}
           />
         ) : (
