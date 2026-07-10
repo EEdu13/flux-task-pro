@@ -4,6 +4,7 @@ import {
   AtSign,
   CheckCircle2,
   CheckSquare,
+  Flame,
   Clock,
   Filter,
   LayoutGrid,
@@ -11,6 +12,8 @@ import {
   Pencil,
   Plus,
   Repeat,
+  Star,
+  Sparkles,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -42,7 +45,7 @@ export const Route = createFileRoute("/minhas-tarefas")({
   component: MinhasTarefas,
 });
 
-type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas";
+type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas" | "pack";
 type ViewMode = "quadro" | "lista";
 type DatePreset =
   | "todas"
@@ -128,6 +131,7 @@ const scopeLabels: Record<Scope, string> = {
   atribuidas: "Atribuídas a mim",
   criadas: "Criadas por mim",
   mencionadas: "Mencionaram-me",
+  pack: "Meu pack",
 };
 
 function MinhasTarefas() {
@@ -173,6 +177,7 @@ function MinhasTarefas() {
       if (scope === "atribuidas" && t.assigneeId !== currentUser.id) return false;
       if (scope === "criadas" && t.createdBy !== currentUser.id) return false;
       if (scope === "mencionadas" && !t.mentions.includes(currentUser.id)) return false;
+      if (scope === "pack" && !(t.assigneeId === currentUser.id && t.inPack)) return false;
       if (sector !== "todos" && t.sector !== sector) return false;
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
@@ -214,6 +219,7 @@ function MinhasTarefas() {
       atribuidas: active.filter((t) => t.assigneeId === currentUser.id).length,
       criadas: active.filter((t) => t.createdBy === currentUser.id).length,
       mencionadas: active.filter((t) => t.mentions.includes(currentUser.id)).length,
+      pack: active.filter((t) => t.assigneeId === currentUser.id && t.inPack).length,
     } as Record<Scope, number>;
   }, [tasks, users, currentUser]);
 
@@ -229,14 +235,23 @@ function MinhasTarefas() {
                 key={s}
                 onClick={() => setScope(s)}
                 className={`relative px-4 py-2 text-sm font-medium transition ${
-                  scope === s ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  scope === s
+                    ? s === "pack"
+                      ? "text-amber-500"
+                      : "text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {scopeLabels[s]}
+                <span className="inline-flex items-center gap-1.5">
+                  {s === "pack" && <Flame className="h-3.5 w-3.5" />}
+                  {scopeLabels[s]}
+                </span>
                 {scopeCounts[s] > 0 && (
                   <span
                     className={`ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                      s === "mencionadas"
+                      s === "pack"
+                        ? "bg-amber-500 text-white"
+                        : s === "mencionadas"
                         ? "bg-primary text-primary-foreground"
                         : scope === s
                           ? "bg-primary/15 text-primary"
@@ -246,7 +261,13 @@ function MinhasTarefas() {
                     {scopeCounts[s]}
                   </span>
                 )}
-                {scope === s && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+                {scope === s && (
+                  <span
+                    className={`absolute inset-x-2 -bottom-px h-0.5 rounded-full ${
+                      s === "pack" ? "bg-amber-500" : "bg-primary"
+                    }`}
+                  />
+                )}
               </button>
             ))}
           </div>
@@ -324,15 +345,29 @@ function MinhasTarefas() {
         </div>
 
         <div className="mt-4">
-          <div className="mb-3">
-            <InlineTaskCreator />
-          </div>
-          {view === "quadro" ? (
+          {scope !== "pack" && (
+            <div className="mb-3">
+              <InlineTaskCreator />
+            </div>
+          )}
+          {scope === "pack" ? (
+            <PackView
+              tasks={visible}
+              onEdit={openTask}
+              onComplete={(id) => updateTask(id, { status: "concluida" })}
+              onTogglePack={(id, v) => updateTask(id, { inPack: v })}
+            />
+          ) : view === "quadro" ? (
             <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} />
           ) : (
-            <TaskList tasks={visible} onEdit={openTask} onComplete={(id) => updateTask(id, { status: "concluida" })} />
+            <TaskList
+              tasks={visible}
+              onEdit={openTask}
+              onComplete={(id) => updateTask(id, { status: "concluida" })}
+              onTogglePack={(id, v) => updateTask(id, { inPack: v })}
+            />
           )}
-          {visible.length === 0 && (
+          {visible.length === 0 && scope !== "pack" && (
             <div className="mt-4 rounded-lg border border-dashed border-border bg-card py-16 text-center">
               <Filter className="mx-auto h-6 w-6 text-muted-foreground" />
               <p className="mt-2 text-sm font-medium">Nenhuma tarefa neste recorte</p>
@@ -379,10 +414,12 @@ function TaskList({
   tasks,
   onEdit,
   onComplete,
+  onTogglePack,
 }: {
   tasks: Task[];
   onEdit: (id: string) => void;
   onComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
 }) {
   const { users } = useFluxo();
   const groups: { key: string; label: string; items: Task[] }[] = [
@@ -481,12 +518,25 @@ function TaskList({
                         <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
                       </td>
                       <td className="py-2.5 pr-4 text-right">
-                        <button
-                          onClick={() => onEdit(t.id)}
-                          className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => onTogglePack(t.id, !t.inPack)}
+                            title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
+                            className={`rounded p-1 transition ${
+                              t.inPack
+                                ? "text-amber-500 hover:bg-amber-500/10"
+                                : "text-muted-foreground opacity-0 hover:bg-secondary hover:text-amber-500 group-hover:opacity-100"
+                            }`}
+                          >
+                            <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
+                          </button>
+                          <button
+                            onClick={() => onEdit(t.id)}
+                            className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -678,5 +728,169 @@ function Badge({ label, color, dot }: { label: string; color: string; dot?: bool
       {dot && <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />}
       {label}
     </span>
+  );
+}
+
+function PackView({
+  tasks,
+  onEdit,
+  onComplete,
+  onTogglePack,
+}: {
+  tasks: Task[];
+  onEdit: (id: string) => void;
+  onComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
+}) {
+  const done = tasks.filter((t) => t.status === "concluida");
+  const pending = tasks.filter((t) => t.status !== "concluida");
+  const total = tasks.length;
+  const pct = total === 0 ? 0 : Math.round((done.length / total) * 100);
+  const today = new Date().toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-transparent p-5">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20 text-amber-500">
+            <Flame className="h-7 w-7" />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold">Meu pack diário</h2>
+              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                Inegociável
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground first-letter:uppercase">{today}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Suas obrigações do dia. Bater 100% antes de tudo mantém o combo aceso.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-bold tabular-nums text-amber-500">{pct}%</div>
+            <div className="text-[11px] text-muted-foreground">
+              {done.length}/{total} concluídas
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-amber-500/10">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {total === 0 ? (
+        <div className="rounded-xl border border-dashed border-amber-500/40 bg-card p-10 text-center">
+          <Sparkles className="mx-auto h-6 w-6 text-amber-500" />
+          <p className="mt-2 text-sm font-semibold">Seu pack ainda está vazio</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Em qualquer tarefa atribuída a você, clique na estrela{" "}
+            <Star className="inline h-3 w-3 -translate-y-0.5 text-amber-500" /> para marcá-la como
+            obrigação diária.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pending.map((t) => (
+            <PackRow
+              key={t.id}
+              task={t}
+              onEdit={onEdit}
+              onComplete={onComplete}
+              onTogglePack={onTogglePack}
+            />
+          ))}
+          {done.length > 0 && (
+            <>
+              <div className="pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Concluídas hoje ({done.length})
+              </div>
+              {done.map((t) => (
+                <PackRow
+                  key={t.id}
+                  task={t}
+                  onEdit={onEdit}
+                  onComplete={onComplete}
+                  onTogglePack={onTogglePack}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PackRow({
+  task,
+  onEdit,
+  onComplete,
+  onTogglePack,
+}: {
+  task: Task;
+  onEdit: (id: string) => void;
+  onComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
+}) {
+  const sec = sectors.find((s) => s.id === task.sector);
+  const isDone = task.status === "concluida";
+  return (
+    <div
+      className={`group flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm transition hover:shadow-md ${
+        isDone ? "border-border/60 opacity-60" : "border-amber-500/30"
+      }`}
+    >
+      <button
+        onClick={() => !isDone && onComplete(task.id)}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
+          isDone
+            ? "border-emerald-500 bg-emerald-500 text-white"
+            : "border-amber-500/60 hover:bg-amber-500/10"
+        }`}
+        title={isDone ? "Concluída" : "Marcar concluída"}
+      >
+        {isDone && <CheckCircle2 className="h-4 w-4" />}
+      </button>
+      <button
+        onClick={() => onEdit(task.id)}
+        className="flex-1 text-left"
+      >
+        <div className={`text-sm font-medium ${isDone ? "line-through" : ""}`}>{task.title}</div>
+        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>
+            Prazo{" "}
+            {new Date(task.dueDate).toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "short",
+            })}
+          </span>
+          {task.recurring && (
+            <span className="inline-flex items-center gap-0.5">
+              <Repeat className="h-2.5 w-2.5" /> Recorrente
+            </span>
+          )}
+          <Badge
+            label={priorityLabels[task.priority]}
+            color={priorityColor[task.priority]}
+          />
+        </div>
+      </button>
+      <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
+      <button
+        onClick={() => onTogglePack(task.id, false)}
+        title="Remover do Meu pack"
+        className="rounded p-1.5 text-amber-500 opacity-70 transition hover:bg-amber-500/10 hover:opacity-100"
+      >
+        <Star className="h-4 w-4 fill-amber-500" />
+      </button>
+    </div>
   );
 }
