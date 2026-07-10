@@ -20,7 +20,7 @@ function todayEnd() {
 }
 
 export function QuickFab() {
-  const { createTask, visibleUsersForAssign, currentUser, isAuthenticated } = useFluxo();
+  const { createTask, users, currentUser, isAuthenticated } = useFluxo();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("menu");
   const [title, setTitle] = useState("");
@@ -206,7 +206,7 @@ export function QuickFab() {
             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
           >
             <option value="">— escolher pessoa —</option>
-            {visibleUsersForAssign()
+            {users
               .filter((u) => u.id !== currentUser.id)
               .map((u) => (
                 <option key={u.id} value={u.id}>
