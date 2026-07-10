@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Lock, LockOpen, WifiOff, X } from "lucide-react";
+import { Check, Lock, LockOpen, WifiOff, X, KeyRound } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
+import { PreCall } from "@/components/pre-call";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import {
   getKnockStatus,
@@ -30,6 +31,7 @@ type AccessState =
   | { kind: "checking" }
   | { kind: "open" }
   | { kind: "member"; isPrivate: boolean }
+  | { kind: "pin-required" }
   | { kind: "knocking"; knockId: string }
   | { kind: "denied" };
 
@@ -40,6 +42,12 @@ function RoomPage() {
   const navigate = useNavigate();
   const [access, setAccess] = useState<AccessState>({ kind: "checking" });
   const [isPrivate, setIsPrivate] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinAttempts, setPinAttempts] = useState(0);
+  const [showPreCall, setShowPreCall] = useState(true);
+  const [pinShown, setPinShown] = useState<string | null>(null);
   const [knocks, setKnocks] = useState<
     { id: string; requester_user_id: string; requester_name: string }[]
   >([]);
@@ -61,6 +69,10 @@ function RoomPage() {
   useEffect(() => {
     startedRef.current = false;
     setAccess({ kind: "checking" });
+    setShowPreCall(true);
+    setPinInput("");
+    setPinError(null);
+    setPinAttempts(0);
   }, [roomName]);
 
   // Check access + auto-knock if needed. If any request errors, keep
@@ -73,10 +85,14 @@ function RoomPage() {
         const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
         if (cancelled) return;
         setIsPrivate(res.isPrivate);
+        setHasPin(!!res.hasPin);
+        setPinShown(res.pin ?? null);
         if (!res.isPrivate) {
           setAccess({ kind: "open" });
         } else if (res.isMember) {
           setAccess({ kind: "member", isPrivate: true });
+        } else if (res.hasPin) {
+          setAccess({ kind: "pin-required" });
         } else {
           const k = await knockRoom({
             data: { roomName, userId: currentUser.id, userName: currentUser.name },
@@ -123,13 +139,14 @@ function RoomPage() {
     };
   }, [access]);
 
-  // Start the call once we have access
+  // Start the call once we have access AND user finished pre-call
   useEffect(() => {
     if (startedRef.current) return;
     if (access.kind !== "open" && access.kind !== "member") return;
+    if (showPreCall) return;
     startedRef.current = true;
     startCall({ roomName, roomLabel, identity, name: currentUser.name, userId: currentUser.id });
-  }, [access, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall]);
+  }, [access, showPreCall, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall]);
 
   // Poll pending knocks + privacy state as soon as we have access (member/open),
   // even while the LiveKit connection is still establishing, so incoming
@@ -181,6 +198,54 @@ function RoomPage() {
     },
     [currentUser.id],
   );
+
+  const tryPin = useCallback(async () => {
+    setPinError(null);
+    const pin = pinInput.replace(/\D/g, "");
+    if (pin.length < 4) {
+      setPinError("Digite o PIN completo");
+      return;
+    }
+    try {
+      // Use knockRoom-like fast path via getRoomAccess -> we do a token pre-check
+      // by calling the same access endpoint after inserting membership. Easier:
+      // just try to start the call passing the pin; server validates.
+      const { getLiveKitToken } = await import("@/lib/livekit-token.functions");
+      await getLiveKitToken({
+        data: {
+          roomName,
+          identity: `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`,
+          name: currentUser.name,
+          userId: currentUser.id,
+          pin,
+        } as {
+          roomName: string;
+          identity: string;
+          name: string;
+          userId?: string;
+          pin?: string;
+        },
+      });
+      // Success — server added us as member.
+      setAccess({ kind: "member", isPrivate: true });
+    } catch {
+      const next = pinAttempts + 1;
+      setPinAttempts(next);
+      setPinError("PIN incorreto");
+      if (next >= 3) {
+        // Fall back to knock flow
+        try {
+          const k = await knockRoom({
+            data: { roomName, userId: currentUser.id, userName: currentUser.name },
+          });
+          if (k.status === "approved") setAccess({ kind: "member", isPrivate: true });
+          else setAccess({ kind: "knocking", knockId: k.knockId ?? "" });
+        } catch {
+          setAccess({ kind: "denied" });
+        }
+      }
+    }
+  }, [pinInput, pinAttempts, roomName, currentUser.id, currentUser.name]);
 
   const connecting = access.kind === "checking" || !active || active.roomName !== roomName;
 
