@@ -22,6 +22,7 @@ import {
   CheckSquare,
   Trophy,
   Headphones,
+  FileText,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -40,6 +41,7 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/minhas-tarefas", label: "Minhas tarefas", icon: CheckSquare },
   { to: "/inbox", label: "Caixa de entrada", icon: Inbox },
   { to: "/equipe", label: "Equipe", icon: Users },
+  { to: "/atas", label: "Atas & Planos", icon: FileText },
   { to: "/metas", label: "Metas & Score", icon: Target },
   { to: "/calendario", label: "Calendário", icon: Calendar },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
