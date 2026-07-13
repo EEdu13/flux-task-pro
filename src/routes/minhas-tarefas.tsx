@@ -323,19 +323,6 @@ function MinhasTarefas() {
 
         {/* Filter bar */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            placeholder="Buscar…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input max-w-[14rem] py-1.5"
-          />
-          <MiniSelect value={sector} onChange={setSector} options={[["todos", "Todos setores"], ...sectors.map((s) => [s.id, s.name] as [string, string])]} />
-          <MiniSelect value={freq} onChange={(v) => setFreq(v as Frequency | "todas")} options={[["todas", "Todas frequências"], ...Object.entries(freqLabels) as [string, string][]]} />
-          <MiniSelect value={priority} onChange={(v) => setPriority(v as Priority | "todas")} options={[["todas", "Todas prioridades"], ...Object.entries(priorityLabels) as [string, string][]]} />
-          <MiniSelect value={assignee} onChange={setAssignee} options={[["todos", "Qualquer responsável"], ...users.map((u) => [u.id, u.name] as [string, string])]} />
-          {allTags.length > 0 && (
-            <MiniSelect value={tag} onChange={setTag} options={[["todas", "Todas tags"], ...allTags.map((t) => [t, `#${t}`] as [string, string])]} />
-          )}
           <div className="inline-flex flex-wrap items-center gap-1 rounded-md border border-border bg-secondary/40 p-0.5">
             {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
               <button
@@ -352,6 +339,12 @@ function MinhasTarefas() {
               </button>
             ))}
           </div>
+          <input
+            placeholder="Buscar por título, descrição ou #tag…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input min-w-[16rem] flex-1 py-1.5"
+          />
           {datePreset === "entre" && (
             <div className="inline-flex items-center gap-1">
               <input
