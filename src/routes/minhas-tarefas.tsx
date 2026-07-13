@@ -20,6 +20,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { formatDueBucket } from "@/lib/use-theme";
+import { loadPackDone, savePackDone } from "@/lib/pack";
 import {
   freqLabels,
   priorityLabels,
@@ -68,30 +69,6 @@ const datePresetLabels: Record<DatePreset, string> = {
   "este-mes": "Este mês",
   entre: "Entre datas…",
 };
-
-// ---- Pack (daily commitment) helpers ----------------------------------
-// Pack items are permanent per-user commitments. Completion is tracked per
-// day in localStorage so that every day the checklist resets.
-function packTodayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function packStorageKey(userId: string) {
-  return `fluxo.pack.done.v1:${userId}:${packTodayKey()}`;
-}
-function loadPackDone(userId: string): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(packStorageKey(userId));
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
-}
-function savePackDone(userId: string, ids: Set<string>) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(packStorageKey(userId), JSON.stringify(Array.from(ids)));
-}
 
 function startOfDay(d: Date) {
   const x = new Date(d);
@@ -152,17 +129,17 @@ function dateRangeFor(preset: DatePreset, from?: string, to?: string): [number, 
 }
 
 const scopeLabels: Record<Scope, string> = {
-  todas: "Todas visíveis",
+  pack: "Meu pack",
   atribuidas: "Atribuídas a mim",
   criadas: "Criadas por mim",
   mencionadas: "Mencionaram-me",
-  pack: "Meu pack",
+  todas: "Todas visíveis",
 };
 
 function MinhasTarefas() {
   const { tasks, users, currentUser, updateTask, moveTask, openNewTask, openTask } = useFluxo();
   const { q: initialQ } = Route.useSearch();
-  const [scope, setScope] = useState<Scope>("atribuidas");
+  const [scope, setScope] = useState<Scope>("pack");
   const [view, setView] = useState<ViewMode>("quadro");
   const [sector, setSector] = useState<string>("todos");
   const [freq, setFreq] = useState<Frequency | "todas">("todas");
@@ -346,19 +323,6 @@ function MinhasTarefas() {
 
         {/* Filter bar */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            placeholder="Buscar…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input max-w-[14rem] py-1.5"
-          />
-          <MiniSelect value={sector} onChange={setSector} options={[["todos", "Todos setores"], ...sectors.map((s) => [s.id, s.name] as [string, string])]} />
-          <MiniSelect value={freq} onChange={(v) => setFreq(v as Frequency | "todas")} options={[["todas", "Todas frequências"], ...Object.entries(freqLabels) as [string, string][]]} />
-          <MiniSelect value={priority} onChange={(v) => setPriority(v as Priority | "todas")} options={[["todas", "Todas prioridades"], ...Object.entries(priorityLabels) as [string, string][]]} />
-          <MiniSelect value={assignee} onChange={setAssignee} options={[["todos", "Qualquer responsável"], ...users.map((u) => [u.id, u.name] as [string, string])]} />
-          {allTags.length > 0 && (
-            <MiniSelect value={tag} onChange={setTag} options={[["todas", "Todas tags"], ...allTags.map((t) => [t, `#${t}`] as [string, string])]} />
-          )}
           <div className="inline-flex flex-wrap items-center gap-1 rounded-md border border-border bg-secondary/40 p-0.5">
             {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
               <button
@@ -375,6 +339,12 @@ function MinhasTarefas() {
               </button>
             ))}
           </div>
+          <input
+            placeholder="Buscar por título, descrição ou #tag…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input min-w-[16rem] flex-1 py-1.5"
+          />
           {datePreset === "entre" && (
             <div className="inline-flex items-center gap-1">
               <input
