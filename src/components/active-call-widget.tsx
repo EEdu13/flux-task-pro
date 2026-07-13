@@ -40,11 +40,17 @@ import {
   Pencil,
   Check,
   FileText,
+  Link2,
+  Share2,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
-import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import {
+  createGuestInvite,
+  getRoomAccess,
+  setRoomPrivacy,
+} from "@/lib/livekit-token.functions";
 import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { MeetingExtras, type MeetingExtrasHandle } from "@/components/meeting-extras";
 import {
@@ -192,6 +198,39 @@ function CallContents({
   const [privBusy, setPrivBusy] = useState(false);
   const [presenterMode, setPresenterMode] = useState<"auto" | "grid" | "focus">("auto");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [guestUrl, setGuestUrl] = useState<string | null>(null);
+  const [guestBusy, setGuestBusy] = useState(false);
+  const [guestErr, setGuestErr] = useState<string | null>(null);
+  const [guestCopied, setGuestCopied] = useState(false);
+
+  async function generateGuestLink() {
+    setGuestBusy(true);
+    setGuestErr(null);
+    setGuestCopied(false);
+    try {
+      const res = await createGuestInvite({
+        data: { roomName, inviterUserId: currentUser.id, hours: 24 },
+      });
+      const url = `${window.location.origin}/convidado/${roomName}?t=${encodeURIComponent(res.token)}`;
+      setGuestUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setGuestCopied(true);
+      } catch {
+        /* clipboard may be blocked; user can copy manually */
+      }
+    } catch (e) {
+      setGuestErr(e instanceof Error ? e.message : "Não foi possível gerar o link");
+    } finally {
+      setGuestBusy(false);
+    }
+  }
+
+  function openGuestPanel() {
+    setGuestOpen(true);
+    if (!guestUrl) void generateGuestLink();
+  }
 
   // Poll privacy state so the lock button reflects reality.
   useEffect(() => {
@@ -629,6 +668,93 @@ function CallContents({
                       ))
                     )}
                   </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {!mini && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={openGuestPanel}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                  guestOpen
+                    ? "border-sky-400/60 bg-sky-400/20 text-white"
+                    : "border-sky-400/40 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20"
+                }`}
+                title="Gerar um link para chamar alguém de fora da empresa (cliente, parceiro…)"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                Convidado externo
+              </button>
+              {guestOpen && (
+                <div className="absolute bottom-full right-0 z-40 mb-1 w-80 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs text-white shadow-xl">
+                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      <Share2 className="h-3.5 w-3.5 text-sky-300" />
+                      Convidar alguém externo
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setGuestOpen(false)}
+                      className="rounded p-1 hover:bg-white/10"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="space-y-2 px-3 py-3">
+                    <p className="text-[11px] leading-snug text-white/70">
+                      Copie o link abaixo e envie por WhatsApp, e-mail ou onde preferir. Quem
+                      receber entra na sala <b>{roomLabel}</b> só com o nome — não precisa criar
+                      conta. O link vale por 24 horas.
+                    </p>
+                    {guestErr ? (
+                      <div className="rounded-md border border-red-400/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-200">
+                        {guestErr}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 p-1.5">
+                      <input
+                        readOnly
+                        value={guestBusy ? "Gerando link…" : (guestUrl ?? "")}
+                        onFocus={(e) => e.currentTarget.select()}
+                        className="min-w-0 flex-1 truncate bg-transparent px-1 py-0.5 text-[11px] text-white outline-none"
+                      />
+                      <button
+                        type="button"
+                        disabled={!guestUrl || guestBusy}
+                        onClick={async () => {
+                          if (!guestUrl) return;
+                          try {
+                            await navigator.clipboard.writeText(guestUrl);
+                            setGuestCopied(true);
+                            window.setTimeout(() => setGuestCopied(false), 1600);
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-sky-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-400 disabled:opacity-50"
+                      >
+                        {guestCopied ? (
+                          <>
+                            <Check className="h-3 w-3" /> Copiado
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3" /> Copiar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void generateGuestLink()}
+                      disabled={guestBusy}
+                      className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                    >
+                      Gerar um novo link
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
