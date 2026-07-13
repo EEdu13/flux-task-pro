@@ -169,18 +169,28 @@
 @keyframes fab-pulse {
   0%, 100% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 oklch(0.52 0.22 275 / 0.45);
+    opacity: 0.55;
   }
   50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 0 12px oklch(0.52 0.22 275 / 0);
+    transform: scale(1.18);
+    opacity: 0;
   }
 }
 
 .fab-pulse {
+  position: relative;
+}
+
+.fab-pulse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 9999px;
+  background: var(--color-primary);
   animation: fab-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.fab-pulse:hover {
+.fab-pulse:hover::before {
   animation-play-state: paused;
 }
