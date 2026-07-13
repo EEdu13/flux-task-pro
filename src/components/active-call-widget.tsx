@@ -40,11 +40,17 @@ import {
   Pencil,
   Check,
   FileText,
+  Link2,
+  Share2,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
-import { getRoomAccess, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import {
+  createGuestInvite,
+  getRoomAccess,
+  setRoomPrivacy,
+} from "@/lib/livekit-token.functions";
 import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { MeetingExtras, type MeetingExtrasHandle } from "@/components/meeting-extras";
 import {
