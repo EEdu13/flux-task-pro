@@ -164,3 +164,23 @@
   }
   html { scroll-behavior: smooth; }
 }
+
+/* Pulsing call-to-action on the Quick FAB */
+@keyframes fab-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 oklch(0.52 0.22 275 / 0.45);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 12px oklch(0.52 0.22 275 / 0);
+  }
+}
+
+.fab-pulse {
+  animation: fab-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.fab-pulse:hover {
+  animation-play-state: paused;
+}
