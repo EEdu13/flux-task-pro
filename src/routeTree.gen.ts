@@ -21,6 +21,7 @@ import { Route as AtasRouteImport } from './routes/atas'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
+import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
 
 const RelatoriosRoute = RelatoriosRouteImport.update({
@@ -83,6 +84,11 @@ const SalasRoomNameRoute = SalasRoomNameRouteImport.update({
   path: '/salas/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConvidadoRoomNameRoute = ConvidadoRoomNameRouteImport.update({
+  id: '/convidado/$roomName',
+  path: '/convidado/$roomName',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
   id: '/api/public/purge-rooms',
   path: '/api/public/purge-rooms',
@@ -100,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
+  '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
+  '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/relatorios': typeof RelatoriosRoute
+  '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
@@ -148,6 +157,7 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
+    | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
     | '/api/public/purge-rooms'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
+    | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas'
     | '/api/public/purge-rooms'
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/relatorios'
+    | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
     | '/api/public/purge-rooms'
@@ -194,6 +206,7 @@ export interface RootRouteChildren {
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   RelatoriosRoute: typeof RelatoriosRoute
+  ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
   ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
@@ -285,6 +298,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalasRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/convidado/$roomName': {
+      id: '/convidado/$roomName'
+      path: '/convidado/$roomName'
+      fullPath: '/convidado/$roomName'
+      preLoaderRoute: typeof ConvidadoRoomNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/purge-rooms': {
       id: '/api/public/purge-rooms'
       path: '/api/public/purge-rooms'
@@ -306,6 +326,7 @@ const rootRouteChildren: RootRouteChildren = {
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
   RelatoriosRoute: RelatoriosRoute,
+  ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
   ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
