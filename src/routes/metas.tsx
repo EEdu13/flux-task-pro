@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Download, FileText, Target, TrendingDown, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Download,
+  FileText,
+  Maximize2,
+  Minimize2,
+  Presentation,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { FluxoLayout } from "@/components/fluxo-layout";
@@ -10,8 +20,8 @@ import { sectors, type Task, type User } from "@/lib/fluxo-types";
 export const Route = createFileRoute("/metas")({
   head: () => ({
     meta: [
-      { title: "Metas & Score · Fluxo" },
-      { name: "description", content: "Score automático baseado em tarefas diárias e mensais concluídas no prazo." },
+      { title: "Painel gestor · Metas & Score · Fluxo" },
+      { name: "description", content: "Painel apresentativo do gestor: resultados individuais e do time com filtro por colaborador e exportação em PDF." },
     ],
   }),
   component: MetasPage,
@@ -71,6 +81,9 @@ function MetasPage() {
   const { tasks, users, completions, currentUser } = useFluxo();
   const [period, setPeriod] = useState<Period>("diaria");
   const [openUserId, setOpenUserId] = useState<string | null>(null);
+  const isManager = currentUser.role === "gerente" || currentUser.role === "supervisor";
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [presenting, setPresenting] = useState(false);
 
   const visibleUsers = useMemo(() => {
     if (currentUser.role === "gerente") return users;
@@ -79,10 +92,50 @@ function MetasPage() {
     return users.filter((u) => u.id === currentUser.id);
   }, [users, currentUser]);
 
+  // Team filter — starts with everyone visible; the panel + PDF respect it.
+  const [selectedTeam, setSelectedTeam] = useState<Set<string>>(
+    () => new Set(visibleUsers.map((u) => u.id)),
+  );
+  useEffect(() => {
+    // If the visible team changes (e.g. role switch), reset selection.
+    setSelectedTeam(new Set(visibleUsers.map((u) => u.id)));
+  }, [visibleUsers]);
+  const filteredUsers = useMemo(
+    () => visibleUsers.filter((u) => selectedTeam.has(u.id)),
+    [visibleUsers, selectedTeam],
+  );
+  const toggleTeamMember = (id: string) =>
+    setSelectedTeam((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allSelected = selectedTeam.size === visibleUsers.length;
+  const toggleAllTeam = () =>
+    setSelectedTeam(allSelected ? new Set() : new Set(visibleUsers.map((u) => u.id)));
+
+  // Presentation mode: fullscreen the panel container and enlarge type.
+  useEffect(() => {
+    const onChange = () => setPresenting(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  const togglePresent = async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {
+      /* ignore */
+    }
+  };
+
   const range = useMemo(() => periodRange(period), [period]);
 
   const scores: UserScore[] = useMemo(() => {
-    return visibleUsers.map((u) => {
+    return filteredUsers.map((u) => {
       const assigned = tasks.filter(
         (t) =>
           t.assigneeId === u.id &&
@@ -107,46 +160,156 @@ function MetasPage() {
         breakdown,
       };
     });
-  }, [visibleUsers, tasks, completions, period, range]);
+  }, [filteredUsers, tasks, completions, period, range]);
 
   const ranked = [...scores].sort((a, b) => b.pct - a.pct);
   const teamAssigned = scores.reduce((s, r) => s + r.assigned, 0);
   const teamPoints = scores.reduce((s, r) => s + r.points, 0);
   const teamPct = teamAssigned ? (teamPoints / teamAssigned) * 100 : 0;
+  const teamOnTime = scores.reduce((s, r) => s + r.onTime, 0);
+  const teamLate = scores.reduce((s, r) => s + r.late, 0);
+  const teamMissed = scores.reduce((s, r) => s + r.missed, 0);
+  const topPerformer = ranked.find((r) => r.assigned > 0) ?? null;
+  const needsAttention = [...ranked]
+    .filter((r) => r.assigned > 0)
+    .sort((a, b) => a.pct - b.pct)[0] ?? null;
 
   return (
     <FluxoLayout title="Metas & Score">
-      <div className="mx-auto max-w-6xl space-y-5">
+      <div
+        ref={containerRef}
+        className={`mx-auto space-y-5 ${
+          presenting
+            ? "max-w-none bg-background p-8 text-[1.05rem] overflow-auto min-h-screen"
+            : "max-w-6xl"
+        }`}
+      >
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Metas & Score</h1>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                <Presentation className="h-3 w-3" /> Painel do gestor
+              </span>
+            </div>
+            <h1 className={`mt-1 font-semibold tracking-tight ${presenting ? "text-4xl" : "text-2xl"}`}>
+              Metas & Score
+            </h1>
             <p className="text-sm text-muted-foreground">
-              Cada tarefa concluída no prazo conta cheia; concluída em atraso conta pela metade; não feita não conta.
-              O score é a % de tarefas cumpridas sobre as atribuídas no período.
+              {isManager
+                ? "Filtre seus colaboradores, apresente ao vivo e exporte um PDF do período. O score vem direto das tarefas concluídas no prazo."
+                : "Score automático baseado nas suas tarefas concluídas no prazo. Peça acesso de gestor para acompanhar o time."}
             </p>
           </div>
-          <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
-            {(["diaria", "mensal"] as Period[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 font-medium ${period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
-              >
-                {p === "diaria" ? "Diário" : "Mensal"}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
+              {(["diaria", "mensal"] as Period[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-3 py-1.5 font-medium ${period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
+                >
+                  {p === "diaria" ? "Diário" : "Mensal"}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={togglePresent}
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20"
+              title={presenting ? "Sair da apresentação" : "Modo apresentação"}
+            >
+              {presenting ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {presenting ? "Sair" : "Apresentar"}
+            </button>
           </div>
         </header>
+
+        {isManager && visibleUsers.length > 1 && (
+          <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Users className="h-3.5 w-3.5" /> Filtrar meus colaboradores
+              </div>
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                <span>
+                  {selectedTeam.size} de {visibleUsers.length}
+                </span>
+                <button
+                  onClick={toggleAllTeam}
+                  className="rounded px-2 py-0.5 font-medium text-primary hover:bg-primary/10"
+                >
+                  {allSelected ? "Limpar" : "Selecionar todos"}
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {visibleUsers.map((u) => {
+                const on = selectedTeam.has(u.id);
+                const sector = sectors.find((s) => s.id === u.sector);
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => toggleTeamMember(u.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs transition ${
+                      on
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span
+                      className="grid h-5 w-5 place-items-center rounded-full text-[9px] font-bold text-white"
+                      style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
+                    >
+                      {u.avatar}
+                    </span>
+                    {u.name}
+                    {u.id === currentUser.id && (
+                      <span className="rounded-full bg-primary/15 px-1 text-[9px] font-semibold uppercase text-primary">
+                        você
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <div className="grid gap-3 md:grid-cols-4">
           <KpiCard label={`Período (${frequencyLabel(period)})`} value={range.label} mono />
           <KpiCard label="Tarefas do período" value={teamAssigned} />
           <KpiCard
             label="Concluídas"
-            value={`${scores.reduce((s, r) => s + r.onTime + r.late, 0)} / ${teamAssigned}`}
+            value={`${teamOnTime + teamLate} / ${teamAssigned}`}
           />
-          <KpiCard label="Score do time" value={`${teamPct.toFixed(0)}%`} highlight={teamPct >= 100} />
+          <KpiCard label={filteredUsers.length === 1 ? "Score individual" : "Score do time"} value={`${teamPct.toFixed(0)}%`} highlight={teamPct >= 100} />
         </div>
+
+        {isManager && filteredUsers.length > 0 && (
+          <div className="grid gap-3 md:grid-cols-3">
+            <HighlightCard
+              tone="success"
+              label="Destaque"
+              user={topPerformer?.user}
+              value={topPerformer && topPerformer.assigned > 0 ? `${topPerformer.pct.toFixed(0)}%` : "—"}
+              sub={topPerformer ? `${topPerformer.onTime} no prazo · ${topPerformer.assigned} tarefas` : "Sem dados no período"}
+            />
+            <HighlightCard
+              tone="warning"
+              label="Precisa de atenção"
+              user={needsAttention?.user}
+              value={needsAttention && needsAttention.assigned > 0 ? `${needsAttention.pct.toFixed(0)}%` : "—"}
+              sub={needsAttention ? `${needsAttention.missed} perdidas · ${needsAttention.late} em atraso` : "Sem dados no período"}
+            />
+            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Distribuição</div>
+              <div className="mt-2 space-y-1.5 text-xs">
+                <DistRow label="No prazo" value={teamOnTime} total={teamAssigned} className="bg-success" />
+                <DistRow label="Em atraso" value={teamLate} total={teamAssigned} className="bg-warning" />
+                <DistRow label="Perdidas" value={teamMissed} total={teamAssigned} className="bg-destructive" />
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="rounded-lg border border-border bg-card shadow-sm">
           <div className="flex items-center justify-between border-b border-border px-5 py-3">
@@ -162,7 +325,9 @@ function MetasPage() {
             {ranked.length === 0 && (
               <li className="px-5 py-10 text-center text-sm text-muted-foreground">
                 <Target className="mx-auto mb-2 h-6 w-6" />
-                Nenhuma tarefa {frequencyLabel(period)} atribuída no período.
+                {filteredUsers.length === 0
+                  ? "Selecione ao menos um colaborador para ver o ranking."
+                  : `Nenhuma tarefa ${frequencyLabel(period)} atribuída no período.`}
               </li>
             )}
             {ranked.map((row) => {
@@ -229,9 +394,78 @@ function MetasPage() {
           </ul>
         </section>
 
-        <ExportMonthly users={visibleUsers} tasks={tasks} completions={completions} />
+        {isManager && (
+          <ExportMonthly users={filteredUsers} tasks={tasks} completions={completions} />
+        )}
       </div>
     </FluxoLayout>
+  );
+}
+
+function HighlightCard({
+  tone,
+  label,
+  user,
+  value,
+  sub,
+}: {
+  tone: "success" | "warning";
+  label: string;
+  user?: User;
+  value: string;
+  sub: string;
+}) {
+  const sector = user ? sectors.find((s) => s.id === user.sector) : undefined;
+  const border = tone === "success" ? "border-success/40 bg-success/5" : "border-warning/40 bg-warning/5";
+  const valueClass = tone === "success" ? "text-success" : "text-warning";
+  return (
+    <div className={`rounded-lg border p-4 shadow-sm ${border}`}>
+      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
+      {user ? (
+        <div className="mt-2 flex items-center gap-3">
+          <div
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
+            style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
+          >
+            {user.avatar}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{user.name}</div>
+            <div className="truncate text-[11px] text-muted-foreground">{sub}</div>
+          </div>
+          <div className={`text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
+        </div>
+      ) : (
+        <div className="mt-2 text-sm text-muted-foreground">Sem dados no período.</div>
+      )}
+    </div>
+  );
+}
+
+function DistRow({
+  label,
+  value,
+  total,
+  className,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  className: string;
+}) {
+  const pct = total === 0 ? 0 : Math.round((value / total) * 100);
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{label}</span>
+        <span className="tabular-nums font-medium text-foreground">
+          {value} · {pct}%
+        </span>
+      </div>
+      <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-secondary">
+        <div className={`h-full rounded-full ${className}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
   );
 }
 
