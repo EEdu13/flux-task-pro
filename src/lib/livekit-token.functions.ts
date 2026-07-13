@@ -633,12 +633,12 @@ async function signGuestToken(payload: { r: string; e: number }, secret: string)
   const body = base64UrlEncode(enc.encode(JSON.stringify(payload)));
   const key = await crypto.subtle.importKey(
     "raw",
-    enc.encode(secret),
+    enc.encode(secret) as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body) as BufferSource);
   return `${body}.${base64UrlEncode(sig)}`;
 }
 
@@ -649,12 +649,17 @@ async function verifyGuestToken(token: string, secret: string): Promise<{ r: str
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    enc.encode(secret),
+    enc.encode(secret) as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["verify"],
   );
-  const ok = await crypto.subtle.verify("HMAC", key, base64UrlDecode(sig), enc.encode(body));
+  const ok = await crypto.subtle.verify(
+    "HMAC",
+    key,
+    base64UrlDecode(sig) as BufferSource,
+    enc.encode(body) as BufferSource,
+  );
   if (!ok) return null;
   try {
     const dec = new TextDecoder().decode(base64UrlDecode(body));
