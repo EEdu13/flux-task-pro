@@ -198,6 +198,39 @@ function CallContents({
   const [privBusy, setPrivBusy] = useState(false);
   const [presenterMode, setPresenterMode] = useState<"auto" | "grid" | "focus">("auto");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [guestUrl, setGuestUrl] = useState<string | null>(null);
+  const [guestBusy, setGuestBusy] = useState(false);
+  const [guestErr, setGuestErr] = useState<string | null>(null);
+  const [guestCopied, setGuestCopied] = useState(false);
+
+  async function generateGuestLink() {
+    setGuestBusy(true);
+    setGuestErr(null);
+    setGuestCopied(false);
+    try {
+      const res = await createGuestInvite({
+        data: { roomName, inviterUserId: currentUser.id, hours: 24 },
+      });
+      const url = `${window.location.origin}/convidado/${roomName}?t=${encodeURIComponent(res.token)}`;
+      setGuestUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setGuestCopied(true);
+      } catch {
+        /* clipboard may be blocked; user can copy manually */
+      }
+    } catch (e) {
+      setGuestErr(e instanceof Error ? e.message : "Não foi possível gerar o link");
+    } finally {
+      setGuestBusy(false);
+    }
+  }
+
+  function openGuestPanel() {
+    setGuestOpen(true);
+    if (!guestUrl) void generateGuestLink();
+  }
 
   // Poll privacy state so the lock button reflects reality.
   useEffect(() => {
