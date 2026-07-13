@@ -239,7 +239,7 @@ export function QuickFab() {
           setMode("menu");
         }}
         title="Ações rápidas"
-        className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110 ${
+        className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110 fab-pulse ${
           open ? "rotate-45" : ""
         }`}
       >
