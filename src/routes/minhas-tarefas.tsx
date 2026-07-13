@@ -129,17 +129,17 @@ function dateRangeFor(preset: DatePreset, from?: string, to?: string): [number, 
 }
 
 const scopeLabels: Record<Scope, string> = {
-  todas: "Todas visíveis",
+  pack: "Meu pack",
   atribuidas: "Atribuídas a mim",
   criadas: "Criadas por mim",
   mencionadas: "Mencionaram-me",
-  pack: "Meu pack",
+  todas: "Todas visíveis",
 };
 
 function MinhasTarefas() {
   const { tasks, users, currentUser, updateTask, moveTask, openNewTask, openTask } = useFluxo();
   const { q: initialQ } = Route.useSearch();
-  const [scope, setScope] = useState<Scope>("atribuidas");
+  const [scope, setScope] = useState<Scope>("pack");
   const [view, setView] = useState<ViewMode>("quadro");
   const [sector, setSector] = useState<string>("todos");
   const [freq, setFreq] = useState<Frequency | "todas">("todas");
