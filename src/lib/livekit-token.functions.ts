@@ -606,3 +606,132 @@ export const updateActiveSpeakers = createServerFn({ method: "POST" })
     );
     return { ok: true };
   });
+
+// =============== External guest invites ===============
+// Signed short-lived tokens so anyone with the link can join the room
+// as a guest without a Fluxo account. Signed with LIVEKIT_API_SECRET so
+// no extra secret / DB row is required.
+
+function base64UrlEncode(buf: ArrayBuffer | Uint8Array) {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlDecode(input: string): Uint8Array {
+  const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
+  const s = input.replace(/-/g, "+").replace(/_/g, "/") + pad;
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function signGuestToken(payload: { r: string; e: number }, secret: string) {
+  const enc = new TextEncoder();
+  const body = base64UrlEncode(enc.encode(JSON.stringify(payload)));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
+  return `${body}.${base64UrlEncode(sig)}`;
+}
+
+async function verifyGuestToken(token: string, secret: string): Promise<{ r: string; e: number } | null> {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, sig] = parts;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+  const ok = await crypto.subtle.verify("HMAC", key, base64UrlDecode(sig), enc.encode(body));
+  if (!ok) return null;
+  try {
+    const dec = new TextDecoder().decode(base64UrlDecode(body));
+    const parsed = JSON.parse(dec) as { r: string; e: number };
+    if (typeof parsed?.r !== "string" || typeof parsed?.e !== "number") return null;
+    if (parsed.e < Math.floor(Date.now() / 1000)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export const createGuestInvite = createServerFn({ method: "POST" })
+  .inputValidator(
+    (input: { roomName: string; inviterUserId: string; hours?: number }) => ({
+      roomName: sanitizeRoomName(input?.roomName),
+      inviterUserId: sanitizeUserId(input?.inviterUserId),
+      hours: Math.max(1, Math.min(72, Math.floor(input?.hours ?? 24))),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const secret = process.env.LIVEKIT_API_SECRET;
+    if (!secret) throw new Error("LiveKit não configurado no servidor");
+    // Ensure inviter is a member (so, if the room is private, guests aren't
+    // blocked at the LiveKit token step — we bypass the member check on the
+    // guest path anyway, but this also grandfathers the inviter cleanly).
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin
+      .from("room_members")
+      .upsert(
+        {
+          room_name: data.roomName,
+          user_id: data.inviterUserId,
+          added_by: data.inviterUserId,
+        },
+        { onConflict: "room_name,user_id" },
+      );
+    const exp = Math.floor(Date.now() / 1000) + data.hours * 3600;
+    const token = await signGuestToken({ r: data.roomName, e: exp }, secret);
+    return { token, expiresAt: exp };
+  });
+
+export const getGuestLiveKitToken = createServerFn({ method: "POST" })
+  .inputValidator((input: { roomName: string; guestToken: string; name: string }) => {
+    const roomName = sanitizeRoomName(input?.roomName);
+    const guestToken =
+      typeof input?.guestToken === "string" ? input.guestToken.trim().slice(0, 512) : "";
+    if (!guestToken || !/^[A-Za-z0-9_\-.]+$/.test(guestToken)) {
+      throw new Error("Convite inválido");
+    }
+    const name = (typeof input?.name === "string" ? input.name : "").trim().slice(0, 60);
+    if (name.length < 2) throw new Error("Digite seu nome");
+    return { roomName, guestToken, name };
+  })
+  .handler(async ({ data }) => {
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const url = process.env.LIVEKIT_URL;
+    if (!apiKey || !apiSecret || !url) throw new Error("LiveKit não configurado no servidor");
+    const verified = await verifyGuestToken(data.guestToken, apiSecret);
+    if (!verified || verified.r !== data.roomName) {
+      throw new Error("Convite expirado ou inválido");
+    }
+    const { AccessToken } = await import("livekit-server-sdk");
+    const identity = `guest-${Math.random().toString(36).slice(2, 10)}`;
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity,
+      name: `${data.name} (convidado)`,
+      ttl: 60 * 60 * 4,
+    });
+    at.addGrant({
+      room: data.roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+    const token = await at.toJwt();
+    return { token, url, identity };
+  });
