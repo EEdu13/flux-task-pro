@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AtSign,
   Bell,
@@ -17,6 +17,7 @@ import { formatDueBucket, formatRelative } from "@/lib/use-theme";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { userScorePct, scoreTextClass } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
+import { loadPackDone, savePackDone } from "@/lib/pack";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,6 +31,39 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { currentUser, tasks, users, notifications, completions, openTask } = useFluxo();
+
+  // ---- Meu pack (today) ------------------------------------------------
+  const packTasks = useMemo(
+    () => tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack),
+    [tasks, currentUser.id],
+  );
+  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
+  useEffect(() => {
+    setPackDone(loadPackDone(currentUser.id));
+  }, [currentUser.id]);
+  const togglePackDone = (id: string) => {
+    setPackDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      savePackDone(currentUser.id, next);
+      return next;
+    });
+  };
+  const packTotal = packTasks.length;
+  const packDoneCount = packTasks.filter((t) => packDone.has(t.id)).length;
+  const packPct = packTotal === 0 ? 0 : Math.round((packDoneCount / packTotal) * 100);
+  // Team-wide pack overview (how everyone's pack looks in size)
+  const teamPack = useMemo(() => {
+    return users
+      .map((u) => {
+        const items = tasks.filter((t) => t.assigneeId === u.id && t.inPack);
+        return { user: u, total: items.length };
+      })
+      .filter((x) => x.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [users, tasks]);
 
   const myTasks = tasks.filter((t) => t.assigneeId === currentUser.id);
   const openTasks = myTasks.filter((t) => t.status !== "concluida");
@@ -148,6 +182,132 @@ function Home() {
           </div>
           <Kpi icon={Flame} label="Sequência" value={`${currentUser.streak} d`} sub="dias em ritmo" color="oklch(0.6 0.2 330)" />
         </div>
+
+        {/* Meu pack — foco especial */}
+        <section className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-card to-card p-5 shadow-sm">
+          <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl" />
+          <div className="relative grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500 text-white shadow-sm">
+                    <Flame className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-semibold">Meu pack de hoje</h2>
+                    <p className="text-[11px] text-muted-foreground">
+                      Seus compromissos diários inegociáveis.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  to="/minhas-tarefas"
+                  search={{ q: undefined }}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-600 hover:bg-amber-500/20"
+                >
+                  Abrir pack <ChevronRight className="h-3 w-3" />
+                </Link>
+              </div>
+
+              <div className="mt-4 flex items-end gap-4">
+                <div className="text-4xl font-semibold tabular-nums tracking-tight text-amber-600">
+                  {packDoneCount}
+                  <span className="text-lg text-muted-foreground">/{packTotal}</span>
+                </div>
+                <div className="flex-1 pb-1.5">
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>Progresso do dia</span>
+                    <span className="font-semibold text-amber-600">{packPct}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className="h-full rounded-full bg-amber-500 transition-all"
+                      style={{ width: `${packPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <ul className="mt-4 space-y-1.5">
+                {packTasks.length === 0 && (
+                  <li className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/5 px-3 py-4 text-center text-xs text-muted-foreground">
+                    Você ainda não montou seu pack. Vá em <Link to="/minhas-tarefas" className="font-semibold text-amber-600 hover:underline">Minhas tarefas</Link> e marque a ⭐ nas obrigações do seu dia.
+                  </li>
+                )}
+                {packTasks.slice(0, 5).map((t) => {
+                  const done = packDone.has(t.id);
+                  const sec = sectors.find((s) => s.id === t.sector);
+                  return (
+                    <li key={t.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-amber-500/5">
+                      <button
+                        onClick={() => togglePackDone(t.id)}
+                        aria-label={done ? "Desmarcar" : "Concluir hoje"}
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                          done
+                            ? "border-amber-500 bg-amber-500 text-white"
+                            : "border-amber-500/50 bg-transparent hover:border-amber-500"
+                        }`}
+                      >
+                        {done && <CheckCircle2 className="h-3 w-3" />}
+                      </button>
+                      <button
+                        onClick={() => openTask(t.id)}
+                        className={`flex-1 truncate text-left text-sm ${done ? "text-muted-foreground line-through" : "font-medium"}`}
+                      >
+                        {t.title}
+                      </button>
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                        style={{
+                          background: `color-mix(in oklab, ${sec?.color} 15%, transparent)`,
+                          color: sec?.color,
+                        }}
+                      >
+                        {sec?.name}
+                      </span>
+                    </li>
+                  );
+                })}
+                {packTasks.length > 5 && (
+                  <li className="pl-7 pt-1 text-[11px] text-muted-foreground">
+                    +{packTasks.length - 5} no pack completo
+                  </li>
+                )}
+              </ul>
+            </div>
+
+            <div className="rounded-lg border border-border bg-card/70 p-4 backdrop-blur">
+              <div className="flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-amber-500" />
+                <h3 className="text-sm font-semibold">Packs do time</h3>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Quem já definiu seus compromissos diários.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {teamPack.length === 0 && (
+                  <li className="py-4 text-center text-xs text-muted-foreground">
+                    Ninguém montou o pack ainda.
+                  </li>
+                )}
+                {teamPack.map(({ user, total }) => (
+                  <li key={user.id} className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                      {user.avatar}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium">{user.name}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {total} {total === 1 ? "item" : "itens"} no pack
+                      </div>
+                    </div>
+                    <Flame className="h-3.5 w-3.5 text-amber-500" />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
 
         <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
