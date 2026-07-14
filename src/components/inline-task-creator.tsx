@@ -107,6 +107,13 @@ export function InlineTaskCreator({
 
   const jumpNext = (rowId: string) => {
     const idx = rows.findIndex((r) => r.id === rowId);
+    const current = rows[idx];
+    if (!current || !current.title.trim()) {
+      // não cria linha em branco; foca a próxima existente se houver
+      const nxt = rows[idx + 1];
+      if (nxt) focusRow(nxt.id);
+      return;
+    }
     const nxt = rows[idx + 1];
     if (nxt) {
       focusRow(nxt.id);
