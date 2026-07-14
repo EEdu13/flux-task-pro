@@ -239,11 +239,18 @@ export function QuickFab() {
           setMode("menu");
         }}
         title="Ações rápidas"
-        className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110 fab-pulse ${
-          open ? "rotate-45" : ""
-        }`}
+        className="group flex flex-col items-center gap-1"
       >
-        <Plus className="h-5 w-5" />
+        <span
+          className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition group-hover:brightness-110 ${
+            open ? "rotate-45" : ""
+          }`}
+        >
+          {open ? <X className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
+        </span>
+        <span className="rounded-md border border-border bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground shadow-sm">
+          Acesso rápido
+        </span>
       </button>
     </div>
   );
