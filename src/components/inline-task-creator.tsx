@@ -35,7 +35,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
     title: "",
-    dueDate: todayStr(),
+    dueDate: defaults.dueDate ?? todayStr(),
     assigneeId: defaults.assigneeId ?? "",
     priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
