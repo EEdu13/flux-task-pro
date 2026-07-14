@@ -19,6 +19,7 @@ interface DraftRow {
   priority: Priority;
   sector: string;
   attachments: Attachment[];
+  mentions: string[];
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -38,6 +39,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
     attachments: [],
+    mentions: [],
   };
 }
 
@@ -61,11 +63,42 @@ export function InlineTaskCreator({
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRowId = useRef<string | null>(null);
+  const [mention, setMention] = useState<{
+    rowId: string;
+    query: string;
+    startIndex: number;
+    selectedIndex: number;
+  } | null>(null);
 
   const focusRow = (id: string) => {
     requestAnimationFrame(() => {
       inputRefs.current[id]?.focus();
     });
+  };
+
+  const parseMention = (title: string, cursor: number): { query: string; startIndex: number } | null => {
+    const before = title.slice(0, cursor);
+    const at = before.lastIndexOf("@");
+    if (at === -1) return null;
+    if (before.slice(at + 1).includes(" ")) return null;
+    if (at > 0 && /\w/.test(title[at - 1])) return null;
+    return { query: title.slice(at + 1, cursor), startIndex: at };
+  };
+
+  const applyMention = (rowId: string, userId: string, userName: string) => {
+    if (!mention) return;
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.id !== rowId) return r;
+        const before = r.title.slice(0, mention.startIndex);
+        const after = r.title.slice(mention.startIndex + mention.query.length + 1);
+        const newTitle = `${before}@${userName} ${after}`;
+        const mentions = r.mentions.includes(userId) ? r.mentions : [...r.mentions, userId];
+        return { ...r, title: newTitle, mentions };
+      }),
+    );
+    setMention(null);
+    focusRow(rowId);
   };
 
   const addRow = (afterId?: string) => {
@@ -90,7 +123,7 @@ export function InlineTaskCreator({
       sector: row.sector || currentUser.sector,
       createdBy: currentUser.id,
       assigneeId: row.assigneeId || currentUser.id,
-      mentions: [],
+      mentions: row.mentions,
       frequency: "diaria",
       status: defaultStatus,
       score: 10,
@@ -105,6 +138,13 @@ export function InlineTaskCreator({
 
   const jumpNext = (rowId: string) => {
     const idx = rows.findIndex((r) => r.id === rowId);
+    const current = rows[idx];
+    if (!current || !current.title.trim()) {
+      // não cria linha em branco; foca a próxima existente se houver
+      const nxt = rows[idx + 1];
+      if (nxt) focusRow(nxt.id);
+      return;
+    }
     const nxt = rows[idx + 1];
     if (nxt) {
       focusRow(nxt.id);
@@ -230,7 +270,7 @@ export function InlineTaskCreator({
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-sm font-semibold">Criação rápida (estilo planilha)</span>
           <span className="text-[11px] text-muted-foreground">
-            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Tab</kbd> para próxima linha · arraste arquivos para anexar
+            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para próxima linha · arraste arquivos para anexar
           </span>
         </div>
         {open && rows.some((r) => r.title.trim()) && (
@@ -283,42 +323,124 @@ export function InlineTaskCreator({
                     }`}
                   >
                     <td className="py-1 pl-3 text-[10px] text-muted-foreground">{idx + 1}</td>
-                    <td className="py-1 pr-3">
+                    <td className="relative py-1 pr-3">
                       <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
                         }}
                         value={row.title}
-                        onChange={(e) => update(row.id, { title: e.target.value })}
+                        onChange={(e) => {
+                          update(row.id, { title: e.target.value });
+                          const cursor = e.currentTarget.selectionStart ?? e.target.value.length;
+                          const m = parseMention(e.target.value, cursor);
+                          if (m) {
+                            setMention({
+                              rowId: row.id,
+                              query: m.query,
+                              startIndex: m.startIndex,
+                              selectedIndex: 0,
+                            });
+                          } else {
+                            setMention((cur) => (cur?.rowId === row.id ? null : cur));
+                          }
+                        }}
                         onKeyDown={(e) => {
+                          const mentionOpen = mention?.rowId === row.id;
+                          const matches = mentionOpen
+                            ? assignees.filter((u) =>
+                                u.name.toLowerCase().includes(mention!.query.toLowerCase()),
+                              )
+                            : [];
+
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            requestSubmitAll();
+                            if (mentionOpen && matches.length > 0) {
+                              const u = matches[mention!.selectedIndex] ?? matches[0];
+                              applyMention(row.id, u.id, u.name);
+                            } else {
+                              jumpNext(row.id);
+                            }
                           } else if (e.key === "Tab" && !e.shiftKey) {
-                            e.preventDefault();
-                            jumpNext(row.id);
+                            if (mentionOpen && matches.length > 0) {
+                              e.preventDefault();
+                              const u = matches[mention!.selectedIndex] ?? matches[0];
+                              applyMention(row.id, u.id, u.name);
+                            }
                           } else if (e.key === "Backspace" && row.title === "" && rows.length > 1) {
                             e.preventDefault();
                             remove(row.id);
                             const prev = rows[idx - 1];
                             if (prev) focusRow(prev.id);
                           } else if (e.key === "ArrowDown") {
-                            const nxt = rows[idx + 1];
-                            if (nxt) {
+                            if (mentionOpen && matches.length > 0) {
                               e.preventDefault();
-                              focusRow(nxt.id);
+                              setMention((m) =>
+                                m ? { ...m, selectedIndex: Math.min(m.selectedIndex + 1, matches.length - 1) } : m,
+                              );
+                            } else {
+                              const nxt = rows[idx + 1];
+                              if (nxt) {
+                                e.preventDefault();
+                                focusRow(nxt.id);
+                              }
                             }
                           } else if (e.key === "ArrowUp") {
-                            const prv = rows[idx - 1];
-                            if (prv) {
+                            if (mentionOpen && matches.length > 0) {
                               e.preventDefault();
-                              focusRow(prv.id);
+                              setMention((m) =>
+                                m ? { ...m, selectedIndex: Math.max(m.selectedIndex - 1, 0) } : m,
+                              );
+                            } else {
+                              const prv = rows[idx - 1];
+                              if (prv) {
+                                e.preventDefault();
+                                focusRow(prv.id);
+                              }
+                            }
+                          } else if (e.key === "Escape") {
+                            if (mentionOpen) {
+                              e.preventDefault();
+                              setMention(null);
                             }
                           }
                         }}
                         placeholder="Nova tarefa…"
                         className="w-full bg-transparent px-1 py-1.5 outline-none placeholder:text-muted-foreground/60"
                       />
+                      {mention?.rowId === row.id && (
+                        <div className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-card shadow-xl">
+                          {(() => {
+                            const matches = assignees.filter((u) =>
+                              u.name.toLowerCase().includes(mention.query.toLowerCase()),
+                            );
+                            if (matches.length === 0) {
+                              return (
+                                <div className="px-3 py-2 text-xs text-muted-foreground">
+                                  Nenhum usuário encontrado
+                                </div>
+                              );
+                            }
+                            return matches.map((u, i) => (
+                              <button
+                                key={u.id}
+                                type="button"
+                                onClick={() => applyMention(row.id, u.id, u.name)}
+                                onMouseEnter={() =>
+                                  setMention((m) => (m ? { ...m, selectedIndex: i } : m))
+                                }
+                                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-secondary ${
+                                  i === mention.selectedIndex ? "bg-secondary" : ""
+                                }`}
+                              >
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                                  {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                                </span>
+                                <span className="flex-1 truncate">{u.name}</span>
+                              </button>
+                            ));
+                          })()}
+                        </div>
+                      )}
                       {row.attachments.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {row.attachments.map((a) => (
@@ -441,8 +563,8 @@ export function InlineTaskCreator({
             </button>
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <span>
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Tab</kbd> próxima linha ·{" "}
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> cria todas ·{" "}
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima linha ·{" "}
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">@</kbd> menciona ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">↑↓</kbd> navega ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">⌫</kbd> remove linha vazia
               </span>
