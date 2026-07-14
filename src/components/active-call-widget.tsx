@@ -4,7 +4,6 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
-  ControlBar,
   GridLayout,
   FocusLayout,
   FocusLayoutContainer,
@@ -14,6 +13,7 @@ import {
   useDataChannel,
   useLocalParticipant,
   useRoomContext,
+  useTrackToggle,
 } from "@livekit/components-react";
 import { Track, RoomEvent } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
@@ -42,6 +42,14 @@ import {
   FileText,
   Link2,
   Share2,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  MonitorOff,
+  PhoneOff,
+  MoreHorizontal,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
