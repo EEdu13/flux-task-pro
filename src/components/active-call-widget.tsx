@@ -962,7 +962,7 @@ function CallContents({
                 disabled={endConfirm === "saving"}
                 onClick={() => {
                   setEndConfirm(null);
-                  onEnd();
+                  doEnd();
                 }}
                 className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
               >
