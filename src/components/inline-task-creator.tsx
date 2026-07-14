@@ -323,36 +323,84 @@ export function InlineTaskCreator({
                     }`}
                   >
                     <td className="py-1 pl-3 text-[10px] text-muted-foreground">{idx + 1}</td>
-                    <td className="py-1 pr-3">
+                    <td className="relative py-1 pr-3">
                       <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
                         }}
                         value={row.title}
-                        onChange={(e) => update(row.id, { title: e.target.value })}
+                        onChange={(e) => {
+                          update(row.id, { title: e.target.value });
+                          const cursor = e.currentTarget.selectionStart ?? e.target.value.length;
+                          const m = parseMention(e.target.value, cursor);
+                          if (m) {
+                            setMention({
+                              rowId: row.id,
+                              query: m.query,
+                              startIndex: m.startIndex,
+                              selectedIndex: 0,
+                            });
+                          } else {
+                            setMention((cur) => (cur?.rowId === row.id ? null : cur));
+                          }
+                        }}
                         onKeyDown={(e) => {
+                          const mentionOpen = mention?.rowId === row.id;
+                          const matches = mentionOpen
+                            ? assignees.filter((u) =>
+                                u.name.toLowerCase().includes(mention!.query.toLowerCase()),
+                              )
+                            : [];
+
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            requestSubmitAll();
+                            if (mentionOpen && matches.length > 0) {
+                              const u = matches[mention!.selectedIndex] ?? matches[0];
+                              applyMention(row.id, u.id, u.name);
+                            } else {
+                              jumpNext(row.id);
+                            }
                           } else if (e.key === "Tab" && !e.shiftKey) {
-                            e.preventDefault();
-                            jumpNext(row.id);
+                            if (mentionOpen && matches.length > 0) {
+                              e.preventDefault();
+                              const u = matches[mention!.selectedIndex] ?? matches[0];
+                              applyMention(row.id, u.id, u.name);
+                            }
                           } else if (e.key === "Backspace" && row.title === "" && rows.length > 1) {
                             e.preventDefault();
                             remove(row.id);
                             const prev = rows[idx - 1];
                             if (prev) focusRow(prev.id);
                           } else if (e.key === "ArrowDown") {
-                            const nxt = rows[idx + 1];
-                            if (nxt) {
+                            if (mentionOpen && matches.length > 0) {
                               e.preventDefault();
-                              focusRow(nxt.id);
+                              setMention((m) =>
+                                m ? { ...m, selectedIndex: Math.min(m.selectedIndex + 1, matches.length - 1) } : m,
+                              );
+                            } else {
+                              const nxt = rows[idx + 1];
+                              if (nxt) {
+                                e.preventDefault();
+                                focusRow(nxt.id);
+                              }
                             }
                           } else if (e.key === "ArrowUp") {
-                            const prv = rows[idx - 1];
-                            if (prv) {
+                            if (mentionOpen && matches.length > 0) {
                               e.preventDefault();
-                              focusRow(prv.id);
+                              setMention((m) =>
+                                m ? { ...m, selectedIndex: Math.max(m.selectedIndex - 1, 0) } : m,
+                              );
+                            } else {
+                              const prv = rows[idx - 1];
+                              if (prv) {
+                                e.preventDefault();
+                                focusRow(prv.id);
+                              }
+                            }
+                          } else if (e.key === "Escape") {
+                            if (mentionOpen) {
+                              e.preventDefault();
+                              setMention(null);
                             }
                           }
                         }}
