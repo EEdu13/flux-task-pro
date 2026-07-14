@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
@@ -46,15 +47,17 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
 export function InlineTaskCreator({
   defaultStatus = "pendente",
   compact = false,
+  defaultDueDate,
 }: {
   defaultStatus?: Status;
   compact?: boolean;
+  defaultDueDate?: string;
 }) {
   const { currentUser, visibleUsersForAssign, createTask } = useFluxo();
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState<DraftRow[]>(() => [
-    makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector }),
+    makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector, dueDate: defaultDueDate }),
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
