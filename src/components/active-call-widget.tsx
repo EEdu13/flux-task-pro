@@ -4,7 +4,6 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
-  ControlBar,
   GridLayout,
   FocusLayout,
   FocusLayoutContainer,
@@ -14,6 +13,7 @@ import {
   useDataChannel,
   useLocalParticipant,
   useRoomContext,
+  useTrackToggle,
 } from "@livekit/components-react";
 import { Track, RoomEvent } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
@@ -42,6 +42,14 @@ import {
   FileText,
   Link2,
   Share2,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  MonitorOff,
+  PhoneOff,
+  MoreHorizontal,
 } from "lucide-react";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -78,6 +86,88 @@ type RaiseToast = { id: string; name: string };
 
 type VideoEffect = "none" | "blur" | "office";
 const EFFECT_STORAGE_KEY = "fluxo:video-effect";
+
+/* Teams-style circular toolbar button */
+function ToolBtn({
+  icon: Icon,
+  label,
+  onClick,
+  active,
+  danger,
+  muted,
+  disabled,
+  badge,
+  wide,
+}: {
+  icon: typeof X;
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  danger?: boolean;
+  muted?: boolean;
+  disabled?: boolean;
+  badge?: number;
+  wide?: boolean;
+}) {
+  const base =
+    "relative inline-flex items-center justify-center rounded-lg transition disabled:opacity-40";
+  const size = wide ? "h-9 px-3" : "h-9 w-9";
+  const style = danger
+    ? "bg-red-600 text-white hover:bg-red-500"
+    : muted
+      ? "bg-red-500/20 text-red-200 hover:bg-red-500/30"
+      : active
+        ? "bg-white/25 text-white"
+        : "text-white/85 hover:bg-white/10";
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`${base} ${size} ${style}`}
+    >
+      <Icon className="h-[18px] w-[18px]" />
+      {wide && <span className="ml-1.5 text-xs font-semibold">{label}</span>}
+      {badge && badge > 0 ? (
+        <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
+          {badge}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function MediaToggle({
+  source,
+  IconOn,
+  IconOff,
+  labelOn,
+  labelOff,
+}: {
+  source: Track.Source.Microphone | Track.Source.Camera | Track.Source.ScreenShare;
+  IconOn: typeof X;
+  IconOff: typeof X;
+  labelOn: string;
+  labelOff: string;
+}) {
+  const { enabled, pending, toggle } = useTrackToggle({ source });
+  return (
+    <ToolBtn
+      icon={enabled ? IconOn : IconOff}
+      label={enabled ? labelOn : labelOff}
+      onClick={() => toggle()}
+      disabled={pending}
+      muted={!enabled && source !== Track.Source.ScreenShare}
+      active={enabled && source === Track.Source.ScreenShare}
+    />
+  );
+}
+
+function Divider() {
+  return <span className="mx-0.5 h-6 w-px bg-white/10" />;
+}
 
 function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
   const [effect, setEffectState] = useState<VideoEffect>(() => {
@@ -521,115 +611,104 @@ function CallContents({
           />
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/70 px-2 py-1">
-        <ControlBar
-          variation="minimal"
-          controls={{
-            microphone: true,
-            camera: true,
-            screenShare: true,
-            chat: false,
-            leave: false,
-            settings: false,
-          }}
-          style={{ border: "none", padding: 0, background: "transparent" }}
-        />
-        <div className="relative flex items-center gap-1.5">
+      <div className="relative flex items-center gap-2 border-t border-white/10 bg-black/80 px-3 py-1.5">
+        {/* Left slot: PIN when private */}
+        <div className="flex flex-1 items-center gap-1.5">
           {!mini && isPrivate && roomPin && (
             <button
               type="button"
               onClick={() => navigator.clipboard?.writeText(roomPin).catch(() => {})}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-400/60 bg-amber-400/15 px-2 py-1.5 font-mono text-xs font-bold tracking-widest text-amber-200 hover:bg-amber-400/25"
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/60 bg-amber-400/15 px-2 py-1 font-mono text-[11px] font-bold tracking-widest text-amber-200 hover:bg-amber-400/25"
               title="PIN da sala — clique para copiar e compartilhar"
             >
               <Copy className="h-3 w-3" /> {roomPin}
             </button>
           )}
+        </div>
+
+        {/* Center: Teams-style icon toolbar */}
+        <div className="flex items-center gap-0.5 rounded-xl bg-white/[0.03] px-1.5 py-1">
+          <MediaToggle
+            source={Track.Source.Microphone}
+            IconOn={Mic}
+            IconOff={MicOff}
+            labelOn="Silenciar microfone"
+            labelOff="Ativar microfone"
+          />
+          <MediaToggle
+            source={Track.Source.Camera}
+            IconOn={Video}
+            IconOff={VideoOff}
+            labelOn="Desligar câmera"
+            labelOff="Ligar câmera"
+          />
           {!mini && (
-            <MeetingExtras
-              ref={meetingRef}
-              roomName={roomName}
-              roomLabel={roomLabel}
-              meetingTitle={meetingTitle}
-              autoStartTranscription={autoMinute}
-              chatLines={chatLines}
+            <MediaToggle
+              source={Track.Source.ScreenShare}
+              IconOn={MonitorOff}
+              IconOff={MonitorUp}
+              labelOn="Parar de compartilhar"
+              labelOff="Compartilhar tela"
             />
           )}
           {!mini && (
-            <button
-              type="button"
-              onClick={() => setShortcutsOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white hover:bg-white/10"
-              title="Atalhos de teclado"
-            >
-              <Keyboard className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {shortcutsOpen && !mini && (
-            <div className="absolute bottom-full right-0 z-40 mb-1 w-64 rounded-md border border-white/10 bg-neutral-900 p-3 text-xs text-white shadow-xl">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
-                  Atalhos
-                </span>
-                <button onClick={() => setShortcutsOpen(false)} className="rounded p-0.5 hover:bg-white/10">
-                  <X className="h-3 w-3" />
-                </button>
+            <>
+              <Divider />
+              <ToolBtn
+                icon={Hand}
+                label="Levantar a mão"
+                onClick={raiseHand}
+              />
+              <ToolBtn
+                icon={MessageSquare}
+                label="Chat da sala"
+                onClick={() => setChatOpen((v) => !v)}
+                active={chatOpen}
+                badge={!chatOpen ? unread : 0}
+              />
+              <div className="relative">
+                <ToolBtn
+                  icon={Sparkles}
+                  label="Fundo de vídeo"
+                  onClick={() => setEffectMenu((v) => !v)}
+                  active={effect !== "none" || effectMenu}
+                />
+                {effectMenu && (
+                  <div className="absolute bottom-full left-1/2 z-30 mb-2 w-48 -translate-x-1/2 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
+                    {([
+                      { id: "none", label: "Sem efeito" },
+                      { id: "blur", label: "Fundo desfocado" },
+                      { id: "office", label: "Escritório" },
+                    ] as { id: VideoEffect; label: string }[]).map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => {
+                          setEffect(o.id);
+                          setEffectMenu(false);
+                        }}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-white/10 ${
+                          effect === o.id ? "bg-white/5 text-primary" : "text-white"
+                        }`}
+                      >
+                        <span>{o.label}</span>
+                        {effect === o.id && <span className="text-[10px]">●</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-              <ul className="space-y-1.5">
-                {[
-                  ["M", "Mutar / desmutar mic"],
-                  ["V", "Ligar / desligar câmera"],
-                  ["C", "Abrir / fechar chat"],
-                  ["H", "Levantar a mão"],
-                  ["P", "Alternar modo apresentador"],
-                  ["E", "Encerrar chamada"],
-                ].map(([key, desc]) => (
-                  <li key={key} className="flex items-center justify-between gap-2">
-                    <span className="text-white/70">{desc}</span>
-                    <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
-                      {key}
-                    </kbd>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {!mini && (
-            <button
-              type="button"
-              onClick={togglePrivacy}
-              disabled={privBusy}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
-                isPrivate
-                  ? "border-amber-400/60 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25"
-                  : "border-emerald-400/50 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20"
-              } disabled:opacity-60`}
-              title={
-                isPrivate
-                  ? "Sala privada — clique para abrir"
-                  : "Sala aberta — clique para privar (só quem for aceito entra)"
-              }
-            >
-              {isPrivate ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
-              {isPrivate ? "Privada" : "Aberta"}
-            </button>
-          )}
-          {!mini && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setInviteOpen((v) => !v)}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                  inviteOpen
-                    ? "border-primary/60 bg-primary/20 text-white"
-                    : "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                }`}
-                title="Chamar alguém para esta sala"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                Convidar
-              </button>
-              {inviteOpen && (
+
+              <Divider />
+
+              <div className="relative">
+                <ToolBtn
+                  icon={UserPlus}
+                  label="Convidar colaborador"
+                  onClick={() => setInviteOpen((v) => !v)}
+                  active={inviteOpen}
+                />
+                {inviteOpen && (
                 <div className="absolute bottom-full right-0 z-30 mb-1 w-64 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
                   <div className="relative border-b border-white/10 p-2">
                     <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />
@@ -669,25 +748,17 @@ function CallContents({
                     )}
                   </ul>
                 </div>
-              )}
-            </div>
-          )}
-          {!mini && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={openGuestPanel}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                  guestOpen
-                    ? "border-sky-400/60 bg-sky-400/20 text-white"
-                    : "border-sky-400/40 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20"
-                }`}
-                title="Gerar um link para chamar alguém de fora da empresa (cliente, parceiro…)"
-              >
-                <Link2 className="h-3.5 w-3.5" />
-                Convidado externo
-              </button>
-              {guestOpen && (
+                )}
+              </div>
+
+              <div className="relative">
+                <ToolBtn
+                  icon={Link2}
+                  label="Convidado externo (link)"
+                  onClick={openGuestPanel}
+                  active={guestOpen}
+                />
+                {guestOpen && (
                 <div className="absolute bottom-full right-0 z-40 mb-1 w-80 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs text-white shadow-xl">
                   <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
                     <span className="flex items-center gap-1.5 font-semibold">
@@ -756,101 +827,88 @@ function CallContents({
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
+                )}
+              </div>
+
+              <ToolBtn
+                icon={isPrivate ? Lock : LockOpen}
+                label={isPrivate ? "Sala privada — clique para abrir" : "Sala aberta — clique para privar"}
+                onClick={togglePrivacy}
+                disabled={privBusy}
+                active={isPrivate}
+              />
+
+              <Divider />
+
+              {/* Meeting minute (ata) — component brings its own button styling */}
+              <MeetingExtras
+                ref={meetingRef}
+                roomName={roomName}
+                roomLabel={roomLabel}
+                meetingTitle={meetingTitle}
+                autoStartTranscription={autoMinute}
+                chatLines={chatLines}
+              />
+
+              <div className="relative">
+                <ToolBtn
+                  icon={MoreHorizontal}
+                  label="Mais opções"
+                  onClick={() => setShortcutsOpen((v) => !v)}
+                  active={shortcutsOpen}
+                />
+                {shortcutsOpen && (
+                  <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-md border border-white/10 bg-neutral-900 p-2 text-xs text-white shadow-xl">
+                    {onMinimize && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShortcutsOpen(false);
+                          onMinimize();
+                        }}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-white/10"
+                      >
+                        <Maximize2 className="h-3.5 w-3.5 rotate-180" /> Modo mini
+                      </button>
+                    )}
+                    <div className="mt-2 border-t border-white/10 pt-2">
+                      <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/50">
+                        <Keyboard className="h-3 w-3" /> Atalhos
+                      </div>
+                      <ul className="space-y-1 px-2">
+                        {[
+                          ["M", "Mutar / desmutar mic"],
+                          ["V", "Ligar / desligar câmera"],
+                          ["C", "Abrir / fechar chat"],
+                          ["H", "Levantar a mão"],
+                          ["P", "Alternar modo apresentador"],
+                          ["E", "Encerrar chamada"],
+                        ].map(([key, desc]) => (
+                          <li key={key} className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="text-white/70">{desc}</span>
+                            <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
+                              {key}
+                            </kbd>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
-          {!mini && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setEffectMenu((v) => !v)}
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                  effect !== "none"
-                    ? "border-primary/60 bg-primary/20 text-white"
-                    : "border-white/15 bg-white/5 text-white hover:bg-white/10"
-                }`}
-                title="Fundo de vídeo"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Fundo
-              </button>
-              {effectMenu && (
-                <div className="absolute bottom-full right-0 z-30 mb-1 w-48 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
-                  {([
-                    { id: "none", label: "Sem efeito" },
-                    { id: "blur", label: "Fundo desfocado" },
-                    { id: "office", label: "Escritório" },
-                  ] as { id: VideoEffect; label: string }[]).map((o) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onClick={() => {
-                        setEffect(o.id);
-                        setEffectMenu(false);
-                      }}
-                      className={`flex w-full items-center justify-between px-3 py-2 text-left hover:bg-white/10 ${
-                        effect === o.id ? "bg-white/5 text-primary" : "text-white"
-                      }`}
-                    >
-                      <span>{o.label}</span>
-                      {effect === o.id && <span className="text-[10px]">●</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {!mini && (
-            <button
-              type="button"
-              onClick={raiseHand}
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-400/40 bg-amber-400/10 px-2.5 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-400/20"
-              title="Levantar a mão — avisa todo mundo na sala"
-            >
-              <Hand className="h-3.5 w-3.5" />
-              Mão
-            </button>
-          )}
-          {!mini && (
-            <button
-              type="button"
-              onClick={() => setChatOpen((v) => !v)}
-              className={`relative inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                chatOpen
-                  ? "border-primary/60 bg-primary/20 text-white"
-                  : "border-white/15 bg-white/5 text-white hover:bg-white/10"
-              }`}
-              title="Chat da sala"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              Chat
-              {!chatOpen && unread > 0 && (
-                <span className="ml-0.5 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                  {unread}
-                </span>
-              )}
-            </button>
-          )}
-          {!mini && onMinimize && (
-            <button
-              type="button"
-              onClick={onMinimize}
-              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-white/10"
-              title="Minimiza a chamada para o cantinho e mantém você conectado"
-            >
-              <Maximize2 className="h-3.5 w-3.5 rotate-180" />
-              Modo mini
-            </button>
-          )}
-          <button
-            type="button"
+        </div>
+
+        {/* Right slot: red hangup */}
+        <div className="flex flex-1 items-center justify-end">
+          <ToolBtn
+            icon={PhoneOff}
+            label="Encerrar chamada"
             onClick={requestEnd}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-500"
-            title="Encerrar chamada"
-          >
-            <X className="h-3.5 w-3.5" />
-            Sair
-          </button>
+            danger
+            wide={!mini}
+          />
         </div>
       </div>
       <RoomAudioRenderer />
