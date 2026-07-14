@@ -461,7 +461,7 @@ export const MeetingExtras = forwardRef<
       </button>
 
       {transcriptOpen && (
-        <div className="absolute bottom-16 right-2 z-40 flex h-[70vh] w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-white/10 bg-neutral-950/95 text-xs text-white shadow-2xl">
+        <div className="absolute top-12 right-2 z-40 flex h-[calc(100%-5rem)] w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-white/10 bg-neutral-950/95 text-xs text-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="flex items-center gap-1.5 text-sm font-semibold">
               <FileText className="h-4 w-4" /> Ata da reunião
@@ -561,7 +561,7 @@ export const MeetingExtras = forwardRef<
       )}
 
       {closeConfirmOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-lg border border-white/10 bg-neutral-900 p-4 text-white shadow-2xl">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <FileText className="h-4 w-4 text-amber-300" />
