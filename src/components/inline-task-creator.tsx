@@ -71,6 +71,7 @@ export function InlineTaskCreator({
     query: string;
     startIndex: number;
     selectedIndex: number;
+    rect: { top: number; left: number; width: number };
   } | null>(null);
 
   const focusRow = (id: string) => {
@@ -337,11 +338,13 @@ export function InlineTaskCreator({
                           const cursor = e.currentTarget.selectionStart ?? e.target.value.length;
                           const m = parseMention(e.target.value, cursor);
                           if (m) {
+        const r = e.currentTarget.getBoundingClientRect();
                             setMention({
                               rowId: row.id,
                               query: m.query,
                               startIndex: m.startIndex,
                               selectedIndex: 0,
+                              rect: { top: r.bottom, left: r.left, width: Math.max(r.width, 224) },
                             });
                           } else {
                             setMention((cur) => (cur?.rowId === row.id ? null : cur));
