@@ -849,16 +849,6 @@ function CallContents({
                 )}
               </div>
 
-              <ToolBtn
-                icon={isPrivate ? Lock : LockOpen}
-                label={isPrivate ? "Sala privada — clique para abrir" : "Sala aberta — clique para privar"}
-                onClick={togglePrivacy}
-                disabled={privBusy}
-                active={isPrivate}
-              />
-
-              <Divider />
-
               {/* Meeting minute (ata) — component brings its own button styling */}
               <MeetingExtras
                 ref={meetingRef}
