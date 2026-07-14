@@ -29,6 +29,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
+import { QuickTaskModal } from "@/components/quick-task-modal";
 import { OnboardingModal } from "@/components/onboarding-modal";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { X } from "lucide-react";
@@ -631,6 +632,7 @@ export function FluxoLayout({
       </div>
 
       <TaskDialog />
+      <QuickTaskModal />
       {needsOnboarding && <OnboardingModal />}
       <IncomingCall />
       {gridOpen && (
@@ -645,16 +647,6 @@ export function FluxoLayout({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setGridOpen(false);
-                    openNewTask();
-                  }}
-                  className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted"
-                  title="Prefiro o formulário detalhado"
-                >
-                  Modo detalhado
-                </button>
                 <button
                   onClick={() => setGridOpen(false)}
                   className="rounded p-1 text-muted-foreground hover:bg-muted"

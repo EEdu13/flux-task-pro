@@ -252,20 +252,39 @@ function CallContents({
   const [endConfirm, setEndConfirm] = useState<null | "prompt" | "saving">(null);
   const [endError, setEndError] = useState<string | null>(null);
 
+  const doEnd = useCallback(() => {
+    // Explicitly disconnect LiveKit so audio/video tracks stop immediately —
+    // otherwise, in rare cases (fast route changes, minimized-then-close), the
+    // Room can stay alive and keep consuming mic/camera/bandwidth.
+    try {
+      room?.disconnect(true);
+    } catch {
+      /* ignore */
+    }
+    onEnd();
+  }, [room, onEnd]);
+
   const requestEnd = useCallback(() => {
+    // In mini mode we don't have room to show the "save minute" prompt, and
+    // clicking X on the mini widget should just end the call. Otherwise the
+    // user gets stuck: nothing happens, and the call keeps running.
+    if (mini) {
+      doEnd();
+      return;
+    }
     const h = meetingRef.current;
     if (h && h.hasContent() && !h.hasSavedMinute()) {
       setEndError(null);
       setEndConfirm("prompt");
       return;
     }
-    onEnd();
-  }, [onEnd]);
+    doEnd();
+  }, [doEnd, mini]);
 
   const saveThenEnd = useCallback(async () => {
     const h = meetingRef.current;
     if (!h) {
-      onEnd();
+      doEnd();
       return;
     }
     setEndError(null);
@@ -277,8 +296,8 @@ function CallContents({
       return;
     }
     setEndConfirm(null);
-    onEnd();
-  }, [onEnd]);
+    doEnd();
+  }, [doEnd]);
 
   const { ask: askInvite } = useCallInviter();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -611,9 +630,9 @@ function CallContents({
           />
         )}
       </div>
-      <div className="relative flex items-center gap-2 border-t border-white/10 bg-black/80 px-3 py-1.5">
+      <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-white/10 bg-black/80 px-2 py-1.5 sm:px-3">
         {/* Left slot: PIN when private */}
-        <div className="flex flex-1 items-center gap-1.5">
+        <div className="order-2 flex w-full items-center justify-center gap-1.5 sm:order-1 sm:w-auto sm:flex-1 sm:justify-start">
           {!mini && isPrivate && roomPin && (
             <button
               type="button"
@@ -627,7 +646,7 @@ function CallContents({
         </div>
 
         {/* Center: Teams-style icon toolbar */}
-        <div className="flex items-center gap-0.5 rounded-xl bg-white/[0.03] px-1.5 py-1">
+        <div className="order-1 flex max-w-full flex-wrap items-center justify-center gap-0.5 overflow-x-auto rounded-xl bg-white/[0.03] px-1.5 py-1 sm:order-2 sm:flex-nowrap sm:overflow-visible">
           <MediaToggle
             source={Track.Source.Microphone}
             IconOn={Mic}
@@ -830,16 +849,6 @@ function CallContents({
                 )}
               </div>
 
-              <ToolBtn
-                icon={isPrivate ? Lock : LockOpen}
-                label={isPrivate ? "Sala privada — clique para abrir" : "Sala aberta — clique para privar"}
-                onClick={togglePrivacy}
-                disabled={privBusy}
-                active={isPrivate}
-              />
-
-              <Divider />
-
               {/* Meeting minute (ata) — component brings its own button styling */}
               <MeetingExtras
                 ref={meetingRef}
@@ -901,7 +910,7 @@ function CallContents({
         </div>
 
         {/* Right slot: red hangup */}
-        <div className="flex flex-1 items-center justify-end">
+        <div className="order-3 flex w-auto items-center justify-end sm:flex-1">
           <ToolBtn
             icon={PhoneOff}
             label="Encerrar chamada"
@@ -943,7 +952,7 @@ function CallContents({
                 disabled={endConfirm === "saving"}
                 onClick={() => {
                   setEndConfirm(null);
-                  onEnd();
+                  doEnd();
                 }}
                 className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
               >

@@ -50,6 +50,7 @@ function RoomPage() {
   const [pendingPreCall, setPendingPreCall] = useState<{
     title: string;
     autoMinute: boolean;
+    makePrivate: boolean;
   } | null>(null);
   const [pinShown, setPinShown] = useState<string | null>(null);
   const [knocks, setKnocks] = useState<
@@ -332,9 +333,15 @@ function RoomPage() {
         ) : showPreCall && (access.kind === "open" || access.kind === "member") ? (
           <PreCall
             roomLabel={roomLabel}
+            alreadyPrivate={isPrivate}
             onEnter={(r) => {
-              setPendingPreCall({ title: r.title, autoMinute: r.autoMinute });
+              setPendingPreCall({ title: r.title, autoMinute: r.autoMinute, makePrivate: r.makePrivate });
               setShowPreCall(false);
+              if (r.makePrivate && !isPrivate) {
+                setRoomPrivacy({
+                  data: { roomName, isPrivate: true, userId: currentUser.id },
+                }).catch(() => {});
+              }
             }}
             onCancel={() => navigate({ to: "/salas" })}
           />

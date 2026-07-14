@@ -89,6 +89,10 @@ interface Store {
   openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
   openTask: (id: string) => void;
   closeTaskDialog: () => void;
+  // quick create modal (spreadsheet-style)
+  quickCreate: { open: boolean; status?: Status; dueDate?: string };
+  openQuickCreate: (opts?: { status?: Status; dueDate?: string }) => void;
+  closeQuickCreate: () => void;
 }
 
 const StoreCtx = createContext<Store | null>(null);
@@ -153,6 +157,7 @@ function computeScore(base: number, priority: Task["priority"], onTime: boolean)
 export function FluxoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Persisted>(() => load());
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ open: false });
+  const [quickCreate, setQuickCreate] = useState<{ open: boolean; status?: Status; dueDate?: string }>({ open: false });
   const didAutoNotifRef = useRef(false);
 
   useEffect(() => {
@@ -747,13 +752,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     taskDialog,
     openNewTask: (opts) =>
-      setTaskDialog({
-        open: true,
-        initialStatus: opts?.status,
-        initialDueDate: opts?.dueDate,
-      }),
+      setQuickCreate({ open: true, status: opts?.status, dueDate: opts?.dueDate }),
     openTask: (id) => setTaskDialog({ open: true, editingId: id }),
     closeTaskDialog: () => setTaskDialog({ open: false }),
+    quickCreate,
+    openQuickCreate: (opts) =>
+      setQuickCreate({ open: true, status: opts?.status, dueDate: opts?.dueDate }),
+    closeQuickCreate: () => setQuickCreate({ open: false }),
 
     minutes: state.minutes ?? [],
     saveMinute: (m) => {

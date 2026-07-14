@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
@@ -34,7 +35,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
     title: "",
-    dueDate: todayStr(),
+    dueDate: defaults.dueDate ?? todayStr(),
     assigneeId: defaults.assigneeId ?? "",
     priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
@@ -46,15 +47,17 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
 export function InlineTaskCreator({
   defaultStatus = "pendente",
   compact = false,
+  defaultDueDate,
 }: {
   defaultStatus?: Status;
   compact?: boolean;
+  defaultDueDate?: string;
 }) {
   const { currentUser, visibleUsersForAssign, createTask } = useFluxo();
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState<DraftRow[]>(() => [
-    makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector }),
+    makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector, dueDate: defaultDueDate }),
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -68,6 +71,7 @@ export function InlineTaskCreator({
     query: string;
     startIndex: number;
     selectedIndex: number;
+    rect: { top: number; left: number; width: number };
   } | null>(null);
 
   const focusRow = (id: string) => {
@@ -334,11 +338,13 @@ export function InlineTaskCreator({
                           const cursor = e.currentTarget.selectionStart ?? e.target.value.length;
                           const m = parseMention(e.target.value, cursor);
                           if (m) {
+        const r = e.currentTarget.getBoundingClientRect();
                             setMention({
                               rowId: row.id,
                               query: m.query,
                               startIndex: m.startIndex,
                               selectedIndex: 0,
+                              rect: { top: r.bottom, left: r.left, width: Math.max(r.width, 224) },
                             });
                           } else {
                             setMention((cur) => (cur?.rowId === row.id ? null : cur));
@@ -407,40 +413,46 @@ export function InlineTaskCreator({
                         placeholder="Nova tarefa…"
                         className="w-full bg-transparent px-1 py-1.5 outline-none placeholder:text-muted-foreground/60"
                       />
-                      {mention?.rowId === row.id && (
-                        <div className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-card shadow-xl">
-                          {(() => {
-                            const matches = assignees.filter((u) =>
-                              u.name.toLowerCase().includes(mention.query.toLowerCase()),
-                            );
-                            if (matches.length === 0) {
-                              return (
-                                <div className="px-3 py-2 text-xs text-muted-foreground">
-                                  Nenhum usuário encontrado
-                                </div>
+                      {mention?.rowId === row.id && typeof document !== "undefined" &&
+                        createPortal(
+                          <div
+                            className="fixed z-[200] overflow-hidden rounded-md border border-border bg-popover shadow-2xl"
+                            style={{ top: mention.rect.top + 4, left: mention.rect.left, width: mention.rect.width }}
+                            onMouseDown={(e) => e.preventDefault()}
+                          >
+                            {(() => {
+                              const matches = assignees.filter((u) =>
+                                u.name.toLowerCase().includes(mention.query.toLowerCase()),
                               );
-                            }
-                            return matches.map((u, i) => (
-                              <button
-                                key={u.id}
-                                type="button"
-                                onClick={() => applyMention(row.id, u.id, u.name)}
-                                onMouseEnter={() =>
-                                  setMention((m) => (m ? { ...m, selectedIndex: i } : m))
-                                }
-                                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-secondary ${
-                                  i === mention.selectedIndex ? "bg-secondary" : ""
-                                }`}
-                              >
-                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
-                                  {u.avatar || u.name.slice(0, 1).toUpperCase()}
-                                </span>
-                                <span className="flex-1 truncate">{u.name}</span>
-                              </button>
-                            ));
-                          })()}
-                        </div>
-                      )}
+                              if (matches.length === 0) {
+                                return (
+                                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                                    Nenhum usuário encontrado
+                                  </div>
+                                );
+                              }
+                              return matches.slice(0, 8).map((u, i) => (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onClick={() => applyMention(row.id, u.id, u.name)}
+                                  onMouseEnter={() =>
+                                    setMention((m) => (m ? { ...m, selectedIndex: i } : m))
+                                  }
+                                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-secondary ${
+                                    i === mention.selectedIndex ? "bg-secondary" : ""
+                                  }`}
+                                >
+                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                                    {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                                  </span>
+                                  <span className="flex-1 truncate">{u.name}</span>
+                                </button>
+                              ));
+                            })()}
+                          </div>,
+                          document.body,
+                        )}
                       {row.attachments.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {row.attachments.map((a) => (
