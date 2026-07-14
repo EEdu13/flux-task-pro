@@ -19,6 +19,7 @@ interface DraftRow {
   priority: Priority;
   sector: string;
   attachments: Attachment[];
+  mentions: string[];
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
