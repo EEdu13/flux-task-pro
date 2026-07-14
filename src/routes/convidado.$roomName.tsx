@@ -7,10 +7,12 @@ import {
   GridLayout,
   ParticipantTile,
   useTracks,
+  useDataChannel,
+  useLocalParticipant,
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
-import { LogIn, Loader2, AlertTriangle, Video } from "lucide-react";
+import { LogIn, Loader2, AlertTriangle, Video, Hand } from "lucide-react";
 import { getGuestLiveKitToken } from "@/lib/livekit-token.functions";
 
 export const Route = createFileRoute("/convidado/$roomName")({
@@ -143,24 +145,49 @@ function GuestCall({ onLeave }: { onLeave: () => void }) {
     { onlySubscribed: false },
   );
   const visible = useMemo(() => tracks, [tracks]);
+  const { localParticipant } = useLocalParticipant();
+  const { send } = useDataChannel("fluxo-room");
+  const [raised, setRaised] = useState(false);
+  const raiseHand = () => {
+    const name = localParticipant.name || localParticipant.identity || "Convidado";
+    try {
+      send?.(new TextEncoder().encode(JSON.stringify({ kind: "raise", name })), { reliable: true });
+    } catch {
+      /* ignore */
+    }
+    setRaised(true);
+    window.setTimeout(() => setRaised(false), 2500);
+  };
   return (
     <div className="flex h-full w-full flex-col bg-black text-white">
       <div className="flex items-center justify-between border-b border-white/10 bg-black/70 px-3 py-1.5 text-xs">
         <span className="font-semibold text-sky-300">Você está na reunião como convidado</span>
-        <button
-          type="button"
-          onClick={onLeave}
-          className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500"
-        >
-          Sair
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={raiseHand}
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${
+              raised ? "bg-amber-400 text-black" : "bg-white/10 text-white hover:bg-white/20"
+            }`}
+            title="Levantar a mão"
+          >
+            <Hand className="h-3.5 w-3.5" /> Mão
+          </button>
+          <button
+            type="button"
+            onClick={onLeave}
+            className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500"
+          >
+            Sair
+          </button>
+        </div>
       </div>
       <div className="min-h-0 flex-1">
         <GridLayout tracks={visible} style={{ height: "100%" }}>
           <ParticipantTile />
         </GridLayout>
       </div>
-      <div className="border-t border-white/10 bg-black/70 px-2 py-1">
+      <div className="flex items-center gap-2 overflow-x-auto border-t border-white/10 bg-black/70 px-2 py-1">
         <ControlBar
           variation="minimal"
           controls={{
