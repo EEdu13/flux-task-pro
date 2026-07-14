@@ -270,7 +270,7 @@ export function InlineTaskCreator({
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-sm font-semibold">Criação rápida (estilo planilha)</span>
           <span className="text-[11px] text-muted-foreground">
-            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Tab</kbd> para próxima linha · arraste arquivos para anexar
+            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para próxima linha · arraste arquivos para anexar
           </span>
         </div>
         {open && rows.some((r) => r.title.trim()) && (
