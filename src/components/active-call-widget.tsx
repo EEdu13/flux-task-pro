@@ -910,7 +910,7 @@ function CallContents({
         </div>
 
         {/* Right slot: red hangup */}
-        <div className="flex flex-1 items-center justify-end">
+        <div className="order-3 flex w-auto items-center justify-end sm:flex-1">
           <ToolBtn
             icon={PhoneOff}
             label="Encerrar chamada"
