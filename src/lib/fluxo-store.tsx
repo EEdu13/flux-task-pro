@@ -89,6 +89,10 @@ interface Store {
   openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
   openTask: (id: string) => void;
   closeTaskDialog: () => void;
+  // quick create modal (spreadsheet-style)
+  quickCreate: { open: boolean; status?: Status; dueDate?: string };
+  openQuickCreate: (opts?: { status?: Status; dueDate?: string }) => void;
+  closeQuickCreate: () => void;
 }
 
 const StoreCtx = createContext<Store | null>(null);
