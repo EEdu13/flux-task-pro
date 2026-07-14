@@ -253,6 +253,13 @@ function CallContents({
   const [endError, setEndError] = useState<string | null>(null);
 
   const requestEnd = useCallback(() => {
+    // In mini mode we don't have room to show the "save minute" prompt, and
+    // clicking X on the mini widget should just end the call. Otherwise the
+    // user gets stuck: nothing happens, and the call keeps running.
+    if (mini) {
+      onEnd();
+      return;
+    }
     const h = meetingRef.current;
     if (h && h.hasContent() && !h.hasSavedMinute()) {
       setEndError(null);
@@ -260,7 +267,7 @@ function CallContents({
       return;
     }
     onEnd();
-  }, [onEnd]);
+  }, [onEnd, mini]);
 
   const saveThenEnd = useCallback(async () => {
     const h = meetingRef.current;
