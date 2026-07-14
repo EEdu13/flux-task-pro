@@ -92,7 +92,7 @@ export function InlineTaskCreator({
       sector: row.sector || currentUser.sector,
       createdBy: currentUser.id,
       assigneeId: row.assigneeId || currentUser.id,
-      mentions: [],
+      mentions: row.mentions,
       frequency: "diaria",
       status: defaultStatus,
       score: 10,
