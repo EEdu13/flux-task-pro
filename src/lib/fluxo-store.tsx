@@ -157,6 +157,7 @@ function computeScore(base: number, priority: Task["priority"], onTime: boolean)
 export function FluxoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Persisted>(() => load());
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ open: false });
+  const [quickCreate, setQuickCreate] = useState<{ open: boolean; status?: Status; dueDate?: string }>({ open: false });
   const didAutoNotifRef = useRef(false);
 
   useEffect(() => {
