@@ -407,6 +407,40 @@ export function InlineTaskCreator({
                         placeholder="Nova tarefa…"
                         className="w-full bg-transparent px-1 py-1.5 outline-none placeholder:text-muted-foreground/60"
                       />
+                      {mention?.rowId === row.id && (
+                        <div className="absolute left-0 top-full z-50 mt-1 w-56 overflow-hidden rounded-md border border-border bg-card shadow-xl">
+                          {(() => {
+                            const matches = assignees.filter((u) =>
+                              u.name.toLowerCase().includes(mention.query.toLowerCase()),
+                            );
+                            if (matches.length === 0) {
+                              return (
+                                <div className="px-3 py-2 text-xs text-muted-foreground">
+                                  Nenhum usuário encontrado
+                                </div>
+                              );
+                            }
+                            return matches.map((u, i) => (
+                              <button
+                                key={u.id}
+                                type="button"
+                                onClick={() => applyMention(row.id, u.id, u.name)}
+                                onMouseEnter={() =>
+                                  setMention((m) => (m ? { ...m, selectedIndex: i } : m))
+                                }
+                                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-secondary ${
+                                  i === mention.selectedIndex ? "bg-secondary" : ""
+                                }`}
+                              >
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
+                                  {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                                </span>
+                                <span className="flex-1 truncate">{u.name}</span>
+                              </button>
+                            ));
+                          })()}
+                        </div>
+                      )}
                       {row.attachments.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {row.attachments.map((a) => (
