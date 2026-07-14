@@ -63,6 +63,12 @@ export function InlineTaskCreator({
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRowId = useRef<string | null>(null);
+  const [mention, setMention] = useState<{
+    rowId: string;
+    query: string;
+    startIndex: number;
+    selectedIndex: number;
+  } | null>(null);
 
   const focusRow = (id: string) => {
     requestAnimationFrame(() => {
