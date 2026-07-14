@@ -87,6 +87,88 @@ type RaiseToast = { id: string; name: string };
 type VideoEffect = "none" | "blur" | "office";
 const EFFECT_STORAGE_KEY = "fluxo:video-effect";
 
+/* Teams-style circular toolbar button */
+function ToolBtn({
+  icon: Icon,
+  label,
+  onClick,
+  active,
+  danger,
+  muted,
+  disabled,
+  badge,
+  wide,
+}: {
+  icon: typeof X;
+  label: string;
+  onClick?: () => void;
+  active?: boolean;
+  danger?: boolean;
+  muted?: boolean;
+  disabled?: boolean;
+  badge?: number;
+  wide?: boolean;
+}) {
+  const base =
+    "relative inline-flex items-center justify-center rounded-lg transition disabled:opacity-40";
+  const size = wide ? "h-9 px-3" : "h-9 w-9";
+  const style = danger
+    ? "bg-red-600 text-white hover:bg-red-500"
+    : muted
+      ? "bg-red-500/20 text-red-200 hover:bg-red-500/30"
+      : active
+        ? "bg-white/25 text-white"
+        : "text-white/85 hover:bg-white/10";
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`${base} ${size} ${style}`}
+    >
+      <Icon className="h-[18px] w-[18px]" />
+      {wide && <span className="ml-1.5 text-xs font-semibold">{label}</span>}
+      {badge && badge > 0 ? (
+        <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
+          {badge}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function MediaToggle({
+  source,
+  IconOn,
+  IconOff,
+  labelOn,
+  labelOff,
+}: {
+  source: Track.Source;
+  IconOn: typeof X;
+  IconOff: typeof X;
+  labelOn: string;
+  labelOff: string;
+}) {
+  const { enabled, pending, toggle } = useTrackToggle({ source });
+  return (
+    <ToolBtn
+      icon={enabled ? IconOn : IconOff}
+      label={enabled ? labelOn : labelOff}
+      onClick={() => toggle()}
+      disabled={pending}
+      muted={!enabled && source !== Track.Source.ScreenShare}
+      active={enabled && source === Track.Source.ScreenShare}
+    />
+  );
+}
+
+function Divider() {
+  return <span className="mx-0.5 h-6 w-px bg-white/10" />;
+}
+
 function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
   const [effect, setEffectState] = useState<VideoEffect>(() => {
     if (typeof window === "undefined") return "none";
