@@ -76,6 +76,31 @@ export function InlineTaskCreator({
     });
   };
 
+  const parseMention = (title: string, cursor: number): { query: string; startIndex: number } | null => {
+    const before = title.slice(0, cursor);
+    const at = before.lastIndexOf("@");
+    if (at === -1) return null;
+    if (before.slice(at + 1).includes(" ")) return null;
+    if (at > 0 && /\w/.test(title[at - 1])) return null;
+    return { query: title.slice(at + 1, cursor), startIndex: at };
+  };
+
+  const applyMention = (rowId: string, userId: string, userName: string) => {
+    if (!mention) return;
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.id !== rowId) return r;
+        const before = r.title.slice(0, mention.startIndex);
+        const after = r.title.slice(mention.startIndex + mention.query.length + 1);
+        const newTitle = `${before}@${userName} ${after}`;
+        const mentions = r.mentions.includes(userId) ? r.mentions : [...r.mentions, userId];
+        return { ...r, title: newTitle, mentions };
+      }),
+    );
+    setMention(null);
+    focusRow(rowId);
+  };
+
   const addRow = (afterId?: string) => {
     const draft = makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector });
     setRows((rs) => {
