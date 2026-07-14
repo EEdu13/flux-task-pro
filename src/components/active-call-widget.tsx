@@ -146,7 +146,7 @@ function MediaToggle({
   labelOn,
   labelOff,
 }: {
-  source: Track.Source;
+  source: Track.Source.Microphone | Track.Source.Camera | Track.Source.ScreenShare;
   IconOn: typeof X;
   IconOff: typeof X;
   labelOn: string;
