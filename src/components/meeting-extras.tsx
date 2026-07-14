@@ -561,7 +561,7 @@ export const MeetingExtras = forwardRef<
       )}
 
       {closeConfirmOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-lg border border-white/10 bg-neutral-900 p-4 text-white shadow-2xl">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <FileText className="h-4 w-4 text-amber-300" />
