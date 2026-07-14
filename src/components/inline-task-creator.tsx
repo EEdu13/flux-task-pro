@@ -39,6 +39,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
     attachments: [],
+    mentions: [],
   };
 }
 
