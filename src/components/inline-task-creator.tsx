@@ -563,8 +563,8 @@ export function InlineTaskCreator({
             </button>
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <span>
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Tab</kbd> próxima linha ·{" "}
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> cria todas ·{" "}
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima linha ·{" "}
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">@</kbd> menciona ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">↑↓</kbd> navega ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">⌫</kbd> remove linha vazia
               </span>
