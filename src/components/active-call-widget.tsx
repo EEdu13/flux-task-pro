@@ -252,12 +252,24 @@ function CallContents({
   const [endConfirm, setEndConfirm] = useState<null | "prompt" | "saving">(null);
   const [endError, setEndError] = useState<string | null>(null);
 
+  const doEnd = useCallback(() => {
+    // Explicitly disconnect LiveKit so audio/video tracks stop immediately —
+    // otherwise, in rare cases (fast route changes, minimized-then-close), the
+    // Room can stay alive and keep consuming mic/camera/bandwidth.
+    try {
+      room?.disconnect(true);
+    } catch {
+      /* ignore */
+    }
+    onEnd();
+  }, [room, onEnd]);
+
   const requestEnd = useCallback(() => {
     // In mini mode we don't have room to show the "save minute" prompt, and
     // clicking X on the mini widget should just end the call. Otherwise the
     // user gets stuck: nothing happens, and the call keeps running.
     if (mini) {
-      onEnd();
+      doEnd();
       return;
     }
     const h = meetingRef.current;
@@ -266,13 +278,13 @@ function CallContents({
       setEndConfirm("prompt");
       return;
     }
-    onEnd();
-  }, [onEnd, mini]);
+    doEnd();
+  }, [doEnd, mini]);
 
   const saveThenEnd = useCallback(async () => {
     const h = meetingRef.current;
     if (!h) {
-      onEnd();
+      doEnd();
       return;
     }
     setEndError(null);
@@ -284,8 +296,8 @@ function CallContents({
       return;
     }
     setEndConfirm(null);
-    onEnd();
-  }, [onEnd]);
+    doEnd();
+  }, [doEnd]);
 
   const { ask: askInvite } = useCallInviter();
   const [inviteOpen, setInviteOpen] = useState(false);
