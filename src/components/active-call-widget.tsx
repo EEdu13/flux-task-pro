@@ -630,9 +630,9 @@ function CallContents({
           />
         )}
       </div>
-      <div className="relative flex items-center gap-2 border-t border-white/10 bg-black/80 px-3 py-1.5">
+      <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-white/10 bg-black/80 px-2 py-1.5 sm:px-3">
         {/* Left slot: PIN when private */}
-        <div className="flex flex-1 items-center gap-1.5">
+        <div className="order-2 flex w-full items-center justify-center gap-1.5 sm:order-1 sm:w-auto sm:flex-1 sm:justify-start">
           {!mini && isPrivate && roomPin && (
             <button
               type="button"
@@ -646,7 +646,7 @@ function CallContents({
         </div>
 
         {/* Center: Teams-style icon toolbar */}
-        <div className="flex items-center gap-0.5 rounded-xl bg-white/[0.03] px-1.5 py-1">
+        <div className="order-1 flex max-w-full flex-wrap items-center justify-center gap-0.5 overflow-x-auto rounded-xl bg-white/[0.03] px-1.5 py-1 sm:order-2 sm:flex-nowrap sm:overflow-visible">
           <MediaToggle
             source={Track.Source.Microphone}
             IconOn={Mic}
