@@ -752,13 +752,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     taskDialog,
     openNewTask: (opts) =>
-      setTaskDialog({
-        open: true,
-        initialStatus: opts?.status,
-        initialDueDate: opts?.dueDate,
-      }),
+      setQuickCreate({ open: true, status: opts?.status, dueDate: opts?.dueDate }),
     openTask: (id) => setTaskDialog({ open: true, editingId: id }),
     closeTaskDialog: () => setTaskDialog({ open: false }),
+    quickCreate,
+    openQuickCreate: (opts) =>
+      setQuickCreate({ open: true, status: opts?.status, dueDate: opts?.dueDate }),
+    closeQuickCreate: () => setQuickCreate({ open: false }),
 
     minutes: state.minutes ?? [],
     saveMinute: (m) => {
