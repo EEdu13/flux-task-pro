@@ -58,16 +58,22 @@ export function InlineTaskCreator({
   defaultStatus = "pendente",
   compact = false,
   defaultDueDate,
+  defaultAssigneeId,
 }: {
   defaultStatus?: Status;
   compact?: boolean;
   defaultDueDate?: string;
+  defaultAssigneeId?: string;
 }) {
   const { currentUser, visibleUsersForAssign, createTask } = useFluxo();
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState<DraftRow[]>(() => [
-    makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector, dueDate: defaultDueDate }),
+    makeDraft({
+      assigneeId: defaultAssigneeId ?? currentUser.id,
+      sector: currentUser.sector,
+      dueDate: defaultDueDate,
+    }),
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
