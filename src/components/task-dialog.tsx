@@ -53,6 +53,7 @@ export function TaskDialog() {
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
+  const [requireProof, setRequireProof] = useState(false);
   const [tags, setTags] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -78,6 +79,7 @@ export function TaskDialog() {
       setDueDate(editing.dueDate.slice(0, 10));
       setRecurring(editing.recurring);
       setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
+      setRequireProof(!!editing.requireProof);
       setTags(editing.tags.join(", "));
       setMentions(editing.mentions);
     } else {
@@ -91,6 +93,7 @@ export function TaskDialog() {
       setDueDate(taskDialog.initialDueDate ?? new Date().toISOString().slice(0, 10));
       setRecurring(false);
       setRecurringUntil("");
+      setRequireProof(false);
       setTags("");
       setMentions([]);
     }
@@ -166,6 +169,7 @@ export function TaskDialog() {
       recurringUntil: recurring && recurringUntil ? new Date(recurringUntil + "T23:59:59").toISOString() : null,
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      requireProof,
     };
     if (editing) updateTask(editing.id, payload);
     else createTask(payload);
