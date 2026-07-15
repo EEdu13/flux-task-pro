@@ -101,6 +101,51 @@ export function triggerAttention(fromName: string, fromAvatar?: string) {
   );
 }
 
+// ---------- MSN-style nudge sound (synthesized via Web Audio) ----------
+
+let audioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return null;
+  if (!audioCtx) audioCtx = new Ctor();
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+export function playNudgeSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  // Two quick knocks + a rising chirp — MSN-ish nudge
+  const now = ctx.currentTime;
+  const knock = (t: number) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(180, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.08);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g).connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.14);
+  };
+  knock(now);
+  knock(now + 0.16);
+  const chirp = ctx.createOscillator();
+  const cg = ctx.createGain();
+  chirp.type = "triangle";
+  chirp.frequency.setValueAtTime(660, now + 0.34);
+  chirp.frequency.exponentialRampToValueAtTime(1320, now + 0.55);
+  cg.gain.setValueAtTime(0.0001, now + 0.34);
+  cg.gain.exponentialRampToValueAtTime(0.25, now + 0.36);
+  cg.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  chirp.connect(cg).connect(ctx.destination);
+  chirp.start(now + 0.34);
+  chirp.stop(now + 0.62);
+}
+
 // ---------- Tab flashing + OS notifications ----------
 
 let flashTimer: number | null = null;
