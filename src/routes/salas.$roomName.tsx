@@ -8,6 +8,7 @@ import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
 import { PreCall } from "@/components/pre-call";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { supabase } from "@/integrations/supabase/client";
 import {
   getKnockStatus,
   getRoomAccess,
@@ -127,10 +128,19 @@ function RoomPage() {
       }
     };
     tick();
-    const id = window.setInterval(tick, 2000);
+    const id = window.setInterval(tick, 2500);
+    const channel = supabase
+      .channel(`knock-${knockId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "room_knocks", filter: `id=eq.${knockId}` },
+        () => tick(),
+      )
+      .subscribe();
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      try { supabase.removeChannel(channel); } catch { /* ignore */ }
     };
   }, [access]);
 
@@ -161,6 +171,7 @@ function RoomPage() {
   // requests appear immediately for whoever is already in the room.
   const insideRoom = active?.roomName === roomName;
   const canSeeKnocks = access.kind === "member" || access.kind === "open";
+  const prevKnockIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!canSeeKnocks) return;
     let cancelled = false;
@@ -171,6 +182,38 @@ function RoomPage() {
           getRoomAccess({ data: { roomName, userId: currentUser.id } }),
         ]);
         if (cancelled) return;
+        // Play a soft chime when a NEW pending knock appears.
+        const prev = prevKnockIdsRef.current;
+        const nextIds = new Set(ks.knocks.map((k) => k.id));
+        const hasNew = ks.knocks.some((k) => !prev.has(k.id));
+        prevKnockIdsRef.current = nextIds;
+        if (hasNew && prev.size >= 0) {
+          try {
+            const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.18);
+            gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.5);
+            setTimeout(() => ctx.close().catch(() => {}), 700);
+          } catch {
+            /* audio blocked, fine */
+          }
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try {
+              const first = ks.knocks.find((k) => !prev.has(k.id));
+              if (first) new Notification("Pedido para entrar", { body: `${first.requester_name} quer entrar em ${roomLabel}` });
+            } catch {
+              /* ignore */
+            }
+          }
+        }
         setKnocks(ks.knocks);
         setIsPrivate(st.isPrivate);
       } catch {
@@ -178,12 +221,27 @@ function RoomPage() {
       }
     };
     tick();
-    const id = window.setInterval(tick, 1500);
+    const id = window.setInterval(tick, 2500);
+    // Instant push via Supabase realtime — fires tick as soon as a knock is
+    // inserted/updated so the person inside sees it without waiting for poll.
+    const channel = supabase
+      .channel(`room-knocks-${roomName}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "room_knocks", filter: `room_name=eq.${roomName}` },
+        () => tick(),
+      )
+      .subscribe();
+    // Request browser notification permission once, silently.
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      try { Notification.requestPermission().catch(() => {}); } catch { /* ignore */ }
+    }
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      try { supabase.removeChannel(channel); } catch { /* ignore */ }
     };
-  }, [canSeeKnocks, roomName, currentUser.id]);
+  }, [canSeeKnocks, roomName, currentUser.id, roomLabel]);
 
   const togglePrivacy = useCallback(async () => {
     const next = !isPrivate;
