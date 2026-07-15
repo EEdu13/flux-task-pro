@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
   sectors,
@@ -18,6 +18,7 @@ interface DraftRow {
   sector: string;
   attachments: Attachment[];
   mentions: string[];
+  requireProof: boolean;
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -51,6 +52,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     sector: defaults.sector ?? "",
     attachments: [],
     mentions: [],
+    requireProof: false,
   };
 }
 
@@ -152,6 +154,7 @@ export function InlineTaskCreator({
       priority: "media",
       tags: [],
       attachments: row.attachments.length ? row.attachments : undefined,
+      requireProof: row.requireProof || undefined,
     });
     return true;
   };
