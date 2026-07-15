@@ -119,7 +119,11 @@ export function FluxoLayout({
     if (typeof document === "undefined") return;
     const onDoc = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target && !target.closest("[data-rooms-quick-panel]")) {
+      if (
+        target &&
+        !target.closest("[data-rooms-quick-panel]") &&
+        !target.closest("[data-rooms-quick-toggle]")
+      ) {
         setRoomsQuickOpen(false);
       }
     };
