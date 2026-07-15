@@ -499,7 +499,18 @@ function TaskList({
                   const assignee = users.find((u) => u.id === t.assigneeId);
                   const sec = sectors.find((s) => s.id === t.sector);
                   return (
-                    <tr key={t.id} className="group border-b border-border last:border-0 hover:bg-secondary/40">
+                    <tr
+                      key={t.id}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        window.dispatchEvent(
+                          new CustomEvent("fluxo:task-context", {
+                            detail: { id: t.id, x: e.clientX, y: e.clientY },
+                          }),
+                        );
+                      }}
+                      className="group border-b border-border last:border-0 hover:bg-secondary/40"
+                    >
                       <td className="py-2.5 pl-4 pr-2">
                         {t.status !== "concluida" && (
                           <button
@@ -661,6 +672,14 @@ function KanbanBoard({
                     key={t.id}
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData("text/plain", t.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      window.dispatchEvent(
+                        new CustomEvent("fluxo:task-context", {
+                          detail: { id: t.id, x: e.clientX, y: e.clientY },
+                        }),
+                      );
+                    }}
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
