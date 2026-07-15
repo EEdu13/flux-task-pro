@@ -7,7 +7,7 @@ export function QuickTaskModal() {
   if (!quickCreate.open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-10"
+      className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/60 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-10"
       onClick={closeQuickCreate}
     >
       <div
