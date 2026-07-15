@@ -403,7 +403,7 @@ export function QuickFab() {
           setMode("menu");
         }}
         title="Ações rápidas"
-        className="group flex flex-col items-center gap-1"
+        className="group hidden flex-col items-center gap-1 lg:flex"
       >
         <span
           className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition group-hover:brightness-110 ${
