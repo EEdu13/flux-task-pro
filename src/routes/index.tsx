@@ -18,6 +18,7 @@ import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { userScorePct, scoreTextClass } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
 import { loadPackDone, savePackDone } from "@/lib/pack";
+import { openTaskContext } from "@/components/task-context-menu";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -237,7 +238,14 @@ function Home() {
                   const done = packDone.has(t.id);
                   const sec = sectors.find((s) => s.id === t.sector);
                   return (
-                    <li key={t.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-amber-500/5">
+                    <li
+                      key={t.id}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openTaskContext(t.id, e.clientX, e.clientY);
+                      }}
+                      className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-amber-500/5"
+                    >
                       <button
                         onClick={() => togglePackDone(t.id)}
                         aria-label={done ? "Desmarcar" : "Concluir hoje"}
@@ -329,7 +337,13 @@ function Home() {
                 const bucket = formatDueBucket(t.dueDate);
                 const sec = sectors.find((s) => s.id === t.sector);
                 return (
-                  <li key={t.id}>
+                  <li
+                    key={t.id}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      openTaskContext(t.id, e.clientX, e.clientY);
+                    }}
+                  >
                     <button
                       onClick={() => openTask(t.id)}
                       className="flex w-full items-center gap-3 py-3 text-left hover:bg-secondary/40"
