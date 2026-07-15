@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Lock, LockOpen, WifiOff, X, KeyRound } from "lucide-react";
+import { Check, Lock, LockOpen, WifiOff, X } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useActiveCall } from "@/lib/active-call-context";
@@ -31,7 +31,6 @@ type AccessState =
   | { kind: "checking" }
   | { kind: "open" }
   | { kind: "member"; isPrivate: boolean }
-  | { kind: "pin-required" }
   | { kind: "knocking"; knockId: string }
   | { kind: "denied" };
 
@@ -42,17 +41,12 @@ function RoomPage() {
   const navigate = useNavigate();
   const [access, setAccess] = useState<AccessState>({ kind: "checking" });
   const [isPrivate, setIsPrivate] = useState(false);
-  const [hasPin, setHasPin] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState<string | null>(null);
-  const [pinAttempts, setPinAttempts] = useState(0);
   const [showPreCall, setShowPreCall] = useState(true);
   const [pendingPreCall, setPendingPreCall] = useState<{
     title: string;
     autoMinute: boolean;
     makePrivate: boolean;
   } | null>(null);
-  const [pinShown, setPinShown] = useState<string | null>(null);
   const [knocks, setKnocks] = useState<
     { id: string; requester_user_id: string; requester_name: string }[]
   >([]);
@@ -78,9 +72,6 @@ function RoomPage() {
     // If we already have an active call for this room (e.g. returning from
     // minimized mode), skip the pre-call screen.
     setShowPreCall(!(active && active.roomName === roomName));
-    setPinInput("");
-    setPinError(null);
-    setPinAttempts(0);
   }, [roomName, active]);
 
   // Check access + auto-knock if needed. If any request errors, keep
@@ -93,14 +84,10 @@ function RoomPage() {
         const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
         if (cancelled) return;
         setIsPrivate(res.isPrivate);
-        setHasPin(!!res.hasPin);
-        setPinShown(res.pin ?? null);
         if (!res.isPrivate) {
           setAccess({ kind: "open" });
         } else if (res.isMember) {
           setAccess({ kind: "member", isPrivate: true });
-        } else if (res.hasPin) {
-          setAccess({ kind: "pin-required" });
         } else {
           const k = await knockRoom({
             data: { roomName, userId: currentUser.id, userName: currentUser.name },
@@ -220,54 +207,6 @@ function RoomPage() {
     [currentUser.id],
   );
 
-  const tryPin = useCallback(async () => {
-    setPinError(null);
-    const pin = pinInput.replace(/\D/g, "");
-    if (pin.length < 4) {
-      setPinError("Digite o PIN completo");
-      return;
-    }
-    try {
-      // Use knockRoom-like fast path via getRoomAccess -> we do a token pre-check
-      // by calling the same access endpoint after inserting membership. Easier:
-      // just try to start the call passing the pin; server validates.
-      const { getLiveKitToken } = await import("@/lib/livekit-token.functions");
-      await getLiveKitToken({
-        data: {
-          roomName,
-          identity: `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`,
-          name: currentUser.name,
-          userId: currentUser.id,
-          pin,
-        } as {
-          roomName: string;
-          identity: string;
-          name: string;
-          userId?: string;
-          pin?: string;
-        },
-      });
-      // Success — server added us as member.
-      setAccess({ kind: "member", isPrivate: true });
-    } catch {
-      const next = pinAttempts + 1;
-      setPinAttempts(next);
-      setPinError("PIN incorreto");
-      if (next >= 3) {
-        // Fall back to knock flow
-        try {
-          const k = await knockRoom({
-            data: { roomName, userId: currentUser.id, userName: currentUser.name },
-          });
-          if (k.status === "approved") setAccess({ kind: "member", isPrivate: true });
-          else setAccess({ kind: "knocking", knockId: k.knockId ?? "" });
-        } catch {
-          setAccess({ kind: "denied" });
-        }
-      }
-    }
-  }, [pinInput, pinAttempts, roomName, currentUser.id, currentUser.name]);
-
   const connecting = access.kind === "checking" || !active || active.roomName !== roomName;
 
   const layoutActions = insideRoom && !isDiretoria ? (
@@ -288,17 +227,7 @@ function RoomPage() {
   return (
     <FluxoLayout title={`Sala: ${roomLabel}`} breadcrumb="Salas Online" actions={layoutActions}>
       <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl">
-        {access.kind === "pin-required" ? (
-          <PinScreen
-            roomLabel={roomLabel}
-            value={pinInput}
-            onChange={setPinInput}
-            error={pinError}
-            attempts={pinAttempts}
-            onSubmit={tryPin}
-            onCancel={() => navigate({ to: "/salas" })}
-          />
-        ) : access.kind === "knocking" ? (
+        {access.kind === "knocking" ? (
           <WaitingScreen roomLabel={roomLabel} onCancel={() => navigate({ to: "/salas" })} />
         ) : access.kind === "denied" ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card text-center">
@@ -352,11 +281,6 @@ function RoomPage() {
             id={ACTIVE_CALL_MOUNT_ID}
             className="relative h-full w-full overflow-hidden rounded-xl border border-border bg-card"
           >
-            {pinShown && (
-              <div className="absolute right-3 top-3 z-30 rounded-md border border-amber-500/50 bg-black/70 px-2 py-1 text-[10px] font-mono text-amber-300">
-                PIN: <span className="font-bold tracking-widest">{pinShown}</span>
-              </div>
-            )}
             {connecting && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
                 Conectando à sala…
@@ -424,70 +348,3 @@ function WaitingScreen({ roomLabel, onCancel }: { roomLabel: string; onCancel: (
   );
 }
 
-function PinScreen({
-  roomLabel,
-  value,
-  onChange,
-  onSubmit,
-  onCancel,
-  error,
-  attempts,
-}: {
-  roomLabel: string;
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-  error: string | null;
-  attempts: number;
-}) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-border bg-card p-6 text-center">
-      <KeyRound className="h-10 w-10 text-amber-500" />
-      <div>
-        <div className="text-sm font-semibold">Sala trancada</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          A sala <span className="font-medium text-foreground">{roomLabel}</span> exige PIN. Digite
-          o código que você recebeu — ou peça pra bater na porta.
-        </div>
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSubmit();
-        }}
-        className="flex w-full max-w-xs flex-col items-center gap-2"
-      >
-        <input
-          autoFocus
-          inputMode="numeric"
-          maxLength={8}
-          value={value}
-          onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
-          placeholder="000000"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-center font-mono text-2xl tracking-[0.5em] outline-none focus:border-primary"
-        />
-        {error && (
-          <div className="text-[11px] text-destructive">
-            {error} {attempts > 0 && `(tentativa ${attempts}/3)`}
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-border bg-secondary px-3 py-1.5 text-sm hover:bg-secondary/70"
-          >
-            Voltar
-          </button>
-          <button
-            type="submit"
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-95"
-          >
-            Entrar
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}

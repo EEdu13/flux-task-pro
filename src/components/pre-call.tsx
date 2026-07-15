@@ -186,8 +186,8 @@ export function PreCall({
               Sala restrita — sempre privada
             </span>
             <span className="mt-0.5 block text-muted-foreground">
-              A sala da Diretoria é sempre privada. Novos participantes entram apenas com PIN ou
-              aprovação de quem já está dentro.
+              A sala da Diretoria é sempre privada. Novos participantes só entram com aprovação de
+              quem já está dentro.
             </span>
           </span>
         </div>
@@ -205,8 +205,8 @@ export function PreCall({
               Entrar como sala privada
             </span>
             <span className="mt-0.5 block text-muted-foreground">
-              Ninguém entra sem sua aprovação ou o PIN de 6 dígitos. Você pode abrir/trancar depois
-              pelo botão no topo da sala.
+              Ninguém entra sem sua aprovação. Você pode abrir/trancar depois pelo botão no topo da
+              sala.
             </span>
           </span>
         </label>

@@ -2,10 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 
 type RoomCallStatus = "ringing" | "accepted" | "declined" | "missed";
 
-function generatePin(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
 const sanitizeUserId = (value: unknown) => {
   if (typeof value !== "string") throw new Error("Usuário inválido");
   const id = value.trim().slice(0, 80);
@@ -26,7 +22,7 @@ const sanitizeRoomLabel = (value: unknown, fallback: string) => {
 };
 
 export const getLiveKitToken = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; identity: string; name: string; pin?: string }) => {
+  .inputValidator((input: { roomName: string; identity: string; name: string }) => {
     if (!input || typeof input.roomName !== "string" || typeof input.identity !== "string") {
       throw new Error("Parâmetros inválidos");
     }
@@ -39,8 +35,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       typeof (input as { userId?: string }).userId === "string"
         ? (input as { userId?: string }).userId!.trim().slice(0, 80)
         : "";
-    const pin = typeof input.pin === "string" ? input.pin.replace(/\D/g, "").slice(0, 8) : "";
-    return { roomName, identity, name, userId, pin };
+    return { roomName, identity, name, userId };
   })
   .handler(async ({ data }) => {
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -55,7 +50,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: state } = await supabaseAdmin
         .from("room_state")
-        .select("is_private, pin")
+        .select("is_private")
         .eq("room_name", data.roomName)
         .maybeSingle();
       if (state?.is_private) {
@@ -69,17 +64,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
           .eq("user_id", data.userId)
           .maybeSingle();
         if (!member) {
-          // Auto-join with correct PIN
-          if (data.pin && state.pin && data.pin === state.pin) {
-            await supabaseAdmin
-              .from("room_members")
-              .upsert(
-                { room_name: data.roomName, user_id: data.userId, added_by: data.userId },
-                { onConflict: "room_name,user_id" },
-              );
-          } else {
-            throw new Error("Sala privada: peça para entrar antes.");
-          }
+          throw new Error("Sala privada: peça para entrar antes.");
         }
       }
     }
@@ -395,7 +380,7 @@ export const getRoomAccess = createServerFn({ method: "POST" })
     let [{ data: state }, { data: member }] = await Promise.all([
       supabaseAdmin
         .from("room_state")
-        .select("is_private, pin")
+        .select("is_private")
         .eq("room_name", data.roomName)
         .maybeSingle(),
       supabaseAdmin
@@ -407,28 +392,25 @@ export const getRoomAccess = createServerFn({ method: "POST" })
     ]);
     // Diretoria rooms are always private and must have a room_state row.
     if (forcePrivate && (!state || !state.is_private)) {
-      const pin = generatePin();
       await supabaseAdmin.from("room_state").upsert(
         {
           room_name: data.roomName,
           is_private: true,
-          pin,
+          pin: null,
           updated_by: data.userId,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "room_name" },
       );
-      state = { is_private: true, pin };
+      state = { is_private: true };
     }
     const isPrivate = forcePrivate || !!state?.is_private;
-    // Only reveal the PIN to a current member; strangers just know one exists.
-    const pin = isPrivate && member ? (state?.pin ?? null) : null;
     return {
       isPrivate,
       isMember: !!member,
       canJoin: !isPrivate || !!member,
-      pin,
-      hasPin: !!(isPrivate && state?.pin),
+      pin: null,
+      hasPin: false,
     };
   });
 
@@ -442,12 +424,11 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Diretoria rooms are always private and cannot be opened.
     const isPrivate = isDiretoriaRoom(data.roomName) || data.isPrivate;
-    const pin = isPrivate ? generatePin() : null;
     await supabaseAdmin.from("room_state").upsert(
       {
         room_name: data.roomName,
         is_private: isPrivate,
-        pin,
+        pin: null,
         updated_by: data.userId,
         updated_at: new Date().toISOString(),
       },
@@ -492,7 +473,7 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
       await supabaseAdmin.from("room_knocks").delete().eq("room_name", data.roomName);
       await supabaseAdmin.from("room_members").delete().eq("room_name", data.roomName);
     }
-    return { ok: true, pin };
+    return { ok: true, pin: null };
   });
 
 export const inviteToRoom = createServerFn({ method: "POST" })

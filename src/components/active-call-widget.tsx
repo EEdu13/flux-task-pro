@@ -303,7 +303,6 @@ function CallContents({
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
-  const [roomPin, setRoomPin] = useState<string | null>(null);
   const [privBusy, setPrivBusy] = useState(false);
   const [presenterMode, setPresenterMode] = useState<"auto" | "grid" | "focus">("auto");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -349,7 +348,6 @@ function CallContents({
         const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
         if (!cancelled) {
           setIsPrivate(res.isPrivate);
-          setRoomPin(res.pin ?? null);
         }
       } catch {
         /* ignore */
@@ -369,10 +367,9 @@ function CallContents({
     setIsPrivate(next);
     setPrivBusy(true);
     try {
-      const res = await setRoomPrivacy({
+      await setRoomPrivacy({
         data: { roomName, isPrivate: next, userId: currentUser.id },
       });
-      setRoomPin(res?.pin ?? null);
     } catch {
       setIsPrivate(!next);
     } finally {
@@ -631,19 +628,8 @@ function CallContents({
         )}
       </div>
       <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-white/10 bg-black/80 px-2 py-1.5 sm:px-3">
-        {/* Left slot: PIN when private */}
-        <div className="order-2 flex w-full items-center justify-center gap-1.5 sm:order-1 sm:w-auto sm:flex-1 sm:justify-start">
-          {!mini && isPrivate && roomPin && (
-            <button
-              type="button"
-              onClick={() => navigator.clipboard?.writeText(roomPin).catch(() => {})}
-              className="inline-flex items-center gap-1 rounded-md border border-amber-400/60 bg-amber-400/15 px-2 py-1 font-mono text-[11px] font-bold tracking-widest text-amber-200 hover:bg-amber-400/25"
-              title="PIN da sala — clique para copiar e compartilhar"
-            >
-              <Copy className="h-3 w-3" /> {roomPin}
-            </button>
-          )}
-        </div>
+        {/* Left slot (reserved) */}
+        <div className="order-2 flex w-full items-center justify-center gap-1.5 sm:order-1 sm:w-auto sm:flex-1 sm:justify-start" />
 
         {/* Center: Teams-style icon toolbar */}
         <div className="order-1 flex max-w-full flex-wrap items-center justify-center gap-0.5 overflow-x-auto rounded-xl bg-white/[0.03] px-1.5 py-1 sm:order-2 sm:flex-nowrap sm:overflow-visible">
