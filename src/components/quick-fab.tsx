@@ -57,9 +57,7 @@ export function QuickFab() {
     setMode("menu");
   };
 
-  const packItems = tasks.filter(
-    (t) => t.assigneeId === currentUser.id && (t as unknown as { inPack?: boolean }).inPack,
-  );
+  const packItems = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
   const packPending = packItems.filter((t) => !packDone.has(t.id));
 
   const togglePackDone = (id: string) => {
