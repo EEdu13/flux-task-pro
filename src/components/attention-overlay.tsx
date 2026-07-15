@@ -16,6 +16,15 @@ export function AttentionOverlay() {
       const detail = (e as CustomEvent<AttnEvent>).detail;
       if (!detail) return;
       setCurrent(detail);
+      try {
+        window.focus();
+        if (window.parent && window.parent !== window) window.parent.focus();
+        if (window.top && window.top !== window) window.top.focus();
+      } catch {
+        /* ignore cross-origin */
+      }
+      flashTitle(`🔔 ${detail.fromName} chamou sua atenção!`);
+      showNudgeNotification(detail.fromName);
       const root = document.documentElement;
       root.classList.remove("fluxo-nudge-shake");
       // force reflow to restart the animation
@@ -26,6 +35,13 @@ export function AttentionOverlay() {
     };
     window.addEventListener("fluxo:attention", handler as EventListener);
     return () => window.removeEventListener("fluxo:attention", handler as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
   }, []);
 
   // Subscribe to a Supabase realtime channel scoped to this user so nudges
