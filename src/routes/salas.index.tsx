@@ -98,14 +98,15 @@ function SalasPage() {
     const discovered = new Map<string, RoomInfo>();
     for (const r of bySector[sector] ?? []) discovered.set(r.name, r);
     // fixed: exactly two rooms per sector — Sala 1 and Sala 2
+    const forcePrivate = sector === "diretoria";
     const fixed: RoomInfo[] = [
-      { name: sector, label: `${label} · Sala 1`, isPrivate: false, participants: [] },
-      { name: `${sector}-2`, label: `${label} · Sala 2`, isPrivate: false, participants: [] },
+      { name: sector, label: `${label} · Sala 1`, isPrivate: forcePrivate, participants: [] },
+      { name: `${sector}-2`, label: `${label} · Sala 2`, isPrivate: forcePrivate, participants: [] },
     ];
     return fixed.map((base) => {
       const d = discovered.get(base.name);
       return d
-        ? { name: base.name, label: base.label, isPrivate: d.isPrivate, participants: d.participants }
+        ? { name: base.name, label: base.label, isPrivate: forcePrivate || d.isPrivate, participants: d.participants }
         : base;
     });
   }
@@ -129,6 +130,7 @@ function SalasPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {DEPARTMENT_ROOMS.map((r) => {
             const rooms = roomsForSector(r.name, r.label);
+            const isDiretoria = r.name === "diretoria";
             const query = (queries[r.name] ?? "").trim().toLowerCase();
             const matches = query
               ? users
@@ -139,16 +141,29 @@ function SalasPage() {
             return (
               <section
                 key={r.name}
-                className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-primary/40"
+                className={`flex flex-col gap-3 rounded-lg border p-4 transition ${
+                  isDiretoria
+                    ? "border-amber-500/60 bg-gradient-to-br from-amber-500/10 via-card to-card ring-1 ring-amber-500/40 hover:border-amber-500"
+                    : "border-border bg-card hover:border-primary/40"
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
-                      <Headphones className="h-5 w-5" />
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-md ${
+                        isDiretoria ? "bg-amber-500/20 text-amber-600 dark:text-amber-400" : "bg-primary/10 text-primary"
+                      }`}
+                    >
+                      {isDiretoria ? <Lock className="h-5 w-5" /> : <Headphones className="h-5 w-5" />}
                     </div>
                     <div>
-                      <div className="text-base font-semibold uppercase tracking-wide">
+                      <div className="flex items-center gap-1.5 text-base font-semibold uppercase tracking-wide">
                         {r.label}
+                        {isDiretoria && (
+                          <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                            Restrita
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-muted-foreground">{r.desc}</div>
                     </div>
@@ -194,7 +209,7 @@ function SalasPage() {
                                  {room.participants.length}
                                </span>
                              )}
-                             {inUse && (
+                              {(inUse || room.isPrivate) && (
                                <span
                                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
                                    room.isPrivate
@@ -204,7 +219,7 @@ function SalasPage() {
                                >
                                  {room.isPrivate ? (
                                    <>
-                                     <Lock className="h-2.5 w-2.5" /> Privado
+                                     <Lock className="h-2.5 w-2.5" /> Restrita
                                    </>
                                  ) : (
                                    <>
