@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { priorityColor, sectors, statusColor } from "@/lib/fluxo-types";
+import { openTaskContext } from "@/components/task-context-menu";
 
 export const Route = createFileRoute("/calendario")({
   head: () => ({
@@ -151,6 +152,11 @@ function CalendarioPage() {
                         onClick={(e) => {
                           e.stopPropagation();
                           openTask(t.id);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openTaskContext(t.id, e.clientX, e.clientY);
                         }}
                         className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition hover:bg-secondary"
                         style={{
