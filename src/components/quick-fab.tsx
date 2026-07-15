@@ -52,6 +52,15 @@ export function QuickFab() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  useEffect(() => {
+    const onOpen = () => {
+      setOpen(true);
+      setMode("menu");
+    };
+    window.addEventListener("fluxo:quick-open", onOpen);
+    return () => window.removeEventListener("fluxo:quick-open", onOpen);
+  }, []);
+
   const openNotepad = () => {
     window.dispatchEvent(new CustomEvent("fluxo:notepad-open"));
     setOpen(false);
