@@ -16,6 +16,15 @@ export function AttentionOverlay() {
       const detail = (e as CustomEvent<AttnEvent>).detail;
       if (!detail) return;
       setCurrent(detail);
+      try {
+        window.focus();
+        if (window.parent && window.parent !== window) window.parent.focus();
+        if (window.top && window.top !== window) window.top.focus();
+      } catch {
+        /* ignore cross-origin */
+      }
+      flashTitle(`🔔 ${detail.fromName} chamou sua atenção!`);
+      showNudgeNotification(detail.fromName);
       const root = document.documentElement;
       root.classList.remove("fluxo-nudge-shake");
       // force reflow to restart the animation
@@ -26,6 +35,13 @@ export function AttentionOverlay() {
     };
     window.addEventListener("fluxo:attention", handler as EventListener);
     return () => window.removeEventListener("fluxo:attention", handler as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
   }, []);
 
   // Subscribe to a Supabase realtime channel scoped to this user so nudges
@@ -74,6 +90,70 @@ export function triggerAttention(fromName: string, fromAvatar?: string) {
   window.dispatchEvent(
     new CustomEvent("fluxo:attention", { detail: { fromName, fromAvatar } }),
   );
+}
+
+// ---------- Tab flashing + OS notifications ----------
+
+let flashTimer: number | null = null;
+let originalTitle: string | null = null;
+
+function stopFlashing() {
+  if (flashTimer !== null) {
+    window.clearInterval(flashTimer);
+    flashTimer = null;
+  }
+  if (originalTitle !== null) {
+    document.title = originalTitle;
+    originalTitle = null;
+  }
+}
+
+export function flashTitle(message: string, durationMs = 8000) {
+  if (typeof document === "undefined") return;
+  if (originalTitle === null) originalTitle = document.title;
+  const base = originalTitle;
+  let on = false;
+  if (flashTimer !== null) window.clearInterval(flashTimer);
+  flashTimer = window.setInterval(() => {
+    on = !on;
+    document.title = on ? message : base;
+  }, 800);
+  const stopWhenVisible = () => {
+    if (!document.hidden) {
+      stopFlashing();
+      document.removeEventListener("visibilitychange", stopWhenVisible);
+      window.removeEventListener("focus", stopWhenVisible);
+    }
+  };
+  document.addEventListener("visibilitychange", stopWhenVisible);
+  window.addEventListener("focus", stopWhenVisible);
+  window.setTimeout(stopFlashing, durationMs);
+}
+
+export function showNudgeNotification(fromName: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  if (!document.hidden && document.hasFocus()) return;
+  try {
+    const n = new Notification("Fluxo", {
+      body: `${fromName} chamou sua atenção!`,
+      tag: "fluxo-nudge",
+      renotify: true,
+    } as NotificationOptions);
+    n.onclick = () => {
+      try {
+        window.focus();
+        if (window.parent && window.parent !== window) window.parent.focus();
+        if (window.top && window.top !== window) window.top.focus();
+      } catch {
+        /* ignore */
+      }
+      n.close();
+    };
+    window.setTimeout(() => n.close(), 6000);
+  } catch {
+    /* ignore */
+  }
 }
 
 // Send a nudge to another user via Supabase realtime broadcast. Returns a
