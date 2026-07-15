@@ -302,9 +302,8 @@ export function InlineTaskCreator({
                 <tr className="border-b border-border bg-secondary/40 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <th className="w-6 py-1.5 pl-3"></th>
                   <th className="py-1.5 pr-3">Título da tarefa</th>
-                  <th className="w-32 py-1.5 pr-3">Prazo</th>
+                  <th className="w-72 py-1.5 pr-3">Prazo</th>
                   {!compact && <th className="w-40 py-1.5 pr-3">Responsável</th>}
-                  {!compact && <th className="w-32 py-1.5 pr-3">Prioridade</th>}
                   {!compact && <th className="w-36 py-1.5 pr-3">Setor</th>}
                   <th className="w-8 py-1.5 pr-2"></th>
                 </tr>
