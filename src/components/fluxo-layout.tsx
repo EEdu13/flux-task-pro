@@ -108,10 +108,25 @@ export function FluxoLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [roomsQuickOpen, setRoomsQuickOpen] = useState(false);
 
-  // Close mobile drawer whenever the route changes
+  // Close mobile drawer and rooms quick panel whenever the route changes
   useEffect(() => {
     setMobileOpen(false);
+    setRoomsQuickOpen(false);
   }, [pathname]);
+
+  // Close rooms quick panel when clicking outside
+  useEffect(() => {
+    if (!roomsQuickOpen) return;
+    if (typeof document === "undefined") return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && !target.closest("[data-rooms-quick-panel]")) {
+        setRoomsQuickOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [roomsQuickOpen]);
 
   // Lock body scroll while drawer is open
   useEffect(() => {
