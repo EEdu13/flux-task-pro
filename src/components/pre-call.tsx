@@ -178,24 +178,26 @@ export function PreCall({
           </span>
         </span>
       </label>
-      <label className="flex w-full max-w-xl cursor-pointer items-start gap-2 rounded-md border border-border bg-background/50 p-3">
-        <input
-          type="checkbox"
-          checked={makePrivate}
-          onChange={(e) => setMakePrivate(e.target.checked)}
-          className="mt-0.5 h-4 w-4 accent-primary"
-        />
-        <span className="flex-1 text-xs">
-          <span className="flex items-center gap-1 font-semibold">
-            <Lock className="h-3.5 w-3.5 text-amber-500" />
-            Entrar como sala privada
+      {!forcePrivate && (
+        <label className="flex w-full max-w-xl cursor-pointer items-start gap-2 rounded-md border border-border bg-background/50 p-3">
+          <input
+            type="checkbox"
+            checked={makePrivate}
+            onChange={(e) => setMakePrivate(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <span className="flex-1 text-xs">
+            <span className="flex items-center gap-1 font-semibold">
+              <Lock className="h-3.5 w-3.5 text-amber-500" />
+              Entrar como sala privada
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              Ninguém entra sem sua aprovação ou o PIN de 6 dígitos. Você pode abrir/trancar depois
+              pelo botão no topo da sala.
+            </span>
           </span>
-          <span className="mt-0.5 block text-muted-foreground">
-            Ninguém entra sem sua aprovação ou o PIN de 6 dígitos. Você pode abrir/trancar depois
-            pelo botão no topo da sala.
-          </span>
-        </span>
-      </label>
+        </label>
+      )}
       <div className="relative aspect-video w-full max-w-xl overflow-hidden rounded-lg border border-border bg-black">
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
