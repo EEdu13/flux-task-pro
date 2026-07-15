@@ -175,9 +175,9 @@ export const priorityLabels: Record<Priority, string> = {
 };
 
 export const priorityMultiplier: Record<Priority, number> = {
-  alta: 1.5,
+  alta: 1,
   media: 1,
-  baixa: 0.75,
+  baixa: 1,
 };
 
 export const priorityColor: Record<Priority, string> = {

@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
-  priorityLabels,
   sectors,
-  type Priority,
   type Status,
 } from "@/lib/fluxo-types";
 import type { Attachment } from "@/lib/fluxo-types";
@@ -17,7 +15,6 @@ interface DraftRow {
   title: string;
   dueDate: string; // yyyy-mm-dd
   assigneeId: string;
-  priority: Priority;
   sector: string;
   attachments: Attachment[];
   mentions: string[];
@@ -31,13 +28,26 @@ function todayStr() {
   return d.toISOString().slice(0, 10);
 }
 
+function tomorrowStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function inDaysStr(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
 function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
     title: "",
     dueDate: defaults.dueDate ?? todayStr(),
     assigneeId: defaults.assigneeId ?? "",
-    priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
     attachments: [],
     mentions: [],
@@ -133,7 +143,7 @@ export function InlineTaskCreator({
       score: 10,
       dueDate: due.toISOString(),
       recurring: false,
-      priority: row.priority,
+      priority: "media",
       tags: [],
       attachments: row.attachments.length ? row.attachments : undefined,
     });
@@ -274,7 +284,10 @@ export function InlineTaskCreator({
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-sm font-semibold">Criação rápida (estilo planilha)</span>
           <span className="text-[11px] text-muted-foreground">
-            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para próxima linha · arraste arquivos para anexar
+            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para próxima linha
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-dashed border-primary/40 bg-primary/5 px-1.5 py-0.5 text-primary">
+              <UploadCloud className="h-3 w-3" /> arraste arquivos aqui para anexar
+            </span>
           </span>
         </div>
         {open && rows.some((r) => r.title.trim()) && (
@@ -292,9 +305,8 @@ export function InlineTaskCreator({
                 <tr className="border-b border-border bg-secondary/40 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <th className="w-6 py-1.5 pl-3"></th>
                   <th className="py-1.5 pr-3">Título da tarefa</th>
-                  <th className="w-32 py-1.5 pr-3">Prazo</th>
+                  <th className="w-72 py-1.5 pr-3">Prazo</th>
                   {!compact && <th className="w-40 py-1.5 pr-3">Responsável</th>}
-                  {!compact && <th className="w-32 py-1.5 pr-3">Prioridade</th>}
                   {!compact && <th className="w-36 py-1.5 pr-3">Setor</th>}
                   <th className="w-8 py-1.5 pr-2"></th>
                 </tr>
@@ -480,12 +492,36 @@ export function InlineTaskCreator({
                       )}
                     </td>
                     <td className="py-1 pr-3">
-                      <input
-                        type="date"
-                        value={row.dueDate}
-                        onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                        className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
-                      />
+                      <div className="flex items-center gap-1">
+                        <div className="inline-flex rounded-md border border-border p-0.5 text-[10px]">
+                          {[
+                            { label: "Hoje", get: todayStr },
+                            { label: "Amanhã", get: tomorrowStr },
+                            { label: "+7d", get: () => inDaysStr(7) },
+                          ].map((opt) => {
+                            const iso = opt.get();
+                            const active = row.dueDate === iso;
+                            return (
+                              <button
+                                type="button"
+                                key={opt.label}
+                                onClick={() => update(row.id, { dueDate: iso })}
+                                className={`rounded px-1.5 py-0.5 font-medium transition ${
+                                  active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <input
+                          type="date"
+                          value={row.dueDate}
+                          onChange={(e) => update(row.id, { dueDate: e.target.value })}
+                          className="w-32 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
+                        />
+                      </div>
                     </td>
                     {!compact && (
                       <td className="py-1 pr-3">
@@ -497,21 +533,6 @@ export function InlineTaskCreator({
                           {assignees.map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    )}
-                    {!compact && (
-                      <td className="py-1 pr-3">
-                        <select
-                          value={row.priority}
-                          onChange={(e) => update(row.id, { priority: e.target.value as Priority })}
-                          className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
-                        >
-                          {(Object.entries(priorityLabels) as [Priority, string][]).map(([v, l]) => (
-                            <option key={v} value={v}>
-                              {l}
                             </option>
                           ))}
                         </select>
@@ -538,10 +559,11 @@ export function InlineTaskCreator({
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                          className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo (ou arraste)"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
+                          <span className="hidden text-[10px] font-medium xl:inline">Anexar / arraste</span>
                         </button>
                       <button
                         type="button"
@@ -607,7 +629,9 @@ export function InlineTaskCreator({
                 <li key={r.id} className="flex items-center gap-2 border-b border-border/40 py-1 last:border-0">
                   <span className="text-[10px] text-muted-foreground">{i + 1}.</span>
                   <span className="flex-1 truncate font-medium">{r.title}</span>
-                  <span className="text-[10px] uppercase text-muted-foreground">{r.priority}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(r.dueDate + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                  </span>
                 </li>
               ))}
             </ul>

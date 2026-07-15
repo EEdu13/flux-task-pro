@@ -23,8 +23,6 @@ import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import {
   freqLabels,
-  priorityLabels,
-  priorityColor,
   sectors,
   statusColor,
   statusLabels,
@@ -488,7 +486,6 @@ function TaskList({
                   <th className="py-2 pr-4">Tarefa</th>
                   <th className="py-2 pr-4">Responsável</th>
                   <th className="py-2 pr-4">Prazo</th>
-                  <th className="py-2 pr-4">Prioridade</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Setor</th>
                   <th className="py-2 pr-4 w-8"></th>
@@ -555,9 +552,6 @@ function TaskList({
                       </td>
                       <td className="py-2.5 pr-4 text-xs text-muted-foreground">
                         {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <Badge label={priorityLabels[t.priority]} color={priorityColor[t.priority]} />
                       </td>
                       <td className="py-2.5 pr-4">
                         <Badge label={statusLabels[t.status]} color={statusColor[t.status]} />
@@ -717,7 +711,6 @@ function KanbanBoard({
                       >
                         <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
                       </button>
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: priorityColor[t.priority] }} />
                     </div>
                     <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
                     {(t.mentions.length > 0 || t.checklist.length > 0) && (
@@ -1010,7 +1003,6 @@ function ExternalRow({
               <Repeat className="h-2.5 w-2.5" /> Recorrente
             </span>
           )}
-          <Badge label={priorityLabels[task.priority]} color={priorityColor[task.priority]} />
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
@@ -1084,10 +1076,6 @@ function PackRow({
               <Repeat className="h-2.5 w-2.5" /> Recorrente
             </span>
           )}
-          <Badge
-            label={priorityLabels[task.priority]}
-            color={priorityColor[task.priority]}
-          />
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />

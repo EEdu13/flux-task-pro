@@ -8,7 +8,6 @@ import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import {
   sectors,
   freqLabels,
-  priorityLabels,
   statusLabels,
   type Frequency,
   type Priority,
@@ -314,13 +313,6 @@ export function TaskDialog() {
                 <Field label="Frequência">
                   <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className="input">
                     {Object.entries(freqLabels).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Prioridade">
-                  <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="input">
-                    {Object.entries(priorityLabels).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
