@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useFluxo } from "@/lib/fluxo-store";
 
 interface AttnEvent {
   fromName: string;
@@ -7,6 +9,7 @@ interface AttnEvent {
 
 export function AttentionOverlay() {
   const [current, setCurrent] = useState<AttnEvent | null>(null);
+  const { currentUser, isAuthenticated } = useFluxo();
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -24,6 +27,26 @@ export function AttentionOverlay() {
     window.addEventListener("fluxo:attention", handler as EventListener);
     return () => window.removeEventListener("fluxo:attention", handler as EventListener);
   }, []);
+
+  // Subscribe to a Supabase realtime channel scoped to this user so nudges
+  // sent from other tabs / other users actually reach *this* device.
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.id) return;
+    const ch = supabase.channel(`attention:${currentUser.id}`, {
+      config: { broadcast: { self: false } },
+    });
+    ch.on("broadcast", { event: "nudge" }, (payload) => {
+      const p = payload.payload as AttnEvent | undefined;
+      if (!p) return;
+      window.dispatchEvent(
+        new CustomEvent("fluxo:attention", { detail: p }),
+      );
+    });
+    ch.subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [currentUser?.id, isAuthenticated]);
 
   if (!current) return null;
   return (
@@ -51,4 +74,32 @@ export function triggerAttention(fromName: string, fromAvatar?: string) {
   window.dispatchEvent(
     new CustomEvent("fluxo:attention", { detail: { fromName, fromAvatar } }),
   );
+}
+
+// Send a nudge to another user via Supabase realtime broadcast. Returns a
+// promise that resolves when the message has been queued.
+export async function sendNudge(
+  targetUserId: string,
+  fromName: string,
+  fromAvatar?: string,
+) {
+  const ch = supabase.channel(`attention:${targetUserId}`, {
+    config: { broadcast: { self: false, ack: true } },
+  });
+  await new Promise<void>((resolve) => {
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") resolve();
+    });
+    // safety timeout
+    window.setTimeout(() => resolve(), 1500);
+  });
+  try {
+    await ch.send({
+      type: "broadcast",
+      event: "nudge",
+      payload: { fromName, fromAvatar },
+    });
+  } finally {
+    window.setTimeout(() => supabase.removeChannel(ch), 500);
+  }
 }
