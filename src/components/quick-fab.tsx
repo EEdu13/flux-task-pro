@@ -10,6 +10,7 @@ import {
   Sparkles,
   Check,
 } from "lucide-react";
+
 import { useFluxo } from "@/lib/fluxo-store";
 import { toast } from "sonner";
 import type { Priority } from "@/lib/fluxo-types";
