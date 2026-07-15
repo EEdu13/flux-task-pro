@@ -8,7 +8,6 @@ import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import {
   sectors,
   freqLabels,
-  priorityLabels,
   statusLabels,
   type Frequency,
   type Priority,
