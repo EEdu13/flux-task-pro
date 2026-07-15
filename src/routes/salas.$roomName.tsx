@@ -128,10 +128,19 @@ function RoomPage() {
       }
     };
     tick();
-    const id = window.setInterval(tick, 2000);
+    const id = window.setInterval(tick, 2500);
+    const channel = supabase
+      .channel(`knock-${knockId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "room_knocks", filter: `id=eq.${knockId}` },
+        () => tick(),
+      )
+      .subscribe();
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      try { supabase.removeChannel(channel); } catch { /* ignore */ }
     };
   }, [access]);
 
