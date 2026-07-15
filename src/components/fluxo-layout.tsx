@@ -302,7 +302,6 @@ export function FluxoLayout({
           {/* Salas Online — with submenu */}
           {(() => {
             const salasActive = pathname === "/salas" || pathname.startsWith("/salas/");
-            const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
             if (collapsed) {
               return (
                 <Link
