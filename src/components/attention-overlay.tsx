@@ -42,6 +42,14 @@ export function AttentionOverlay() {
     if (Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
+    // Register a tiny service worker so we can use
+    // registration.showNotification — this is what actually makes Windows
+    // flash the Chrome icon on the taskbar.
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/fluxo-nudge-sw.js")
+        .catch(() => {});
+    }
   }, []);
 
   // Subscribe to a Supabase realtime channel scoped to this user so nudges
