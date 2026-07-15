@@ -184,8 +184,9 @@ html.fluxo-nudge-shake body {
 
 @keyframes fluxo-attn-pop {
   0% { opacity: 0; transform: perspective(1200px) translateZ(-400px) rotateX(35deg) scale(0.5); filter: blur(8px); }
-  35% { opacity: 1; transform: perspective(1200px) translateZ(60px) rotateX(-4deg) scale(1.05); filter: blur(0); }
-  60% { opacity: 1; transform: perspective(1200px) translateZ(0) rotateX(0) scale(1); }
+  15% { opacity: 1; transform: perspective(1200px) translateZ(60px) rotateX(-4deg) scale(1.05); filter: blur(0); }
+  25% { opacity: 1; transform: perspective(1200px) translateZ(0) rotateX(0) scale(1); }
+  85% { opacity: 1; transform: perspective(1200px) translateZ(0) rotateX(0) scale(1); }
   100% { opacity: 0; transform: perspective(1200px) translateZ(200px) rotateX(-12deg) scale(1.15); filter: blur(2px); }
 }
-.fluxo-attn-pop { animation: fluxo-attn-pop 1.8s cubic-bezier(.2,.7,.3,1) forwards; }
+.fluxo-attn-pop { animation: fluxo-attn-pop 4.2s cubic-bezier(.2,.7,.3,1) forwards; }
