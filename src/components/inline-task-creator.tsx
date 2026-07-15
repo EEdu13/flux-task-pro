@@ -607,27 +607,28 @@ export function InlineTaskCreator({
               </div>
             </div>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-4 py-3">
             <button
               type="button"
               onClick={() => addRow()}
-              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary"
+              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
             >
-              <Plus className="h-3 w-3" /> Nova linha
+              <Plus className="h-4 w-4" /> Adicionar linha
             </button>
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span>
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima linha ·{" "}
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="hidden md:inline">
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">@</kbd> menciona ·{" "}
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">↑↓</kbd> navega ·{" "}
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">⌫</kbd> remove linha vazia
+                <kbd className="rounded border border-border bg-muted px-1 font-mono">⌫</kbd> remove vazia
               </span>
               <button
                 type="button"
                 onClick={requestSubmitAll}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
               >
-                Criar todas
+                <Sparkles className="h-4 w-4" />
+                Criar {validRows.length > 0 ? `${validRows.length} tarefa${validRows.length > 1 ? "s" : ""}` : "tarefas"}
               </button>
             </div>
           </div>
