@@ -301,14 +301,14 @@ export function PreCall({
           onClick={() => {
             // Release preview stream before joining — LiveKit re-acquires.
             if (stream) stream.getTracks().forEach((t) => t.stop());
-            onEnter({
+          onEnter({
               micOn: prefs.micOn,
               camOn: prefs.camOn,
               micDeviceId: prefs.micDeviceId,
               camDeviceId: prefs.camDeviceId,
               title: title.trim() || roomLabel,
               autoMinute,
-              makePrivate,
+              makePrivate: forcePrivate || makePrivate,
             });
           }}
           disabled={!title.trim()}
