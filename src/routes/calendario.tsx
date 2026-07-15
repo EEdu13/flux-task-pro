@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, Zap, Eye } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { priorityColor, sectors, statusColor } from "@/lib/fluxo-types";
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/calendario")({
 });
 
 function CalendarioPage() {
-  const { tasks, currentUser, users, openTask, openNewTask } = useFluxo();
+  const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate } = useFluxo();
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -25,6 +25,21 @@ function CalendarioPage() {
     return d;
   });
   const [scope, setScope] = useState<"eu" | "todos">("eu");
+  const [dayCtx, setDayCtx] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
+
+  useEffect(() => {
+    if (!dayCtx) return;
+    const close = () => setDayCtx(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [dayCtx]);
 
   const filtered = useMemo(
     () => (scope === "eu" ? tasks.filter((t) => t.assigneeId === currentUser.id) : tasks),
