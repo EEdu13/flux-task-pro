@@ -556,9 +556,6 @@ function TaskList({
                         {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                       </td>
                       <td className="py-2.5 pr-4">
-                        <Badge label={priorityLabels[t.priority]} color={priorityColor[t.priority]} />
-                      </td>
-                      <td className="py-2.5 pr-4">
                         <Badge label={statusLabels[t.status]} color={statusColor[t.status]} />
                       </td>
                       <td className="py-2.5 pr-4">
