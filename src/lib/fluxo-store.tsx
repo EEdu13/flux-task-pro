@@ -417,6 +417,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
     },
 
+    reorderTasks: (orderedIds) => {
+      setState((s) => {
+        const map = new Map(orderedIds.map((id, i) => [id, i]));
+        return {
+          ...s,
+          tasks: s.tasks.map((t) =>
+            map.has(t.id) ? { ...t, order: map.get(t.id)! } : t,
+          ),
+        };
+      });
+    },
+
     moveTask: (id, status, targetIndex) => {
       setState((s) => {
         const prev = s.tasks.find((t) => t.id === id);
