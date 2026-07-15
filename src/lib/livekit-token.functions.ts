@@ -405,6 +405,42 @@ export const getRoomAccess = createServerFn({ method: "POST" })
       state = { is_private: true };
     }
     const isPrivate = forcePrivate || !!state?.is_private;
+    // If the room is private but empty (no live participants), admit the
+    // caller as the first member so they don't wait for approval from nobody.
+    if (isPrivate && !member) {
+      const apiKey = process.env.LIVEKIT_API_KEY;
+      const apiSecret = process.env.LIVEKIT_API_SECRET;
+      const wsUrl = process.env.LIVEKIT_URL;
+      let empty = true;
+      if (apiKey && apiSecret && wsUrl) {
+        try {
+          const httpUrl = wsUrl
+            .replace(/^wss:\/\//, "https://")
+            .replace(/^ws:\/\//, "http://");
+          const { RoomServiceClient } = await import("livekit-server-sdk");
+          const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+          try {
+            const parts = await svc.listParticipants(data.roomName);
+            empty = !parts || parts.length === 0;
+          } catch {
+            empty = true;
+          }
+        } catch {
+          empty = true;
+        }
+      }
+      if (empty) {
+        await supabaseAdmin.from("room_members").upsert(
+          {
+            room_name: data.roomName,
+            user_id: data.userId,
+            added_by: data.userId,
+          },
+          { onConflict: "room_name,user_id" },
+        );
+        return { isPrivate, isMember: true, canJoin: true, pin: null, hasPin: false };
+      }
+    }
     return {
       isPrivate,
       isMember: !!member,
