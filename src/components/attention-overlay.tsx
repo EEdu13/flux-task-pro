@@ -142,6 +142,25 @@ export function showNudgeNotification(fromName: string) {
   if (typeof window === "undefined" || !("Notification" in window)) return;
   if (Notification.permission !== "granted") return;
   if (!document.hidden && document.hasFocus()) return;
+  // Prefer the ServiceWorker path — on Windows this is what actually makes
+  // Chrome flash its taskbar icon in orange/red.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistration("/fluxo-nudge-sw.js").then((reg) => {
+      if (!reg) return fallbackNotification(fromName);
+      reg.showNotification("Fluxo", {
+        body: `${fromName} chamou sua atenção!`,
+        tag: "fluxo-nudge",
+        renotify: true,
+        requireInteraction: true,
+        silent: false,
+      } as NotificationOptions).catch(() => fallbackNotification(fromName));
+    }).catch(() => fallbackNotification(fromName));
+    return;
+  }
+  fallbackNotification(fromName);
+}
+
+function fallbackNotification(fromName: string) {
   try {
     const n = new Notification("Fluxo", {
       body: `${fromName} chamou sua atenção!`,
