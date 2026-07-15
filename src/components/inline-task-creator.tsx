@@ -306,15 +306,15 @@ export function InlineTaskCreator({
       {open && (
         <div className="border-t border-border">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-full text-left text-sm md:min-w-[900px]">
               <thead>
                 <tr className="border-b border-border bg-secondary/60 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <th className="w-8 py-2.5 pl-4">#</th>
+                  <th className="w-8 py-2.5 pl-3 sm:pl-4">#</th>
                   <th className="py-2.5 pr-3">Título da tarefa</th>
-                  <th className="w-80 py-2.5 pr-3">Prazo</th>
-                  {!compact && <th className="w-44 py-2.5 pr-3">Responsável</th>}
-                  {!compact && <th className="w-40 py-2.5 pr-3">Setor</th>}
-                  <th className="w-[280px] py-2.5 pr-4 text-right">Ações</th>
+                  <th className="hidden w-80 py-2.5 pr-3 md:table-cell">Prazo</th>
+                  {!compact && <th className="hidden w-44 py-2.5 pr-3 md:table-cell">Responsável</th>}
+                  {!compact && <th className="hidden w-40 py-2.5 pr-3 lg:table-cell">Setor</th>}
+                  <th className="w-[80px] py-2.5 pr-3 text-right sm:w-[280px] sm:pr-4">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -340,11 +340,11 @@ export function InlineTaskCreator({
                       setDragRowId(null);
                       await addFilesToRow(row.id, e.dataTransfer.files);
                     }}
-                    className={`border-b border-border/60 align-top last:border-0 hover:bg-secondary/30 ${
-                      dragRowId === row.id ? "bg-primary/10" : ""
+                    className={`border-b border-border/60 align-top last:border-0 odd:bg-secondary/25 even:bg-background hover:bg-primary/5 ${
+                      dragRowId === row.id ? "!bg-primary/10" : ""
                     }`}
                   >
-                    <td className="py-3 pl-4 text-xs font-semibold text-muted-foreground">{idx + 1}</td>
+                    <td className="py-3 pl-3 text-xs font-semibold text-muted-foreground sm:pl-4">{idx + 1}</td>
                     <td className="relative py-3 pr-3">
                       <input
                         ref={(el) => {
@@ -496,8 +496,44 @@ export function InlineTaskCreator({
                           ))}
                         </div>
                       )}
+                      {/* Mobile stacked controls */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 md:hidden">
+                        <input
+                          type="date"
+                          value={row.dueDate}
+                          onChange={(e) => update(row.id, { dueDate: e.target.value })}
+                          className="rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
+                        />
+                        {!compact && (
+                          <select
+                            value={row.assigneeId}
+                            onChange={(e) => update(row.id, { assigneeId: e.target.value })}
+                            className="min-w-0 max-w-[45%] flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
+                          >
+                            {assignees.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {!compact && (
+                          <select
+                            value={row.sector}
+                            onChange={(e) => update(row.id, { sector: e.target.value })}
+                            className="min-w-0 max-w-[45%] flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
+                          >
+                            <option value="">— setor —</option>
+                            {sectors.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
                     </td>
-                    <td className="py-3 pr-3">
+                    <td className="hidden py-3 pr-3 md:table-cell">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
                           {[
@@ -530,7 +566,7 @@ export function InlineTaskCreator({
                       </div>
                     </td>
                     {!compact && (
-                      <td className="py-3 pr-3">
+                      <td className="hidden py-3 pr-3 md:table-cell">
                         <select
                           value={row.assigneeId}
                           onChange={(e) => update(row.id, { assigneeId: e.target.value })}
@@ -545,7 +581,7 @@ export function InlineTaskCreator({
                       </td>
                     )}
                     {!compact && (
-                      <td className="py-3 pr-3">
+                      <td className="hidden py-3 pr-3 lg:table-cell">
                         <select
                           value={row.sector}
                           onChange={(e) => update(row.id, { sector: e.target.value })}
@@ -560,7 +596,7 @@ export function InlineTaskCreator({
                         </select>
                       </td>
                     )}
-                    <td className="py-3 pr-4 text-right">
+                    <td className="py-3 pr-3 text-right sm:pr-4">
                       <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                         <button
                           type="button"
@@ -573,7 +609,7 @@ export function InlineTaskCreator({
                           title="Marca a tarefa como 'precisa comprovante' — quem concluir precisa anexar arquivo"
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          <span>{row.requireProof ? "Exige comprov." : "Comprovante"}</span>
+                          <span className="hidden sm:inline">{row.requireProof ? "Exige comprov." : "Comprovante"}</span>
                         </button>
                         <button
                           type="button"
@@ -582,7 +618,7 @@ export function InlineTaskCreator({
                           title="Anexar arquivo agora (ou arraste um arquivo pra cima desta linha)"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
-                          <span>Anexar</span>
+                          <span className="hidden sm:inline">Anexar</span>
                         </button>
                         <button
                           type="button"
@@ -591,7 +627,7 @@ export function InlineTaskCreator({
                           title="Remover esta linha"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          <span>Remover</span>
+                          <span className="hidden sm:inline">Remover</span>
                         </button>
                       </div>
                     </td>
