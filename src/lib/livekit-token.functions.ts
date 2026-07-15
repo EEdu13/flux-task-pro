@@ -380,7 +380,7 @@ export const getRoomAccess = createServerFn({ method: "POST" })
     let [{ data: state }, { data: member }] = await Promise.all([
       supabaseAdmin
         .from("room_state")
-        .select("is_private, pin")
+        .select("is_private")
         .eq("room_name", data.roomName)
         .maybeSingle(),
       supabaseAdmin
@@ -392,28 +392,25 @@ export const getRoomAccess = createServerFn({ method: "POST" })
     ]);
     // Diretoria rooms are always private and must have a room_state row.
     if (forcePrivate && (!state || !state.is_private)) {
-      const pin = generatePin();
       await supabaseAdmin.from("room_state").upsert(
         {
           room_name: data.roomName,
           is_private: true,
-          pin,
+          pin: null,
           updated_by: data.userId,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "room_name" },
       );
-      state = { is_private: true, pin };
+      state = { is_private: true };
     }
     const isPrivate = forcePrivate || !!state?.is_private;
-    // Only reveal the PIN to a current member; strangers just know one exists.
-    const pin = isPrivate && member ? (state?.pin ?? null) : null;
     return {
       isPrivate,
       isMember: !!member,
       canJoin: !isPrivate || !!member,
-      pin,
-      hasPin: !!(isPrivate && state?.pin),
+      pin: null,
+      hasPin: false,
     };
   });
 
@@ -427,12 +424,11 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Diretoria rooms are always private and cannot be opened.
     const isPrivate = isDiretoriaRoom(data.roomName) || data.isPrivate;
-    const pin = isPrivate ? generatePin() : null;
     await supabaseAdmin.from("room_state").upsert(
       {
         room_name: data.roomName,
         is_private: isPrivate,
-        pin,
+        pin: null,
         updated_by: data.userId,
         updated_at: new Date().toISOString(),
       },
