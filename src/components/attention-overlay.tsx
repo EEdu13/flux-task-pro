@@ -25,13 +25,14 @@ export function AttentionOverlay() {
       }
       flashTitle(`🔔 ${detail.fromName} chamou sua atenção!`);
       showNudgeNotification(detail.fromName);
+      playNudgeSound();
       const root = document.documentElement;
       root.classList.remove("fluxo-nudge-shake");
       // force reflow to restart the animation
       void root.offsetWidth;
       root.classList.add("fluxo-nudge-shake");
       window.setTimeout(() => root.classList.remove("fluxo-nudge-shake"), 750);
-      window.setTimeout(() => setCurrent(null), 1900);
+      window.setTimeout(() => setCurrent(null), 4200);
     };
     window.addEventListener("fluxo:attention", handler as EventListener);
     return () => window.removeEventListener("fluxo:attention", handler as EventListener);
@@ -98,6 +99,51 @@ export function triggerAttention(fromName: string, fromAvatar?: string) {
   window.dispatchEvent(
     new CustomEvent("fluxo:attention", { detail: { fromName, fromAvatar } }),
   );
+}
+
+// ---------- MSN-style nudge sound (synthesized via Web Audio) ----------
+
+let audioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return null;
+  if (!audioCtx) audioCtx = new Ctor();
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+export function playNudgeSound() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  // Two quick knocks + a rising chirp — MSN-ish nudge
+  const now = ctx.currentTime;
+  const knock = (t: number) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "square";
+    o.frequency.setValueAtTime(180, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.08);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    o.connect(g).connect(ctx.destination);
+    o.start(t);
+    o.stop(t + 0.14);
+  };
+  knock(now);
+  knock(now + 0.16);
+  const chirp = ctx.createOscillator();
+  const cg = ctx.createGain();
+  chirp.type = "triangle";
+  chirp.frequency.setValueAtTime(660, now + 0.34);
+  chirp.frequency.exponentialRampToValueAtTime(1320, now + 0.55);
+  cg.gain.setValueAtTime(0.0001, now + 0.34);
+  cg.gain.exponentialRampToValueAtTime(0.25, now + 0.36);
+  cg.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  chirp.connect(cg).connect(ctx.destination);
+  chirp.start(now + 0.34);
+  chirp.stop(now + 0.62);
 }
 
 // ---------- Tab flashing + OS notifications ----------
