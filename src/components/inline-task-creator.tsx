@@ -284,7 +284,10 @@ export function InlineTaskCreator({
           <Sparkles className="h-3.5 w-3.5 text-primary" />
           <span className="text-sm font-semibold">Criação rápida (estilo planilha)</span>
           <span className="text-[11px] text-muted-foreground">
-            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para próxima linha · arraste arquivos para anexar
+            Digite o título, aperte <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> para próxima linha
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-dashed border-primary/40 bg-primary/5 px-1.5 py-0.5 text-primary">
+              <UploadCloud className="h-3 w-3" /> arraste arquivos aqui para anexar
+            </span>
           </span>
         </div>
         {open && rows.some((r) => r.title.trim()) && (
@@ -556,10 +559,11 @@ export function InlineTaskCreator({
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                          className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo (ou arraste)"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
+                          <span className="hidden text-[10px] font-medium xl:inline">Anexar / arraste</span>
                         </button>
                       <button
                         type="button"
