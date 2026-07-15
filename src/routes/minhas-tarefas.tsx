@@ -746,6 +746,12 @@ function KanbanBoard({
                   >
                     <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                       <span
+                        className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary"
+                        title={`Prioridade ${index + 1}`}
+                      >
+                        {index + 1}
+                      </span>
+                      <span
                         className="rounded px-1.5 py-0.5"
                         style={{
                           background: `color-mix(in oklab, ${sec?.color} 15%, transparent)`,
