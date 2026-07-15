@@ -694,8 +694,80 @@ export function FluxoLayout({
             </div>
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-3 sm:p-4 md:p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-3 pb-24 sm:p-4 md:p-6 lg:pb-4">{children}</main>
       </div>
+
+      {/* Mobile bottom tab bar */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-around border-t border-border bg-card/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1.5 shadow-[0_-8px_20px_-12px_rgba(0,0,0,0.35)] backdrop-blur lg:hidden"
+        aria-label="Navegação inferior"
+      >
+        {(() => {
+          const inboxActive = pathname === "/inbox";
+          const myActive = pathname === "/minhas-tarefas";
+          const homeActive = pathname === "/";
+          const myCount = tasks.filter(
+            (t) => t.assigneeId === currentUser.id && t.status !== "concluida",
+          ).length;
+          const tabBase =
+            "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-md py-1.5 text-[10px] font-medium transition";
+          const activeCls = "text-primary";
+          const idleCls = "text-muted-foreground hover:text-foreground";
+          return (
+            <>
+              <Link to="/" className={`${tabBase} ${homeActive ? activeCls : idleCls}`}>
+                <Home className="h-5 w-5" />
+                <span>Início</span>
+              </Link>
+              <Link
+                to="/minhas-tarefas"
+                className={`${tabBase} relative ${myActive ? activeCls : idleCls}`}
+              >
+                <div className="relative">
+                  <CheckSquare className="h-5 w-5" />
+                  {myCount > 0 && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                      {myCount}
+                    </span>
+                  )}
+                </div>
+                <span>Tarefas</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setGridOpen(true)}
+                aria-label="Criar tarefa"
+                className="-mt-6 flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background transition hover:brightness-110 active:scale-95"
+              >
+                <Plus className="h-6 w-6" />
+              </button>
+              <Link
+                to="/inbox"
+                className={`${tabBase} relative ${inboxActive ? activeCls : idleCls}`}
+              >
+                <div className="relative">
+                  <Inbox className="h-5 w-5" />
+                  {unread > 0 && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
+                      {unread}
+                    </span>
+                  )}
+                </div>
+                <span>Inbox</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Abrir menu"
+                className={`${tabBase} ${idleCls}`}
+              >
+                <Menu className="h-5 w-5" />
+                <span>Menu</span>
+              </button>
+            </>
+          );
+        })()}
+      </nav>
 
       <TaskDialog />
       <QuickTaskModal />
