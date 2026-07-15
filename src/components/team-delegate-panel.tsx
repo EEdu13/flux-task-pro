@@ -87,8 +87,7 @@ export function TeamDelegatePanel() {
   };
 
   const quickCreate = (toUserId: string) => {
-    setOpen(false);
-    setTimeout(() => openQuickCreate({ assigneeId: toUserId }), 0);
+    openQuickCreate({ assigneeId: toUserId });
   };
 
   return (
@@ -127,6 +126,11 @@ export function TeamDelegatePanel() {
               return (
                 <div
                   key={u.id}
+                  onDoubleClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest("button") || target.closest("[draggable=true]")) return;
+                    quickCreate(u.id);
+                  }}
                   onDragOver={(e) => {
                     e.preventDefault();
                     setHoverCol(u.id);
