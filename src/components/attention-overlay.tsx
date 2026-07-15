@@ -139,6 +139,8 @@ export function showNudgeNotification(fromName: string) {
       body: `${fromName} chamou sua atenção!`,
       tag: "fluxo-nudge",
       renotify: true,
+      requireInteraction: true,
+      silent: false,
     } as NotificationOptions);
     n.onclick = () => {
       try {
@@ -150,7 +152,8 @@ export function showNudgeNotification(fromName: string) {
       }
       n.close();
     };
-    window.setTimeout(() => n.close(), 6000);
+    // keep notification longer so Windows keeps flashing the taskbar
+    window.setTimeout(() => n.close(), 20000);
   } catch {
     /* ignore */
   }
