@@ -87,6 +87,11 @@ export interface Task {
    * Only meaningful for the task's assignee.
    */
   inPack?: boolean;
+  /**
+   * Se true, exige pelo menos um anexo (comprovante) antes de marcar como concluída.
+   * Ex: conciliação bancária, pagamento, envio de relatório.
+   */
+  requireProof?: boolean;
 }
 
 export interface MinuteTopic {
