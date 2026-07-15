@@ -42,6 +42,7 @@ function readAllNotesForUser(userId: string): { id: string; title: string; snipp
 }
 
 export function CommandPalette() {
+  console.log("[CommandPalette] rendering");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
