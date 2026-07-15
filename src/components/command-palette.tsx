@@ -42,7 +42,6 @@ function readAllNotesForUser(userId: string): { id: string; title: string; snipp
 }
 
 export function CommandPalette() {
-  console.log("[CommandPalette] rendering");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
@@ -58,7 +57,6 @@ export function CommandPalette() {
   const { ask: askInvite } = useCallInviter();
 
   useEffect(() => {
-    (window as unknown as { __paletteMounted?: boolean }).__paletteMounted = true;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -72,7 +70,6 @@ export function CommandPalette() {
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("fluxo:palette-open", onOpen);
-      (window as unknown as { __paletteMounted?: boolean }).__paletteMounted = false;
     };
   }, [open]);
 
