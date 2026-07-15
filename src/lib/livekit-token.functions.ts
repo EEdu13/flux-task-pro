@@ -440,11 +440,13 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const pin = data.isPrivate ? generatePin() : null;
+    // Diretoria rooms are always private and cannot be opened.
+    const isPrivate = isDiretoriaRoom(data.roomName) || data.isPrivate;
+    const pin = isPrivate ? generatePin() : null;
     await supabaseAdmin.from("room_state").upsert(
       {
         room_name: data.roomName,
-        is_private: data.isPrivate,
+        is_private: isPrivate,
         pin,
         updated_by: data.userId,
         updated_at: new Date().toISOString(),
