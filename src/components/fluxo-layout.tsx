@@ -26,7 +26,6 @@ import {
   FileText,
   StickyNote,
   UserPlus,
-  Zap,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -106,11 +105,31 @@ export function FluxoLayout({
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [roomsQuickOpen, setRoomsQuickOpen] = useState(false);
 
-  // Close mobile drawer whenever the route changes
+  // Close mobile drawer and rooms quick panel whenever the route changes
   useEffect(() => {
     setMobileOpen(false);
+    setRoomsQuickOpen(false);
   }, [pathname]);
+
+  // Close rooms quick panel when clicking outside
+  useEffect(() => {
+    if (!roomsQuickOpen) return;
+    if (typeof document === "undefined") return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        !target.closest("[data-rooms-quick-panel]") &&
+        !target.closest("[data-rooms-quick-toggle]")
+      ) {
+        setRoomsQuickOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [roomsQuickOpen]);
 
   // Lock body scroll while drawer is open
   useEffect(() => {
@@ -162,6 +181,7 @@ export function FluxoLayout({
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
   const myScore = userScorePct(currentUser.id, tasks, completions);
+  const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
 
   useEffect(() => {
     if (!isAuthenticated) navigate({ to: "/login" });
@@ -300,7 +320,6 @@ export function FluxoLayout({
           {/* Salas Online — with submenu */}
           {(() => {
             const salasActive = pathname === "/salas" || pathname.startsWith("/salas/");
-            const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
             if (collapsed) {
               return (
                 <Link
@@ -758,19 +777,79 @@ export function FluxoLayout({
               </Link>
               <button
                 type="button"
-                onClick={() =>
-                  window.dispatchEvent(new CustomEvent("fluxo:quick-open"))
-                }
-                aria-label="Acesso rápido"
-                className={`${tabBase} ${idleCls}`}
+                data-rooms-quick-toggle
+                onClick={() => setRoomsQuickOpen((v) => !v)}
+                aria-label="Salas online"
+                className={`${tabBase} relative ${roomsQuickOpen ? activeCls : idleCls}`}
               >
-                <Zap className="h-5 w-5" />
-                <span>Acesso rápido</span>
+                <div className="relative">
+                  <Headphones className="h-5 w-5" />
+                  {totalOnline > 0 && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
+                      {totalOnline}
+                    </span>
+                  )}
+                </div>
+                <span>Salas</span>
               </button>
             </>
           );
         })()}
       </nav>
+
+      {/* Mobile rooms quick panel */}
+      {roomsQuickOpen && (
+        <div
+          data-rooms-quick-panel
+          className="fixed inset-x-2 bottom-24 z-50 mx-auto max-w-md rounded-xl border border-border bg-card p-3 shadow-2xl lg:hidden"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <Headphones className="h-3.5 w-3.5 text-emerald-500" />
+              Salas Online
+              {totalOnline > 0 && (
+                <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500">
+                  {totalOnline} online
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setRoomsQuickOpen(false)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+              aria-label="Fechar salas"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <ul className="max-h-[50vh] space-y-1 overflow-y-auto">
+            {DEPARTMENT_ROOMS.map((r) => {
+              const parts = presence[r.name] ?? [];
+              const isFree = parts.length === 0;
+              return (
+                <li key={r.name}>
+                  <button
+                    onClick={() => {
+                      setRoomsQuickOpen(false);
+                      navigate({ to: "/salas/$roomName", params: { roomName: r.name } });
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
+                  >
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        isFree ? "bg-emerald-400" : "bg-amber-400"
+                      }`}
+                    />
+                    <span className="flex-1 font-medium">{r.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {parts.length === 0 ? "Livre" : `Ocupada · ${parts.length}`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       <TaskDialog />
       <QuickTaskModal />
