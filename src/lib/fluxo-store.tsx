@@ -49,6 +49,7 @@ interface Store {
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: Status, targetIndex?: number) => void;
+  reorderTasks: (orderedIds: string[]) => void;
   // task details
   addComment: (taskId: string, text: string, attachments?: Attachment[]) => void;
   addChecklistItem: (taskId: string, text: string) => void;
@@ -414,6 +415,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     deleteTask: (id) => {
       setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
+    },
+
+    reorderTasks: (orderedIds) => {
+      setState((s) => {
+        const map = new Map(orderedIds.map((id, i) => [id, i]));
+        return {
+          ...s,
+          tasks: s.tasks.map((t) =>
+            map.has(t.id) ? { ...t, order: map.get(t.id)! } : t,
+          ),
+        };
+      });
     },
 
     moveTask: (id, status, targetIndex) => {
