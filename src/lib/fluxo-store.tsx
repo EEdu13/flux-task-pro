@@ -49,6 +49,7 @@ interface Store {
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: Status, targetIndex?: number) => void;
+  reorderTasks: (orderedIds: string[]) => void;
   // task details
   addComment: (taskId: string, text: string, attachments?: Attachment[]) => void;
   addChecklistItem: (taskId: string, text: string) => void;
