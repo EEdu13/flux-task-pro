@@ -625,7 +625,9 @@ export function InlineTaskCreator({
                 <li key={r.id} className="flex items-center gap-2 border-b border-border/40 py-1 last:border-0">
                   <span className="text-[10px] text-muted-foreground">{i + 1}.</span>
                   <span className="flex-1 truncate font-medium">{r.title}</span>
-                  <span className="text-[10px] uppercase text-muted-foreground">{r.priority}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(r.dueDate + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                  </span>
                 </li>
               ))}
             </ul>
