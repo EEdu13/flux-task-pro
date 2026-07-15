@@ -22,6 +22,22 @@ import type {
 import { priorityMultiplier } from "./fluxo-types";
 import { seedCompletions, seedMetas, seedNotifications, seedTasks, seedUsers } from "./fluxo-seed";
 import { createRoomCall } from "./livekit-token.functions";
+import { toast } from "sonner";
+
+function taskHasProof(t: Task): boolean {
+  if ((t.attachments?.length ?? 0) > 0) return true;
+  return t.comments.some((c) => (c.attachments?.length ?? 0) > 0);
+}
+
+function blockIfMissingProof(t: Task, targetStatus: Status): boolean {
+  if (targetStatus !== "concluida") return false;
+  if (!t.requireProof) return false;
+  if (taskHasProof(t)) return false;
+  toast.error("Essa tarefa exige comprovante", {
+    description: "Anexe um arquivo antes de concluir (ex: recibo, print, PDF).",
+  });
+  return true;
+}
 
 interface TaskDialogState {
   open: boolean;
