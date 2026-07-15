@@ -44,16 +44,18 @@ export function PreCall({
   onEnter,
   onCancel,
   alreadyPrivate,
+  forcePrivate,
 }: {
   roomLabel: string;
   onEnter: (r: PreCallResult) => void;
   onCancel: () => void;
   alreadyPrivate?: boolean;
+  forcePrivate?: boolean;
 }) {
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const [title, setTitle] = useState<string>(roomLabel);
   const [autoMinute, setAutoMinute] = useState<boolean>(true);
-  const [makePrivate, setMakePrivate] = useState<boolean>(!!alreadyPrivate);
+  const [makePrivate, setMakePrivate] = useState<boolean>(forcePrivate || !!alreadyPrivate);
   const [devices, setDevices] = useState<{ mics: MediaDeviceInfo[]; cams: MediaDeviceInfo[] }>({
     mics: [],
     cams: [],
@@ -176,24 +178,39 @@ export function PreCall({
           </span>
         </span>
       </label>
-      <label className="flex w-full max-w-xl cursor-pointer items-start gap-2 rounded-md border border-border bg-background/50 p-3">
-        <input
-          type="checkbox"
-          checked={makePrivate}
-          onChange={(e) => setMakePrivate(e.target.checked)}
-          className="mt-0.5 h-4 w-4 accent-primary"
-        />
-        <span className="flex-1 text-xs">
-          <span className="flex items-center gap-1 font-semibold">
-            <Lock className="h-3.5 w-3.5 text-amber-500" />
-            Entrar como sala privada
+      {forcePrivate ? (
+        <div className="flex w-full max-w-xl items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <span className="flex-1 text-xs">
+            <span className="flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
+              Sala restrita — sempre privada
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              A sala da Diretoria é sempre privada. Novos participantes entram apenas com PIN ou
+              aprovação de quem já está dentro.
+            </span>
           </span>
-          <span className="mt-0.5 block text-muted-foreground">
-            Ninguém entra sem sua aprovação ou o PIN de 6 dígitos. Você pode abrir/trancar depois
-            pelo botão no topo da sala.
+        </div>
+      ) : (
+        <label className="flex w-full max-w-xl cursor-pointer items-start gap-2 rounded-md border border-border bg-background/50 p-3">
+          <input
+            type="checkbox"
+            checked={makePrivate}
+            onChange={(e) => setMakePrivate(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          <span className="flex-1 text-xs">
+            <span className="flex items-center gap-1 font-semibold">
+              <Lock className="h-3.5 w-3.5 text-amber-500" />
+              Entrar como sala privada
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              Ninguém entra sem sua aprovação ou o PIN de 6 dígitos. Você pode abrir/trancar depois
+              pelo botão no topo da sala.
+            </span>
           </span>
-        </span>
-      </label>
+        </label>
+      )}
       <div className="relative aspect-video w-full max-w-xl overflow-hidden rounded-lg border border-border bg-black">
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
@@ -297,14 +314,14 @@ export function PreCall({
           onClick={() => {
             // Release preview stream before joining — LiveKit re-acquires.
             if (stream) stream.getTracks().forEach((t) => t.stop());
-            onEnter({
+          onEnter({
               micOn: prefs.micOn,
               camOn: prefs.camOn,
               micDeviceId: prefs.micDeviceId,
               camDeviceId: prefs.camDeviceId,
               title: title.trim() || roomLabel,
               autoMinute,
-              makePrivate,
+              makePrivate: forcePrivate || makePrivate,
             });
           }}
           disabled={!title.trim()}

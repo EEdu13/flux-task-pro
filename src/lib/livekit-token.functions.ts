@@ -380,6 +380,10 @@ export const purgeAllRooms = createServerFn({ method: "POST" })
 
 // ================= Room privacy / membership / knocks =================
 
+function isDiretoriaRoom(roomName: string): boolean {
+  return roomName === "diretoria" || roomName.startsWith("diretoria-");
+}
+
 export const getRoomAccess = createServerFn({ method: "POST" })
   .inputValidator((input: { roomName: string; userId: string }) => ({
     roomName: sanitizeRoomName(input?.roomName),
@@ -387,7 +391,8 @@ export const getRoomAccess = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [{ data: state }, { data: member }] = await Promise.all([
+    const forcePrivate = isDiretoriaRoom(data.roomName);
+    let [{ data: state }, { data: member }] = await Promise.all([
       supabaseAdmin
         .from("room_state")
         .select("is_private, pin")
@@ -400,7 +405,22 @@ export const getRoomAccess = createServerFn({ method: "POST" })
         .eq("user_id", data.userId)
         .maybeSingle(),
     ]);
-    const isPrivate = !!state?.is_private;
+    // Diretoria rooms are always private and must have a room_state row.
+    if (forcePrivate && (!state || !state.is_private)) {
+      const pin = generatePin();
+      await supabaseAdmin.from("room_state").upsert(
+        {
+          room_name: data.roomName,
+          is_private: true,
+          pin,
+          updated_by: data.userId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "room_name" },
+      );
+      state = { is_private: true, pin };
+    }
+    const isPrivate = forcePrivate || !!state?.is_private;
     // Only reveal the PIN to a current member; strangers just know one exists.
     const pin = isPrivate && member ? (state?.pin ?? null) : null;
     return {
@@ -420,18 +440,20 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const pin = data.isPrivate ? generatePin() : null;
+    // Diretoria rooms are always private and cannot be opened.
+    const isPrivate = isDiretoriaRoom(data.roomName) || data.isPrivate;
+    const pin = isPrivate ? generatePin() : null;
     await supabaseAdmin.from("room_state").upsert(
       {
         room_name: data.roomName,
-        is_private: data.isPrivate,
+        is_private: isPrivate,
         pin,
         updated_by: data.userId,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "room_name" },
     );
-    if (data.isPrivate) {
+    if (isPrivate) {
       // Grandfather everyone currently connected to LiveKit as a member so
       // they aren't kicked, but nobody new can enter without a knock.
       const apiKey = process.env.LIVEKIT_API_KEY;

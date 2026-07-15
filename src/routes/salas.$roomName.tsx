@@ -69,6 +69,7 @@ function RoomPage() {
     if (parts.length === 1) return `${base} · Sala 1`;
     return `${base} · Sala ${parts[1]}`;
   }, [roomName]);
+  const isDiretoria = useMemo(() => roomName.split("-")[0] === "diretoria", [roomName]);
 
   // Reset when navigating between rooms
   useEffect(() => {
@@ -269,7 +270,7 @@ function RoomPage() {
 
   const connecting = access.kind === "checking" || !active || active.roomName !== roomName;
 
-  const layoutActions = insideRoom ? (
+  const layoutActions = insideRoom && !isDiretoria ? (
     <button
       onClick={togglePrivacy}
       title={isPrivate ? "Sala privada — clique para abrir" : "Sala aberta — clique para privar"}
@@ -334,10 +335,11 @@ function RoomPage() {
           <PreCall
             roomLabel={roomLabel}
             alreadyPrivate={isPrivate}
+            forcePrivate={isDiretoria}
             onEnter={(r) => {
               setPendingPreCall({ title: r.title, autoMinute: r.autoMinute, makePrivate: r.makePrivate });
               setShowPreCall(false);
-              if (r.makePrivate && !isPrivate) {
+              if ((isDiretoria || r.makePrivate) && !isPrivate) {
                 setRoomPrivacy({
                   data: { roomName, isPrivate: true, userId: currentUser.id },
                 }).catch(() => {});
