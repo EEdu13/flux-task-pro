@@ -489,12 +489,36 @@ export function InlineTaskCreator({
                       )}
                     </td>
                     <td className="py-1 pr-3">
-                      <input
-                        type="date"
-                        value={row.dueDate}
-                        onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                        className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
-                      />
+                      <div className="flex items-center gap-1">
+                        <div className="inline-flex rounded-md border border-border p-0.5 text-[10px]">
+                          {[
+                            { label: "Hoje", get: todayStr },
+                            { label: "Amanhã", get: tomorrowStr },
+                            { label: "+7d", get: () => inDaysStr(7) },
+                          ].map((opt) => {
+                            const iso = opt.get();
+                            const active = row.dueDate === iso;
+                            return (
+                              <button
+                                type="button"
+                                key={opt.label}
+                                onClick={() => update(row.id, { dueDate: iso })}
+                                className={`rounded px-1.5 py-0.5 font-medium transition ${
+                                  active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <input
+                          type="date"
+                          value={row.dueDate}
+                          onChange={(e) => update(row.id, { dueDate: e.target.value })}
+                          className="w-32 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
+                        />
+                      </div>
                     </td>
                     {!compact && (
                       <td className="py-1 pr-3">
@@ -506,21 +530,6 @@ export function InlineTaskCreator({
                           {assignees.map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    )}
-                    {!compact && (
-                      <td className="py-1 pr-3">
-                        <select
-                          value={row.priority}
-                          onChange={(e) => update(row.id, { priority: e.target.value as Priority })}
-                          className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
-                        >
-                          {(Object.entries(priorityLabels) as [Priority, string][]).map(([v, l]) => (
-                            <option key={v} value={v}>
-                              {l}
                             </option>
                           ))}
                         </select>
