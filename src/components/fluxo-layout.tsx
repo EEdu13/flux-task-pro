@@ -777,9 +777,10 @@ export function FluxoLayout({
               </Link>
               <button
                 type="button"
+                data-rooms-quick-toggle
                 onClick={() => setRoomsQuickOpen((v) => !v)}
                 aria-label="Salas online"
-                className={`${tabBase} relative ${idleCls}`}
+                className={`${tabBase} relative ${roomsQuickOpen ? activeCls : idleCls}`}
               >
                 <div className="relative">
                   <Headphones className="h-5 w-5" />
