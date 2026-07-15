@@ -69,6 +69,7 @@ function RoomPage() {
     if (parts.length === 1) return `${base} · Sala 1`;
     return `${base} · Sala ${parts[1]}`;
   }, [roomName]);
+  const isDiretoria = useMemo(() => roomName.split("-")[0] === "diretoria", [roomName]);
 
   // Reset when navigating between rooms
   useEffect(() => {
