@@ -837,7 +837,7 @@ export function FluxoLayout({
                     />
                     <span className="flex-1 font-medium">{r.label}</span>
                     <span className="text-[10px] text-muted-foreground">
-                      {parts.length === 0 ? "Livre" : `${parts.length} online`}
+                      {parts.length === 0 ? "Livre" : `Ocupada · ${parts.length}`}
                     </span>
                   </button>
                 </li>
