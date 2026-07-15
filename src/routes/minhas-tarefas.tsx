@@ -488,7 +488,6 @@ function TaskList({
                   <th className="py-2 pr-4">Tarefa</th>
                   <th className="py-2 pr-4">Responsável</th>
                   <th className="py-2 pr-4">Prazo</th>
-                  <th className="py-2 pr-4">Prioridade</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Setor</th>
                   <th className="py-2 pr-4 w-8"></th>
