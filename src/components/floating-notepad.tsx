@@ -372,17 +372,6 @@ export function FloatingNotepad() {
                 key={i}
                 className="flex items-start gap-2 rounded-md border border-border bg-card p-2 text-xs"
               >
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                    s.priority === "alta"
-                      ? "bg-red-500/15 text-red-600 dark:text-red-400"
-                      : s.priority === "baixa"
-                        ? "bg-slate-500/15 text-slate-600 dark:text-slate-300"
-                        : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                  }`}
-                >
-                  {s.priority}
-                </span>
                 <div className="flex-1">
                   <div className="font-medium leading-snug text-foreground">{s.title}</div>
                   {s.reason && (
