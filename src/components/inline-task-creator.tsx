@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
-  priorityLabels,
   sectors,
-  type Priority,
   type Status,
 } from "@/lib/fluxo-types";
 import type { Attachment } from "@/lib/fluxo-types";
@@ -17,7 +15,6 @@ interface DraftRow {
   title: string;
   dueDate: string; // yyyy-mm-dd
   assigneeId: string;
-  priority: Priority;
   sector: string;
   attachments: Attachment[];
   mentions: string[];
@@ -31,13 +28,26 @@ function todayStr() {
   return d.toISOString().slice(0, 10);
 }
 
+function tomorrowStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function inDaysStr(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
 function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
     title: "",
     dueDate: defaults.dueDate ?? todayStr(),
     assigneeId: defaults.assigneeId ?? "",
-    priority: defaults.priority ?? "media",
     sector: defaults.sector ?? "",
     attachments: [],
     mentions: [],
@@ -133,7 +143,7 @@ export function InlineTaskCreator({
       score: 10,
       dueDate: due.toISOString(),
       recurring: false,
-      priority: row.priority,
+      priority: "media",
       tags: [],
       attachments: row.attachments.length ? row.attachments : undefined,
     });
