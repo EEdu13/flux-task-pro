@@ -44,16 +44,18 @@ export function PreCall({
   onEnter,
   onCancel,
   alreadyPrivate,
+  forcePrivate,
 }: {
   roomLabel: string;
   onEnter: (r: PreCallResult) => void;
   onCancel: () => void;
   alreadyPrivate?: boolean;
+  forcePrivate?: boolean;
 }) {
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const [title, setTitle] = useState<string>(roomLabel);
   const [autoMinute, setAutoMinute] = useState<boolean>(true);
-  const [makePrivate, setMakePrivate] = useState<boolean>(!!alreadyPrivate);
+  const [makePrivate, setMakePrivate] = useState<boolean>(forcePrivate || !!alreadyPrivate);
   const [devices, setDevices] = useState<{ mics: MediaDeviceInfo[]; cams: MediaDeviceInfo[] }>({
     mics: [],
     cams: [],
