@@ -2,10 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 
 type RoomCallStatus = "ringing" | "accepted" | "declined" | "missed";
 
-function generatePin(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
 const sanitizeUserId = (value: unknown) => {
   if (typeof value !== "string") throw new Error("Usuário inválido");
   const id = value.trim().slice(0, 80);
@@ -26,7 +22,7 @@ const sanitizeRoomLabel = (value: unknown, fallback: string) => {
 };
 
 export const getLiveKitToken = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; identity: string; name: string; pin?: string }) => {
+  .inputValidator((input: { roomName: string; identity: string; name: string }) => {
     if (!input || typeof input.roomName !== "string" || typeof input.identity !== "string") {
       throw new Error("Parâmetros inválidos");
     }
@@ -39,8 +35,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       typeof (input as { userId?: string }).userId === "string"
         ? (input as { userId?: string }).userId!.trim().slice(0, 80)
         : "";
-    const pin = typeof input.pin === "string" ? input.pin.replace(/\D/g, "").slice(0, 8) : "";
-    return { roomName, identity, name, userId, pin };
+    return { roomName, identity, name, userId };
   })
   .handler(async ({ data }) => {
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -55,7 +50,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: state } = await supabaseAdmin
         .from("room_state")
-        .select("is_private, pin")
+        .select("is_private")
         .eq("room_name", data.roomName)
         .maybeSingle();
       if (state?.is_private) {
@@ -69,17 +64,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
           .eq("user_id", data.userId)
           .maybeSingle();
         if (!member) {
-          // Auto-join with correct PIN
-          if (data.pin && state.pin && data.pin === state.pin) {
-            await supabaseAdmin
-              .from("room_members")
-              .upsert(
-                { room_name: data.roomName, user_id: data.userId, added_by: data.userId },
-                { onConflict: "room_name,user_id" },
-              );
-          } else {
-            throw new Error("Sala privada: peça para entrar antes.");
-          }
+          throw new Error("Sala privada: peça para entrar antes.");
         }
       }
     }
