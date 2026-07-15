@@ -316,6 +316,38 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
+  .inputValidator((input: { userId: string; sinceIso?: string }) => {
+    const userId = sanitizeUserId(input?.userId);
+    const sinceIso =
+      typeof input?.sinceIso === "string" && !Number.isNaN(Date.parse(input.sinceIso))
+        ? input.sinceIso
+        : new Date(Date.now() - 120_000).toISOString();
+    return { userId, sinceIso };
+  })
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Auto-expire stale ringing calls first so callers get a "missed" event.
+    const expiresAt = new Date(Date.now() - 45_000).toISOString();
+    await supabaseAdmin
+      .from("room_call_events")
+      .update({ status: "missed", handled_at: new Date().toISOString() })
+      .eq("status", "ringing")
+      .lt("created_at", expiresAt);
+
+    const { data: calls, error } = await supabaseAdmin
+      .from("room_call_events")
+      .select("id, target_user_id, room_name, room_label, status, handled_at, created_at")
+      .eq("caller_user_id", data.userId)
+      .in("status", ["declined", "missed"])
+      .gte("handled_at", data.sinceIso)
+      .order("handled_at", { ascending: false })
+      .limit(10);
+
+    if (error) throw new Error("Não foi possível buscar atualizações de chamada");
+    return { calls: calls ?? [] };
+  });
+
 export const purgeAllRooms = createServerFn({ method: "POST" })
   .handler(async () => {
     const apiKey = process.env.LIVEKIT_API_KEY;
