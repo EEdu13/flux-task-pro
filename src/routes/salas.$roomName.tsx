@@ -8,6 +8,7 @@ import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
 import { PreCall } from "@/components/pre-call";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { supabase } from "@/integrations/supabase/client";
 import {
   getKnockStatus,
   getRoomAccess,
