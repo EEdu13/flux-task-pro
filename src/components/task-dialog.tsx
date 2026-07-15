@@ -318,13 +318,6 @@ export function TaskDialog() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Prioridade">
-                  <select value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="input">
-                    {Object.entries(priorityLabels).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                </Field>
                 <Field label="Status">
                   <select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="input">
                     {Object.entries(statusLabels).map(([k, v]) => (
