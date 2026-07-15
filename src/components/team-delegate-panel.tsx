@@ -13,11 +13,13 @@ export function TeamDelegatePanel() {
     updateTask,
     createTask,
     openTask,
+    reorderTasks,
   } = useFluxo();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverCol, setHoverCol] = useState<string | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const openHandler = () => setOpen(true);
@@ -64,14 +66,32 @@ export function TeamDelegatePanel() {
   if (!open) return null;
 
   const activeForUser = (uid: string) =>
-    tasks.filter((t) => t.assigneeId === uid && t.status !== "concluida");
+    tasks
+      .filter((t) => t.assigneeId === uid && t.status !== "concluida")
+      .sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate));
 
-  const delegate = (taskId: string, toUserId: string) => {
+  const delegate = (taskId: string, toUserId: string, insertIndex?: number) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
-    updateTask(taskId, { assigneeId: toUserId });
+    const wasOtherUser = task.assigneeId !== toUserId;
+    if (wasOtherUser) updateTask(taskId, { assigneeId: toUserId });
+    // Rebuild target user's ordered list with the dragged task inserted at position
+    const target = tasks
+      .filter((t) => t.assigneeId === toUserId && t.status !== "concluida" && t.id !== taskId)
+      .sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate));
+    const idx = insertIndex == null ? target.length : Math.min(insertIndex, target.length);
+    const nextIds = [
+      ...target.slice(0, idx).map((t) => t.id),
+      taskId,
+      ...target.slice(idx).map((t) => t.id),
+    ];
+    reorderTasks(nextIds);
     const to = users.find((u) => u.id === toUserId);
-    toast.success(`"${task.title}" delegada para ${to?.name.split(" ")[0] ?? "outro"}`);
+    if (wasOtherUser) {
+      toast.success(`"${task.title}" delegada para ${to?.name.split(" ")[0] ?? "outro"}`);
+    } else {
+      toast.success(`Ordem atualizada`);
+    }
   };
 
   const quickCreate = (toUserId: string) => {
@@ -150,6 +170,7 @@ export function TeamDelegatePanel() {
                   onDragEnd={() => {
                     setDragId(null);
                     setHoverCol(null);
+                    setHoverIndex(null);
                   }}
                   onClick={() => openTask(t.id)}
                 />
@@ -177,12 +198,18 @@ export function TeamDelegatePanel() {
                   onDragOver={(e) => {
                     e.preventDefault();
                     setHoverCol(u.id);
+                    if (hoverIndex == null) setHoverIndex(list.length);
                   }}
-                  onDragLeave={() => setHoverCol((h) => (h === u.id ? null : h))}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget === e.target) {
+                      setHoverCol((h) => (h === u.id ? null : h));
+                    }
+                  }}
                   onDrop={() => {
-                    if (dragId) delegate(dragId, u.id);
+                    if (dragId) delegate(dragId, u.id, hoverIndex ?? list.length);
                     setDragId(null);
                     setHoverCol(null);
+                    setHoverIndex(null);
                   }}
                   className={`flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border bg-card transition ${
                     isHover
@@ -226,28 +253,61 @@ export function TeamDelegatePanel() {
                         Livre. Solta uma tarefa aqui.
                       </div>
                     ) : (
-                      list
-                        .slice()
-                        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-                        .slice(0, 20)
-                        .map((t) => (
-                          <button
-                            key={t.id}
-                            onClick={() => openTask(t.id)}
-                            className="w-full rounded-md border border-border bg-background p-2 text-left text-xs hover:border-primary/40"
-                          >
-                            <div className="truncate font-medium">{t.title}</div>
-                            <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
-                              <span>{statusLabels[t.status]}</span>
-                              <span>
-                                {new Date(t.dueDate).toLocaleDateString("pt-BR", {
-                                  day: "2-digit",
-                                  month: "2-digit",
-                                })}
-                              </span>
+                      <>
+                        {list.slice(0, 20).map((t, index) => {
+                          const showIndicator =
+                            hoverCol === u.id && hoverIndex === index && dragId && dragId !== t.id;
+                          return (
+                            <div key={t.id}>
+                              {showIndicator && (
+                                <div className="mb-1 h-0.5 rounded-full bg-primary" />
+                              )}
+                              <div
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("text/plain", t.id);
+                                  e.dataTransfer.effectAllowed = "move";
+                                  setDragId(t.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDragId(null);
+                                  setHoverCol(null);
+                                  setHoverIndex(null);
+                                }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  const before = e.clientY < rect.top + rect.height / 2;
+                                  setHoverCol(u.id);
+                                  setHoverIndex(before ? index : index + 1);
+                                }}
+                                onClick={() => openTask(t.id)}
+                                className="group flex cursor-grab items-start gap-2 rounded-md border border-border bg-background p-2 text-left text-xs hover:border-primary/40 active:cursor-grabbing"
+                              >
+                                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">
+                                  {index + 1}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium">{t.title}</div>
+                                  <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                                    <span>{statusLabels[t.status]}</span>
+                                    <span>
+                                      {new Date(t.dueDate).toLocaleDateString("pt-BR", {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                      })}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          </button>
-                        ))
+                          );
+                        })}
+                        {hoverCol === u.id && hoverIndex === list.length && dragId && (
+                          <div className="h-0.5 rounded-full bg-primary" />
+                        )}
+                      </>
                     )}
                   </div>
                   <button
