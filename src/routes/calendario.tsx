@@ -172,6 +172,7 @@ function CalendarioPage() {
             users={users}
             onTaskClick={openTask}
             onNew={() => openNewTask({ dueDate: cursor.toISOString().slice(0, 10) })}
+            onReorder={reorderTasks}
           />
         )}
         {view === "lista" && (
@@ -456,12 +457,14 @@ function DayView({
   users,
   onTaskClick,
   onNew,
+  onReorder,
 }: {
   cursor: Date;
   filtered: any[];
   users: any[];
   onTaskClick: (id: string) => void;
   onNew: () => void;
+  onReorder: (ids: string[]) => void;
 }) {
   const dayTasks = useMemo(() => {
     const s = startOfDay(cursor).getTime();
@@ -471,7 +474,9 @@ function DayView({
         const dt = new Date(t.dueDate).getTime();
         return dt >= s && dt < e;
       })
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      .sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.dueDate.localeCompare(b.dueDate),
+      );
   }, [cursor, filtered]);
 
   const byStatus = useMemo(() => {
@@ -479,6 +484,23 @@ function DayView({
     dayTasks.forEach((t) => g[t.status as string]?.push(t));
     return g;
   }, [dayTasks]);
+
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ st: string; index: number } | null>(null);
+
+  const handleDrop = (st: string, insertIdx: number) => {
+    if (!dragId) return;
+    const list = (byStatus[st] || []).filter((t) => t.id !== dragId);
+    const idx = Math.min(insertIdx, list.length);
+    const ids = [
+      ...list.slice(0, idx).map((t) => t.id),
+      dragId,
+      ...list.slice(idx).map((t) => t.id),
+    ];
+    onReorder(ids);
+    setDragId(null);
+    setDropTarget(null);
+  };
 
   return (
     <div className="mt-4 rounded-lg border border-border bg-card">
@@ -492,38 +514,72 @@ function DayView({
       </div>
       <div className="grid grid-cols-1 gap-px bg-border md:grid-cols-4">
         {(["pendente", "andamento", "revisao", "concluida"] as const).map((st) => (
-          <div key={st} className="flex flex-col bg-card p-3">
+          <div
+            key={st}
+            className="flex flex-col bg-card p-3"
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (dragId && !dropTarget) setDropTarget({ st, index: (byStatus[st] || []).length });
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleDrop(st, dropTarget?.st === st ? dropTarget.index : (byStatus[st] || []).length);
+            }}
+          >
             <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               <span className="h-2 w-2 rounded-full" style={{ background: statusColor[st] }} />
               {statusLabels[st]}
               <span className="ml-auto">{byStatus[st].length}</span>
             </div>
             <div className="space-y-1.5">
-              {byStatus[st].map((t) => {
+              {byStatus[st].map((t, index) => {
                 const u = users.find((x) => x.id === t.assigneeId);
                 const sec = sectors.find((s) => s.id === t.sector);
+                const showBefore =
+                  dropTarget?.st === st && dropTarget.index === index && dragId && dragId !== t.id;
                 return (
-                  <button
-                    key={t.id}
-                    onClick={() => onTaskClick(t.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      openTaskContext(t.id, e.clientX, e.clientY);
-                    }}
-                    className="w-full rounded-md border border-border bg-background p-2 text-left transition hover:bg-secondary/60"
-                  >
-                    <div className="flex items-start gap-2">
-                      
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-medium">{t.title}</div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                          <span style={{ color: sec?.color }}>{sec?.name}</span>
-                          <span>·</span>
-                          <span className="truncate">{u?.name}</span>
+                  <div key={t.id}>
+                    {showBefore && <div className="mb-1 h-0.5 rounded-full bg-primary" />}
+                    <button
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", t.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDragId(t.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDropTarget(null);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const before = e.clientY < rect.top + rect.height / 2;
+                        setDropTarget({ st, index: before ? index : index + 1 });
+                      }}
+                      onClick={() => onTaskClick(t.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        openTaskContext(t.id, e.clientX, e.clientY);
+                      }}
+                      className="w-full cursor-grab rounded-md border border-border bg-background p-2 text-left transition hover:bg-secondary/60 active:cursor-grabbing"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-medium">{t.title}</div>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                            <span style={{ color: sec?.color }}>{sec?.name}</span>
+                            <span>·</span>
+                            <span className="truncate">{u?.name}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
               {byStatus[st].length === 0 && <div className="text-[11px] text-muted-foreground/60">Vazio</div>}
@@ -540,11 +596,13 @@ function ListView({
   filtered,
   users,
   onTaskClick,
+  onReorder,
 }: {
   cursor: Date;
   filtered: any[];
   users: any[];
   onTaskClick: (id: string) => void;
+  onReorder: (ids: string[]) => void;
 }) {
   const groups = useMemo(() => {
     const start = startOfDay(cursor).getTime();
@@ -554,15 +612,39 @@ function ListView({
         const dt = new Date(t.dueDate).getTime();
         return dt >= start && dt < end;
       })
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      .sort(
+        (a, b) =>
+          a.dueDate.localeCompare(b.dueDate) || (a.order ?? 0) - (b.order ?? 0),
+      );
     const map = new Map<string, any[]>();
     list.forEach((t) => {
       const key = new Date(t.dueDate).toISOString().slice(0, 10);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     });
+    // Sort each day by order
+    for (const arr of map.values()) {
+      arr.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.dueDate.localeCompare(b.dueDate));
+    }
     return Array.from(map.entries());
   }, [cursor, filtered]);
+
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ iso: string; index: number } | null>(null);
+
+  const handleDrop = (iso: string, items: any[], insertIdx: number) => {
+    if (!dragId) return;
+    const list = items.filter((t) => t.id !== dragId);
+    const idx = Math.min(insertIdx, list.length);
+    const ids = [
+      ...list.slice(0, idx).map((t) => t.id),
+      dragId,
+      ...list.slice(idx).map((t) => t.id),
+    ];
+    onReorder(ids);
+    setDragId(null);
+    setDropTarget(null);
+  };
 
   return (
     <div className="mt-4 space-y-3">
@@ -584,20 +666,46 @@ function ListView({
               <div className="text-[11px] text-muted-foreground">{items.length}</div>
             </div>
             <div className="divide-y divide-border">
-              {items.map((t: any) => {
+              {items.map((t: any, index: number) => {
                 const u = users.find((x) => x.id === t.assigneeId);
                 const sec = sectors.find((s) => s.id === t.sector);
+                const showBefore =
+                  dropTarget?.iso === iso && dropTarget.index === index && dragId && dragId !== t.id;
                 return (
                   <button
                     key={t.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", t.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      setDragId(t.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setDropTarget(null);
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const before = e.clientY < rect.top + rect.height / 2;
+                      setDropTarget({ iso, index: before ? index : index + 1 });
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleDrop(iso, items, dropTarget?.index ?? index);
+                    }}
                     onClick={() => onTaskClick(t.id)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openTaskContext(t.id, e.clientX, e.clientY);
                     }}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-secondary/40"
+                    className={`flex w-full cursor-grab items-center gap-3 px-3 py-2 text-left hover:bg-secondary/40 active:cursor-grabbing ${
+                      showBefore ? "border-t-2 border-t-primary" : ""
+                    }`}
                   >
-                    
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                      {index + 1}
+                    </span>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{t.title}</div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
