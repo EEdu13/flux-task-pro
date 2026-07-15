@@ -209,7 +209,7 @@ function SalasPage() {
                                  {room.participants.length}
                                </span>
                              )}
-                             {inUse && (
+                              {(inUse || room.isPrivate) && (
                                <span
                                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
                                    room.isPrivate
@@ -219,7 +219,7 @@ function SalasPage() {
                                >
                                  {room.isPrivate ? (
                                    <>
-                                     <Lock className="h-2.5 w-2.5" /> Privado
+                                     <Lock className="h-2.5 w-2.5" /> Restrita
                                    </>
                                  ) : (
                                    <>
