@@ -163,6 +163,7 @@ export function FluxoLayout({
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
   const myScore = userScorePct(currentUser.id, tasks, completions);
+  const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
 
   useEffect(() => {
     if (!isAuthenticated) navigate({ to: "/login" });
