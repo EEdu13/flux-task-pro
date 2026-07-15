@@ -473,7 +473,7 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
       await supabaseAdmin.from("room_knocks").delete().eq("room_name", data.roomName);
       await supabaseAdmin.from("room_members").delete().eq("room_name", data.roomName);
     }
-    return { ok: true, pin };
+    return { ok: true, pin: null };
   });
 
 export const inviteToRoom = createServerFn({ method: "POST" })
