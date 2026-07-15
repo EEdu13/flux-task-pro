@@ -567,6 +567,25 @@ export function InlineTaskCreator({
                       <div className="inline-flex items-center gap-0.5">
                         <button
                           type="button"
+                          onClick={() => update(row.id, { requireProof: !row.requireProof })}
+                          className={`inline-flex items-center gap-1 rounded p-1 transition ${
+                            row.requireProof
+                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                              : "text-muted-foreground hover:bg-amber-500/10 hover:text-amber-600"
+                          }`}
+                          title={
+                            row.requireProof
+                              ? "Exigindo comprovante: precisa anexar arquivo pra concluir"
+                              : "Exigir comprovante ao concluir (ex: conciliação bancária)"
+                          }
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span className="hidden text-[10px] font-medium xl:inline">
+                            {row.requireProof ? "Comprovante" : "Exigir compr."}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openFilePicker(row.id)}
                           className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo (ou arraste)"
