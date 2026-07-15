@@ -93,11 +93,11 @@ export function TeamDelegatePanel() {
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col bg-background/95 backdrop-blur">
-      <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-border bg-card px-3 py-2 sm:px-4 sm:py-3">
         <UserPlus className="h-5 w-5 text-primary" />
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold">Delegar rápido</div>
-          <div className="text-[11px] text-muted-foreground">
+          <div className="truncate text-[11px] text-muted-foreground">
             Arraste tarefas entre pessoas · + cria direto · Esc fecha
           </div>
         </div>
@@ -109,9 +109,9 @@ export function TeamDelegatePanel() {
         </button>
       </div>
 
-      <div className="flex flex-1 gap-3 overflow-hidden p-3">
+      <div className="flex flex-1 gap-3 overflow-hidden p-2 sm:p-3">
         {/* Colunas de pessoas */}
-        <div className="flex flex-1 gap-3 overflow-x-auto">
+        <div className="flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto sm:snap-none">
           {teammates.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
               Você não tem colaboradores visíveis para delegar.
@@ -143,7 +143,7 @@ export function TeamDelegatePanel() {
                     setHoverCol(null);
                     setHoverIndex(null);
                   }}
-                  className={`flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border bg-card transition ${
+                  className={`flex w-[85vw] max-w-72 shrink-0 snap-start flex-col overflow-hidden rounded-lg border bg-card transition sm:w-72 ${
                     isHover
                       ? "border-primary bg-primary/5 ring-2 ring-primary/40"
                       : isMe
