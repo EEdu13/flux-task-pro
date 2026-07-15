@@ -25,13 +25,14 @@ export function AttentionOverlay() {
       }
       flashTitle(`🔔 ${detail.fromName} chamou sua atenção!`);
       showNudgeNotification(detail.fromName);
+      playNudgeSound();
       const root = document.documentElement;
       root.classList.remove("fluxo-nudge-shake");
       // force reflow to restart the animation
       void root.offsetWidth;
       root.classList.add("fluxo-nudge-shake");
       window.setTimeout(() => root.classList.remove("fluxo-nudge-shake"), 750);
-      window.setTimeout(() => setCurrent(null), 1900);
+      window.setTimeout(() => setCurrent(null), 4200);
     };
     window.addEventListener("fluxo:attention", handler as EventListener);
     return () => window.removeEventListener("fluxo:attention", handler as EventListener);
