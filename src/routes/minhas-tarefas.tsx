@@ -460,7 +460,9 @@ function TaskList({
   onComplete: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
 }) {
-  const { users } = useFluxo();
+  const { users, reorderTasks } = useFluxo();
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ group: string; index: number } | null>(null);
   const groups: { key: string; label: string; items: Task[] }[] = [
     { key: "atrasada", label: "Atrasadas", items: [] },
     { key: "hoje", label: "Hoje", items: [] },
@@ -471,6 +473,25 @@ function TaskList({
     const b = formatDueBucket(t.dueDate);
     groups.find((g) => g.key === b)!.items.push(t);
   }
+  groups.forEach((g) =>
+    g.items.sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate)),
+  );
+
+  const handleDrop = (groupKey: string, insertIndex: number) => {
+    if (!dragId) return;
+    const g = groups.find((x) => x.key === groupKey);
+    if (!g) return;
+    const filtered = g.items.filter((t) => t.id !== dragId);
+    const clampedIdx = Math.min(insertIndex, filtered.length);
+    const nextIds = [
+      ...filtered.slice(0, clampedIdx).map((t) => t.id),
+      dragId,
+      ...filtered.slice(clampedIdx).map((t) => t.id),
+    ];
+    reorderTasks(nextIds);
+    setDragId(null);
+    setDropTarget(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -481,12 +502,16 @@ function TaskList({
               {g.label}
             </h3>
             <span className="text-[10px] text-muted-foreground">({g.items.length})</span>
+            <span className="text-[10px] text-muted-foreground/70">
+              · arraste ⋮⋮ para priorizar
+            </span>
           </div>
           <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
             <table className="w-full min-w-[860px] text-left">
               <thead>
                 <tr className="border-b border-border bg-secondary/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <th className="py-2 pl-4 pr-2 w-8"></th>
+                  <th className="py-2 pr-2 w-8">#</th>
                   <th className="py-2 pr-4">Tarefa</th>
                   <th className="py-2 pr-4">Responsável</th>
                   <th className="py-2 pr-4">Prazo</th>
@@ -496,12 +521,34 @@ function TaskList({
                 </tr>
               </thead>
               <tbody>
-                {g.items.map((t) => {
+                {g.items.map((t, index) => {
                   const assignee = users.find((u) => u.id === t.assigneeId);
                   const sec = sectors.find((s) => s.id === t.sector);
+                  const showBefore =
+                    dropTarget?.group === g.key && dropTarget.index === index && dragId && dragId !== t.id;
                   return (
                     <tr
                       key={t.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", t.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDragId(t.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDropTarget(null);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const before = e.clientY < rect.top + rect.height / 2;
+                        setDropTarget({ group: g.key, index: before ? index : index + 1 });
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        handleDrop(g.key, dropTarget?.index ?? index);
+                      }}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         window.dispatchEvent(
@@ -510,7 +557,9 @@ function TaskList({
                           }),
                         );
                       }}
-                      className="group border-b border-border last:border-0 hover:bg-secondary/40"
+                      className={`group cursor-grab border-b border-border last:border-0 hover:bg-secondary/40 active:cursor-grabbing ${
+                        showBefore ? "border-t-2 border-t-primary" : ""
+                      }`}
                     >
                       <td className="py-2.5 pl-4 pr-2">
                         {t.status !== "concluida" && (
@@ -520,6 +569,11 @@ function TaskList({
                             title="Marcar concluída"
                           />
                         )}
+                      </td>
+                      <td className="py-2.5 pr-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                          {index + 1}
+                        </span>
                       </td>
                       <td className="py-2.5 pr-4">
                         <button onClick={() => onEdit(t.id)} className="flex items-start gap-2 text-left">
