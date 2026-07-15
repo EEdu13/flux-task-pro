@@ -39,6 +39,7 @@ import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
 import { IncomingCall } from "@/components/incoming-call";
+import { OutgoingCallWatcher } from "@/components/outgoing-call-watcher";
 import { toast } from "sonner";
 import { useCallInviter } from "@/lib/call-inviter-context";
 
@@ -638,6 +639,7 @@ export function FluxoLayout({
       {needsOnboarding && <OnboardingModal />}
       <IncomingCall />
       <AttentionOverlay />
+      <OutgoingCallWatcher />
       <TaskContextMenu />
       {gridOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm">
