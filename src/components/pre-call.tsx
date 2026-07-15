@@ -178,7 +178,20 @@ export function PreCall({
           </span>
         </span>
       </label>
-      {!forcePrivate && (
+      {forcePrivate ? (
+        <div className="flex w-full max-w-xl items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <span className="flex-1 text-xs">
+            <span className="flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
+              Sala restrita — sempre privada
+            </span>
+            <span className="mt-0.5 block text-muted-foreground">
+              A sala da Diretoria é sempre privada. Novos participantes entram apenas com PIN ou
+              aprovação de quem já está dentro.
+            </span>
+          </span>
+        </div>
+      ) : (
         <label className="flex w-full max-w-xl cursor-pointer items-start gap-2 rounded-md border border-border bg-background/50 p-3">
           <input
             type="checkbox"
