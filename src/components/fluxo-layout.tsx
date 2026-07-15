@@ -510,6 +510,18 @@ export function FluxoLayout({
           <div className="ml-auto flex items-center gap-2">
             {actions}
             <button
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent("fluxo:team-panel-open"))
+              }
+              title="Delegar rápido (Ctrl+E)"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
+            >
+              <UserPlus className="h-4 w-4" /> Delegar
+              <kbd className="ml-1 hidden rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground lg:inline">
+                Ctrl+E
+              </kbd>
+            </button>
+            <button
               onClick={() => setGridOpen(true)}
               className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:brightness-110"
             >
