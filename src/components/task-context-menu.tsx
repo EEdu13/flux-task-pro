@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Pencil, CheckCircle2, RotateCcw, Star, Copy, Trash2, AtSign } from "lucide-react";
+import { Pencil, CheckCircle2, RotateCcw, Star, Copy, Trash2, AtSign, Sunrise, Clock, CalendarDays, Play } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { toast } from "sonner";
+import { useUndo } from "@/lib/undo-stack";
+import { startFocus } from "@/components/focus-overlay";
 
 interface Detail {
   id: string;
@@ -11,6 +13,7 @@ interface Detail {
 
 export function TaskContextMenu() {
   const { tasks, updateTask, deleteTask, createTask, openTask, currentUser } = useFluxo();
+  const { push: pushUndo } = useUndo();
   const [ctx, setCtx] = useState<Detail | null>(null);
 
   useEffect(() => {
@@ -36,6 +39,30 @@ export function TaskContextMenu() {
   if (!ctx) return null;
   const task = tasks.find((t) => t.id === ctx.id);
   if (!task) return null;
+
+  const snooze = (label: string, when: Date) => {
+    const prev = task.dueDate;
+    updateTask(task.id, { dueDate: when.toISOString() });
+    pushUndo({
+      label: `Tarefa adiada para ${label}`,
+      undo: () => updateTask(task.id, { dueDate: prev }),
+    });
+  };
+  const tomorrow9 = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  };
+  const plusOneHour = () => new Date(Date.now() + 60 * 60 * 1000);
+  const nextMonday = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const add = ((8 - day) % 7) || 7;
+    d.setDate(d.getDate() + add);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  };
 
   const isDone = task.status === "concluida";
   // clamp position to viewport
@@ -85,6 +112,9 @@ export function TaskContextMenu() {
       </div>
       <div className="mt-1 flex flex-col">
         {item(Pencil, "Editar", () => openTask(task.id))}
+        {task.assigneeId === currentUser.id && !isDone && (
+          item(Play, "Iniciar modo foco (25min)", () => startFocus(task.id))
+        )}
         {isDone
           ? item(RotateCcw, "Reabrir", () =>
               updateTask(task.id, { status: "pendente" }),
@@ -92,6 +122,15 @@ export function TaskContextMenu() {
           : item(CheckCircle2, "Concluir", () =>
               updateTask(task.id, { status: "concluida" }),
             )}
+        {!isDone && (
+          <>
+            <div className="my-1 h-px bg-border" />
+            {item(Sunrise, "Deixar pra amanhã (9h)", () => snooze("amanhã 9h", tomorrow9()))}
+            {item(Clock, "Adiar 1 hora", () => snooze("+1h", plusOneHour()))}
+            {item(CalendarDays, "Próxima segunda", () => snooze("próxima segunda", nextMonday()))}
+            <div className="my-1 h-px bg-border" />
+          </>
+        )}
         {item(
           Star,
           task.inPack ? "Remover do pack" : "Adicionar ao pack",
@@ -123,10 +162,30 @@ export function TaskContextMenu() {
           Trash2,
           "Excluir",
           () => {
-            if (confirm(`Excluir "${task.title}"?`)) {
-              deleteTask(task.id);
-              toast.success("Tarefa excluída");
-            }
+            const snapshot = task;
+            deleteTask(task.id);
+            pushUndo({
+              label: `"${snapshot.title}" excluída`,
+              undo: () => {
+                // Re-create task with original fields
+                createTask({
+                  title: snapshot.title,
+                  description: snapshot.description,
+                  sector: snapshot.sector,
+                  createdBy: snapshot.createdBy,
+                  assigneeId: snapshot.assigneeId,
+                  mentions: snapshot.mentions,
+                  frequency: snapshot.frequency,
+                  status: snapshot.status,
+                  score: snapshot.score,
+                  dueDate: snapshot.dueDate,
+                  recurring: snapshot.recurring,
+                  priority: snapshot.priority,
+                  tags: snapshot.tags,
+                  inPack: snapshot.inPack,
+                });
+              },
+            });
           },
           true,
         )}

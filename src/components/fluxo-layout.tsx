@@ -34,6 +34,10 @@ import { OnboardingModal } from "@/components/onboarding-modal";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { AttentionOverlay } from "@/components/attention-overlay";
 import { TaskContextMenu } from "@/components/task-context-menu";
+import { CommandPalette } from "@/components/command-palette";
+import { TeamDelegatePanel } from "@/components/team-delegate-panel";
+import { FocusOverlay } from "@/components/focus-overlay";
+import { UndoProvider } from "@/lib/undo-stack";
 import { X } from "lucide-react";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
@@ -162,6 +166,7 @@ export function FluxoLayout({
   const needsOnboarding = !currentUser.contactCompleted || !currentUser.email || !currentUser.phone;
 
   return (
+  <UndoProvider>
     <div className="flex min-h-screen w-full bg-background text-foreground">
       <aside
         className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex ${
@@ -641,6 +646,9 @@ export function FluxoLayout({
       <AttentionOverlay />
       <OutgoingCallWatcher />
       <TaskContextMenu />
+      <CommandPalette />
+      <TeamDelegatePanel />
+      <FocusOverlay />
       {gridOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm">
           <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
@@ -669,5 +677,6 @@ export function FluxoLayout({
         </div>
       )}
     </div>
+  </UndoProvider>
   );
 }
