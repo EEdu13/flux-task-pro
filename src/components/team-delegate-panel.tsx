@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, UserPlus, Plus } from "lucide-react";
+import { X, UserPlus, Plus } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { statusLabels, type Task } from "@/lib/fluxo-types";
 import { toast } from "sonner";
@@ -16,7 +16,6 @@ export function TeamDelegatePanel() {
     openQuickCreate,
   } = useFluxo();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverCol, setHoverCol] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -54,18 +53,6 @@ export function TeamDelegatePanel() {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [users, currentUser.id],
-  );
-
-  const myOpenTasks = useMemo(
-    () =>
-      tasks.filter(
-        (t) =>
-          t.assigneeId === currentUser.id &&
-          t.status !== "concluida" &&
-          (query.trim().length === 0 ||
-            t.title.toLowerCase().includes(query.toLowerCase())),
-      ),
-    [tasks, currentUser.id, query],
   );
 
   if (!open) return null;
@@ -111,17 +98,8 @@ export function TeamDelegatePanel() {
         <div className="flex-1">
           <div className="text-sm font-semibold">Delegar rápido</div>
           <div className="text-[11px] text-muted-foreground">
-            Arraste tarefas suas para a coluna de quem vai fazer · Esc fecha
+            Arraste tarefas entre pessoas · + cria direto · Esc fecha
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filtrar minhas tarefas…"
-            className="w-56 bg-transparent py-1.5 text-xs outline-none"
-          />
         </div>
         <button
           onClick={() => setOpen(false)}
