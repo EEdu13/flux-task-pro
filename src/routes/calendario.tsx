@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Zap, Eye } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { priorityColor, sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
+import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { openTaskContext } from "@/components/task-context-menu";
 
 export const Route = createFileRoute("/calendario")({
