@@ -25,7 +25,7 @@ function todayEnd() {
 }
 
 export function QuickFab() {
-  const { createTask, updateTask, tasks, users, currentUser, isAuthenticated } = useFluxo();
+  const { createTask, tasks, users, currentUser, isAuthenticated } = useFluxo();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("menu");
   const [title, setTitle] = useState("");
