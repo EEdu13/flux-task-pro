@@ -340,12 +340,12 @@ export function InlineTaskCreator({
                       setDragRowId(null);
                       await addFilesToRow(row.id, e.dataTransfer.files);
                     }}
-                    className={`border-b border-border/60 last:border-0 hover:bg-secondary/30 ${
+                    className={`border-b border-border/60 align-top last:border-0 hover:bg-secondary/30 ${
                       dragRowId === row.id ? "bg-primary/10" : ""
                     }`}
                   >
-                    <td className="py-1 pl-3 text-[10px] text-muted-foreground">{idx + 1}</td>
-                    <td className="relative py-1 pr-3">
+                    <td className="py-3 pl-4 text-xs font-semibold text-muted-foreground">{idx + 1}</td>
+                    <td className="relative py-3 pr-3">
                       <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
@@ -428,8 +428,8 @@ export function InlineTaskCreator({
                             }
                           }
                         }}
-                        placeholder="Nova tarefa…"
-                        className="w-full bg-transparent px-1 py-1.5 outline-none placeholder:text-muted-foreground/60"
+                        placeholder="Ex: Fazer conciliação bancária de julho"
+                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
                         createPortal(
@@ -497,9 +497,9 @@ export function InlineTaskCreator({
                         </div>
                       )}
                     </td>
-                    <td className="py-1 pr-3">
-                      <div className="flex items-center gap-1">
-                        <div className="inline-flex rounded-md border border-border p-0.5 text-[10px]">
+                    <td className="py-3 pr-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
                           {[
                             { label: "Hoje", get: todayStr },
                             { label: "Amanhã", get: tomorrowStr },
@@ -512,7 +512,7 @@ export function InlineTaskCreator({
                                 type="button"
                                 key={opt.label}
                                 onClick={() => update(row.id, { dueDate: iso })}
-                                className={`rounded px-1.5 py-0.5 font-medium transition ${
+                                className={`rounded px-2 py-1 font-medium transition ${
                                   active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
                                 }`}
                               >
@@ -525,16 +525,16 @@ export function InlineTaskCreator({
                           type="date"
                           value={row.dueDate}
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="w-32 rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
+                          className="w-36 rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
                         />
                       </div>
                     </td>
                     {!compact && (
-                      <td className="py-1 pr-3">
+                      <td className="py-3 pr-3">
                         <select
                           value={row.assigneeId}
                           onChange={(e) => update(row.id, { assigneeId: e.target.value })}
-                          className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
                         >
                           {assignees.map((u) => (
                             <option key={u.id} value={u.id}>
@@ -545,11 +545,11 @@ export function InlineTaskCreator({
                       </td>
                     )}
                     {!compact && (
-                      <td className="py-1 pr-3">
+                      <td className="py-3 pr-3">
                         <select
                           value={row.sector}
                           onChange={(e) => update(row.id, { sector: e.target.value })}
-                          className="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-xs outline-none focus:border-border focus:bg-background"
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
                         >
                           <option value="">— setor —</option>
                           {sectors.map((s) => (
@@ -560,44 +560,39 @@ export function InlineTaskCreator({
                         </select>
                       </td>
                     )}
-                    <td className="py-1 pr-2 text-right">
-                      <div className="inline-flex items-center gap-0.5">
+                    <td className="py-3 pr-4 text-right">
+                      <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                         <button
                           type="button"
                           onClick={() => update(row.id, { requireProof: !row.requireProof })}
-                          className={`inline-flex items-center gap-1 rounded p-1 transition ${
+                          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium transition ${
                             row.requireProof
-                              ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                              : "text-muted-foreground hover:bg-amber-500/10 hover:text-amber-600"
+                              ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                              : "border-border text-muted-foreground hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
                           }`}
-                          title={
-                            row.requireProof
-                              ? "Exigindo comprovante: precisa anexar arquivo pra concluir"
-                              : "Exigir comprovante ao concluir (ex: conciliação bancária)"
-                          }
+                          title="Marca a tarefa como 'precisa comprovante' — quem concluir precisa anexar arquivo"
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          <span className="hidden text-[10px] font-medium xl:inline">
-                            {row.requireProof ? "Comprovante" : "Exigir compr."}
-                          </span>
+                          <span>{row.requireProof ? "Exige comprov." : "Comprovante"}</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                          title="Anexar arquivo (ou arraste)"
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          title="Anexar arquivo agora (ou arraste um arquivo pra cima desta linha)"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
-                          <span className="hidden text-[10px] font-medium xl:inline">Anexar / arraste</span>
+                          <span>Anexar</span>
                         </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(row.id)}
-                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        title="Remover linha"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => remove(row.id)}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                          title="Remover esta linha"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Remover</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
