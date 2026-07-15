@@ -274,7 +274,7 @@ function TaskPill({
       style={{ background: `color-mix(in oklab, ${statusColor[t.status as keyof typeof statusColor]} 12%, transparent)` }}
       title={`${t.title} · ${u?.name}`}
     >
-      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: priorityColor[t.priority as keyof typeof priorityColor] }} />
+      
       <span className="truncate">{t.title}</span>
       <span className="ml-auto shrink-0" style={{ color: sec?.color }}>•</span>
     </button>
@@ -512,7 +512,7 @@ function DayView({
                     className="w-full rounded-md border border-border bg-background p-2 text-left transition hover:bg-secondary/60"
                   >
                     <div className="flex items-start gap-2">
-                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: priorityColor[t.priority as keyof typeof priorityColor] }} />
+                      
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-xs font-medium">{t.title}</div>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -596,7 +596,7 @@ function ListView({
                     }}
                     className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-secondary/40"
                   >
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: priorityColor[t.priority as keyof typeof priorityColor] }} />
+                    
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{t.title}</div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
