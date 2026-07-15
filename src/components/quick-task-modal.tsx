@@ -7,29 +7,29 @@ export function QuickTaskModal() {
   if (!quickCreate.open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-16"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm"
       onClick={closeQuickCreate}
     >
       <div
-        className="w-full max-w-5xl rounded-xl border border-border bg-background shadow-2xl"
+        className="w-full max-w-6xl rounded-2xl border border-border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
           <div>
-            <div className="text-sm font-semibold">Criar tarefas rapidamente</div>
-            <div className="text-[11px] text-muted-foreground">
-              Enter para próxima linha · @ menciona · arraste arquivos para anexar
+            <div className="text-lg font-semibold tracking-tight">Criar tarefas rapidamente</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Uma linha = uma tarefa. Preencha o título e os campos ao lado — <strong>tudo está visível abaixo</strong>.
             </div>
           </div>
           <button
             onClick={closeQuickCreate}
-            className="rounded-md p-1 text-muted-foreground hover:bg-secondary"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary"
             aria-label="Fechar"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="p-3">
+        <div className="p-5">
           <InlineTaskCreator
             defaultStatus={quickCreate.status ?? "pendente"}
             defaultDueDate={quickCreate.dueDate}
