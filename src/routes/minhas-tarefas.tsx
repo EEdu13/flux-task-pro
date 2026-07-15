@@ -1005,7 +1005,6 @@ function ExternalRow({
               <Repeat className="h-2.5 w-2.5" /> Recorrente
             </span>
           )}
-          <Badge label={priorityLabels[task.priority]} color={priorityColor[task.priority]} />
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
