@@ -143,6 +143,16 @@ function CalendarioPage() {
                 onClick={() =>
                   openNewTask({ dueDate: cell.date.toISOString().slice(0, 10) })
                 }
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDayCtx({
+                    x: e.clientX,
+                    y: e.clientY,
+                    date: cell.date.toISOString().slice(0, 10),
+                    count: cell.tasks.length,
+                  });
+                }}
                 className={`min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
               >
                 <div className="flex items-center justify-between">
