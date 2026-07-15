@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, Zap, Eye } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { priorityColor, sectors, statusColor } from "@/lib/fluxo-types";
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/calendario")({
 });
 
 function CalendarioPage() {
-  const { tasks, currentUser, users, openTask, openNewTask } = useFluxo();
+  const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate } = useFluxo();
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -25,6 +25,21 @@ function CalendarioPage() {
     return d;
   });
   const [scope, setScope] = useState<"eu" | "todos">("eu");
+  const [dayCtx, setDayCtx] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
+
+  useEffect(() => {
+    if (!dayCtx) return;
+    const close = () => setDayCtx(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [dayCtx]);
 
   const filtered = useMemo(
     () => (scope === "eu" ? tasks.filter((t) => t.assigneeId === currentUser.id) : tasks),
@@ -128,6 +143,16 @@ function CalendarioPage() {
                 onClick={() =>
                   openNewTask({ dueDate: cell.date.toISOString().slice(0, 10) })
                 }
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDayCtx({
+                    x: e.clientX,
+                    y: e.clientY,
+                    date: cell.date.toISOString().slice(0, 10),
+                    count: cell.tasks.length,
+                  });
+                }}
                 className={`min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
               >
                 <div className="flex items-center justify-between">
@@ -179,6 +204,63 @@ function CalendarioPage() {
           })}
         </div>
       </div>
+      {dayCtx && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            left: Math.min(dayCtx.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240),
+            top: Math.min(dayCtx.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 200),
+            width: 220,
+          }}
+          className="fixed z-[300] animate-in fade-in-0 zoom-in-95 rounded-lg border border-border bg-card p-1 shadow-2xl"
+        >
+          <div className="border-b border-border px-2 py-1.5">
+            <div className="text-[11px] font-semibold">
+              {new Date(dayCtx.date + "T00:00:00").toLocaleDateString("pt-BR", {
+                weekday: "short",
+                day: "2-digit",
+                month: "short",
+              })}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {dayCtx.count} {dayCtx.count === 1 ? "tarefa" : "tarefas"}
+            </div>
+          </div>
+          <div className="mt-1 flex flex-col">
+            <button
+              onClick={() => {
+                openQuickCreate({ dueDate: dayCtx.date });
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              <span>Criar rápido</span>
+            </button>
+            <button
+              onClick={() => {
+                openNewTask({ dueDate: dayCtx.date });
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Nova tarefa detalhada</span>
+            </button>
+            <button
+              onClick={() => {
+                setScope("todos");
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>Ver de todos</span>
+            </button>
+          </div>
+        </div>
+      )}
     </FluxoLayout>
   );
 }
