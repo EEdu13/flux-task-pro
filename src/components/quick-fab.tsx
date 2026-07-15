@@ -6,12 +6,17 @@ import {
   AtSign,
   StickyNote,
   ListChecks,
+  Flame,
+  Sparkles,
+  Check,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { toast } from "sonner";
 import type { Priority } from "@/lib/fluxo-types";
+import { loadPackDone, savePackDone } from "@/lib/pack";
+import { triggerAttention } from "@/components/attention-overlay";
 
-type Mode = "menu" | "quick" | "mention";
+type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
 
 function todayEnd() {
   const d = new Date();
@@ -20,14 +25,19 @@ function todayEnd() {
 }
 
 export function QuickFab() {
-  const { createTask, users, currentUser, isAuthenticated } = useFluxo();
+  const { createTask, tasks, users, currentUser, isAuthenticated } = useFluxo();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("menu");
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<Priority>("media");
   const [mentionUser, setMentionUser] = useState<string>("");
   const [mentionText, setMentionText] = useState("");
+  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setPackDone(loadPackDone(currentUser.id));
+  }, [currentUser.id, mode]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -43,6 +53,29 @@ export function QuickFab() {
 
   const openNotepad = () => {
     window.dispatchEvent(new CustomEvent("fluxo:notepad-open"));
+    setOpen(false);
+    setMode("menu");
+  };
+
+  const packItems = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
+  const packPending = packItems.filter((t) => !packDone.has(t.id));
+
+  const togglePackDone = (id: string) => {
+    setPackDone((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      savePackDone(currentUser.id, next);
+      window.dispatchEvent(new CustomEvent("fluxo:pack-updated"));
+      return next;
+    });
+  };
+
+  const nudgeUser = (uid: string) => {
+    const target = users.find((u) => u.id === uid);
+    // Locally show the effect (demo/single-tab)
+    triggerAttention(currentUser.name, currentUser.avatar);
+    toast.success(`Você chamou a atenção de ${target?.name?.split(" ")[0] ?? "alguém"}`);
     setOpen(false);
     setMode("menu");
   };
@@ -122,6 +155,22 @@ export function QuickFab() {
             onClick={() => setMode("mention")}
           />
           <FabItem
+            icon={Flame}
+            label="Concluir pack"
+            hint={
+              packItems.length === 0
+                ? "sem itens no seu pack"
+                : `${packPending.length} de ${packItems.length} pendentes hoje`
+            }
+            onClick={() => setMode("pack")}
+          />
+          <FabItem
+            icon={Sparkles}
+            label="Chamar atenção"
+            hint="treme a tela da pessoa"
+            onClick={() => setMode("attention")}
+          />
+          <FabItem
             icon={StickyNote}
             label="Bloco de notas"
             hint="abre o bloco flutuante"
@@ -135,6 +184,119 @@ export function QuickFab() {
               window.location.href = "/minhas-tarefas";
             }}
           />
+        </div>
+      )}
+
+      {open && mode === "pack" && (
+        <div className="w-[320px] rounded-xl border border-border bg-card p-3 shadow-2xl">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <Flame className="h-3.5 w-3.5 text-amber-500" /> Concluir pack
+            </div>
+            <button
+              onClick={() => setMode("menu")}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="mb-2 text-[10px] text-muted-foreground">
+            Marque o que você já fez hoje. Reseta automaticamente amanhã.
+          </p>
+          {packItems.length === 0 && (
+            <div className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground">
+              Você ainda não adicionou tarefas ao seu pack.
+            </div>
+          )}
+          <ul className="max-h-72 space-y-1 overflow-y-auto">
+            {packItems.map((t) => {
+              const done = packDone.has(t.id);
+              return (
+                <li key={t.id}>
+                  <button
+                    onClick={() => togglePackDone(t.id)}
+                    className={`flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition ${
+                      done
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-muted-foreground"
+                        : "border-border hover:bg-secondary"
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                        done
+                          ? "border-emerald-500 bg-emerald-500 text-white"
+                          : "border-border bg-background"
+                      }`}
+                    >
+                      {done && <Check className="h-3 w-3" />}
+                    </span>
+                    <span className={`flex-1 ${done ? "line-through" : ""}`}>{t.title}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {packItems.length > 0 && (
+            <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+              <span>
+                {packItems.length - packPending.length}/{packItems.length} feitos
+              </span>
+              <button
+                onClick={() => {
+                  const all = new Set(packItems.map((t) => t.id));
+                  setPackDone(all);
+                  savePackDone(currentUser.id, all);
+                  window.dispatchEvent(new CustomEvent("fluxo:pack-updated"));
+                  toast.success("Pack concluído — bom trabalho!");
+                }}
+                className="font-semibold text-primary hover:underline"
+              >
+                Marcar tudo
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {open && mode === "attention" && (
+        <div className="w-[300px] rounded-xl border border-border bg-card p-3 shadow-2xl">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <Sparkles className="h-3.5 w-3.5 text-fuchsia-500" /> Chamar atenção
+            </div>
+            <button
+              onClick={() => setMode("menu")}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="mb-2 text-[10px] text-muted-foreground">
+            Estilo MSN — treme a tela da pessoa por 1 segundo. Use com moderação.
+          </p>
+          <ul className="max-h-72 space-y-1 overflow-y-auto">
+            {users
+              .filter((u) => u.id !== currentUser.id)
+              .map((u) => (
+                <li key={u.id}>
+                  <button
+                    onClick={() => nudgeUser(u.id)}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                      {u.avatar || u.name.slice(0, 1)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold">{u.name}</span>
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        {u.jobTitle}
+                      </span>
+                    </span>
+                    <Sparkles className="h-3.5 w-3.5 text-fuchsia-500 opacity-0 group-hover:opacity-100" />
+                  </button>
+                </li>
+              ))}
+          </ul>
         </div>
       )}
 

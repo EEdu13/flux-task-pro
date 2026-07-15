@@ -164,3 +164,28 @@
   }
   html { scroll-behavior: smooth; }
 }
+
+/* ————— Chamar atenção (MSN-style nudge) ————— */
+@keyframes fluxo-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  10% { transform: translate(-6px, 4px) rotate(-0.4deg); }
+  20% { transform: translate(7px, -3px) rotate(0.5deg); }
+  30% { transform: translate(-8px, -2px) rotate(-0.3deg); }
+  40% { transform: translate(6px, 5px) rotate(0.4deg); }
+  50% { transform: translate(-4px, -4px) rotate(-0.2deg); }
+  60% { transform: translate(5px, 3px) rotate(0.3deg); }
+  70% { transform: translate(-3px, 2px) rotate(-0.2deg); }
+  80% { transform: translate(2px, -1px) rotate(0.1deg); }
+  90% { transform: translate(-1px, 1px) rotate(0); }
+}
+html.fluxo-nudge-shake body {
+  animation: fluxo-shake 0.7s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes fluxo-attn-pop {
+  0% { opacity: 0; transform: perspective(1200px) translateZ(-400px) rotateX(35deg) scale(0.5); filter: blur(8px); }
+  35% { opacity: 1; transform: perspective(1200px) translateZ(60px) rotateX(-4deg) scale(1.05); filter: blur(0); }
+  60% { opacity: 1; transform: perspective(1200px) translateZ(0) rotateX(0) scale(1); }
+  100% { opacity: 0; transform: perspective(1200px) translateZ(200px) rotateX(-12deg) scale(1.15); filter: blur(2px); }
+}
+.fluxo-attn-pop { animation: fluxo-attn-pop 1.8s cubic-bezier(.2,.7,.3,1) forwards; }
