@@ -26,6 +26,7 @@ import {
   FileText,
   StickyNote,
   UserPlus,
+  Zap,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -757,12 +758,14 @@ export function FluxoLayout({
               </Link>
               <button
                 type="button"
-                onClick={() => setMobileOpen(true)}
-                aria-label="Abrir menu"
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent("fluxo:quick-open"))
+                }
+                aria-label="Acesso rápido"
                 className={`${tabBase} ${idleCls}`}
               >
-                <Menu className="h-5 w-5" />
-                <span>Menu</span>
+                <Zap className="h-5 w-5" />
+                <span>Acesso rápido</span>
               </button>
             </>
           );

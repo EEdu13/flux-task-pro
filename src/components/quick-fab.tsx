@@ -10,6 +10,7 @@ import {
   Sparkles,
   Check,
 } from "lucide-react";
+
 import { useFluxo } from "@/lib/fluxo-store";
 import { toast } from "sonner";
 import type { Priority } from "@/lib/fluxo-types";
@@ -50,6 +51,15 @@ export function QuickFab() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
+
+  useEffect(() => {
+    const onOpen = () => {
+      setOpen(true);
+      setMode("menu");
+    };
+    window.addEventListener("fluxo:quick-open", onOpen);
+    return () => window.removeEventListener("fluxo:quick-open", onOpen);
+  }, []);
 
   const openNotepad = () => {
     window.dispatchEvent(new CustomEvent("fluxo:notepad-open"));
@@ -144,7 +154,7 @@ export function QuickFab() {
   if (!isAuthenticated) return null;
 
   return (
-    <div ref={rootRef} className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2">
+    <div ref={rootRef} className="fixed bottom-24 right-5 z-[60] flex flex-col items-end gap-2 lg:bottom-5">
       {open && mode === "menu" && (
         <div className="flex flex-col items-stretch gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-2xl">
           <FabItem
@@ -393,7 +403,7 @@ export function QuickFab() {
           setMode("menu");
         }}
         title="Ações rápidas"
-        className="group flex flex-col items-center gap-1"
+        className="group hidden flex-col items-center gap-1 lg:flex"
       >
         <span
           className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition group-hover:brightness-110 ${
