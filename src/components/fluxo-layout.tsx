@@ -759,14 +759,19 @@ export function FluxoLayout({
               </Link>
               <button
                 type="button"
-                onClick={() =>
-                  window.dispatchEvent(new CustomEvent("fluxo:quick-open"))
-                }
-                aria-label="Acesso rápido"
-                className={`${tabBase} ${idleCls}`}
+                onClick={() => setRoomsQuickOpen((v) => !v)}
+                aria-label="Salas online"
+                className={`${tabBase} relative ${idleCls}`}
               >
-                <Zap className="h-5 w-5" />
-                <span>Acesso rápido</span>
+                <div className="relative">
+                  <Headphones className="h-5 w-5" />
+                  {totalOnline > 0 && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
+                      {totalOnline}
+                    </span>
+                  )}
+                </div>
+                <span>Salas</span>
               </button>
             </>
           );
