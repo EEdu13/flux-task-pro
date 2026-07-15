@@ -416,6 +416,26 @@ export function TaskDialog() {
                 )}
               </div>
 
+              <div className="rounded-md border border-border bg-secondary/40 p-3">
+                <label className="flex cursor-pointer items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={requireProof}
+                    onChange={(e) => setRequireProof(e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium">Exigir comprovante para concluir</span>
+                    <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                      flag do gestor
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                      Só permite marcar como concluída se tiver pelo menos 1 anexo (recibo, print, PDF). Ex: conciliação bancária, pagamento, envio de relatório.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
               {editing && (
                 <div className="rounded-md border border-border bg-secondary/40 p-3">
                   <div className="mb-2 flex items-center justify-between">
