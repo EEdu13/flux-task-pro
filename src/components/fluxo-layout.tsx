@@ -106,6 +106,7 @@ export function FluxoLayout({
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [roomsQuickOpen, setRoomsQuickOpen] = useState(false);
 
   // Close mobile drawer whenever the route changes
   useEffect(() => {
