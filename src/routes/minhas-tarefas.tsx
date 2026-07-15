@@ -713,7 +713,6 @@ function KanbanBoard({
                       >
                         <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
                       </button>
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: priorityColor[t.priority] }} />
                     </div>
                     <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
                     {(t.mentions.length > 0 || t.checklist.length > 0) && (
