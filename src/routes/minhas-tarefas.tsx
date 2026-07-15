@@ -966,7 +966,17 @@ function ExternalRow({
   const isLate = dueMs < startOfToday.getTime();
   const origin = isMention ? "Mencionaram você" : isMine ? "Atribuída a você" : "Criada por você";
   return (
-    <div className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm transition hover:shadow-md">
+    <div
+      onContextMenu={(e) => {
+        e.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent("fluxo:task-context", {
+            detail: { id: task.id, x: e.clientX, y: e.clientY },
+          }),
+        );
+      }}
+      className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm transition hover:shadow-md"
+    >
       <button
         onClick={() => onComplete(task.id)}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-border transition hover:border-emerald-500 hover:bg-emerald-500/10"
@@ -1033,6 +1043,14 @@ function PackRow({
   const sec = sectors.find((s) => s.id === task.sector);
   return (
     <div
+      onContextMenu={(e) => {
+        e.preventDefault();
+        window.dispatchEvent(
+          new CustomEvent("fluxo:task-context", {
+            detail: { id: task.id, x: e.clientX, y: e.clientY },
+          }),
+        );
+      }}
       className={`group flex items-center gap-3 rounded-xl border bg-card p-3 shadow-sm transition hover:shadow-md ${
         isDone ? "border-border/60 opacity-60" : "border-amber-500/30"
       }`}
