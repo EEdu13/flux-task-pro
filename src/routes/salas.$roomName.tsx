@@ -335,10 +335,11 @@ function RoomPage() {
           <PreCall
             roomLabel={roomLabel}
             alreadyPrivate={isPrivate}
+            forcePrivate={isDiretoria}
             onEnter={(r) => {
               setPendingPreCall({ title: r.title, autoMinute: r.autoMinute, makePrivate: r.makePrivate });
               setShowPreCall(false);
-              if (r.makePrivate && !isPrivate) {
+              if ((isDiretoria || r.makePrivate) && !isPrivate) {
                 setRoomPrivacy({
                   data: { roomName, isPrivate: true, userId: currentUser.id },
                 }).catch(() => {});
