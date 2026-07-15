@@ -793,6 +793,60 @@ export function FluxoLayout({
         })()}
       </nav>
 
+      {/* Mobile rooms quick panel */}
+      {roomsQuickOpen && (
+        <div
+          data-rooms-quick-panel
+          className="fixed inset-x-2 bottom-24 z-50 mx-auto max-w-md rounded-xl border border-border bg-card p-3 shadow-2xl lg:hidden"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold">
+              <Headphones className="h-3.5 w-3.5 text-emerald-500" />
+              Salas Online
+              {totalOnline > 0 && (
+                <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-500">
+                  {totalOnline} online
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setRoomsQuickOpen(false)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+              aria-label="Fechar salas"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <ul className="max-h-[50vh] space-y-1 overflow-y-auto">
+            {DEPARTMENT_ROOMS.map((r) => {
+              const parts = presence[r.name] ?? [];
+              const isFree = parts.length === 0;
+              return (
+                <li key={r.name}>
+                  <button
+                    onClick={() => {
+                      setRoomsQuickOpen(false);
+                      navigate({ to: "/salas/$roomName", params: { roomName: r.name } });
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
+                  >
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        isFree ? "bg-emerald-400" : "bg-amber-400"
+                      }`}
+                    />
+                    <span className="flex-1 font-medium">{r.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {parts.length === 0 ? "Livre" : `${parts.length} online`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       <TaskDialog />
       <QuickTaskModal />
       {needsOnboarding && <OnboardingModal />}
