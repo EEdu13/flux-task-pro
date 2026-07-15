@@ -26,6 +26,7 @@ import {
   FileText,
   StickyNote,
   UserPlus,
+  Zap,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
