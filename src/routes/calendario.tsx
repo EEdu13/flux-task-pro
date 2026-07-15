@@ -204,6 +204,63 @@ function CalendarioPage() {
           })}
         </div>
       </div>
+      {dayCtx && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            left: Math.min(dayCtx.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240),
+            top: Math.min(dayCtx.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 200),
+            width: 220,
+          }}
+          className="fixed z-[300] animate-in fade-in-0 zoom-in-95 rounded-lg border border-border bg-card p-1 shadow-2xl"
+        >
+          <div className="border-b border-border px-2 py-1.5">
+            <div className="text-[11px] font-semibold">
+              {new Date(dayCtx.date + "T00:00:00").toLocaleDateString("pt-BR", {
+                weekday: "short",
+                day: "2-digit",
+                month: "short",
+              })}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {dayCtx.count} {dayCtx.count === 1 ? "tarefa" : "tarefas"}
+            </div>
+          </div>
+          <div className="mt-1 flex flex-col">
+            <button
+              onClick={() => {
+                openQuickCreate({ dueDate: dayCtx.date });
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              <span>Criar rápido</span>
+            </button>
+            <button
+              onClick={() => {
+                openNewTask({ dueDate: dayCtx.date });
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Nova tarefa detalhada</span>
+            </button>
+            <button
+              onClick={() => {
+                setScope("todos");
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>Ver de todos</span>
+            </button>
+          </div>
+        </div>
+      )}
     </FluxoLayout>
   );
 }
