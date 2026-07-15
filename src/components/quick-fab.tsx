@@ -34,6 +34,26 @@ export function QuickFab() {
   const [mentionText, setMentionText] = useState("");
   const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
   const rootRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => {
+      setOpen(false);
+      setMode("menu");
+    }, 260);
+  };
+  const hoverOpen = (m: Mode) => {
+    cancelClose();
+    setOpen(true);
+    setMode(m);
+  };
 
   useEffect(() => {
     setPackDone(loadPackDone(currentUser.id));
@@ -73,8 +93,13 @@ export function QuickFab() {
 
   const nudgeUser = (uid: string) => {
     const target = users.find((u) => u.id === uid);
-    // Locally show the effect (demo/single-tab)
-    triggerAttention(currentUser.name, currentUser.avatar);
+    // In this demo we simulate the receiving side locally so the caller sees
+    // the shake preview — display the TARGET's name/avatar (whose attention
+    // is being called), not the caller's.
+    triggerAttention(
+      target?.name ?? "Alguém",
+      target?.avatar ?? target?.name?.slice(0, 1),
+    );
     toast.success(`Você chamou a atenção de ${target?.name?.split(" ")[0] ?? "alguém"}`);
     setOpen(false);
     setMode("menu");
@@ -139,7 +164,12 @@ export function QuickFab() {
   if (!isAuthenticated) return null;
 
   return (
-    <div ref={rootRef} className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2">
+    <div
+      ref={rootRef}
+      onMouseEnter={cancelClose}
+      onMouseLeave={scheduleClose}
+      className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2"
+    >
       {open && mode === "menu" && (
         <div className="flex flex-col items-stretch gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-2xl">
           <FabItem
@@ -147,12 +177,14 @@ export function QuickFab() {
             label="Tarefa rápida"
             hint="para você, vence hoje"
             onClick={() => setMode("quick")}
+            onHover={() => hoverOpen("quick")}
           />
           <FabItem
             icon={AtSign}
             label="Mencionar alguém"
             hint="tarefa urgente para outra pessoa"
             onClick={() => setMode("mention")}
+            onHover={() => hoverOpen("mention")}
           />
           <FabItem
             icon={Flame}
@@ -163,12 +195,14 @@ export function QuickFab() {
                 : `${packPending.length} de ${packItems.length} pendentes hoje`
             }
             onClick={() => setMode("pack")}
+            onHover={() => hoverOpen("pack")}
           />
           <FabItem
             icon={Sparkles}
             label="Chamar atenção"
             hint="treme a tela da pessoa"
             onClick={() => setMode("attention")}
+            onHover={() => hoverOpen("attention")}
           />
           <FabItem
             icon={StickyNote}
@@ -400,6 +434,7 @@ export function QuickFab() {
           setOpen((v) => !v);
           setMode("menu");
         }}
+        onMouseEnter={() => hoverOpen("menu")}
         title="Ações rápidas"
         className="group flex flex-col items-center gap-1"
       >
@@ -423,15 +458,18 @@ function FabItem({
   label,
   hint,
   onClick,
+  onHover,
 }: {
   icon: typeof Plus;
   label: string;
   hint: string;
   onClick: () => void;
+  onHover?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
+      onMouseEnter={onHover}
       className="flex items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-secondary"
     >
       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">

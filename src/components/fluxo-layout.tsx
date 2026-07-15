@@ -33,6 +33,7 @@ import { QuickTaskModal } from "@/components/quick-task-modal";
 import { OnboardingModal } from "@/components/onboarding-modal";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { AttentionOverlay } from "@/components/attention-overlay";
+import { TaskContextMenu } from "@/components/task-context-menu";
 import { X } from "lucide-react";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
@@ -637,6 +638,7 @@ export function FluxoLayout({
       {needsOnboarding && <OnboardingModal />}
       <IncomingCall />
       <AttentionOverlay />
+      <TaskContextMenu />
       {gridOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm">
           <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
