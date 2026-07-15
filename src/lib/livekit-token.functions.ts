@@ -453,7 +453,7 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
       },
       { onConflict: "room_name" },
     );
-    if (data.isPrivate) {
+    if (isPrivate) {
       // Grandfather everyone currently connected to LiveKit as a member so
       // they aren't kicked, but nobody new can enter without a knock.
       const apiKey = process.env.LIVEKIT_API_KEY;
