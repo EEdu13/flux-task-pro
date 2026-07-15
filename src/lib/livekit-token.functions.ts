@@ -317,6 +317,7 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
   });
 
 export const purgeAllRooms = createServerFn({ method: "POST" })
+  // no-op marker
   .handler(async () => {
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
