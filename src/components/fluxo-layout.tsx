@@ -40,7 +40,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
 import { UndoProvider } from "@/lib/undo-stack";
-import { X } from "lucide-react";
+import { X, Lock } from "lucide-react";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
@@ -825,6 +825,7 @@ export function FluxoLayout({
             {DEPARTMENT_ROOMS.map((r) => {
               const parts = presence[r.name] ?? [];
               const isFree = parts.length === 0;
+              const isDiretoria = r.name === "diretoria";
               return (
                 <li key={r.name}>
                   <button
@@ -832,17 +833,52 @@ export function FluxoLayout({
                       setRoomsQuickOpen(false);
                       navigate({ to: "/salas/$roomName", params: { roomName: r.name } });
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-secondary"
+                    className={`flex w-full flex-col gap-1 rounded-md border px-2 py-2 text-left text-xs transition ${
+                      isDiretoria
+                        ? "border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/15"
+                        : "border-transparent hover:bg-secondary"
+                    }`}
                   >
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        isFree ? "bg-emerald-400" : "bg-amber-400"
-                      }`}
-                    />
-                    <span className="flex-1 font-medium">{r.label}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {parts.length === 0 ? "Livre" : `Ocupada · ${parts.length}`}
-                    </span>
+                    <div className="flex w-full items-center gap-2">
+                      {isDiretoria ? (
+                        <Lock className="h-3 w-3 shrink-0 text-amber-500" />
+                      ) : (
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${
+                            isFree ? "bg-emerald-400" : "bg-amber-400"
+                          }`}
+                        />
+                      )}
+                      <span className="flex-1 truncate font-medium">
+                        {r.label}
+                        {isDiretoria && (
+                          <span className="ml-1.5 rounded-full bg-amber-500/20 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                            Restrita
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {parts.length === 0 ? "Livre" : `Ocupada · ${parts.length}`}
+                      </span>
+                    </div>
+                    {parts.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pl-5">
+                        {parts.slice(0, 6).map((p) => (
+                          <span
+                            key={p.identity}
+                            className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            {p.name || p.identity}
+                          </span>
+                        ))}
+                        {parts.length > 6 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            +{parts.length - 6}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </button>
                 </li>
               );
