@@ -11,9 +11,9 @@ export function TeamDelegatePanel() {
     currentUser,
     visibleUsersForAssign,
     updateTask,
-    createTask,
     openTask,
     reorderTasks,
+    openQuickCreate,
   } = useFluxo();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -95,27 +95,8 @@ export function TeamDelegatePanel() {
   };
 
   const quickCreate = (toUserId: string) => {
-    const title = window.prompt("Título da tarefa?");
-    if (!title) return;
-    const due = new Date();
-    due.setDate(due.getDate() + 1);
-    due.setHours(18, 0, 0, 0);
-    createTask({
-      title,
-      description: "",
-      sector: currentUser.sector,
-      createdBy: currentUser.id,
-      assigneeId: toUserId,
-      mentions: [],
-      frequency: "diaria",
-      status: "pendente",
-      score: 10,
-      dueDate: due.toISOString(),
-      recurring: false,
-      priority: "media",
-      tags: [],
-    });
-    toast.success("Tarefa criada e delegada");
+    setOpen(false);
+    setTimeout(() => openQuickCreate({ assigneeId: toUserId }), 0);
   };
 
   return (
