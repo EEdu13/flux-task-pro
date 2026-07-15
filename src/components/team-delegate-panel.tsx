@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, UserPlus, Plus } from "lucide-react";
+import { X, UserPlus, Plus } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
-import { statusLabels, type Task } from "@/lib/fluxo-types";
+import { statusLabels } from "@/lib/fluxo-types";
 import { toast } from "sonner";
 
 export function TeamDelegatePanel() {
@@ -16,7 +16,6 @@ export function TeamDelegatePanel() {
     openQuickCreate,
   } = useFluxo();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverCol, setHoverCol] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -46,21 +45,14 @@ export function TeamDelegatePanel() {
   }, []);
 
   const teammates = useMemo(
-    () => visibleUsersForAssign().filter((u) => u.id !== currentUser.id),
+    () => {
+      const all = visibleUsersForAssign();
+      const me = all.find((u) => u.id === currentUser.id);
+      const others = all.filter((u) => u.id !== currentUser.id);
+      return me ? [me, ...others] : others;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [users, currentUser.id],
-  );
-
-  const myOpenTasks = useMemo(
-    () =>
-      tasks.filter(
-        (t) =>
-          t.assigneeId === currentUser.id &&
-          t.status !== "concluida" &&
-          (query.trim().length === 0 ||
-            t.title.toLowerCase().includes(query.toLowerCase())),
-      ),
-    [tasks, currentUser.id, query],
   );
 
   if (!open) return null;
@@ -106,17 +98,8 @@ export function TeamDelegatePanel() {
         <div className="flex-1">
           <div className="text-sm font-semibold">Delegar rápido</div>
           <div className="text-[11px] text-muted-foreground">
-            Arraste tarefas suas para a coluna de quem vai fazer · Esc fecha
+            Arraste tarefas entre pessoas · + cria direto · Esc fecha
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filtrar minhas tarefas…"
-            className="w-56 bg-transparent py-1.5 text-xs outline-none"
-          />
         </div>
         <button
           onClick={() => setOpen(false)}
@@ -127,39 +110,6 @@ export function TeamDelegatePanel() {
       </div>
 
       <div className="flex flex-1 gap-3 overflow-hidden p-3">
-        {/* Minhas tarefas */}
-        <div className="w-72 shrink-0 overflow-y-auto rounded-lg border border-border bg-card p-2">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Minhas tarefas abertas
-            </div>
-            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
-              {myOpenTasks.length}
-            </span>
-          </div>
-          {myOpenTasks.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border p-4 text-center text-[11px] text-muted-foreground">
-              Nada aberto pra delegar.
-            </div>
-          ) : (
-            <ul className="space-y-1.5">
-              {myOpenTasks.map((t) => (
-                <TaskChip
-                  key={t.id}
-                  task={t}
-                  onDragStart={() => setDragId(t.id)}
-                  onDragEnd={() => {
-                    setDragId(null);
-                    setHoverCol(null);
-                    setHoverIndex(null);
-                  }}
-                  onClick={() => openTask(t.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-
         {/* Colunas de pessoas */}
         <div className="flex flex-1 gap-3 overflow-x-auto">
           {teammates.length === 0 ? (
@@ -173,6 +123,7 @@ export function TeamDelegatePanel() {
                 (t) => new Date(t.dueDate).getTime() - Date.now() < 3 * 24 * 3600e3,
               ).length;
               const isHover = hoverCol === u.id;
+              const isMe = u.id === currentUser.id;
               return (
                 <div
                   key={u.id}
@@ -195,19 +146,37 @@ export function TeamDelegatePanel() {
                   className={`flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border bg-card transition ${
                     isHover
                       ? "border-primary bg-primary/5 ring-2 ring-primary/40"
-                      : "border-border"
+                      : isMe
+                        ? "border-primary/60 bg-primary/[0.04] ring-1 ring-primary/30"
+                        : "border-border"
                   }`}
                 >
                   <div className="flex items-center gap-2 border-b border-border p-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${isMe ? "bg-primary text-primary-foreground ring-2 ring-primary/40" : "bg-primary text-primary-foreground"}`}>
                       {u.avatar || u.name.slice(0, 1)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">{u.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold">
+                          {isMe ? "Minhas tarefas" : u.name}
+                        </span>
+                        {isMe && (
+                          <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
+                            você
+                          </span>
+                        )}
+                      </div>
                       <div className="truncate text-[10px] text-muted-foreground">
-                        {u.jobTitle}
+                        {isMe ? u.name : u.jobTitle}
                       </div>
                     </div>
+                    <button
+                      onClick={() => quickCreate(u.id)}
+                      title={isMe ? "Criar tarefa pra mim" : `Criar tarefa pra ${u.name.split(" ")[0]}`}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition hover:border-primary/60 hover:bg-primary hover:text-primary-foreground"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
                     <div className="text-right">
                       <div className="text-xs font-bold">{list.length}</div>
                       <div className="text-[9px] uppercase text-muted-foreground">ativas</div>
@@ -313,7 +282,7 @@ function TaskChip({
   onDragEnd,
   onClick,
 }: {
-  task: Task;
+  task: { id: string; title: string; status: keyof typeof statusLabels; dueDate: string };
   onDragStart: () => void;
   onDragEnd: () => void;
   onClick: () => void;
