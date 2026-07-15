@@ -12,6 +12,7 @@ import {
   Home,
   Inbox,
   LogOut,
+  Menu,
   Moon,
   Plus,
   Search,
@@ -103,6 +104,25 @@ export function FluxoLayout({
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
   });
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close mobile drawer whenever the route changes
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll while drawer is open
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (mobileOpen) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [mobileOpen]);
+
   const [roomsOpen, setRoomsOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem("fluxo:rooms-open") !== "0";
@@ -169,22 +189,37 @@ export function FluxoLayout({
   return (
   <UndoProvider>
     <div className="flex min-h-screen w-full bg-background text-foreground">
+      {/* Mobile drawer backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
       <aside
-        className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex ${
-          collapsed ? "w-16" : "w-60"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 flex-col overflow-y-auto bg-sidebar text-sidebar-foreground transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:transition-[width] ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        } ${collapsed ? "lg:w-16" : "lg:w-60"}`}
       >
         <div className={`flex h-14 items-center gap-2 border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "px-4"}`}>
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-bold">
             F
           </div>
-          {!collapsed && (
+          {(!collapsed || mobileOpen) && (
             <>
               <div className="flex-1">
                 <div className="text-sm font-semibold">Fluxo</div>
                 <div className="text-[10px] text-sidebar-foreground/60">Workspace Acme</div>
               </div>
-              <ChevronDown className="h-4 w-4 opacity-60" />
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="rounded p-1 text-sidebar-foreground/70 hover:bg-sidebar-accent lg:hidden"
+                aria-label="Fechar menu"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <ChevronDown className="hidden h-4 w-4 opacity-60 lg:block" />
             </>
           )}
         </div>
@@ -477,18 +512,26 @@ export function FluxoLayout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-card px-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Building2 className="h-4 w-4" />
-            <span>Acme</span>
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card px-3 sm:gap-3 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground lg:hidden"
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+            <Building2 className="hidden h-4 w-4 sm:block" />
+            <span className="hidden sm:inline">Acme</span>
             {breadcrumb && (
               <>
-                <span>/</span>
-                <span className="text-foreground/70">{breadcrumb}</span>
+                <span className="hidden sm:inline">/</span>
+                <span className="hidden text-foreground/70 sm:inline">{breadcrumb}</span>
               </>
             )}
-            <span>/</span>
-            <span className="font-medium text-foreground">{title}</span>
+            <span className="hidden sm:inline">/</span>
+            <span className="truncate font-medium text-foreground">{title}</span>
           </div>
           <form
             onSubmit={(e) => {
@@ -507,30 +550,32 @@ export function FluxoLayout({
             />
             <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Enter</kbd>
           </form>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1 sm:gap-2">
             {actions}
             <button
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("fluxo:team-panel-open"))
               }
               title="Delegar rápido (Ctrl+E)"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary sm:px-2.5"
             >
-              <UserPlus className="h-4 w-4" /> Delegar
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Delegar</span>
               <kbd className="ml-1 hidden rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground lg:inline">
                 Ctrl+E
               </kbd>
             </button>
             <button
               onClick={() => setGridOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:brightness-110"
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1.5 text-sm font-medium text-primary-foreground shadow-sm hover:brightness-110 sm:px-3"
             >
-              <Plus className="h-4 w-4" /> Nova
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Nova</span>
             </button>
             <button
               onClick={toggle}
               title={theme === "dark" ? "Modo claro" : "Modo escuro"}
-              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              className="hidden h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground sm:flex"
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
@@ -550,7 +595,7 @@ export function FluxoLayout({
               {notifOpen && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
-                  <div className="absolute right-0 top-11 z-40 w-96 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
+                  <div className="fixed right-2 top-14 z-40 w-[calc(100vw-1rem)] max-w-96 overflow-hidden rounded-lg border border-border bg-popover shadow-xl sm:absolute sm:right-0 sm:top-11 sm:w-96">
                     <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
                       <div className="text-sm font-semibold">Notificações</div>
                       <div className="flex items-center gap-3 text-[11px]">
@@ -625,7 +670,7 @@ export function FluxoLayout({
               )}
             </div>
             <div
-              className="flex items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs"
+              className="hidden items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs sm:flex"
               title={`${myScore.done} de ${myScore.assigned} tarefas do mês`}
             >
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -649,7 +694,7 @@ export function FluxoLayout({
             </div>
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-3 sm:p-4 md:p-6">{children}</main>
       </div>
 
       <TaskDialog />
@@ -663,9 +708,9 @@ export function FluxoLayout({
       <TeamDelegatePanel />
       <FocusOverlay />
       {gridOpen && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-10 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-10">
           <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
-            <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-4 py-2.5">
+            <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-3 py-2 sm:px-4 sm:py-2.5">
               <div className="flex items-center gap-2">
                 <Plus className="h-4 w-4 text-primary" />
                 <div className="text-sm font-semibold">Criar tarefas em grade</div>
@@ -683,7 +728,7 @@ export function FluxoLayout({
                 </button>
               </div>
             </div>
-            <div className="p-4">
+            <div className="p-3 sm:p-4">
               <InlineTaskCreator />
             </div>
           </div>
