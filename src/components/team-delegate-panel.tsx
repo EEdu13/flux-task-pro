@@ -110,39 +110,6 @@ export function TeamDelegatePanel() {
       </div>
 
       <div className="flex flex-1 gap-3 overflow-hidden p-3">
-        {/* Minhas tarefas */}
-        <div className="w-72 shrink-0 overflow-y-auto rounded-lg border border-border bg-card p-2">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Minhas tarefas abertas
-            </div>
-            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
-              {myOpenTasks.length}
-            </span>
-          </div>
-          {myOpenTasks.length === 0 ? (
-            <div className="rounded-md border border-dashed border-border p-4 text-center text-[11px] text-muted-foreground">
-              Nada aberto pra delegar.
-            </div>
-          ) : (
-            <ul className="space-y-1.5">
-              {myOpenTasks.map((t) => (
-                <TaskChip
-                  key={t.id}
-                  task={t}
-                  onDragStart={() => setDragId(t.id)}
-                  onDragEnd={() => {
-                    setDragId(null);
-                    setHoverCol(null);
-                    setHoverIndex(null);
-                  }}
-                  onClick={() => openTask(t.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-
         {/* Colunas de pessoas */}
         <div className="flex flex-1 gap-3 overflow-x-auto">
           {teammates.length === 0 ? (
