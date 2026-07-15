@@ -359,6 +359,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setState((s) => {
         const prev = s.tasks.find((t) => t.id === id);
         if (!prev) return s;
+        if (
+          patch.status &&
+          patch.status !== prev.status &&
+          blockIfMissingProof(prev, patch.status)
+        ) {
+          return s;
+        }
         const next = { ...prev, ...patch } as Task;
         const newNotifs: Notification[] = [];
         // added mentions
@@ -449,6 +456,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setState((s) => {
         const prev = s.tasks.find((t) => t.id === id);
         if (!prev) return s;
+        if (status !== prev.status && blockIfMissingProof(prev, status)) return s;
         const others = s.tasks.filter((t) => t.id !== id);
         const col = others.filter((t) => t.status === status).sort((a, b) => a.order - b.order);
         const idx = targetIndex ?? col.length;
