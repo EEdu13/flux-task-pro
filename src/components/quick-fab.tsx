@@ -154,7 +154,7 @@ export function QuickFab() {
   if (!isAuthenticated) return null;
 
   return (
-    <div ref={rootRef} className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-2">
+    <div ref={rootRef} className="fixed bottom-24 right-5 z-[60] flex flex-col items-end gap-2 lg:bottom-5">
       {open && mode === "menu" && (
         <div className="flex flex-col items-stretch gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-2xl">
           <FabItem
