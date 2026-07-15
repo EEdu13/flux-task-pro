@@ -33,6 +33,7 @@ export function QuickTaskModal() {
           <InlineTaskCreator
             defaultStatus={quickCreate.status ?? "pendente"}
             defaultDueDate={quickCreate.dueDate}
+            defaultAssigneeId={quickCreate.assigneeId}
           />
         </div>
       </div>
