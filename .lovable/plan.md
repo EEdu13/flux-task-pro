@@ -1,58 +1,69 @@
-## O que vou entregar (leva única)
+## O que vou entregar
 
-### 1. Senha temporária (PIN) em sala trancada
-- Nova coluna `pin` em `room_state` (6 dígitos, gerado no servidor quando alguém tranca).
-- Quem tranca vê o PIN no botão "Privada" e pode copiar.
-- Ao convidar, o PIN vai junto no convite (aparece no card do `IncomingCall`).
-- Quem tenta entrar em sala trancada sem estar na lista vê um campo de PIN — acertando, entra direto (sem knock). Errando 3x, volta pro fluxo de knock.
-- Ao destrancar, o PIN é apagado.
+### 1. Busca global (Ctrl/Cmd+K)
+- Nova `<CommandPalette />` global (Radix Dialog + `cmdk`).
+- Índice em memória construído do `fluxo-store`: **tarefas** (título, tag, responsável), **pessoas**, **salas**, **atas**, **notas**, **mensagens do inbox**.
+- Ações navegáveis: "Criar tarefa", "Abrir minhas tarefas", "Entrar na sala X", "Ligar pra pessoa Y", "Abrir ata Z".
+- Agrupado por tipo, navegação por ↑↓ Enter, `Esc` fecha.
+- Atalho global registrado no `FluxoLayout`.
 
-### 2. Pré-sala (mic/câmera antes de entrar)
-- Nova tela intermediária em `/salas/$roomName` antes de conectar ao LiveKit:
-  - Preview local com `getUserMedia`
-  - Toggle mic/câmera
-  - Seletor de dispositivo (mic + câmera)
-  - Botão "Entrar" que só então gera o token e conecta
-- Preferências (mic/cam ligado, deviceId) salvas em `localStorage`.
+### 2. Snooze — botão "Deixar pra amanhã"
+- Botão no card da tarefa (hover) e no menu de contexto: **"Deixar pra amanhã"** — move `dueDate` pra amanhã 9h e some da lista de hoje.
+- Variantes no menu de contexto: "Adiar 1h", "Amanhã de manhã", "Próxima segunda".
+- Registra na `activity` como "adiada por X".
+- Toast com Undo (integra com item 4).
 
-### 3. Atalhos de teclado
-Dentro da chamada: **M** mutar/desmutar mic, **V** liga/desliga câmera, **E** encerra, **C** abre chat, **H** levanta a mão. Ignorados quando o foco está em `input`/`textarea`. Tooltip nos botões mostra o atalho.
+### 3. Modo Foco (Pomodoro)
+- Botão ▶ nos itens do **Pack** ("Meu pack" em `minhas-tarefas`).
+- Overlay minimalista fullscreen: título da tarefa, timer 25:00, botões pausar/parar, checklist embutido.
+- Ao clicar iniciar: pede permissão de notificação, silencia toasts internos (flag no store), muta som de nudge/chamada entrante durante o foco.
+- No fim: som suave + notificação "5 min de pausa?", incrementa `pomos` do dia (novo `focusLog` em `fluxo-store`: `{date, taskId, minutes}`).
+- Novo bloco "Foco hoje" no header de Minhas Tarefas: **X pomos · Yh Zm**.
 
-### 4. Modo apresentador
-Quando alguém compartilha tela: layout muda automaticamente — tela grande no centro, tiles dos participantes viram uma faixa lateral pequena. Toggle "Modo grade" pra voltar ao padrão.
+### 4. Undo global (Ctrl+Z)
+- Novo `useUndoStack()` no store: registra ações reversíveis com `{label, undo: () => void, at}`.
+- Ações plugadas: excluir tarefa, concluir tarefa (rápido), snooze, mover kanban, arquivar nota, encerrar chamada.
+- Toast Sonner "Tarefa excluída — Desfazer" (8s) + atalho global **Ctrl/Cmd+Z** quando foco não é em input.
 
-### 5. Status "Ocupado / Em reunião" automático
-- Novo `useRoomPresence()` que faz polling agregado das salas em uso (uma chamada só) e expõe `isUserBusy(userId)` + `busyRoomLabel(userId)`.
-- Novo `<PresenceBadge user />` — pontinho verde/vermelho + tooltip "Em reunião: X". Aplicado em: `equipe`, `inbox` (autor da mensagem), `minhas-tarefas` (responsáveis), lista de contatos do convite.
+### 5. Painel de equipe (Ctrl+E) — delegação por arrasto
+- Atalho global **Ctrl/Cmd+E** abre `<TeamDelegatePanel />` fullscreen.
+- Layout kanban horizontal: **1 coluna por pessoa da minha equipe** (ou do meu setor).
+- Cada coluna mostra: avatar, nome, status (usando `PresenceBadge` que já existe), carga da semana (nº tarefas ativas), próximos vencimentos.
+- Barra de tarefas do lado (minhas em aberto + busca rápida) — **arrasta pra coluna da pessoa = delega**.
+- "Criar tarefa aqui" direto na coluna (mini creator).
+- Fecha com Esc.
 
-### 6. Quem está falando agora no card da sala
-- Um participante da sala publica no data channel `fluxo-active-speaker` a cada 1s a lista de identidades com áudio ativo (`activeSpeakers` do LiveKit já dá isso).
-- Também escrevemos no `room_state.active_speakers` (jsonb) pra `listSectorRooms` retornar. O card da sala destaca o falante com um anel pulsando ao lado do nome.
+### 6. Transcrição melhor
+- Trocar `webkitSpeechRecognition` (item que estava ruim/lento) por **STT server-side com Lovable AI `openai/gpt-4o-transcribe`**.
+- Nova serverFn `transcribeChunk` recebe blob de áudio (~15s), retorna texto + segmentos.
+- No `active-call-widget`: cada participante grava o próprio mic com `MediaRecorder` em pedaços de 15s (`timeslice: 15000`), envia via serverFn, resultado vai pro data channel `fluxo-transcript` com `{from, text, at}`.
+- VAD leve (checa se houve som no chunk antes de enviar) pra não gastar toa.
+- Chunks curtos = feedback rápido (aparece em ~2s vs. hoje que às vezes leva 20s+).
+- Fallback: se serverFn falhar, mantém `webkitSpeechRecognition` local como backup.
+- Painel de transcrição já existente continua igual, só a fonte muda.
 
-### 7. Gravação da reunião
-- Botão "Gravar" no `ControlBar`. Usa `MediaRecorder` **client-side** capturando um `MediaStream` composto (áudio de todos os participantes remotos + áudio local + a tela compartilhada quando existir, senão a grid via canvas).
-- Enquanto grava, badge vermelho pulsando + aviso "Gravando" pra todos via data channel.
-- Ao parar: baixa `.webm` automaticamente + oferece "Enviar pra inbox" (anexo já existente).
+## Arquivos novos
+- `src/components/command-palette.tsx`
+- `src/components/team-delegate-panel.tsx`
+- `src/components/focus-overlay.tsx`
+- `src/lib/undo-stack.tsx` (context + hook)
+- `src/lib/transcription.functions.ts` (STT server-side)
+- `src/hooks/use-global-shortcuts.ts` (Ctrl+K, Ctrl+E, Ctrl+Z)
 
-### 8. Transcrição ao vivo + ata por IA
-- Transcrição: `webkitSpeechRecognition` (Chrome/Edge) capturando fala do participante local em `pt-BR`, com marcação de quem falou pelo identity. Cada participante transcreve o próprio áudio e faz broadcast das linhas via data channel → todos veem a transcrição.
-- Painel de transcrição no chat (aba "Transcrição").
-- Ao encerrar a chamada (ou clicar "Gerar ata"): server function `summarizeMeeting` chama Lovable AI (`openai/gpt-5.5`) com o transcript + chat → gera **ata em markdown** (tópicos, decisões, pendências). A ata vai pra `inbox` de todos os participantes (mensagem do sistema).
-
-## Onde tem tradeoff (importante)
-
-- **Gravação server-side (LiveKit Egress)** seria melhor (grava mesmo se seu navegador fechar, mixa tudo no servidor). Precisa de: worker LiveKit Egress + bucket S3 + credenciais. **Fica de fora dessa leva** — a gravação client-side já resolve 90% dos casos ("quero registrar essa reunião") sem infra nova.
-- **Transcrição via Web Speech API** é grátis mas: só funciona em Chrome/Edge, exige mic ativo, e só transcreve o áudio que o seu navegador capta. Alternativa "de verdade" seria um agente LiveKit + Whisper — mesma questão de infra. Pra "diretoria quer atas automáticas", combinar Web Speech + resumo por IA já entrega o valor.
-
-## Arquivos que serão criados/editados
-
-**Novos:** `src/lib/room-presence.ts`, `src/components/presence-badge.tsx`, `src/components/pre-call.tsx`, `src/components/meeting-recorder.tsx`, `src/lib/meeting-summary.functions.ts`, `src/hooks/use-keyboard-shortcuts.ts`, migração SQL (`pin` + `active_speakers` em `room_state`).
-
-**Editados:** `livekit-token.functions.ts` (validar PIN, atualizar active_speakers, retornar PIN pra dono), `call-inviter-context.tsx` (mostrar PIN, incluir no convite), `active-call-widget.tsx` (atalhos, modo apresentador, botão gravar, painel transcrição, active speaker highlight), `salas.$roomName.tsx` (pré-sala + PIN entry), `salas.index.tsx` (badge falando agora), `incoming-call.tsx` (mostrar PIN), `fluxo-store.tsx` (mensagens de sistema no inbox), `equipe.tsx`, `inbox.tsx`, `minhas-tarefas.tsx` (PresenceBadge nos avatares).
+## Arquivos editados
+- `src/lib/fluxo-store.tsx` — `focusLog`, `snoozeTask()`, integração com undo stack, flag `focusMode`
+- `src/lib/fluxo-types.ts` — tipo `FocusEntry`
+- `src/components/fluxo-layout.tsx` — monta Palette, Undo provider, atalhos globais
+- `src/components/task-context-menu.tsx` — itens "Deixar pra amanhã" / "Adiar" / undo
+- `src/components/inline-task-creator.tsx` e cards de tarefa — botão hover "Deixar pra amanhã"
+- `src/routes/minhas-tarefas.tsx` — botão ▶ Foco no pack, contador "Foco hoje"
+- `src/components/active-call-widget.tsx` — nova fonte de transcrição via serverFn
+- pacote `cmdk` instalado
 
 ## Fora do escopo desta leva
-- Egress server-side / gravação em nuvem
-- Transcrição por agente Whisper server-side
-- Suporte a Safari/Firefox pra transcrição (Web Speech API não cobre)
+- Handoff de fim de expediente (fica pra próxima como falamos)
+- Reunião-que-não-precisou-acontecer
+- Detector de tarefa órfã por IA
+- Workload heatmap avançado (o painel do Ctrl+E já mostra carga básica)
 
-Se você quiser esses depois, faço em uma segunda leva com a infra necessária. Aprovando este plano, começo a implementar.
+Aprovando, começo pela ordem: **1 → 4 → 2 → 3 → 5 → 6** (Cmd+K e Undo primeiro porque tudo depende deles).

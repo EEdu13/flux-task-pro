@@ -15,12 +15,16 @@ import {
   Repeat,
   Star,
   Sparkles,
+  Play,
+  Timer,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
+import { focusSummaryToday } from "@/lib/focus-log";
+import { startFocus } from "@/components/focus-overlay";
 import {
   freqLabels,
   sectors,
@@ -815,6 +819,13 @@ function PackView({
   onCompleteExternal: (id: string) => void;
   currentUserId: string;
 }) {
+  const [focus, setFocus] = useState(() => focusSummaryToday(currentUserId));
+  useEffect(() => {
+    setFocus(focusSummaryToday(currentUserId));
+    const on = () => setFocus(focusSummaryToday(currentUserId));
+    window.addEventListener("fluxo:focus-updated", on);
+    return () => window.removeEventListener("fluxo:focus-updated", on);
+  }, [currentUserId]);
   const done = tasks.filter((t) => packDone.has(t.id));
   const pending = tasks.filter((t) => !packDone.has(t.id));
   const total = tasks.length;
@@ -856,6 +867,19 @@ function PackView({
             className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
             style={{ width: `${pct}%` }}
           />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-primary">
+            <Timer className="h-3 w-3" />
+            <span className="font-semibold">Foco hoje:</span>
+            <span>
+              {focus.pomos} pomo{focus.pomos === 1 ? "" : "s"} · {Math.floor(focus.minutes / 60)}h{" "}
+              {focus.minutes % 60}m
+            </span>
+          </div>
+          <span className="text-muted-foreground">
+            Clique no ▶ ao lado de qualquer tarefa do pack pra iniciar 25min de foco.
+          </span>
         </div>
       </div>
 
@@ -1079,6 +1103,15 @@ function PackRow({
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
+      {!isDone && (
+        <button
+          onClick={() => startFocus(task.id)}
+          title="Iniciar modo foco (25min)"
+          className="rounded p-1.5 text-primary opacity-70 transition hover:bg-primary/10 hover:opacity-100"
+        >
+          <Play className="h-4 w-4 fill-primary" />
+        </button>
+      )}
       <button
         onClick={() => onTogglePack(task.id, false)}
         title="Remover do Meu pack"
