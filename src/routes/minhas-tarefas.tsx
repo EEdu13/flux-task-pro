@@ -23,8 +23,6 @@ import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import {
   freqLabels,
-  priorityLabels,
-  priorityColor,
   sectors,
   statusColor,
   statusLabels,
