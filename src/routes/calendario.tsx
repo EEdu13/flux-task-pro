@@ -30,7 +30,7 @@ const startOfWeek = (d: Date) => {
 };
 
 function CalendarioPage() {
-  const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate } = useFluxo();
+  const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate, reorderTasks } = useFluxo();
   const [view, setView] = useState<ViewMode>("mes");
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [scope, setScope] = useState<"eu" | "todos">("eu");
@@ -180,6 +180,7 @@ function CalendarioPage() {
             filtered={filtered}
             users={users}
             onTaskClick={openTask}
+              onReorder={reorderTasks}
           />
         )}
       </div>
