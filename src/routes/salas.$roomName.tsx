@@ -270,7 +270,7 @@ function RoomPage() {
 
   const connecting = access.kind === "checking" || !active || active.roomName !== roomName;
 
-  const layoutActions = insideRoom ? (
+  const layoutActions = insideRoom && !isDiretoria ? (
     <button
       onClick={togglePrivacy}
       title={isPrivate ? "Sala privada — clique para abrir" : "Sala aberta — clique para privar"}
