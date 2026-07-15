@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, UserPlus, Plus } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
-import { statusLabels, type Task } from "@/lib/fluxo-types";
+import { statusLabels } from "@/lib/fluxo-types";
 import { toast } from "sonner";
 
 export function TeamDelegatePanel() {
@@ -282,7 +282,7 @@ function TaskChip({
   onDragEnd,
   onClick,
 }: {
-  task: Task;
+  task: { id: string; title: string; status: keyof typeof statusLabels; dueDate: string };
   onDragStart: () => void;
   onDragEnd: () => void;
   onClick: () => void;
