@@ -16,6 +16,7 @@ import { Route as MetasRouteImport } from './routes/metas'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as EquipeRouteImport } from './routes/equipe'
+import { Route as ContatosRouteImport } from './routes/contatos'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as AtasRouteImport } from './routes/atas'
@@ -58,6 +59,11 @@ const InboxRoute = InboxRouteImport.update({
 const EquipeRoute = EquipeRouteImport.update({
   id: '/equipe',
   path: '/equipe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContatosRoute = ContatosRouteImport.update({
+  id: '/contatos',
+  path: '/contatos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/atas': typeof AtasRoute
   '/calendario': typeof CalendarioRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/atas': typeof AtasRoute
   '/calendario': typeof CalendarioRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/atas': typeof AtasRoute
   '/calendario': typeof CalendarioRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/atas'
     | '/calendario'
     | '/configuracoes'
+    | '/contatos'
     | '/equipe'
     | '/inbox'
     | '/login'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/atas'
     | '/calendario'
     | '/configuracoes'
+    | '/contatos'
     | '/equipe'
     | '/inbox'
     | '/login'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/atas'
     | '/calendario'
     | '/configuracoes'
+    | '/contatos'
     | '/equipe'
     | '/inbox'
     | '/login'
@@ -212,6 +224,7 @@ export interface RootRouteChildren {
   AtasRoute: typeof AtasRoute
   CalendarioRoute: typeof CalendarioRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
+  ContatosRoute: typeof ContatosRoute
   EquipeRoute: typeof EquipeRoute
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
@@ -274,6 +287,13 @@ declare module '@tanstack/react-router' {
       path: '/equipe'
       fullPath: '/equipe'
       preLoaderRoute: typeof EquipeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contatos': {
+      id: '/contatos'
+      path: '/contatos'
+      fullPath: '/contatos'
+      preLoaderRoute: typeof ContatosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/configuracoes': {
@@ -340,6 +360,7 @@ const rootRouteChildren: RootRouteChildren = {
   AtasRoute: AtasRoute,
   CalendarioRoute: CalendarioRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
+  ContatosRoute: ContatosRoute,
   EquipeRoute: EquipeRoute,
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
