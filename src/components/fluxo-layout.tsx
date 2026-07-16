@@ -27,6 +27,7 @@ import {
   StickyNote,
   UserPlus,
   Flame,
+  Contact,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -56,6 +57,7 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/pack", label: "Pack diário", icon: Flame },
   { to: "/inbox", label: "Caixa de entrada", icon: Inbox },
   { to: "/equipe", label: "Equipe", icon: Users },
+  { to: "/contatos", label: "Contatos", icon: Contact },
   { to: "/atas", label: "Atas & Planos", icon: FileText },
   { to: "/metas", label: "Metas & Score", icon: Target },
   { to: "/calendario", label: "Calendário", icon: Calendar },
