@@ -426,6 +426,7 @@ function ContatosPage() {
                           level={idx}
                           isSelected={u.id === selected.id}
                           isTop={idx === 0}
+                          onCall={handleCall}
                         />
                         {idx < chain.length - 1 && (
                           <motion.div
