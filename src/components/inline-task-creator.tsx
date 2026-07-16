@@ -320,6 +320,7 @@ export function InlineTaskCreator({
                   <th className="hidden w-80 py-2.5 pr-3 md:table-cell">Prazo</th>
                   {!compact && <th className="hidden w-44 py-2.5 pr-3 md:table-cell">Responsável</th>}
                   {!compact && <th className="hidden w-40 py-2.5 pr-3 lg:table-cell">Setor</th>}
+                  <th className="hidden w-24 py-2.5 pr-3 md:table-cell" title="Tempo estimado (hh:mm)">Tempo</th>
                   <th className="w-[80px] py-2.5 pr-3 text-right sm:w-[280px] sm:pr-4">Ações</th>
                 </tr>
               </thead>
