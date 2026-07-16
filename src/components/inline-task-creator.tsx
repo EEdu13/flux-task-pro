@@ -692,11 +692,11 @@ export function InlineTaskCreator({
                       </div>
                     </td>
                     <td className="py-3 pr-3 text-right sm:pr-4">
-                      <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                      <div className="inline-flex items-center justify-end gap-1">
                         <button
                           type="button"
                           onClick={() => update(row.id, { requireProof: !row.requireProof })}
-                          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium transition ${
+                          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-xs font-medium transition ${
                             row.requireProof
                               ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
                               : "border-border text-muted-foreground hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
@@ -709,7 +709,7 @@ export function InlineTaskCreator({
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo agora (ou arraste um arquivo pra cima desta linha)"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
@@ -718,11 +718,11 @@ export function InlineTaskCreator({
                         <button
                           type="button"
                           onClick={() => remove(row.id)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                          className="inline-flex items-center justify-center rounded-md border border-border px-1.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                           title="Remover esta linha"
+                          aria-label="Remover esta linha"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">Remover</span>
                         </button>
                       </div>
                     </td>
