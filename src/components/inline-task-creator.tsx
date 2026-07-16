@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
   sectors,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/fluxo-types";
 import type { Attachment } from "@/lib/fluxo-types";
 import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
+import { parseHM } from "@/lib/time-log";
 import { toast } from "sonner";
 
 interface DraftRow {
@@ -19,6 +20,8 @@ interface DraftRow {
   attachments: Attachment[];
   mentions: string[];
   requireProof: boolean;
+  /** Estimated time as user-typed hh:mm string (empty = none) */
+  estimateHM: string;
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -53,6 +56,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     attachments: [],
     mentions: [],
     requireProof: false,
+    estimateHM: "",
   };
 }
 
@@ -140,6 +144,7 @@ export function InlineTaskCreator({
     if (!row.title.trim()) return false;
     const due = new Date(row.dueDate || todayStr());
     due.setHours(23, 59, 0, 0);
+    const est = parseHM(row.estimateHM);
     createTask({
       title: row.title.trim(),
       sector: row.sector || currentUser.sector,
@@ -155,6 +160,7 @@ export function InlineTaskCreator({
       tags: [],
       attachments: row.attachments.length ? row.attachments : undefined,
       requireProof: row.requireProof || undefined,
+      estimatedMinutes: est && est > 0 ? est : undefined,
     });
     return true;
   };
