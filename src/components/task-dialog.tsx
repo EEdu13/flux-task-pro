@@ -112,6 +112,7 @@ export function TaskDialog() {
 
   const assignables = visibleUsersForAssign();
   const canEditContent = !editing || editing.createdBy === currentUser.id;
+  const canDelete = !!editing && (editing.createdBy === currentUser.id || currentUser.role === "gerente");
 
   const handleTaskFilePick = async (files: FileList | null) => {
     if (!files || !editing) return;
@@ -738,12 +739,18 @@ export function TaskDialog() {
         <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-5 py-3">
           <div>
             {editing && (
-              <button
-                onClick={handleDelete}
-                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
-              >
-                <Trash2 className="h-3 w-3" /> Excluir
-              </button>
+              canDelete ? (
+                <button
+                  onClick={handleDelete}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3 w-3" /> Excluir
+                </button>
+              ) : (
+                <span className="text-[11px] text-muted-foreground">
+                  Apenas quem criou pode excluir. Conclua a tarefa para encerrá-la.
+                </span>
+              )
             )}
           </div>
           <div className="flex gap-2">
