@@ -5,6 +5,8 @@ import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
 import type { Attachment } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
+import { formatHM, parseHM } from "@/lib/time-log";
+import { TaskTimerControls } from "@/components/task-timer-controls";
 import {
   sectors,
   freqLabels,
@@ -54,6 +56,7 @@ export function TaskDialog() {
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
   const [requireProof, setRequireProof] = useState(false);
+  const [estimateHM, setEstimateHM] = useState("");
   const [tags, setTags] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -80,6 +83,11 @@ export function TaskDialog() {
       setRecurring(editing.recurring);
       setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
       setRequireProof(!!editing.requireProof);
+      setEstimateHM(
+        editing.estimatedMinutes
+          ? `${Math.floor(editing.estimatedMinutes / 60)}:${String(editing.estimatedMinutes % 60).padStart(2, "0")}`
+          : "",
+      );
       setTags(editing.tags.join(", "));
       setMentions(editing.mentions);
     } else {
@@ -94,6 +102,7 @@ export function TaskDialog() {
       setRecurring(false);
       setRecurringUntil("");
       setRequireProof(false);
+      setEstimateHM("");
       setTags("");
       setMentions([]);
     }
@@ -154,6 +163,7 @@ export function TaskDialog() {
   const handleSubmit = () => {
     if (!title.trim()) return;
     const preserveTitle = editing && editing.createdBy !== currentUser.id;
+    const estMinutes = parseHM(estimateHM);
     const payload = {
       title: preserveTitle ? editing!.title : title.trim(),
       description: preserveTitle ? (editing!.description ?? "") : description.trim(),
@@ -170,6 +180,7 @@ export function TaskDialog() {
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       requireProof,
+      estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
     };
     if (editing) updateTask(editing.id, payload);
     else createTask(payload);
