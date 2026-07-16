@@ -38,7 +38,8 @@ type Tab = "meu" | "outro" | "concluir";
 
 function PackPage() {
   const { createTask, tasks, users, currentUser } = useFluxo();
-  const [tab, setTab] = useState<Tab>("meu");
+  const initialMyPack = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
+  const [tab, setTab] = useState<Tab>(initialMyPack.length > 0 ? "concluir" : "meu");
   const [meuText, setMeuText] = useState("");
   const [outroText, setOutroText] = useState("");
   const [targetId, setTargetId] = useState<string>("");
