@@ -65,6 +65,7 @@ export function TaskContextMenu() {
   };
 
   const isDone = task.status === "concluida";
+  const canDelete = task.createdBy === currentUser.id || currentUser.role === "gerente";
   // clamp position to viewport
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
@@ -158,7 +159,7 @@ export function TaskContextMenu() {
           toast.success("Tarefa duplicada");
         })}
         <div className="my-1 h-px bg-border" />
-        {item(
+        {canDelete && item(
           Trash2,
           "Excluir",
           () => {
