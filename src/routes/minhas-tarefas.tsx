@@ -823,6 +823,9 @@ function KanbanBoard({
                         </div>
                       </div>
                     </div>
+                    <div className="mt-2 flex items-center justify-end">
+                      <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
+                    </div>
                     {col.id !== "concluida" && (
                       <button
                         onClick={(e) => {
