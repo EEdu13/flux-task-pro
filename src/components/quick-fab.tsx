@@ -18,6 +18,7 @@ import { loadPackDone, savePackDone } from "@/lib/pack";
 import { sendNudge } from "@/components/attention-overlay";
 
 type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
+type PackTab = "concluir" | "meu" | "outro";
 
 function todayEnd() {
   const d = new Date();
@@ -34,6 +35,9 @@ export function QuickFab() {
   const [mentionUser, setMentionUser] = useState<string>("");
   const [mentionText, setMentionText] = useState("");
   const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
+  const [packTab, setPackTab] = useState<PackTab>("concluir");
+  const [packBulk, setPackBulk] = useState("");
+  const [packTarget, setPackTarget] = useState<string>("");
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,6 +73,45 @@ export function QuickFab() {
 
   const packItems = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
   const packPending = packItems.filter((t) => !packDone.has(t.id));
+
+  const parsePackLines = (text: string) =>
+    text
+      .split("\n")
+      .map((l) => l.replace(/^[-*•\d.\s]+/, "").trim())
+      .filter((l) => l.length > 0);
+
+  const submitPackBulk = (assigneeId: string) => {
+    const lines = parsePackLines(packBulk);
+    if (lines.length === 0) {
+      toast.error("Escreva pelo menos um item (uma linha por tarefa)");
+      return;
+    }
+    const target = users.find((u) => u.id === assigneeId);
+    lines.forEach((title) => {
+      createTask({
+        title,
+        sector: target?.sector ?? currentUser.sector,
+        createdBy: currentUser.id,
+        assigneeId,
+        mentions: assigneeId !== currentUser.id ? [assigneeId] : [],
+        frequency: "diaria",
+        status: "pendente",
+        score: 10,
+        dueDate: todayEnd(),
+        recurring: false,
+        priority: "media",
+        tags: ["pack"],
+        inPack: true,
+      });
+    });
+    if (assigneeId === currentUser.id) {
+      toast.success(`Adicionado ao seu pack (${lines.length} ${lines.length === 1 ? "item" : "itens"})`);
+    } else {
+      toast.success(`Pack enviado para ${target?.name?.split(" ")[0] ?? "a pessoa"} (${lines.length})`);
+    }
+    setPackBulk("");
+    setPackTab("concluir");
+  };
 
   const togglePackDone = (id: string) => {
     setPackDone((prev) => {
@@ -171,13 +214,16 @@ export function QuickFab() {
           />
           <FabItem
             icon={Flame}
-            label="Concluir pack"
+            label="Meu pack"
             hint={
               packItems.length === 0
-                ? "sem itens no seu pack"
+                ? "monte seu pack diário"
                 : `${packPending.length} de ${packItems.length} pendentes hoje`
             }
-            onClick={() => setMode("pack")}
+            onClick={() => {
+              setMode("pack");
+              setPackTab(packItems.length === 0 ? "meu" : "concluir");
+            }}
           />
           <FabItem
             icon={Sparkles}
@@ -203,10 +249,10 @@ export function QuickFab() {
       )}
 
       {open && mode === "pack" && (
-        <div className="w-[320px] rounded-xl border border-border bg-card p-3 shadow-2xl">
+        <div className="w-[340px] rounded-xl border border-border bg-card p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
-              <Flame className="h-3.5 w-3.5 text-amber-500" /> Concluir pack
+              <Flame className="h-3.5 w-3.5 text-amber-500" /> Pack
             </div>
             <button
               onClick={() => setMode("menu")}
@@ -215,12 +261,36 @@ export function QuickFab() {
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
+          <div className="mb-2 flex gap-1 rounded-md bg-secondary p-0.5">
+            {(
+              [
+                { id: "concluir" as const, label: "Concluir" },
+                { id: "meu" as const, label: "Criar meu" },
+                { id: "outro" as const, label: "Pra alguém" },
+              ]
+            ).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setPackTab(t.id)}
+                className={`flex-1 rounded px-2 py-1 text-[10px] font-semibold transition ${
+                  packTab === t.id
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {packTab === "concluir" && (
+          <>
           <p className="mb-2 text-[10px] text-muted-foreground">
             Marque o que você já fez hoje. Reseta automaticamente amanhã.
           </p>
           {packItems.length === 0 && (
             <div className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground">
-              Você ainda não adicionou tarefas ao seu pack.
+              Você ainda não adicionou tarefas ao seu pack. Abra a aba <b>Criar meu</b>.
             </div>
           )}
           <ul className="max-h-72 space-y-1 overflow-y-auto">
@@ -269,6 +339,78 @@ export function QuickFab() {
                 Marcar tudo
               </button>
             </div>
+          )}
+          </>
+          )}
+
+          {packTab === "meu" && (
+            <>
+              <p className="mb-2 text-[10px] text-muted-foreground">
+                Uma linha por tarefa. Tudo entra no seu pack de hoje.
+              </p>
+              <textarea
+                autoFocus
+                value={packBulk}
+                onChange={(e) => setPackBulk(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitPackBulk(currentUser.id);
+                }}
+                placeholder={"Ex:\nResponder e-mails prioritários\nRevisar proposta ACME\nLigar para fornecedor X"}
+                rows={6}
+                className="w-full resize-none rounded-md border border-border bg-background px-2 py-2 text-sm outline-none focus:border-primary"
+              />
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                {parsePackLines(packBulk).length} {parsePackLines(packBulk).length === 1 ? "item" : "itens"} · ⌘/Ctrl+Enter envia
+              </div>
+              <button
+                onClick={() => submitPackBulk(currentUser.id)}
+                className="mt-2 w-full rounded-md bg-primary py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+              >
+                Adicionar ao meu pack
+              </button>
+            </>
+          )}
+
+          {packTab === "outro" && (
+            <>
+              <p className="mb-2 text-[10px] text-muted-foreground">
+                Monte o pack diário de alguém do time. Uma linha por tarefa.
+              </p>
+              <select
+                value={packTarget}
+                onChange={(e) => setPackTarget(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+              >
+                <option value="">— escolher pessoa —</option>
+                {users
+                  .filter((u) => u.id !== currentUser.id)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} · {u.jobTitle}
+                    </option>
+                  ))}
+              </select>
+              <textarea
+                value={packBulk}
+                onChange={(e) => setPackBulk(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && packTarget) submitPackBulk(packTarget);
+                }}
+                placeholder={"Ex:\nFechar caixa do dia\nEnviar relatório semanal\nConfirmar reuniões de amanhã"}
+                rows={6}
+                className="mt-2 w-full resize-none rounded-md border border-border bg-background px-2 py-2 text-sm outline-none focus:border-primary"
+              />
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                {parsePackLines(packBulk).length} {parsePackLines(packBulk).length === 1 ? "item" : "itens"} · ⌘/Ctrl+Enter envia
+              </div>
+              <button
+                onClick={() => packTarget && submitPackBulk(packTarget)}
+                disabled={!packTarget}
+                className="mt-2 w-full rounded-md bg-primary py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+              >
+                Enviar pack
+              </button>
+            </>
           )}
         </div>
       )}
