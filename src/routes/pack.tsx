@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { loadPackDone, savePackDone } from "@/lib/pack";
+import { TaskTimerControls } from "@/components/task-timer-controls";
 
 export const Route = createFileRoute("/pack")({
   head: () => ({
@@ -383,6 +384,7 @@ function PackPage() {
                             {done && <Check className="h-3 w-3" />}
                           </span>
                           <span className={`flex-1 ${done ? "line-through" : ""}`}>{t.title}</span>
+                          <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
                         </button>
                       </li>
                     );
