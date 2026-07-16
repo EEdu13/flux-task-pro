@@ -234,7 +234,49 @@ function PackPage() {
                   })}
               </div>
 
-              <div className="flex flex-col">
+              <div className="flex flex-col gap-3">
+                {targetUser && (
+                  <div className="rounded-lg border border-border bg-background p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                        {targetUser.avatar || targetUser.name.slice(0, 1)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-semibold">
+                          Pack de {targetUser.name.split(" ")[0]} hoje
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {targetPack.length === 0
+                            ? "Nenhum item ainda — você vai ser o primeiro"
+                            : `${targetPack.length} ${targetPack.length === 1 ? "item já enviado" : "itens já enviados"}`}
+                        </div>
+                      </div>
+                      {lastSent && lastSent.to === targetId && Date.now() - lastSent.at < 8000 && (
+                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
+                          ✓ enviado agora
+                        </span>
+                      )}
+                    </div>
+                    {targetPack.length > 0 && (
+                      <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto">
+                        {targetPack.map((t) => {
+                          const isNew =
+                            lastSent && lastSent.to === targetId && lastSent.items.includes(t.title);
+                          return (
+                            <li
+                              key={t.id}
+                              className={`truncate text-[11px] ${
+                                isNew ? "font-semibold text-emerald-500" : "text-muted-foreground"
+                              }`}
+                            >
+                              {isNew ? "✓" : "•"} {t.title}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 <textarea
                   value={outroText}
                   onChange={(e) => setOutroText(e.target.value)}
@@ -248,10 +290,10 @@ function PackPage() {
                       : "Escolha uma pessoa ao lado para começar…"
                   }
                   disabled={!targetId}
-                  rows={12}
+                  rows={9}
                   className="w-full flex-1 resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-60"
                 />
-                <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>
                     {outroCount} {outroCount === 1 ? "item" : "itens"} · ⌘/Ctrl+Enter envia
                   </span>
@@ -260,7 +302,7 @@ function PackPage() {
                     disabled={!targetId}
                     className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
                   >
-                    Enviar pack
+                    {targetUser ? `Enviar para ${targetUser.name.split(" ")[0]}` : "Enviar pack"}
                   </button>
                 </div>
               </div>
