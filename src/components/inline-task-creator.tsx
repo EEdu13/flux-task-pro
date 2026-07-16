@@ -603,6 +603,19 @@ export function InlineTaskCreator({
                         </select>
                       </td>
                     )}
+                    <td className="hidden py-3 pr-3 md:table-cell">
+                      <div className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1 text-xs focus-within:border-primary">
+                        <Timer className="h-3 w-3 text-muted-foreground" />
+                        <input
+                          value={row.estimateHM}
+                          onChange={(e) => update(row.id, { estimateHM: e.target.value })}
+                          placeholder="00:30"
+                          inputMode="numeric"
+                          className="w-16 bg-transparent font-mono outline-none placeholder:text-muted-foreground/50"
+                          title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
+                        />
+                      </div>
+                    </td>
                     <td className="py-3 pr-3 text-right sm:pr-4">
                       <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                         <button
