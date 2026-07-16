@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type ColumnType = "text" | "number" | "select";
+export type ColumnType = "text" | "number" | "select" | "date" | "time" | "datetime";
 
 export interface MyViewColumn {
   id: string;
@@ -19,6 +19,7 @@ const KEYS = {
   columns: (uid: string) => `fluxo.myview.columns.v1.${uid}`,
   cells: (uid: string) => `fluxo.myview.cells.v1.${uid}`,
   meta: (uid: string) => `fluxo.myview.meta.v1.${uid}`,
+  order: (uid: string) => `fluxo.myview.order.v1.${uid}`,
 };
 
 function safeRead<T>(key: string, fallback: T): T {
@@ -66,16 +67,19 @@ export function useMyView(userId: string) {
   const [meta, setMeta] = useState<Record<string, MyViewMeta>>(() =>
     safeRead(KEYS.meta(userId), {}),
   );
+  const [order, setOrder] = useState<string[]>(() => safeRead(KEYS.order(userId), []));
 
   useEffect(() => {
     setColumns(safeRead(KEYS.columns(userId), DEFAULT_COLUMNS));
     setCells(safeRead(KEYS.cells(userId), {}));
     setMeta(safeRead(KEYS.meta(userId), {}));
+    setOrder(safeRead(KEYS.order(userId), []));
   }, [userId]);
 
   useEffect(() => safeWrite(KEYS.columns(userId), columns), [userId, columns]);
   useEffect(() => safeWrite(KEYS.cells(userId), cells), [userId, cells]);
   useEffect(() => safeWrite(KEYS.meta(userId), meta), [userId, meta]);
+  useEffect(() => safeWrite(KEYS.order(userId), order), [userId, order]);
 
   const addColumn = (col: Omit<MyViewColumn, "id">) =>
     setColumns((cs) => [
@@ -103,14 +107,46 @@ export function useMyView(userId: string) {
   const setMetaFor = (taskId: string, patch: Partial<MyViewMeta>) =>
     setMeta((cur) => ({ ...cur, [taskId]: { ...(cur[taskId] ?? {}), ...patch } }));
 
+  /** Sort provided task ids by the user's saved order, appending unknown ids at the end. */
+  const sortByOrder = <T extends { id: string }>(items: T[]): T[] => {
+    const rank = new Map<string, number>();
+    order.forEach((id, i) => rank.set(id, i));
+    return [...items].sort((a, b) => {
+      const ra = rank.has(a.id) ? rank.get(a.id)! : Number.MAX_SAFE_INTEGER;
+      const rb = rank.has(b.id) ? rank.get(b.id)! : Number.MAX_SAFE_INTEGER;
+      return ra - rb;
+    });
+  };
+
+  /** Move `draggedId` to the slot currently held by `targetId` (inserts before it). */
+  const reorderRow = (visibleIds: string[], draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    // Compose a full order: current saved order + any missing visible ids in current visible order
+    const base = [...order];
+    for (const id of visibleIds) if (!base.includes(id)) base.push(id);
+    const from = base.indexOf(draggedId);
+    if (from === -1) return;
+    base.splice(from, 1);
+    const to = base.indexOf(targetId);
+    if (to === -1) {
+      base.push(draggedId);
+    } else {
+      base.splice(to, 0, draggedId);
+    }
+    setOrder(base);
+  };
+
   return {
     columns,
     cells,
     meta,
+    order,
     addColumn,
     updateColumn,
     removeColumn,
     setCell,
     setMetaFor,
+    sortByOrder,
+    reorderRow,
   };
 }
