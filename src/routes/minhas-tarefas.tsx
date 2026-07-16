@@ -17,10 +17,12 @@ import {
   Sparkles,
   Play,
   Timer,
+  Wand2,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { MyView } from "@/components/my-view";
 import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
@@ -51,7 +53,7 @@ export const Route = createFileRoute("/minhas-tarefas")({
 });
 
 type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas" | "pack";
-type ViewMode = "quadro" | "lista";
+type ViewMode = "quadro" | "lista" | "minha-visao";
 type DatePreset =
   | "todas"
   | "ontem"
