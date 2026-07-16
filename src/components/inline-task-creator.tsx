@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer, ClipboardPaste } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
   sectors,
@@ -9,6 +9,7 @@ import {
 import type { Attachment } from "@/lib/fluxo-types";
 import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
 import { parseHM } from "@/lib/time-log";
+import { parseExcelPaste, type ParsedPasteRow } from "@/lib/excel-paste";
 import { toast } from "sonner";
 
 interface DraftRow {
@@ -83,6 +84,8 @@ export function InlineTaskCreator({
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [cardDrag, setCardDrag] = useState(false);
   const dragDepth = useRef(0);
@@ -208,6 +211,66 @@ export function InlineTaskCreator({
 
   const update = (id: string, patch: Partial<DraftRow>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const applyParsedRows = (parsed: ParsedPasteRow[], anchorRowId?: string) => {
+    if (parsed.length === 0) {
+      toast.error("Nada para importar — cole ao menos uma linha com título");
+      return 0;
+    }
+    setRows((rs) => {
+      const idx = anchorRowId ? rs.findIndex((r) => r.id === anchorRowId) : -1;
+      const drafts: DraftRow[] = parsed.map((p) =>
+        makeDraft({
+          assigneeId: p.assigneeId ?? defaultAssigneeId ?? currentUser.id,
+          sector: p.sector ?? currentUser.sector,
+          dueDate: p.dueDate ?? defaultDueDate ?? todayStr(),
+        }),
+      );
+      // fill titles / estimates
+      parsed.forEach((p, i) => {
+        drafts[i].title = p.title;
+        if (p.estimateHM) drafts[i].estimateHM = p.estimateHM;
+      });
+      // Replace anchor row if it's still empty, otherwise insert after it
+      if (idx >= 0) {
+        const anchor = rs[idx];
+        const copy = [...rs];
+        if (!anchor.title.trim() && drafts.length > 0) {
+          copy.splice(idx, 1, ...drafts);
+        } else {
+          copy.splice(idx + 1, 0, ...drafts);
+        }
+        return copy;
+      }
+      // no anchor: replace trailing empty row if exists
+      const last = rs[rs.length - 1];
+      if (last && !last.title.trim()) {
+        return [...rs.slice(0, -1), ...drafts, makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })];
+      }
+      return [...rs, ...drafts];
+    });
+    return parsed.length;
+  };
+
+  const handleTitlePaste = (rowId: string, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text");
+    if (!text) return;
+    if (!text.includes("\n") && !text.includes("\t")) return; // normal paste
+    e.preventDefault();
+    const parsed = parseExcelPaste(text, assignees);
+    const n = applyParsedRows(parsed, rowId);
+    if (n > 0) toast.success(`${n} linha${n > 1 ? "s" : ""} importada${n > 1 ? "s" : ""} da planilha`);
+  };
+
+  const submitPasteModal = () => {
+    const parsed = parseExcelPaste(pasteText, assignees);
+    const n = applyParsedRows(parsed);
+    if (n > 0) {
+      toast.success(`${n} linha${n > 1 ? "s" : ""} importada${n > 1 ? "s" : ""}`);
+      setPasteText("");
+      setPasteOpen(false);
+    }
+  };
 
   const addFilesToRow = async (rowId: string, files: FileList | File[]) => {
     const list = Array.from(files);
@@ -437,6 +500,7 @@ export function InlineTaskCreator({
                         }}
                         placeholder="Ex: Fazer conciliação bancária de julho"
                         className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
+                        onPaste={(e) => handleTitlePaste(row.id, e)}
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
                         createPortal(
@@ -675,13 +739,23 @@ export function InlineTaskCreator({
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-4 py-3">
-            <button
-              type="button"
-              onClick={() => addRow()}
-              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
-            >
-              <Plus className="h-4 w-4" /> Adicionar linha
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => addRow()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
+              >
+                <Plus className="h-4 w-4" /> Adicionar linha
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasteOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition hover:bg-primary/20"
+                title="Cole aqui um bloco copiado do Excel / Google Sheets"
+              >
+                <ClipboardPaste className="h-4 w-4" /> Colar do Excel
+              </button>
+            </div>
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
               <span className="hidden md:inline">
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima ·{" "}
@@ -735,6 +809,79 @@ export function InlineTaskCreator({
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
               >
                 Criar {validRows.length}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pasteOpen && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setPasteOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ClipboardPaste className="h-4 w-4 text-primary" />
+                  <h3 className="text-base font-semibold">Colar planilha de tarefas</h3>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Cole abaixo (Ctrl+V) linhas copiadas do Excel, Google Sheets ou qualquer texto.
+                  Uma linha = uma tarefa. Colunas separadas por tabulação:
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-medium">
+                  {["Título*", "Prazo (dd/mm/aaaa)", "Responsável (nome)", "Setor", "Tempo (hh:mm)"].map((c, i) => (
+                    <span
+                      key={c}
+                      className={`rounded border px-1.5 py-0.5 ${
+                        i === 0
+                          ? "border-primary/40 bg-primary/10 text-primary"
+                          : "border-border bg-secondary text-muted-foreground"
+                      }`}
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setPasteOpen(false)}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder={`Fazer conciliação bancária\t25/07/2026\tElisa\tFinanceiro\t00:45\nEnviar relatório mensal\t28/07/2026\tRicardo\tOperações\t01:30`}
+              className="mt-3 h-52 w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-xs outline-none focus:border-primary"
+            />
+            {pasteText.trim() && (
+              <div className="mt-2 rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">
+                Prévia: <strong>{parseExcelPaste(pasteText, assignees).length}</strong> linha(s) reconhecida(s).
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPasteOpen(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitPasteModal}
+                disabled={!pasteText.trim()}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+              >
+                Importar linhas
               </button>
             </div>
           </div>

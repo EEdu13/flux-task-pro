@@ -17,10 +17,12 @@ import {
   Sparkles,
   Play,
   Timer,
+  Wand2,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { MyView } from "@/components/my-view";
 import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
@@ -51,7 +53,7 @@ export const Route = createFileRoute("/minhas-tarefas")({
 });
 
 type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas" | "pack";
-type ViewMode = "quadro" | "lista";
+type ViewMode = "quadro" | "lista" | "minha-visao";
 type DatePreset =
   | "todas"
   | "ontem"
@@ -320,6 +322,15 @@ function MinhasTarefas() {
               >
                 <List className="h-3 w-3" /> Lista
               </button>
+              <button
+                onClick={() => setView("minha-visao")}
+                className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium ${
+                  view === "minha-visao" ? "bg-secondary text-foreground" : "text-muted-foreground"
+                }`}
+                title="Colunas, cores e notas pessoais — só você vê"
+              >
+                <Wand2 className="h-3 w-3" /> Minha visão
+              </button>
             </div>
           </div>
         </div>
@@ -399,6 +410,8 @@ function MinhasTarefas() {
             />
           ) : view === "quadro" ? (
             <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} onTogglePack={(id, v) => updateTask(id, { inPack: v })} />
+          ) : view === "minha-visao" ? (
+            <MyView tasks={visible} onEdit={openTask} />
           ) : (
             <TaskList
               tasks={visible}
