@@ -92,6 +92,10 @@ export interface Task {
    * Ex: conciliação bancária, pagamento, envio de relatório.
    */
   requireProof?: boolean;
+  /**
+   * Tempo estimado (em minutos) para executar essa tarefa. Opcional.
+   */
+  estimatedMinutes?: number;
 }
 
 export interface MinuteTopic {
