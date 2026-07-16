@@ -146,11 +146,13 @@ function HierarchyNode({
   level,
   isSelected,
   isTop,
+  onCall,
 }: {
   user: User;
   level: number;
   isSelected: boolean;
   isTop: boolean;
+  onCall: (user: User) => void;
 }) {
   const sec = sectorMeta(user.sector);
   const RoleIcon = roleIcon[user.role];
@@ -169,30 +171,51 @@ function HierarchyNode({
           Diretoria
         </span>
       )}
-      <div className="flex items-center gap-3">
-        <Avatar user={user} size="lg" />
-        <div>
-          <div className="flex items-center gap-1.5">
-            <div className="text-base font-bold">{user.name}</div>
-            <RoleIcon className="h-4 w-4" />
-          </div>
-          <div className="text-xs text-muted-foreground">{user.jobTitle}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-            <span
-              className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-medium"
-              style={{
-                background: `color-mix(in oklab, ${sec.color} 18%, transparent)`,
-                color: sec.color,
-              }}
-            >
-              <Building2 className="h-2.5 w-2.5" />
-              {sec.name}
-            </span>
-            <span className="rounded-full bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
-              {roleLabels[user.role]}
-            </span>
+      <div className="flex w-full items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Avatar user={user} size="lg" />
+          <div>
+            <div className="flex items-center gap-1.5">
+              <div className="text-base font-bold">{user.name}</div>
+              <RoleIcon className="h-4 w-4" />
+            </div>
+            <div className="text-xs text-muted-foreground">{user.jobTitle}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-medium"
+                style={{
+                  background: `color-mix(in oklab, ${sec.color} 18%, transparent)`,
+                  color: sec.color,
+                }}
+              >
+                <Building2 className="h-2.5 w-2.5" />
+                {sec.name}
+              </span>
+              <span className="rounded-full bg-secondary px-1.5 py-0.5 font-medium text-secondary-foreground">
+                {roleLabels[user.role]}
+              </span>
+            </div>
           </div>
         </div>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCall(user);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onCall(user);
+            }
+          }}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary shadow-sm transition hover:bg-primary hover:text-primary-foreground"
+        >
+          <PhoneCall className="h-3 w-3" />
+          Chamar
+        </span>
       </div>
       {(user.email || user.phone) && (
         <div className="mt-3 flex w-full flex-wrap gap-3 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
