@@ -511,6 +511,17 @@ export function InlineTaskCreator({
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
                           className="rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
                         />
+                        <div className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px]">
+                          <Timer className="h-3 w-3 text-muted-foreground" />
+                          <input
+                            value={row.estimateHM}
+                            onChange={(e) => update(row.id, { estimateHM: e.target.value })}
+                            placeholder="00:30"
+                            inputMode="numeric"
+                            className="w-14 bg-transparent font-mono outline-none placeholder:text-muted-foreground/50"
+                            title="Tempo estimado"
+                          />
+                        </div>
                         {!compact && (
                           <select
                             value={row.assigneeId}
