@@ -426,6 +426,147 @@ function ContatosPage() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Call action menu */}
+      <AnimatePresence>
+        {callMenu && (
+          <motion.div
+            key="call-menu"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            onClick={() => setCallMenu(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 12, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 22 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            >
+              <div className="flex items-center gap-3 border-b border-border bg-gradient-to-br from-primary/10 via-card to-card p-4">
+                <Avatar user={callMenu} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{callMenu.name}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">{callMenu.jobTitle}</div>
+                </div>
+                <button
+                  onClick={() => setCallMenu(null)}
+                  className="rounded-full p-1 text-muted-foreground hover:bg-secondary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex flex-col p-2">
+                <button
+                  onClick={() => openWhatsApp(callMenu)}
+                  className="group flex items-center gap-3 rounded-lg p-3 text-left transition hover:bg-emerald-500/10"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 transition group-hover:bg-emerald-500 group-hover:text-white">
+                    <MessageCircle className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">WhatsApp</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {callMenu.phone ?? "Sem telefone cadastrado"}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
+                </button>
+                <button
+                  onClick={() => startGestor(callMenu)}
+                  className="group flex items-center gap-3 rounded-lg p-3 text-left transition hover:bg-primary/10"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
+                    <Headphones className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">Chamar no gestor</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Escolha uma sala e envie o convite
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
+                </button>
+                <button
+                  onClick={() => openEmail(callMenu)}
+                  className="group flex items-center gap-3 rounded-lg p-3 text-left transition hover:bg-amber-500/10"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/15 text-amber-600 transition group-hover:bg-amber-500 group-hover:text-white">
+                    <MailIcon className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold">E-mail</div>
+                    <div className="truncate text-[11px] text-muted-foreground">
+                      {callMenu.email ?? "Sem e-mail cadastrado"}
+                    </div>
+                  </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Room picker */}
+      <AnimatePresence>
+        {roomPicker && (
+          <motion.div
+            key="room-picker"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            onClick={() => setRoomPicker(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, y: 12, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 22 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-border p-4">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Escolha uma sala
+                  </div>
+                  <div className="text-sm font-semibold">
+                    Convidar {roomPicker.name.split(" ")[0]}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRoomPicker(null)}
+                  className="rounded-full p-1 text-muted-foreground hover:bg-secondary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid max-h-[60vh] grid-cols-1 gap-1.5 overflow-y-auto p-3 sm:grid-cols-2">
+                {DEPARTMENT_ROOMS.map((r) => (
+                  <button
+                    key={r.name}
+                    onClick={() => inviteToRoom(roomPicker, r.name, r.label)}
+                    className="group flex items-start gap-2 rounded-lg border border-border bg-background p-3 text-left transition hover:border-primary hover:bg-primary/5"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
+                      <Headphones className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold">{r.label}</div>
+                      <div className="truncate text-[10px] text-muted-foreground">{r.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </FluxoLayout>
   );
 }
