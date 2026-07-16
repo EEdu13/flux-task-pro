@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer, ClipboardPaste } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
   sectors,
@@ -9,6 +9,7 @@ import {
 import type { Attachment } from "@/lib/fluxo-types";
 import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
 import { parseHM } from "@/lib/time-log";
+import { parseExcelPaste, type ParsedPasteRow } from "@/lib/excel-paste";
 import { toast } from "sonner";
 
 interface DraftRow {
@@ -83,6 +84,8 @@ export function InlineTaskCreator({
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [cardDrag, setCardDrag] = useState(false);
   const dragDepth = useRef(0);
