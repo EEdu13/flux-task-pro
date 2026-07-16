@@ -345,7 +345,35 @@ export function TaskDialog() {
                 <Field label="Tags (separadas por vírgula)">
                   <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
                 </Field>
+                <Field label="Tempo estimado (hh:mm)">
+                  <input
+                    value={estimateHM}
+                    onChange={(e) => setEstimateHM(e.target.value)}
+                    placeholder="Ex.: 00:30, 1:15, 45m"
+                    className="input font-mono"
+                  />
+                  {estimateHM && parseHM(estimateHM) !== null && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      = {formatHM((parseHM(estimateHM) ?? 0) * 60)}
+                    </p>
+                  )}
+                </Field>
               </div>
+
+              {editing && (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Pomodoro / tempo trabalhado</span>
+                    <br />
+                    Use play / pause / stop para medir quanto tempo essa tarefa está consumindo.
+                  </div>
+                  <TaskTimerControls
+                    taskId={editing.id}
+                    estimatedMinutes={editing.estimatedMinutes}
+                    size="md"
+                  />
+                </div>
+              )}
 
               <div className="rounded-md border border-border bg-secondary/40 p-3">
                 <label className="flex items-center gap-2 text-sm">
