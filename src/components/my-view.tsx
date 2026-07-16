@@ -237,7 +237,6 @@ export function MyView({
               const rowCells = view.cells[t.id] ?? {};
               const assignee = users.find((u) => u.id === t.assigneeId);
               const isDone = t.status === "concluida";
-              const canDelete = t.createdBy === currentUser.id || currentUser.role === "gerente";
               return (
                 <tr
                   key={t.id}
