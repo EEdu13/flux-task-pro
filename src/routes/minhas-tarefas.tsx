@@ -322,6 +322,15 @@ function MinhasTarefas() {
               >
                 <List className="h-3 w-3" /> Lista
               </button>
+              <button
+                onClick={() => setView("minha-visao")}
+                className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium ${
+                  view === "minha-visao" ? "bg-secondary text-foreground" : "text-muted-foreground"
+                }`}
+                title="Colunas, cores e notas pessoais — só você vê"
+              >
+                <Wand2 className="h-3 w-3" /> Minha visão
+              </button>
             </div>
           </div>
         </div>
