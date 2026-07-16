@@ -25,6 +25,7 @@ import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
 import { startFocus } from "@/components/focus-overlay";
+import { TaskTimerControls } from "@/components/task-timer-controls";
 import {
   freqLabels,
   sectors,
