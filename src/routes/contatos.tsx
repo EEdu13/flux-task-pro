@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -12,10 +12,17 @@ import {
   Shield,
   Users as UsersIcon,
   X,
+  PhoneCall,
+  MessageCircle,
+  Headphones,
+  Mail as MailIcon,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors, type Role, type User } from "@/lib/fluxo-types";
+import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { useCallInviter } from "@/lib/call-inviter-context";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/contatos")({
   head: () => ({
@@ -78,9 +85,11 @@ function Avatar({ user, size = "md" }: { user: User; size?: "sm" | "md" | "lg" }
 function ContactCard({
   user,
   onSelect,
+  onCall,
 }: {
   user: User;
   onSelect: (id: string) => void;
+  onCall: (user: User) => void;
 }) {
   const sec = sectorMeta(user.sector);
   const RoleIcon = roleIcon[user.role];
@@ -108,6 +117,25 @@ function ContactCard({
           {sec.name}
         </div>
       </div>
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          onCall(user);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            onCall(user);
+          }
+        }}
+        className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary shadow-sm transition hover:bg-primary hover:text-primary-foreground"
+      >
+        <PhoneCall className="h-3 w-3" />
+        Chamar
+      </span>
       <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
     </motion.button>
   );
@@ -188,10 +216,48 @@ function HierarchyNode({
 }
 
 function ContatosPage() {
-  const { users } = useFluxo();
+  const { users, currentUser } = useFluxo();
+  const navigate = useNavigate();
+  const { ask: askInvite } = useCallInviter();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sectorFilter, setSectorFilter] = useState<string>("todos");
+  const [callMenu, setCallMenu] = useState<User | null>(null);
+  const [roomPicker, setRoomPicker] = useState<User | null>(null);
+
+  const handleCall = (u: User) => setCallMenu(u);
+
+  const openWhatsApp = (u: User) => {
+    const phone = (u.phone ?? "").replace(/\D/g, "");
+    if (!phone) {
+      toast.error(`${u.name} não tem telefone cadastrado.`);
+      return;
+    }
+    const text = encodeURIComponent(`Olá, ${u.name.split(" ")[0]}! Aqui é ${currentUser.name}.`);
+    window.open(`https://wa.me/${phone}?text=${text}`, "_blank", "noopener,noreferrer");
+    setCallMenu(null);
+  };
+
+  const openEmail = (u: User) => {
+    if (!u.email) {
+      toast.error(`${u.name} não tem e-mail cadastrado.`);
+      return;
+    }
+    window.location.href = `mailto:${u.email}`;
+    setCallMenu(null);
+  };
+
+  const startGestor = (u: User) => {
+    setCallMenu(null);
+    setRoomPicker(u);
+  };
+
+  const inviteToRoom = (u: User, roomName: string, roomLabel: string) => {
+    askInvite(u.id, roomName, roomLabel);
+    toast.success(`Convite enviado para ${u.name.split(" ")[0]} • ${roomLabel}`);
+    setRoomPicker(null);
+    navigate({ to: "/salas/$roomName", params: { roomName } });
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -278,7 +344,7 @@ function ContatosPage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
                 >
-                  <ContactCard user={u} onSelect={setSelectedId} />
+                  <ContactCard user={u} onSelect={setSelectedId} onCall={handleCall} />
                 </motion.div>
               ))}
             </AnimatePresence>
