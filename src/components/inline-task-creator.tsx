@@ -739,13 +739,23 @@ export function InlineTaskCreator({
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-4 py-3">
-            <button
-              type="button"
-              onClick={() => addRow()}
-              className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
-            >
-              <Plus className="h-4 w-4" /> Adicionar linha
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => addRow()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
+              >
+                <Plus className="h-4 w-4" /> Adicionar linha
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasteOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition hover:bg-primary/20"
+                title="Cole aqui um bloco copiado do Excel / Google Sheets"
+              >
+                <ClipboardPaste className="h-4 w-4" /> Colar do Excel
+              </button>
+            </div>
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
               <span className="hidden md:inline">
                 <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima ·{" "}
