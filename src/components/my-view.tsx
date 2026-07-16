@@ -1,13 +1,38 @@
-import { useState } from "react";
-import { Plus, Trash2, Palette, StickyNote, Settings2, X, Check } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Plus,
+  Trash2,
+  Palette,
+  StickyNote,
+  Settings2,
+  X,
+  Check,
+  GripVertical,
+  Pencil,
+  CheckCircle2,
+  RotateCcw,
+  Copy,
+  Star,
+  Eraser,
+} from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { statusColor, statusLabels, type Task } from "@/lib/fluxo-types";
 import { COLOR_PALETTE, useMyView, type ColumnType } from "@/lib/my-view-store";
+import { toast } from "sonner";
 
 function fmtDue(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
 }
+
+const COLUMN_TYPE_LABEL: Record<ColumnType, string> = {
+  text: "Texto",
+  number: "Número",
+  select: "Lista",
+  date: "Data",
+  time: "Hora",
+  datetime: "Data + hora",
+};
 
 export function MyView({
   tasks,
@@ -16,7 +41,7 @@ export function MyView({
   tasks: Task[];
   onEdit: (id: string) => void;
 }) {
-  const { currentUser, users } = useFluxo();
+  const { currentUser, users, updateTask, deleteTask, createTask } = useFluxo();
   const view = useMyView(currentUser.id);
   const [managing, setManaging] = useState(false);
   const [newCol, setNewCol] = useState<{ name: string; type: ColumnType; options: string }>({
@@ -26,6 +51,26 @@ export function MyView({
   });
   const [noteOpen, setNoteOpen] = useState<string | null>(null);
   const [colorOpen, setColorOpen] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropId, setDropId] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+
+  const ordered = useMemo(() => view.sortByOrder(tasks), [tasks, view]);
+  const visibleIds = useMemo(() => ordered.map((t) => t.id), [ordered]);
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const close = () => setRowMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("scroll", close, true);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setRowMenu(null);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [rowMenu]);
 
   const submitNewCol = () => {
     const name = newCol.name.trim();
@@ -44,13 +89,45 @@ export function MyView({
     setNewCol({ name: "", type: "text", options: "" });
   };
 
+  const openRowMenu = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRowMenu({ id, x: e.clientX, y: e.clientY });
+  };
+
+  const clearRow = (id: string) => {
+    view.setMetaFor(id, { color: undefined, note: undefined });
+    for (const c of view.columns) view.setCell(id, c.id, "");
+    toast.success("Linha limpa");
+  };
+
+  const duplicateTask = (t: Task) => {
+    createTask({
+      title: `${t.title} (cópia)`,
+      description: t.description,
+      sector: t.sector,
+      createdBy: currentUser.id,
+      assigneeId: t.assigneeId,
+      mentions: t.mentions,
+      frequency: t.frequency,
+      status: "pendente",
+      score: t.score,
+      dueDate: t.dueDate,
+      recurring: t.recurring,
+      priority: t.priority,
+      tags: t.tags,
+    });
+    toast.success("Tarefa duplicada");
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/40 px-4 py-2.5">
         <div>
           <div className="text-sm font-semibold">Minha visão</div>
           <div className="text-[11px] text-muted-foreground">
-            Colunas, cores e anotações pessoais — só você vê. Salvo neste dispositivo.
+            Arraste as linhas pela alça <GripVertical className="inline h-3 w-3" /> · dê{" "}
+            <strong>duplo clique</strong> em uma linha para ações rápidas · colunas, cores e notas são só suas.
           </div>
         </div>
         <button
@@ -76,7 +153,7 @@ export function MyView({
                   onChange={(e) => view.updateColumn(c.id, { name: e.target.value })}
                   className="w-28 bg-transparent outline-none"
                 />
-                <span className="text-[10px] text-muted-foreground">{c.type}</span>
+                <span className="text-[10px] text-muted-foreground">{COLUMN_TYPE_LABEL[c.type]}</span>
                 <button
                   onClick={() => view.removeColumn(c.id)}
                   className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
@@ -107,6 +184,9 @@ export function MyView({
                 <option value="text">Texto</option>
                 <option value="number">Número</option>
                 <option value="select">Lista</option>
+                <option value="date">Data</option>
+                <option value="time">Hora</option>
+                <option value="datetime">Data + hora</option>
               </select>
             </label>
             {newCol.type === "select" && (
@@ -137,7 +217,8 @@ export function MyView({
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead>
             <tr className="border-b border-border bg-secondary/50 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <th className="w-6 py-2 pl-3"></th>
+              <th className="w-10 py-2 pl-3"></th>
+              <th className="w-6 py-2"></th>
               <th className="py-2 pr-3">Título</th>
               <th className="w-28 py-2 pr-3">Status</th>
               <th className="w-24 py-2 pr-3">Prazo</th>
@@ -151,16 +232,58 @@ export function MyView({
             </tr>
           </thead>
           <tbody>
-            {tasks.map((t) => {
+            {ordered.map((t) => {
               const m = view.meta[t.id] ?? {};
               const rowCells = view.cells[t.id] ?? {};
               const assignee = users.find((u) => u.id === t.assigneeId);
+              const isDone = t.status === "concluida";
+              const canDelete = t.createdBy === currentUser.id || currentUser.role === "gerente";
               return (
                 <tr
                   key={t.id}
-                  className="group border-b border-border/60 align-top last:border-0 hover:bg-primary/5"
+                  draggable
+                  onDragStart={(e) => {
+                    setDragId(t.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    try {
+                      e.dataTransfer.setData("text/plain", t.id);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragId || dragId === t.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setDropId(t.id);
+                  }}
+                  onDragLeave={() => {
+                    setDropId((d) => (d === t.id ? null : d));
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragId && dragId !== t.id) view.reorderRow(visibleIds, dragId, t.id);
+                    setDragId(null);
+                    setDropId(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setDropId(null);
+                  }}
+                  onDoubleClick={(e) => openRowMenu(t.id, e)}
+                  className={`group border-b border-border/60 align-top last:border-0 hover:bg-primary/5 ${
+                    dragId === t.id ? "opacity-60" : ""
+                  } ${dropId === t.id ? "ring-2 ring-primary/50 ring-inset" : ""}`}
                   style={m.color ? { boxShadow: `inset 4px 0 0 ${m.color}` } : undefined}
                 >
+                  <td className="py-2 pl-3 text-muted-foreground">
+                    <span
+                      className="inline-flex cursor-grab items-center rounded p-1 hover:bg-secondary active:cursor-grabbing"
+                      title="Arraste para reordenar"
+                    >
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </span>
+                  </td>
                   <td className="relative py-2 pl-3">
                     <button
                       onClick={() => setColorOpen((v) => (v === t.id ? null : t.id))}
@@ -170,7 +293,10 @@ export function MyView({
                       <Palette className="h-3.5 w-3.5" style={m.color ? { color: m.color } : undefined} />
                     </button>
                     {colorOpen === t.id && (
-                      <div className="absolute left-3 top-8 z-20 flex flex-wrap gap-1 rounded-md border border-border bg-popover p-2 shadow-2xl">
+                      <div
+                        className="absolute left-0 top-8 z-20 flex flex-wrap gap-1 rounded-md border border-border bg-popover p-2 shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {COLOR_PALETTE.map((c) => (
                           <button
                             key={c.id}
@@ -191,7 +317,9 @@ export function MyView({
                   <td className="py-2 pr-3">
                     <button
                       onClick={() => onEdit(t.id)}
-                      className="text-left text-sm font-medium hover:text-primary"
+                      className={`text-left text-sm font-medium hover:text-primary ${
+                        isDone ? "text-muted-foreground line-through" : ""
+                      }`}
                     >
                       {t.title}
                     </button>
@@ -221,6 +349,13 @@ export function MyView({
                             </option>
                           ))}
                         </select>
+                      ) : c.type === "date" || c.type === "time" || c.type === "datetime" ? (
+                        <input
+                          type={c.type === "datetime" ? "datetime-local" : c.type}
+                          value={rowCells[c.id] ?? ""}
+                          onChange={(e) => view.setCell(t.id, c.id, e.target.value)}
+                          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+                        />
                       ) : (
                         <input
                           value={rowCells[c.id] ?? ""}
@@ -245,7 +380,10 @@ export function MyView({
                       {m.note ? "Nota" : "Anotar"}
                     </button>
                     {noteOpen === t.id && (
-                      <div className="absolute right-3 top-9 z-20 w-72 rounded-md border border-border bg-popover p-2 shadow-2xl">
+                      <div
+                        className="absolute right-3 top-9 z-20 w-72 rounded-md border border-border bg-popover p-2 shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <textarea
                           value={m.note ?? ""}
                           onChange={(e) => view.setMetaFor(t.id, { note: e.target.value })}
@@ -275,9 +413,9 @@ export function MyView({
                 </tr>
               );
             })}
-            {tasks.length === 0 && (
+            {ordered.length === 0 && (
               <tr>
-                <td colSpan={5 + view.columns.length + 1} className="py-8 text-center text-xs text-muted-foreground">
+                <td colSpan={6 + view.columns.length + 1} className="py-8 text-center text-xs text-muted-foreground">
                   Nenhuma tarefa no filtro atual.
                 </td>
               </tr>
@@ -285,6 +423,98 @@ export function MyView({
           </tbody>
         </table>
       </div>
+
+      {rowMenu && (() => {
+        const t = ordered.find((x) => x.id === rowMenu.id);
+        if (!t) return null;
+        const isDone = t.status === "concluida";
+        const canDelete = t.createdBy === currentUser.id || currentUser.role === "gerente";
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const width = 240;
+        const height = 340;
+        const left = Math.min(rowMenu.x, vw - width - 8);
+        const top = Math.min(rowMenu.y, vh - height - 8);
+        const itemBtn = (
+          icon: React.ReactNode,
+          label: string,
+          onClick: () => void,
+          danger?: boolean,
+        ) => (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick();
+              setRowMenu(null);
+            }}
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition ${
+              danger ? "text-destructive hover:bg-destructive/10" : "hover:bg-secondary"
+            }`}
+          >
+            {icon}
+            <span className="flex-1">{label}</span>
+          </button>
+        );
+        return (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+            style={{ left, top, width }}
+            className="fixed z-[300] animate-in fade-in-0 zoom-in-95 rounded-lg border border-border bg-card p-2 shadow-2xl"
+          >
+            <div className="border-b border-border px-1 pb-1.5">
+              <div className="truncate text-[11px] font-semibold">{t.title}</div>
+              <div className="text-[10px] text-muted-foreground">Ações rápidas da linha</div>
+            </div>
+            <div className="mt-1.5">
+              <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-muted-foreground">Cor</div>
+              <div className="flex flex-wrap gap-1 px-1 pb-1.5">
+                {COLOR_PALETTE.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      view.setMetaFor(t.id, { color: c.value || undefined });
+                    }}
+                    title={c.label}
+                    className="h-5 w-5 rounded-full border border-border"
+                    style={{ background: c.value || "transparent" }}
+                  >
+                    {!c.value && <X className="h-3 w-3" />}
+                  </button>
+                ))}
+              </div>
+              <div className="my-1 h-px bg-border" />
+              {itemBtn(<Pencil className="h-3.5 w-3.5" />, "Editar tarefa", () => onEdit(t.id))}
+              {isDone
+                ? itemBtn(<RotateCcw className="h-3.5 w-3.5" />, "Reabrir", () =>
+                    updateTask(t.id, { status: "pendente" }),
+                  )
+                : itemBtn(<CheckCircle2 className="h-3.5 w-3.5" />, "Concluir", () =>
+                    updateTask(t.id, { status: "concluida" }),
+                  )}
+              {itemBtn(
+                <Star className="h-3.5 w-3.5" />,
+                t.inPack ? "Remover do pack" : "Adicionar ao pack",
+                () => updateTask(t.id, { inPack: !t.inPack }),
+              )}
+              {itemBtn(<StickyNote className="h-3.5 w-3.5" />, "Editar nota", () => setNoteOpen(t.id))}
+              {itemBtn(<Copy className="h-3.5 w-3.5" />, "Duplicar tarefa", () => duplicateTask(t))}
+              <div className="my-1 h-px bg-border" />
+              {itemBtn(<Eraser className="h-3.5 w-3.5" />, "Limpar linha (cor, nota, colunas)", () => clearRow(t.id))}
+              {canDelete &&
+                itemBtn(
+                  <Trash2 className="h-3.5 w-3.5" />,
+                  "Excluir tarefa",
+                  () => {
+                    if (confirm(`Excluir "${t.title}"?`)) deleteTask(t.id);
+                  },
+                  true,
+                )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
