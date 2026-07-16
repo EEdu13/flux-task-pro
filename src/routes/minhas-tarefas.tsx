@@ -1168,6 +1168,7 @@ function PackRow({
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
+      <TaskTimerControls taskId={task.id} estimatedMinutes={task.estimatedMinutes} />
       {!isDone && (
         <button
           onClick={() => startFocus(task.id)}
