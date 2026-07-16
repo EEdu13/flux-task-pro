@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FluxoProvider } from "@/lib/fluxo-store";
+import { TaskTimerProvider } from "@/lib/task-timer";
 import { Toaster } from "@/components/ui/sonner";
 import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
@@ -132,6 +133,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <FluxoProvider>
+        <TaskTimerProvider>
         <RoomPresenceProvider>
           <ActiveCallProvider>
             <CallInviterProvider>
@@ -144,6 +146,7 @@ function RootComponent() {
             </CallInviterProvider>
           </ActiveCallProvider>
         </RoomPresenceProvider>
+        </TaskTimerProvider>
       </FluxoProvider>
     </QueryClientProvider>
   );
