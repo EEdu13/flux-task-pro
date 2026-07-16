@@ -500,6 +500,7 @@ export function InlineTaskCreator({
                         }}
                         placeholder="Ex: Fazer conciliação bancária de julho"
                         className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
+                        onPaste={(e) => handleTitlePaste(row.id, e)}
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
                         createPortal(
