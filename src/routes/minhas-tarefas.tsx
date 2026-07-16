@@ -410,6 +410,8 @@ function MinhasTarefas() {
             />
           ) : view === "quadro" ? (
             <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} onTogglePack={(id, v) => updateTask(id, { inPack: v })} />
+          ) : view === "minha-visao" ? (
+            <MyView tasks={visible} onEdit={openTask} />
           ) : (
             <TaskList
               tasks={visible}
