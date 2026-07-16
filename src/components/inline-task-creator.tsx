@@ -212,6 +212,66 @@ export function InlineTaskCreator({
   const update = (id: string, patch: Partial<DraftRow>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
+  const applyParsedRows = (parsed: ParsedPasteRow[], anchorRowId?: string) => {
+    if (parsed.length === 0) {
+      toast.error("Nada para importar — cole ao menos uma linha com título");
+      return 0;
+    }
+    setRows((rs) => {
+      const idx = anchorRowId ? rs.findIndex((r) => r.id === anchorRowId) : -1;
+      const drafts: DraftRow[] = parsed.map((p) =>
+        makeDraft({
+          assigneeId: p.assigneeId ?? defaultAssigneeId ?? currentUser.id,
+          sector: p.sector ?? currentUser.sector,
+          dueDate: p.dueDate ?? defaultDueDate ?? todayStr(),
+        }),
+      );
+      // fill titles / estimates
+      parsed.forEach((p, i) => {
+        drafts[i].title = p.title;
+        if (p.estimateHM) drafts[i].estimateHM = p.estimateHM;
+      });
+      // Replace anchor row if it's still empty, otherwise insert after it
+      if (idx >= 0) {
+        const anchor = rs[idx];
+        const copy = [...rs];
+        if (!anchor.title.trim() && drafts.length > 0) {
+          copy.splice(idx, 1, ...drafts);
+        } else {
+          copy.splice(idx + 1, 0, ...drafts);
+        }
+        return copy;
+      }
+      // no anchor: replace trailing empty row if exists
+      const last = rs[rs.length - 1];
+      if (last && !last.title.trim()) {
+        return [...rs.slice(0, -1), ...drafts, makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })];
+      }
+      return [...rs, ...drafts];
+    });
+    return parsed.length;
+  };
+
+  const handleTitlePaste = (rowId: string, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text");
+    if (!text) return;
+    if (!text.includes("\n") && !text.includes("\t")) return; // normal paste
+    e.preventDefault();
+    const parsed = parseExcelPaste(text, assignees);
+    const n = applyParsedRows(parsed, rowId);
+    if (n > 0) toast.success(`${n} linha${n > 1 ? "s" : ""} importada${n > 1 ? "s" : ""} da planilha`);
+  };
+
+  const submitPasteModal = () => {
+    const parsed = parseExcelPaste(pasteText, assignees);
+    const n = applyParsedRows(parsed);
+    if (n > 0) {
+      toast.success(`${n} linha${n > 1 ? "s" : ""} importada${n > 1 ? "s" : ""}`);
+      setPasteText("");
+      setPasteOpen(false);
+    }
+  };
+
   const addFilesToRow = async (rowId: string, files: FileList | File[]) => {
     const list = Array.from(files);
     if (list.length === 0) return;
