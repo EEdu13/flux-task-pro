@@ -26,6 +26,7 @@ import {
   FileText,
   StickyNote,
   UserPlus,
+  Flame,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -52,6 +53,7 @@ import { useCallInviter } from "@/lib/call-inviter-context";
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
   { to: "/minhas-tarefas", label: "Minhas tarefas", icon: CheckSquare },
+  { to: "/pack", label: "Pack diário", icon: Flame },
   { to: "/inbox", label: "Caixa de entrada", icon: Inbox },
   { to: "/equipe", label: "Equipe", icon: Users },
   { to: "/atas", label: "Atas & Planos", icon: FileText },
