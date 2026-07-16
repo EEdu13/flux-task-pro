@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
   sectors,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/fluxo-types";
 import type { Attachment } from "@/lib/fluxo-types";
 import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
+import { parseHM } from "@/lib/time-log";
 import { toast } from "sonner";
 
 interface DraftRow {
@@ -19,6 +20,8 @@ interface DraftRow {
   attachments: Attachment[];
   mentions: string[];
   requireProof: boolean;
+  /** Estimated time as user-typed hh:mm string (empty = none) */
+  estimateHM: string;
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -53,6 +56,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     attachments: [],
     mentions: [],
     requireProof: false,
+    estimateHM: "",
   };
 }
 
@@ -140,6 +144,7 @@ export function InlineTaskCreator({
     if (!row.title.trim()) return false;
     const due = new Date(row.dueDate || todayStr());
     due.setHours(23, 59, 0, 0);
+    const est = parseHM(row.estimateHM);
     createTask({
       title: row.title.trim(),
       sector: row.sector || currentUser.sector,
@@ -155,6 +160,7 @@ export function InlineTaskCreator({
       tags: [],
       attachments: row.attachments.length ? row.attachments : undefined,
       requireProof: row.requireProof || undefined,
+      estimatedMinutes: est && est > 0 ? est : undefined,
     });
     return true;
   };
@@ -314,6 +320,7 @@ export function InlineTaskCreator({
                   <th className="hidden w-80 py-2.5 pr-3 md:table-cell">Prazo</th>
                   {!compact && <th className="hidden w-44 py-2.5 pr-3 md:table-cell">Responsável</th>}
                   {!compact && <th className="hidden w-40 py-2.5 pr-3 lg:table-cell">Setor</th>}
+                  <th className="hidden w-24 py-2.5 pr-3 md:table-cell" title="Tempo estimado (hh:mm)">Tempo</th>
                   <th className="w-[80px] py-2.5 pr-3 text-right sm:w-[280px] sm:pr-4">Ações</th>
                 </tr>
               </thead>
@@ -504,6 +511,17 @@ export function InlineTaskCreator({
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
                           className="rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
                         />
+                        <div className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px]">
+                          <Timer className="h-3 w-3 text-muted-foreground" />
+                          <input
+                            value={row.estimateHM}
+                            onChange={(e) => update(row.id, { estimateHM: e.target.value })}
+                            placeholder="00:30"
+                            inputMode="numeric"
+                            className="w-14 bg-transparent font-mono outline-none placeholder:text-muted-foreground/50"
+                            title="Tempo estimado"
+                          />
+                        </div>
                         {!compact && (
                           <select
                             value={row.assigneeId}
@@ -596,6 +614,19 @@ export function InlineTaskCreator({
                         </select>
                       </td>
                     )}
+                    <td className="hidden py-3 pr-3 md:table-cell">
+                      <div className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1 text-xs focus-within:border-primary">
+                        <Timer className="h-3 w-3 text-muted-foreground" />
+                        <input
+                          value={row.estimateHM}
+                          onChange={(e) => update(row.id, { estimateHM: e.target.value })}
+                          placeholder="00:30"
+                          inputMode="numeric"
+                          className="w-16 bg-transparent font-mono outline-none placeholder:text-muted-foreground/50"
+                          title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
+                        />
+                      </div>
+                    </td>
                     <td className="py-3 pr-3 text-right sm:pr-4">
                       <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                         <button

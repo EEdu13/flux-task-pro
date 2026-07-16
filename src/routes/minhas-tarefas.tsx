@@ -25,6 +25,7 @@ import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
 import { startFocus } from "@/components/focus-overlay";
+import { TaskTimerControls } from "@/components/task-timer-controls";
 import {
   freqLabels,
   sectors,
@@ -619,6 +620,7 @@ function TaskList({
                       </td>
                       <td className="py-2.5 pr-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
                           <button
                             onClick={() => onTogglePack(t.id, !t.inPack)}
                             title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
@@ -820,6 +822,9 @@ function KanbanBoard({
                           {assignee?.avatar}
                         </div>
                       </div>
+                    </div>
+                    <div className="mt-2 flex items-center justify-end">
+                      <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
                     </div>
                     {col.id !== "concluida" && (
                       <button
@@ -1163,6 +1168,7 @@ function PackRow({
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
+      <TaskTimerControls taskId={task.id} estimatedMinutes={task.estimatedMinutes} />
       {!isDone && (
         <button
           onClick={() => startFocus(task.id)}

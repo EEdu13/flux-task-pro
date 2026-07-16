@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { loadPackDone, savePackDone } from "@/lib/pack";
+import { TaskTimerControls } from "@/components/task-timer-controls";
 
 export const Route = createFileRoute("/pack")({
   head: () => ({
@@ -365,25 +366,34 @@ function PackPage() {
                     const done = packDone.has(t.id);
                     return (
                       <li key={t.id}>
-                        <button
-                          onClick={() => toggleDone(t.id)}
-                          className={`flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition ${
+                        <div
+                          className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
                             done
                               ? "border-emerald-500/40 bg-emerald-500/10 text-muted-foreground"
                               : "border-border hover:bg-secondary"
                           }`}
                         >
-                          <span
+                          <button
+                            type="button"
+                            onClick={() => toggleDone(t.id)}
                             className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                               done
                                 ? "border-emerald-500 bg-emerald-500 text-white"
                                 : "border-border bg-background"
                             }`}
+                            title={done ? "Desmarcar" : "Concluir"}
                           >
                             {done && <Check className="h-3 w-3" />}
-                          </span>
-                          <span className={`flex-1 ${done ? "line-through" : ""}`}>{t.title}</span>
-                        </button>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleDone(t.id)}
+                            className={`flex-1 text-left ${done ? "line-through" : ""}`}
+                          >
+                            {t.title}
+                          </button>
+                          <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
+                        </div>
                       </li>
                     );
                   })}

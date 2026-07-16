@@ -5,6 +5,8 @@ import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
 import type { Attachment } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
+import { formatHM, parseHM } from "@/lib/time-log";
+import { TaskTimerControls } from "@/components/task-timer-controls";
 import {
   sectors,
   freqLabels,
@@ -54,6 +56,7 @@ export function TaskDialog() {
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
   const [requireProof, setRequireProof] = useState(false);
+  const [estimateHM, setEstimateHM] = useState("");
   const [tags, setTags] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -80,6 +83,11 @@ export function TaskDialog() {
       setRecurring(editing.recurring);
       setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
       setRequireProof(!!editing.requireProof);
+      setEstimateHM(
+        editing.estimatedMinutes
+          ? `${Math.floor(editing.estimatedMinutes / 60)}:${String(editing.estimatedMinutes % 60).padStart(2, "0")}`
+          : "",
+      );
       setTags(editing.tags.join(", "));
       setMentions(editing.mentions);
     } else {
@@ -94,6 +102,7 @@ export function TaskDialog() {
       setRecurring(false);
       setRecurringUntil("");
       setRequireProof(false);
+      setEstimateHM("");
       setTags("");
       setMentions([]);
     }
@@ -154,6 +163,7 @@ export function TaskDialog() {
   const handleSubmit = () => {
     if (!title.trim()) return;
     const preserveTitle = editing && editing.createdBy !== currentUser.id;
+    const estMinutes = parseHM(estimateHM);
     const payload = {
       title: preserveTitle ? editing!.title : title.trim(),
       description: preserveTitle ? (editing!.description ?? "") : description.trim(),
@@ -170,6 +180,7 @@ export function TaskDialog() {
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       requireProof,
+      estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
     };
     if (editing) updateTask(editing.id, payload);
     else createTask(payload);
@@ -334,7 +345,35 @@ export function TaskDialog() {
                 <Field label="Tags (separadas por vírgula)">
                   <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
                 </Field>
+                <Field label="Tempo estimado (hh:mm)">
+                  <input
+                    value={estimateHM}
+                    onChange={(e) => setEstimateHM(e.target.value)}
+                    placeholder="Ex.: 00:30, 1:15, 45m"
+                    className="input font-mono"
+                  />
+                  {estimateHM && parseHM(estimateHM) !== null && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      = {formatHM((parseHM(estimateHM) ?? 0) * 60)}
+                    </p>
+                  )}
+                </Field>
               </div>
+
+              {editing && (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Pomodoro / tempo trabalhado</span>
+                    <br />
+                    Use play / pause / stop para medir quanto tempo essa tarefa está consumindo.
+                  </div>
+                  <TaskTimerControls
+                    taskId={editing.id}
+                    estimatedMinutes={editing.estimatedMinutes}
+                    size="md"
+                  />
+                </div>
+              )}
 
               <div className="rounded-md border border-border bg-secondary/40 p-3">
                 <label className="flex items-center gap-2 text-sm">
