@@ -814,6 +814,79 @@ export function InlineTaskCreator({
           </div>
         </div>
       )}
+
+      {pasteOpen && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setPasteOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ClipboardPaste className="h-4 w-4 text-primary" />
+                  <h3 className="text-base font-semibold">Colar planilha de tarefas</h3>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Cole abaixo (Ctrl+V) linhas copiadas do Excel, Google Sheets ou qualquer texto.
+                  Uma linha = uma tarefa. Colunas separadas por tabulação:
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1 text-[10px] font-medium">
+                  {["Título*", "Prazo (dd/mm/aaaa)", "Responsável (nome)", "Setor", "Tempo (hh:mm)"].map((c, i) => (
+                    <span
+                      key={c}
+                      className={`rounded border px-1.5 py-0.5 ${
+                        i === 0
+                          ? "border-primary/40 bg-primary/10 text-primary"
+                          : "border-border bg-secondary text-muted-foreground"
+                      }`}
+                    >
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setPasteOpen(false)}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder={`Fazer conciliação bancária\t25/07/2026\tElisa\tFinanceiro\t00:45\nEnviar relatório mensal\t28/07/2026\tRicardo\tOperações\t01:30`}
+              className="mt-3 h-52 w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-xs outline-none focus:border-primary"
+            />
+            {pasteText.trim() && (
+              <div className="mt-2 rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">
+                Prévia: <strong>{parseExcelPaste(pasteText, assignees).length}</strong> linha(s) reconhecida(s).
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setPasteOpen(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitPasteModal}
+                disabled={!pasteText.trim()}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+              >
+                Importar linhas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
