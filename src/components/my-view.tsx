@@ -270,10 +270,17 @@ export function MyView({
                     setDropId(null);
                   }}
                   onDoubleClick={(e) => openRowMenu(t.id, e)}
-                  className={`group border-b border-border/60 align-top last:border-0 hover:bg-primary/5 ${
+                  className={`group border-b border-border/60 align-top transition-colors last:border-0 hover:bg-primary/5 ${
                     dragId === t.id ? "opacity-60" : ""
                   } ${dropId === t.id ? "ring-2 ring-primary/50 ring-inset" : ""}`}
-                  style={m.color ? { boxShadow: `inset 4px 0 0 ${m.color}` } : undefined}
+                  style={
+                    m.color
+                      ? {
+                          background: `color-mix(in oklab, ${m.color} 18%, transparent)`,
+                          boxShadow: `inset 4px 0 0 ${m.color}`,
+                        }
+                      : undefined
+                  }
                 >
                   <td className="py-2 pl-3 text-muted-foreground">
                     <span
