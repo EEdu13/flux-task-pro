@@ -64,6 +64,13 @@ function PackPage() {
     return map;
   }, [tasks, users, currentUser.id]);
 
+  const targetUser = users.find((u) => u.id === targetId);
+  const targetPack = useMemo(
+    () => (targetId ? tasks.filter((t) => t.assigneeId === targetId && t.inPack) : []),
+    [tasks, targetId],
+  );
+  const [lastSent, setLastSent] = useState<{ to: string; items: string[]; at: number } | null>(null);
+
   const submit = (assigneeId: string, text: string, clear: () => void) => {
     const lines = parsePackLines(text);
     if (lines.length === 0) {
@@ -94,6 +101,7 @@ function PackPage() {
       setTab("concluir");
     } else {
       toast.success(`Pack enviado para ${target?.name?.split(" ")[0] ?? "a pessoa"} (${lines.length})`);
+      setLastSent({ to: assigneeId, items: lines, at: Date.now() });
     }
   };
 
