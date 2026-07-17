@@ -139,22 +139,46 @@ export type Database = {
       }
       tarefas: {
         Row: {
+          assignee_user_id: string | null
+          creator_user_id: string | null
           criado_em: string
+          description: string | null
+          due_date: string | null
           id: string
+          priority: string
+          recurring: boolean
+          recurring_until: string | null
+          require_proof: boolean
           status: string
           telefone: string | null
           titulo: string
         }
         Insert: {
+          assignee_user_id?: string | null
+          creator_user_id?: string | null
           criado_em?: string
+          description?: string | null
+          due_date?: string | null
           id?: string
+          priority?: string
+          recurring?: boolean
+          recurring_until?: string | null
+          require_proof?: boolean
           status?: string
           telefone?: string | null
           titulo: string
         }
         Update: {
+          assignee_user_id?: string | null
+          creator_user_id?: string | null
           criado_em?: string
+          description?: string | null
+          due_date?: string | null
           id?: string
+          priority?: string
+          recurring?: boolean
+          recurring_until?: string | null
+          require_proof?: boolean
           status?: string
           telefone?: string | null
           titulo?: string
