@@ -23,6 +23,8 @@ import { priorityMultiplier } from "./fluxo-types";
 import { seedCompletions, seedMetas, seedNotifications, seedTasks, seedUsers } from "./fluxo-seed";
 import { createRoomCall } from "./livekit-token.functions";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { resolveWhatsAppContact } from "./whatsapp-contacts";
 
 function taskHasProof(t: Task): boolean {
   if ((t.attachments?.length ?? 0) > 0) return true;
@@ -182,6 +184,128 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(LS_KEY, JSON.stringify(state));
     }
   }, [state]);
+
+  // === Ponte WhatsApp → Minhas Tarefas ===
+  // Materializa linhas da tabela `tarefas` (criadas pelo bot com IA)
+  // como Task no store do usuário atual, se ele for o assignee.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const currentUserId = state.currentUserId;
+    const INGESTED_KEY = `fluxo.tarefas.ingested.v1:${currentUserId}`;
+    const ingested = new Set<string>(
+      JSON.parse(localStorage.getItem(INGESTED_KEY) ?? "[]") as string[],
+    );
+
+    function markIngested(id: string) {
+      ingested.add(id);
+      localStorage.setItem(INGESTED_KEY, JSON.stringify(Array.from(ingested).slice(-500)));
+    }
+
+    function rowToTask(row: any): Task {
+      const createdAt = row.criado_em ?? nowIso();
+      const assigneeId = row.assignee_user_id as string;
+      const creatorId = (row.creator_user_id as string) ?? assigneeId;
+      const assignee = seedUsers.find((u) => u.id === assigneeId);
+      const dueDate: string =
+        row.due_date ??
+        new Date(new Date(createdAt).getTime() + 24 * 3600e3).toISOString();
+      const priority = (["alta", "media", "baixa"].includes(row.priority)
+        ? row.priority
+        : "media") as Task["priority"];
+      return {
+        id: `wa-${row.id}`,
+        title: row.titulo ?? "(sem título)",
+        description: row.description ?? "",
+        sector: assignee?.sector ?? "operacoes",
+        createdBy: creatorId,
+        assigneeId,
+        mentions: [],
+        frequency: "diaria",
+        status: row.status === "concluida" ? "concluida" : "pendente",
+        score: 15,
+        dueDate,
+        recurring: Boolean(row.recurring),
+        recurringUntil: row.recurring_until ?? null,
+        priority,
+        tags: ["whatsapp"],
+        createdAt,
+        order: 0,
+        comments: [],
+        checklist: [],
+        attachments: [],
+        requireProof: Boolean(row.require_proof),
+        activity: [
+          {
+            id: rid("a"),
+            at: createdAt,
+            userId: creatorId,
+            kind: "criada",
+            text: "criou esta tarefa pelo WhatsApp 🤖",
+          },
+        ],
+      };
+    }
+
+    function ingestIfMine(row: any) {
+      if (!row) return;
+      let assigneeId: string | null = row.assignee_user_id ?? null;
+      // Fallback: caso o bot não tenha resolvido, usa o mapa por telefone.
+      if (!assigneeId && row.telefone) {
+        assigneeId = resolveWhatsAppContact(row.telefone)?.userId ?? null;
+      }
+      if (!assigneeId || assigneeId !== currentUserId) return;
+      if (ingested.has(row.id)) return;
+      markIngested(row.id);
+
+      const task = rowToTask({ ...row, assignee_user_id: assigneeId });
+      setState((s) => {
+        if (s.tasks.some((t) => t.id === task.id)) return s;
+        const notif: Notification = {
+          id: rid("n"),
+          userId: currentUserId,
+          type: "atribuida",
+          title: "Nova tarefa via WhatsApp",
+          desc: task.title,
+          at: nowIso(),
+          taskId: task.id,
+        };
+        return {
+          ...s,
+          tasks: [task, ...s.tasks],
+          notifications: [notif, ...s.notifications],
+        };
+      });
+    }
+
+    // Backfill: últimas 7 dias, pra pegar as que chegaram enquanto offline.
+    const since = new Date(Date.now() - 7 * 24 * 3600e3).toISOString();
+    void supabase
+      .from("tarefas")
+      .select("*")
+      .gte("criado_em", since)
+      .order("criado_em", { ascending: false })
+      .limit(100)
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn("[fluxo] backfill tarefas erro:", error.message);
+          return;
+        }
+        (data ?? []).forEach(ingestIfMine);
+      });
+
+    const channel = supabase
+      .channel(`tarefas-bridge-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "tarefas" },
+        (payload) => ingestIfMine(payload.new),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [state.currentUserId]);
 
   // Auto prazo notifications on mount
   useEffect(() => {
