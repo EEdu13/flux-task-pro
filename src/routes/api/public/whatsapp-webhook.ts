@@ -4,11 +4,12 @@ export const Route = createFileRoute("/api/public/whatsapp-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // Always ACK fast; process in background so Evolution doesn't retry.
         const bodyText = await request.text();
-        processWebhook(bodyText).catch((e) =>
-          console.error("[whatsapp-webhook] processing error:", e),
-        );
+        try {
+          await processWebhook(bodyText);
+        } catch (e) {
+          console.error("[whatsapp-webhook] processing error:", e);
+        }
         return new Response("ok", { status: 200 });
       },
       GET: async () =>
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/api/public/whatsapp-webhook")({
 });
 
 async function processWebhook(rawBody: string) {
+  console.log("[whatsapp-webhook] body received:", rawBody.slice(0, 500));
   let payload: any;
   try {
     payload = JSON.parse(rawBody);
@@ -27,16 +29,25 @@ async function processWebhook(rawBody: string) {
   }
 
   const data = payload?.data;
-  if (!data) return;
+  if (!data) {
+    console.log("[whatsapp-webhook] no data field");
+    return;
+  }
 
   // Ignore messages sent by us.
-  if (data?.key?.fromMe === true) return;
+  if (data?.key?.fromMe === true) {
+    console.log("[whatsapp-webhook] skipping fromMe");
+    return;
+  }
 
   const text: string | undefined =
     data?.message?.conversation ??
     data?.message?.extendedTextMessage?.text ??
     undefined;
-  if (!text || !text.trim()) return;
+  if (!text || !text.trim()) {
+    console.log("[whatsapp-webhook] no text in message");
+    return;
+  }
 
   const remoteJid: string = data?.key?.remoteJid ?? "";
   const telefone = remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "");
@@ -50,18 +61,23 @@ async function processWebhook(rawBody: string) {
   const titulo = (match?.[1] ?? raw).trim();
   if (!titulo) return;
 
+  console.log("[whatsapp-webhook] inserting", { titulo, telefone });
+
   const { resolveWhatsAppContact } = await import("@/lib/whatsapp-contacts");
   const contact = resolveWhatsAppContact(telefone);
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { error } = await supabaseAdmin
+  const { data: inserted, error } = await supabaseAdmin
     .from("tarefas")
-    .insert({ titulo, telefone });
+    .insert({ titulo, telefone })
+    .select()
+    .single();
 
   if (error) {
     console.error("[whatsapp-webhook] insert error:", error);
     return;
   }
+  console.log("[whatsapp-webhook] inserted row id:", inserted?.id);
 
   // Confirmation reply via Evolution API.
   const evoUrl = process.env.EVOLUTION_URL;
