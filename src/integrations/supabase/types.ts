@@ -137,6 +137,30 @@ export type Database = {
         }
         Relationships: []
       }
+      tarefas: {
+        Row: {
+          criado_em: string
+          id: string
+          status: string
+          telefone: string | null
+          titulo: string
+        }
+        Insert: {
+          criado_em?: string
+          id?: string
+          status?: string
+          telefone?: string | null
+          titulo: string
+        }
+        Update: {
+          criado_em?: string
+          id?: string
+          status?: string
+          telefone?: string | null
+          titulo?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
