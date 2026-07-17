@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -17,8 +18,18 @@ import {
 } from "recharts";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { sectors, statusLabels } from "@/lib/fluxo-types";
-import { loadTimeLog, formatHM } from "@/lib/time-log";
+import { sectors, statusLabels, priorityLabels } from "@/lib/fluxo-types";
+import {
+  loadTimeLog,
+  loadAllTimeLogs,
+  formatHM,
+  formatHMS,
+  buildSessionsCsv,
+  buildSummaryCsv,
+  downloadCsv,
+  type CsvSessionRow,
+  type CsvSummaryRow,
+} from "@/lib/time-log";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/relatorios")({
@@ -40,7 +51,60 @@ function Relatorios() {
     return () => window.removeEventListener("fluxo:timer-updated", on);
   }, []);
 
-  const timeLog = useMemo(() => loadTimeLog(currentUser.id), [currentUser.id, timeTick]);
+  // Manager scope: gestor sees all, supervisor sees self + subordinates,
+  // adm only sees self.
+  const visibleUsers = useMemo(() => {
+    if (currentUser.role === "gerente") return users;
+    if (currentUser.role === "supervisor")
+      return users.filter((u) => u.id === currentUser.id || u.supervisorId === currentUser.id);
+    return users.filter((u) => u.id === currentUser.id);
+  }, [users, currentUser]);
+
+  // "all" aggregates every log stored locally; otherwise per-user log.
+  const [scope, setScope] = useState<string>(currentUser.id);
+  useEffect(() => {
+    setScope(currentUser.id);
+  }, [currentUser.id]);
+
+  const allLogs = useMemo(() => loadAllTimeLogs(), [timeTick, scope]);
+
+  // Merge sessions + totals across the chosen scope.
+  const timeLog = useMemo(() => {
+    if (scope === "all") {
+      const sessions = visibleUsers.flatMap((u) => allLogs[u.id]?.sessions ?? []);
+      const totals: Record<string, number> = {};
+      for (const u of visibleUsers) {
+        const t = allLogs[u.id]?.totals ?? {};
+        for (const [k, v] of Object.entries(t)) totals[k] = (totals[k] ?? 0) + v;
+      }
+      return { sessions, totals };
+    }
+    return allLogs[scope] ?? loadTimeLog(scope);
+  }, [scope, visibleUsers, allLogs]);
+
+  const scopeLabel =
+    scope === "all"
+      ? "todos os colaboradores"
+      : (users.find((u) => u.id === scope)?.name ?? "colaborador");
+
+  const sessionToUserId = useMemo(() => {
+    // For "all" mode we need to know which user each session belongs to.
+    const map = new Map<string, string>();
+    if (scope !== "all") {
+      for (const s of allLogs[scope]?.sessions ?? []) map.set(s.id, scope);
+      return map;
+    }
+    for (const u of visibleUsers) {
+      for (const s of allLogs[u.id]?.sessions ?? []) map.set(s.id, u.id);
+    }
+    return map;
+  }, [scope, visibleUsers, allLogs]);
+
+  const userById = useMemo(() => {
+    const m = new Map<string, (typeof users)[number]>();
+    for (const u of users) m.set(u.id, u);
+    return m;
+  }, [users]);
 
   // Aggregate seconds worked per day (last 30 days)
   const timeByDay = useMemo(() => {
@@ -105,6 +169,108 @@ function Relatorios() {
     return rows;
   }, [tasks, timeLog]);
 
+  // Recent sessions table
+  const recentSessions = useMemo(() => {
+    return [...timeLog.sessions]
+      .sort((a, b) => b.endedAt - a.endedAt)
+      .slice(0, 30)
+      .map((s) => {
+        const t = tasks.find((x) => x.id === s.taskId);
+        const uid = sessionToUserId.get(s.id);
+        const u = uid ? userById.get(uid) : undefined;
+        return {
+          ...s,
+          taskTitle: t?.title ?? "(tarefa removida)",
+          taskStatus: t ? statusLabels[t.status] : "",
+          userName: u?.name ?? (uid === currentUser.id ? currentUser.name : "—"),
+        };
+      });
+  }, [timeLog, tasks, sessionToUserId, userById, currentUser]);
+
+  // Time per user (only meaningful with data stored locally)
+  const timeByUser = useMemo(() => {
+    return visibleUsers
+      .map((u) => {
+        const secs = (allLogs[u.id]?.sessions ?? []).reduce((s, x) => s + x.seconds, 0);
+        return { id: u.id, name: u.name.split(" ")[0]!, seconds: secs, minutes: Math.round(secs / 60) };
+      })
+      .filter((r) => r.seconds > 0)
+      .sort((a, b) => b.seconds - a.seconds)
+      .slice(0, 10);
+  }, [visibleUsers, allLogs]);
+
+  // ---------------- Exports ----------------
+
+  const exportSessions = () => {
+    const rows: CsvSessionRow[] = [...timeLog.sessions]
+      .sort((a, b) => a.startedAt - b.startedAt)
+      .map((s) => {
+        const t = tasks.find((x) => x.id === s.taskId);
+        const uid = sessionToUserId.get(s.id) ?? scope;
+        const u = userById.get(uid);
+        return {
+          userName: u?.name ?? "—",
+          userSector: u?.sector,
+          taskId: s.taskId,
+          taskTitle: t?.title ?? "(tarefa removida)",
+          status: t ? statusLabels[t.status] : "",
+          priority: t ? priorityLabels[t.priority] : "",
+          estimatedMinutes: t?.estimatedMinutes,
+          startedAt: s.startedAt,
+          endedAt: s.endedAt,
+          seconds: s.seconds,
+        };
+      });
+    downloadCsv(`fluxo-sessoes-${scope}-${new Date().toISOString().slice(0, 10)}.csv`, buildSessionsCsv(rows));
+  };
+
+  const exportSummary = () => {
+    // Aggregate per user + task
+    const agg = new Map<
+      string,
+      { userId: string; taskId: string; seconds: number; sessions: number; firstAt: number; lastAt: number }
+    >();
+    for (const s of timeLog.sessions) {
+      const uid = sessionToUserId.get(s.id) ?? scope;
+      const k = `${uid}|${s.taskId}`;
+      const cur = agg.get(k);
+      if (!cur) {
+        agg.set(k, {
+          userId: uid,
+          taskId: s.taskId,
+          seconds: s.seconds,
+          sessions: 1,
+          firstAt: s.startedAt,
+          lastAt: s.endedAt,
+        });
+      } else {
+        cur.seconds += s.seconds;
+        cur.sessions += 1;
+        cur.firstAt = Math.min(cur.firstAt, s.startedAt);
+        cur.lastAt = Math.max(cur.lastAt, s.endedAt);
+      }
+    }
+    const rows: CsvSummaryRow[] = [...agg.values()]
+      .sort((a, b) => b.seconds - a.seconds)
+      .map((r) => {
+        const t = tasks.find((x) => x.id === r.taskId);
+        const u = userById.get(r.userId);
+        return {
+          userName: u?.name ?? "—",
+          userSector: u?.sector,
+          taskTitle: t?.title ?? "(tarefa removida)",
+          status: t ? statusLabels[t.status] : "",
+          priority: t ? priorityLabels[t.priority] : "",
+          estimatedMinutes: t?.estimatedMinutes,
+          totalSeconds: r.seconds,
+          sessions: r.sessions,
+          firstAt: r.firstAt,
+          lastAt: r.lastAt,
+        };
+      });
+    downloadCsv(`fluxo-tempo-por-tarefa-${scope}-${new Date().toISOString().slice(0, 10)}.csv`, buildSummaryCsv(rows));
+  };
+
   const last30 = useMemo(() => {
     const days: { label: string; concluidas: number }[] = [];
     for (let i = 29; i >= 0; i--) {
@@ -153,9 +319,47 @@ function Relatorios() {
   return (
     <FluxoLayout title="Relatórios">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>
-          <p className="text-sm text-muted-foreground">Desempenho dos últimos 30 dias, por pessoa, setor e status.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>
+            <p className="text-sm text-muted-foreground">
+              Desempenho, tempo trabalhado e evolução — atualmente exibindo <b>{scopeLabel}</b>.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-[11px] font-medium text-muted-foreground">Visão de tempo:</label>
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            >
+              {visibleUsers.length > 1 && <option value="all">Todos ({visibleUsers.length})</option>}
+              {visibleUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                  {u.id === currentUser.id ? " (você)" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={exportSummary}
+              disabled={timeLog.sessions.length === 0}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+              title="CSV consolidado por tarefa"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Resumo
+            </button>
+            <button
+              type="button"
+              onClick={exportSessions}
+              disabled={timeLog.sessions.length === 0}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              title="CSV detalhado com início, fim e duração"
+            >
+              <Download className="h-3.5 w-3.5" /> Sessões
+            </button>
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-4">
@@ -174,7 +378,7 @@ function Relatorios() {
         <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Tempo trabalhado — últimos 30 dias (minutos)</h2>
           <p className="text-[11px] text-muted-foreground">
-            Baseado nos pomodoros e no play/pause/stop das tarefas do usuário atual.
+            Baseado no play/pause/stop das tarefas de <b>{scopeLabel}</b>.
           </p>
           <div className="mt-3 h-64">
             <ResponsiveContainer>
@@ -191,6 +395,29 @@ function Relatorios() {
             </ResponsiveContainer>
           </div>
         </section>
+
+        {timeByUser.length > 0 && (
+          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-sm font-semibold">Tempo por colaborador (dados locais)</h2>
+            <p className="text-[11px] text-muted-foreground">
+              Soma de todas as sessões cronometradas no dispositivo — útil para o gestor comparar cargas.
+            </p>
+            <div className="mt-3 h-64">
+              <ResponsiveContainer>
+                <BarChart data={timeByUser} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }}
+                    formatter={(v: number) => [`${v} min`, "Trabalhado"]}
+                  />
+                  <Bar dataKey="minutes" fill="var(--color-chart-4)" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2">
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
@@ -315,6 +542,53 @@ function Relatorios() {
             </div>
           </section>
         </div>
+
+        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">Sessões recentes</h2>
+              <p className="text-[11px] text-muted-foreground">
+                Últimas 30 sessões cronometradas — use "Exportar sessões" para baixar tudo em CSV.
+              </p>
+            </div>
+          </div>
+          {recentSessions.length === 0 ? (
+            <div className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+              Nenhuma sessão registrada. Use ▶ em qualquer tarefa para começar.
+            </div>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="pb-2 pr-3 font-medium">Tarefa</th>
+                    {scope === "all" && <th className="pb-2 pr-3 font-medium">Colaborador</th>}
+                    <th className="pb-2 pr-3 font-medium">Status</th>
+                    <th className="pb-2 pr-3 font-medium">Início</th>
+                    <th className="pb-2 pr-3 font-medium">Fim</th>
+                    <th className="pb-2 pr-3 text-right font-medium">Duração</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentSessions.map((s) => (
+                    <tr key={s.id} className="border-t border-border/60">
+                      <td className="max-w-[240px] truncate py-2 pr-3">{s.taskTitle}</td>
+                      {scope === "all" && <td className="py-2 pr-3 text-muted-foreground">{s.userName}</td>}
+                      <td className="py-2 pr-3 text-muted-foreground">{s.taskStatus}</td>
+                      <td className="py-2 pr-3 tabular-nums text-muted-foreground">
+                        {new Date(s.startedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td className="py-2 pr-3 tabular-nums text-muted-foreground">
+                        {new Date(s.endedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{formatHMS(s.seconds)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Distribuição por status</h2>
