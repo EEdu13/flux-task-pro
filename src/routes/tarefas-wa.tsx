@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveWhatsAppContact } from "@/lib/whatsapp-contacts";
 
 type TarefaWA = {
   id: string;
@@ -117,6 +118,10 @@ function TarefasWAPage() {
                 {r.titulo}
               </p>
               <p className="text-xs text-muted-foreground">
+                {(() => {
+                  const c = resolveWhatsAppContact(r.telefone);
+                  return c ? `${c.name} · ` : "";
+                })()}
                 {r.telefone ?? "—"} ·{" "}
                 {new Date(r.criado_em).toLocaleString("pt-BR")}
               </p>
