@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as PackRouteImport } from './routes/pack'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
@@ -27,6 +28,11 @@ import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomN
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
 
+const TarefasWaRoute = TarefasWaRouteImport.update({
+  id: '/tarefas-wa',
+  path: '/tarefas-wa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
   '/relatorios': typeof RelatoriosRoute
+  '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
   '/relatorios': typeof RelatoriosRoute
+  '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
@@ -166,6 +174,7 @@ export interface FileRoutesById {
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
   '/relatorios': typeof RelatoriosRoute
+  '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/minhas-tarefas'
     | '/pack'
     | '/relatorios'
+    | '/tarefas-wa'
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/minhas-tarefas'
     | '/pack'
     | '/relatorios'
+    | '/tarefas-wa'
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas'
@@ -225,6 +236,7 @@ export interface FileRouteTypes {
     | '/minhas-tarefas'
     | '/pack'
     | '/relatorios'
+    | '/tarefas-wa'
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
@@ -245,6 +257,7 @@ export interface RootRouteChildren {
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   PackRoute: typeof PackRoute
   RelatoriosRoute: typeof RelatoriosRoute
+  TarefasWaRoute: typeof TarefasWaRoute
   ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
@@ -254,6 +267,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tarefas-wa': {
+      id: '/tarefas-wa'
+      path: '/tarefas-wa'
+      fullPath: '/tarefas-wa'
+      preLoaderRoute: typeof TarefasWaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/relatorios': {
       id: '/relatorios'
       path: '/relatorios'
@@ -389,6 +409,7 @@ const rootRouteChildren: RootRouteChildren = {
   MinhasTarefasRoute: MinhasTarefasRoute,
   PackRoute: PackRoute,
   RelatoriosRoute: RelatoriosRoute,
+  TarefasWaRoute: TarefasWaRoute,
   ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
@@ -398,13 +419,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
