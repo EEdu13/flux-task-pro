@@ -80,3 +80,160 @@ export function parseHM(input: string): number | null {
   if (num) return parseInt(num[1]!, 10);
   return null;
 }
+
+// ---------------- Cross-user helpers ----------------
+
+const KEY_PREFIX = "fluxo.timelog.v1:";
+
+/**
+ * Loads the time log for every user that has data persisted on this device.
+ * Useful for managers who need to inspect subordinates' time when they've
+ * shared the same browser (demo/on-prem scenarios).
+ */
+export function loadAllTimeLogs(): Record<string, Persisted> {
+  if (typeof window === "undefined") return {};
+  const out: Record<string, Persisted> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith(KEY_PREFIX)) continue;
+    const userId = k.slice(KEY_PREFIX.length);
+    out[userId] = safeParse(localStorage.getItem(k));
+  }
+  return out;
+}
+
+export function sessionsInRange(
+  sessions: TimerSession[],
+  fromMs: number,
+  toMs: number,
+): TimerSession[] {
+  return sessions.filter((s) => s.endedAt >= fromMs && s.endedAt < toMs);
+}
+
+function csvEscape(v: string | number): string {
+  const s = String(v ?? "");
+  if (/[";\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function fmtDateTime(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function fmtIso(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+export interface CsvSessionRow {
+  userName: string;
+  userSector?: string;
+  taskId: string;
+  taskTitle: string;
+  status?: string;
+  priority?: string;
+  estimatedMinutes?: number;
+  startedAt: number;
+  endedAt: number;
+  seconds: number;
+}
+
+export function buildSessionsCsv(rows: CsvSessionRow[]): string {
+  const header = [
+    "Colaborador",
+    "Setor",
+    "Tarefa",
+    "Status",
+    "Prioridade",
+    "Início",
+    "Fim",
+    "Início (ISO)",
+    "Fim (ISO)",
+    "Duração (min)",
+    "Duração (hh:mm:ss)",
+    "Estimado (min)",
+  ].join(";");
+  const body = rows.map((r) =>
+    [
+      csvEscape(r.userName),
+      csvEscape(r.userSector ?? ""),
+      csvEscape(r.taskTitle),
+      csvEscape(r.status ?? ""),
+      csvEscape(r.priority ?? ""),
+      csvEscape(fmtDateTime(r.startedAt)),
+      csvEscape(fmtDateTime(r.endedAt)),
+      csvEscape(fmtIso(r.startedAt)),
+      csvEscape(fmtIso(r.endedAt)),
+      csvEscape((r.seconds / 60).toFixed(2).replace(".", ",")),
+      csvEscape(formatHMS(r.seconds)),
+      csvEscape(r.estimatedMinutes ?? ""),
+    ].join(";"),
+  );
+  return "\uFEFF" + [header, ...body].join("\n");
+}
+
+export interface CsvSummaryRow {
+  userName: string;
+  userSector?: string;
+  taskTitle: string;
+  status?: string;
+  priority?: string;
+  estimatedMinutes?: number;
+  totalSeconds: number;
+  sessions: number;
+  firstAt?: number;
+  lastAt?: number;
+}
+
+export function buildSummaryCsv(rows: CsvSummaryRow[]): string {
+  const header = [
+    "Colaborador",
+    "Setor",
+    "Tarefa",
+    "Status",
+    "Prioridade",
+    "Estimado (min)",
+    "Trabalhado (min)",
+    "Trabalhado (hh:mm)",
+    "Sessões",
+    "Primeiro início",
+    "Último término",
+    "Desvio (min)",
+  ].join(";");
+  const body = rows.map((r) => {
+    const mins = r.totalSeconds / 60;
+    const desvio = r.estimatedMinutes != null ? mins - r.estimatedMinutes : "";
+    return [
+      csvEscape(r.userName),
+      csvEscape(r.userSector ?? ""),
+      csvEscape(r.taskTitle),
+      csvEscape(r.status ?? ""),
+      csvEscape(r.priority ?? ""),
+      csvEscape(r.estimatedMinutes ?? ""),
+      csvEscape(mins.toFixed(2).replace(".", ",")),
+      csvEscape(formatHM(r.totalSeconds)),
+      csvEscape(r.sessions),
+      csvEscape(r.firstAt ? fmtDateTime(r.firstAt) : ""),
+      csvEscape(r.lastAt ? fmtDateTime(r.lastAt) : ""),
+      csvEscape(typeof desvio === "number" ? desvio.toFixed(1).replace(".", ",") : ""),
+    ].join(";");
+  });
+  return "\uFEFF" + [header, ...body].join("\n");
+}
+
+export function downloadCsv(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

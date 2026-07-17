@@ -16,6 +16,7 @@ import autoTable from "jspdf-autotable";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, type Task, type User } from "@/lib/fluxo-types";
+import { loadAllTimeLogs, formatHM } from "@/lib/time-log";
 
 export const Route = createFileRoute("/metas")({
   head: () => ({
@@ -593,8 +594,22 @@ function ExportMonthly({
     if (list.length === 0) return;
     setBusy(true);
     const range = periodRange("mensal");
+    const logs = loadAllTimeLogs();
     const rows: string[] = [];
-    rows.push(["Colaborador", "Setor", "Frequência", "Tarefa", "Prazo", "Status"].join(";"));
+    rows.push(
+      [
+        "Colaborador",
+        "Setor",
+        "Frequência",
+        "Tarefa",
+        "Prazo",
+        "Status",
+        "Estimado (min)",
+        "Trabalhado (min)",
+        "Trabalhado (hh:mm)",
+        "Desvio (min)",
+      ].join(";"),
+    );
     for (const u of list) {
       const uTasks = tasks.filter(
         (t) =>
@@ -604,10 +619,18 @@ function ExportMonthly({
           new Date(t.dueDate).getTime() < range.end.getTime(),
       );
       const breakdown: TaskScore[] = [];
+      const userTotals = logs[u.id]?.totals ?? {};
+      let sumWorkedSec = 0;
+      let sumEstMin = 0;
       for (const t of uTasks) {
         const c = completions.find((x) => x.taskId === t.id);
         const b = scoreTask(t, c?.at ?? null);
         breakdown.push(b);
+        const workedSec = userTotals[t.id] ?? 0;
+        const workedMin = Math.round(workedSec / 60);
+        const est = t.estimatedMinutes ?? 0;
+        sumWorkedSec += workedSec;
+        sumEstMin += est;
         rows.push(
           [
             escapeCsv(u.name),
@@ -616,6 +639,10 @@ function ExportMonthly({
             escapeCsv(t.title),
             new Date(t.dueDate).toLocaleDateString("pt-BR"),
             b.state,
+            est || "",
+            workedMin || "",
+            workedSec ? escapeCsv(formatHM(workedSec)) : "",
+            est ? (workedMin - est).toString() : "",
           ].join(";"),
         );
       }
@@ -629,6 +656,10 @@ function ExportMonthly({
           "",
           "",
           `${pct.toFixed(0)}%`,
+          sumEstMin || "",
+          Math.round(sumWorkedSec / 60) || "",
+          sumWorkedSec ? escapeCsv(formatHM(sumWorkedSec)) : "",
+          sumEstMin ? (Math.round(sumWorkedSec / 60) - sumEstMin).toString() : "",
         ].join(";"),
       );
     }
