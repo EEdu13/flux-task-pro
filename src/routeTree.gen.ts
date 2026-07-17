@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as PackRouteImport } from './routes/pack'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
@@ -24,8 +25,14 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
 import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
+import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
 
+const TarefasWaRoute = TarefasWaRouteImport.update({
+  id: '/tarefas-wa',
+  path: '/tarefas-wa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -101,6 +108,12 @@ const ConvidadoRoomNameRoute = ConvidadoRoomNameRouteImport.update({
   path: '/convidado/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicWhatsappWebhookRoute =
+  ApiPublicWhatsappWebhookRouteImport.update({
+    id: '/api/public/whatsapp-webhook',
+    path: '/api/public/whatsapp-webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
   id: '/api/public/purge-rooms',
   path: '/api/public/purge-rooms',
@@ -120,10 +133,12 @@ export interface FileRoutesByFullPath {
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
   '/relatorios': typeof RelatoriosRoute
+  '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -138,10 +153,12 @@ export interface FileRoutesByTo {
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
   '/relatorios': typeof RelatoriosRoute
+  '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -157,10 +174,12 @@ export interface FileRoutesById {
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
   '/relatorios': typeof RelatoriosRoute
+  '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,10 +196,12 @@ export interface FileRouteTypes {
     | '/minhas-tarefas'
     | '/pack'
     | '/relatorios'
+    | '/tarefas-wa'
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
     | '/api/public/purge-rooms'
+    | '/api/public/whatsapp-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -195,10 +216,12 @@ export interface FileRouteTypes {
     | '/minhas-tarefas'
     | '/pack'
     | '/relatorios'
+    | '/tarefas-wa'
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas'
     | '/api/public/purge-rooms'
+    | '/api/public/whatsapp-webhook'
   id:
     | '__root__'
     | '/'
@@ -213,10 +236,12 @@ export interface FileRouteTypes {
     | '/minhas-tarefas'
     | '/pack'
     | '/relatorios'
+    | '/tarefas-wa'
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
     | '/api/public/purge-rooms'
+    | '/api/public/whatsapp-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -232,14 +257,23 @@ export interface RootRouteChildren {
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   PackRoute: typeof PackRoute
   RelatoriosRoute: typeof RelatoriosRoute
+  TarefasWaRoute: typeof TarefasWaRoute
   ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
   ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
+  ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tarefas-wa': {
+      id: '/tarefas-wa'
+      path: '/tarefas-wa'
+      fullPath: '/tarefas-wa'
+      preLoaderRoute: typeof TarefasWaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/relatorios': {
       id: '/relatorios'
       path: '/relatorios'
@@ -345,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConvidadoRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/whatsapp-webhook': {
+      id: '/api/public/whatsapp-webhook'
+      path: '/api/public/whatsapp-webhook'
+      fullPath: '/api/public/whatsapp-webhook'
+      preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/purge-rooms': {
       id: '/api/public/purge-rooms'
       path: '/api/public/purge-rooms'
@@ -368,10 +409,12 @@ const rootRouteChildren: RootRouteChildren = {
   MinhasTarefasRoute: MinhasTarefasRoute,
   PackRoute: PackRoute,
   RelatoriosRoute: RelatoriosRoute,
+  TarefasWaRoute: TarefasWaRoute,
   ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
   ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
+  ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
