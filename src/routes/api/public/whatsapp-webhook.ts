@@ -41,7 +41,17 @@ async function processWebhook(rawBody: string) {
   const remoteJid: string = data?.key?.remoteJid ?? "";
   const telefone = remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "");
 
-  const titulo = text.trim();
+  // Aceita comandos naturais: "crie a tarefa X", "criar tarefa X",
+  // "nova tarefa X", "tarefa: X". Se nenhum prefixo bater, usa o texto todo.
+  const raw = text.trim();
+  const match = raw.match(
+    /^\s*(?:crie|criar|cria|nova|novo|adicione|adicionar|add)\s+(?:a\s+|uma\s+|o\s+|um\s+)?tarefa[:\-\s]+(.+)$/i,
+  ) ?? raw.match(/^\s*tarefa[:\-\s]+(.+)$/i);
+  const titulo = (match?.[1] ?? raw).trim();
+  if (!titulo) return;
+
+  const { resolveWhatsAppContact } = await import("@/lib/whatsapp-contacts");
+  const contact = resolveWhatsAppContact(telefone);
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { error } = await supabaseAdmin
@@ -70,7 +80,9 @@ async function processWebhook(rawBody: string) {
       },
       body: JSON.stringify({
         number: telefone,
-        text: `✅ Tarefa criada: ${titulo}`,
+        text: contact
+          ? `✅ Tarefa criada para ${contact.name}: ${titulo}`
+          : `✅ Tarefa criada: ${titulo}`,
       }),
     });
     if (!res.ok) {
