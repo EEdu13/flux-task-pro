@@ -24,6 +24,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
 import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
+import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
 
 const RelatoriosRoute = RelatoriosRouteImport.update({
@@ -101,6 +102,12 @@ const ConvidadoRoomNameRoute = ConvidadoRoomNameRouteImport.update({
   path: '/convidado/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicWhatsappWebhookRoute =
+  ApiPublicWhatsappWebhookRouteImport.update({
+    id: '/api/public/whatsapp-webhook',
+    path: '/api/public/whatsapp-webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
   id: '/api/public/purge-rooms',
   path: '/api/public/purge-rooms',
@@ -124,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -142,6 +150,7 @@ export interface FileRoutesByTo {
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +170,7 @@ export interface FileRoutesById {
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +191,7 @@ export interface FileRouteTypes {
     | '/salas/$roomName'
     | '/salas/'
     | '/api/public/purge-rooms'
+    | '/api/public/whatsapp-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/salas/$roomName'
     | '/salas'
     | '/api/public/purge-rooms'
+    | '/api/public/whatsapp-webhook'
   id:
     | '__root__'
     | '/'
@@ -217,6 +229,7 @@ export interface FileRouteTypes {
     | '/salas/$roomName'
     | '/salas/'
     | '/api/public/purge-rooms'
+    | '/api/public/whatsapp-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -236,6 +249,7 @@ export interface RootRouteChildren {
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
   ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
+  ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -345,6 +359,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConvidadoRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/whatsapp-webhook': {
+      id: '/api/public/whatsapp-webhook'
+      path: '/api/public/whatsapp-webhook'
+      fullPath: '/api/public/whatsapp-webhook'
+      preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/purge-rooms': {
       id: '/api/public/purge-rooms'
       path: '/api/public/purge-rooms'
@@ -372,7 +393,18 @@ const rootRouteChildren: RootRouteChildren = {
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
   ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
+  ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
