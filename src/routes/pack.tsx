@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Check, Flame, Send, Sparkles, Trash2, Users } from "lucide-react";
+import { Check, Flame, Send, Sparkles, Trash2, Users, Layers, ArrowLeftRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
+import type { PackTemplateScope } from "@/lib/fluxo-types";
 
 export const Route = createFileRoute("/pack")({
   head: () => ({
@@ -35,10 +36,20 @@ function parsePackLines(text: string) {
     .filter((l) => l.length > 0);
 }
 
-type Tab = "meu" | "outro" | "concluir";
+type Tab = "meu" | "outro" | "concluir" | "modelos";
 
 function PackPage() {
-  const { createTask, tasks, users, currentUser } = useFluxo();
+  const {
+    createTask,
+    tasks,
+    users,
+    currentUser,
+    packTemplates,
+    createPackTemplate,
+    deletePackTemplate,
+    applyPackTemplate,
+    transferPack,
+  } = useFluxo();
   const initialMyPack = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
   const [tab, setTab] = useState<Tab>(initialMyPack.length > 0 ? "concluir" : "meu");
   const [meuText, setMeuText] = useState("");
