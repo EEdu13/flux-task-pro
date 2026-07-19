@@ -464,6 +464,12 @@ export function InlineTaskCreator({
                               e.preventDefault();
                               const u = matches[mention!.selectedIndex] ?? matches[0];
                               applyMention(row.id, u.id, u.name);
+                            } else {
+                              const el = descRefs.current[row.id];
+                              if (el) {
+                                e.preventDefault();
+                                el.focus();
+                              }
                             }
                           } else if (e.key === "Backspace" && row.title === "" && rows.length > 1) {
                             e.preventDefault();
