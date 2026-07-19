@@ -419,7 +419,7 @@ export function QuickFab() {
         <div className="w-[300px] rounded-xl border border-border bg-card p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
-              <Sparkles className="h-3.5 w-3.5 text-fuchsia-500" /> Chamar atenção
+              <Sparkles className="h-3.5 w-3.5 text-lime-500" /> Chamar atenção
             </div>
             <button
               onClick={() => setMode("menu")}
@@ -449,7 +449,7 @@ export function QuickFab() {
                         {u.jobTitle}
                       </span>
                     </span>
-                    <Sparkles className="h-3.5 w-3.5 text-fuchsia-500 opacity-0 group-hover:opacity-100" />
+                    <Sparkles className="h-3.5 w-3.5 text-lime-500 opacity-0 group-hover:opacity-100" />
                   </button>
                 </li>
               ))}
