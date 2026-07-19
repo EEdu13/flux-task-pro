@@ -37,20 +37,20 @@ function LoginPage() {
   const user = users.find((u) => u.id === selected) ?? users[0]!;
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#05060f] text-white">
+    <div className="relative min-h-screen w-full overflow-hidden bg-[oklch(0.14_0.02_155)] text-white">
       {/* Aurora background */}
       <div className="pointer-events-none absolute inset-0">
         <div
           className="absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full opacity-70 blur-3xl"
-          style={{ background: "radial-gradient(circle, oklch(0.55 0.25 275) 0%, transparent 65%)" }}
+          style={{ background: "radial-gradient(circle, oklch(0.44 0.09 150) 0%, transparent 65%)" }}
         />
         <div
           className="absolute -bottom-40 -right-32 h-[560px] w-[560px] rounded-full opacity-60 blur-3xl"
-          style={{ background: "radial-gradient(circle, oklch(0.6 0.2 330) 0%, transparent 65%)" }}
+          style={{ background: "radial-gradient(circle, oklch(0.83 0.15 120) 0%, transparent 65%)" }}
         />
         <div
           className="absolute top-1/2 left-1/2 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-40 blur-3xl"
-          style={{ background: "radial-gradient(circle, oklch(0.62 0.16 200) 0%, transparent 60%)" }}
+          style={{ background: "radial-gradient(circle, oklch(0.55 0.09 180) 0%, transparent 60%)" }}
         />
         <div
           className="absolute inset-0 opacity-[0.05]"
@@ -77,7 +77,7 @@ function LoginPage() {
               className="bg-clip-text text-transparent"
               style={{
                 backgroundImage:
-                  "linear-gradient(90deg, oklch(0.7 0.22 275), oklch(0.72 0.2 330))",
+                  "linear-gradient(90deg, oklch(0.55 0.10 150), oklch(0.83 0.15 120))",
               }}
             >
               alto desempenho
@@ -111,19 +111,19 @@ function LoginPage() {
             className="absolute -inset-[1px] rounded-2xl opacity-70 blur-md"
             style={{
               background:
-                "linear-gradient(135deg, oklch(0.6 0.24 275) 0%, oklch(0.65 0.2 330) 100%)",
+                "linear-gradient(135deg, oklch(0.44 0.09 150) 0%, oklch(0.83 0.15 120) 100%)",
             }}
           />
           <form
             onSubmit={submit}
-            className="relative rounded-2xl border border-white/10 bg-[#0b0d1a]/90 p-8 backdrop-blur-xl"
+            className="relative rounded-2xl border border-white/10 bg-[oklch(0.18_0.025_155)]/90 p-8 backdrop-blur-xl"
           >
             <div className="mb-6 flex items-center gap-3">
               <div
                 className="flex h-10 w-10 items-center justify-center rounded-lg text-lg font-bold"
                 style={{
                   background:
-                    "linear-gradient(135deg, oklch(0.6 0.24 275) 0%, oklch(0.65 0.2 330) 100%)",
+                    "linear-gradient(135deg, oklch(0.44 0.09 150) 0%, oklch(0.83 0.15 120) 100%)",
                 }}
               >
                 F
@@ -153,7 +153,7 @@ function LoginPage() {
                       className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold"
                       style={{
                         background:
-                          "linear-gradient(135deg, oklch(0.6 0.24 275) 0%, oklch(0.65 0.2 330) 100%)",
+                          "linear-gradient(135deg, oklch(0.44 0.09 150) 0%, oklch(0.83 0.15 120) 100%)",
                       }}
                     >
                       {u.avatar}
@@ -167,7 +167,7 @@ function LoginPage() {
                     {active && (
                       <span
                         className="h-2 w-2 rounded-full"
-                        style={{ background: "oklch(0.72 0.2 330)" }}
+                        style={{ background: "oklch(0.83 0.15 120)" }}
                       />
                     )}
                   </button>
@@ -192,7 +192,7 @@ function LoginPage() {
               className="group flex w-full items-center justify-center gap-2 rounded-md py-2.5 text-sm font-semibold text-white transition disabled:opacity-70"
               style={{
                 background:
-                  "linear-gradient(135deg, oklch(0.6 0.24 275) 0%, oklch(0.65 0.2 330) 100%)",
+                  "linear-gradient(135deg, oklch(0.44 0.09 150) 0%, oklch(0.83 0.15 120) 100%)",
               }}
             >
               {loading ? "Autenticando…" : `Entrar como ${user.name.split(" ")[0]}`}
