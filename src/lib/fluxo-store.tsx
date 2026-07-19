@@ -15,6 +15,9 @@ import type {
   MeetingMinute,
   Meta,
   Notification,
+  PackTemplate,
+  PackTemplateItem,
+  Project,
   Status,
   Task,
   User,
@@ -54,6 +57,8 @@ interface Store {
   notifications: Notification[];
   metas: Meta[];
   completions: CompletionEntry[];
+  projects: Project[];
+  packTemplates: PackTemplate[];
   currentUserId: string;
   isAuthenticated: boolean;
   login: (userId: string) => void;
@@ -103,6 +108,18 @@ interface Store {
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
+  // projects
+  createProject: (p: Omit<Project, "id" | "createdAt" | "createdBy">) => string;
+  updateProject: (id: string, patch: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
+  visibleProjects: () => Project[];
+  projectTasks: (projectId: string) => Task[];
+  // pack templates
+  createPackTemplate: (p: Omit<PackTemplate, "id" | "createdAt" | "createdBy">) => string;
+  updatePackTemplate: (id: string, patch: Partial<PackTemplate>) => void;
+  deletePackTemplate: (id: string) => void;
+  applyPackTemplate: (templateId: string, targetUserId: string) => number;
+  transferPack: (fromUserId: string, toUserId: string) => number;
   // global task dialog
   taskDialog: TaskDialogState;
   openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
@@ -124,6 +141,8 @@ interface Persisted {
   notifications: Notification[];
   metas: Meta[];
   completions: CompletionEntry[];
+  projects: Project[];
+  packTemplates: PackTemplate[];
   currentUserId: string;
   isAuthenticated: boolean;
   callCounts: Record<string, Record<string, Record<string, number>>>;
@@ -139,6 +158,8 @@ function load(): Persisted {
     notifications: seedNotifications,
     metas: seedMetas,
     completions: seedCompletions,
+    projects: [],
+    packTemplates: [],
     currentUserId: "u1",
     isAuthenticated: false,
     callCounts: {},
