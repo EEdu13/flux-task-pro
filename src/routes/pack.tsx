@@ -154,6 +154,7 @@ function PackPage() {
                 { id: "meu" as const, label: "Criar meu pack", icon: Sparkles },
                 { id: "outro" as const, label: "Criar pack para alguém", icon: Send },
                 { id: "concluir" as const, label: `Concluir hoje (${pending.length}/${myPack.length})`, icon: Check },
+                { id: "modelos" as const, label: "Modelos & transferência", icon: Layers },
               ]
             ).map((t) => {
               const active = tab === t.id;
