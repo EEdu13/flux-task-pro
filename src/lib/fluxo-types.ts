@@ -96,6 +96,47 @@ export interface Task {
    * Tempo estimado (em minutos) para executar essa tarefa. Opcional.
    */
   estimatedMinutes?: number;
+  /**
+   * Se preenchido, a tarefa é uma subtarefa de um Projeto.
+   * A subtarefa continua sendo a tarefa do dia-a-dia do assignee.
+   */
+  projectId?: string;
+}
+
+export type ProjectStatus = "ativo" | "pausado" | "concluido";
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  status: ProjectStatus;
+  ownerId: string;      // criador / responsável do projeto
+  memberIds: string[];  // pessoas participando do projeto
+  sector?: string;
+  dueDate?: string;     // ISO
+  createdAt: string;
+  createdBy: string;
+  color?: string;       // ex.: oklch(...)
+}
+
+export type PackTemplateScope = "cargo" | "pessoa";
+
+export interface PackTemplateItem {
+  id: string;
+  title: string;
+  estimatedMinutes?: number;
+}
+
+export interface PackTemplate {
+  id: string;
+  name: string;                 // ex.: "Supervisor de Operações"
+  scope: PackTemplateScope;     // cargo (jobTitle) ou pessoa (userId)
+  targetJobTitle?: string;      // usado quando scope="cargo"
+  targetUserId?: string;        // usado quando scope="pessoa"
+  items: PackTemplateItem[];
+  description?: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface MinuteTopic {
