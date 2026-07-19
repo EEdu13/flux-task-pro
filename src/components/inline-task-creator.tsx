@@ -15,6 +15,7 @@ import { toast } from "sonner";
 interface DraftRow {
   id: string;
   title: string;
+  description: string;
   dueDate: string; // yyyy-mm-dd
   assigneeId: string;
   sector: string;
@@ -51,6 +52,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
     title: "",
+    description: "",
     dueDate: defaults.dueDate ?? todayStr(),
     assigneeId: defaults.assigneeId ?? "",
     sector: defaults.sector ?? "",
@@ -83,6 +85,7 @@ export function InlineTaskCreator({
     }),
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const descRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -150,6 +153,7 @@ export function InlineTaskCreator({
     const est = parseHM(row.estimateHM);
     createTask({
       title: row.title.trim(),
+      description: row.description.trim() || undefined,
       sector: row.sector || currentUser.sector,
       createdBy: currentUser.id,
       assigneeId: row.assigneeId || currentUser.id,
