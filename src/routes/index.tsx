@@ -138,7 +138,7 @@ function Home() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              Olá, {currentUser.name.split(" ")[0]} 👋
+              Olá, {currentUser.name.split(" ")[0]}
             </h1>
             <p className="text-sm text-muted-foreground">
               Você tem <span className="font-medium text-foreground">{openTasks.length}</span> tarefas em aberto e concluiu{" "}
@@ -231,7 +231,7 @@ function Home() {
               <ul className="mt-4 space-y-1.5">
                 {packTasks.length === 0 && (
                   <li className="rounded-md border border-dashed border-amber-500/40 bg-amber-500/5 px-3 py-4 text-center text-xs text-muted-foreground">
-                    Você ainda não montou seu pack. Vá em <Link to="/minhas-tarefas" className="font-semibold text-amber-600 hover:underline">Minhas tarefas</Link> e marque a ⭐ nas obrigações do seu dia.
+                    Você ainda não montou seu pack. Vá em <Link to="/minhas-tarefas" className="font-semibold text-amber-600 hover:underline">Minhas tarefas</Link> e marque a ★ nas obrigações do seu dia.
                   </li>
                 )}
                 {packTasks.slice(0, 5).map((t) => {
@@ -330,7 +330,7 @@ function Home() {
             <ul className="mt-4 divide-y divide-border">
               {todayFocus.length === 0 && (
                 <li className="py-10 text-center text-sm text-muted-foreground">
-                  🎉 Nada urgente. Aproveite pra planejar a semana.
+                  Nada urgente. Aproveite pra planejar a semana.
                 </li>
               )}
               {todayFocus.map((t) => {

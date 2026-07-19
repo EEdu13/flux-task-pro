@@ -1021,7 +1021,7 @@ function ChatPanel({
       <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-2 text-xs">
         {messages.length === 0 ? (
           <div className="mt-6 text-center text-[11px] text-white/50">
-            Nenhuma mensagem ainda. Diga oi 👋
+            Nenhuma mensagem ainda. Diga oi
           </div>
         ) : (
           messages.map((m) => {

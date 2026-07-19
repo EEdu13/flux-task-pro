@@ -114,7 +114,7 @@ async function processWebhook(rawBody: string) {
   if (!evoUrl || !evoKey || !evoInstance || !telefone) return;
 
   const parts: string[] = [];
-  parts.push(assigneeName ? `✅ Tarefa criada para ${assigneeName}` : "✅ Tarefa criada");
+  parts.push(assigneeName ? `Tarefa criada para ${assigneeName}` : "Tarefa criada");
   parts.push(`: ${titulo}`);
   if (parsed?.due_date_iso) {
     const d = new Date(parsed.due_date_iso);
@@ -123,7 +123,7 @@ async function processWebhook(rawBody: string) {
   if (parsed?.recurring) parts.push("\n🔁 Recorrente");
   if (parsed?.require_proof) parts.push("\n📎 Exige comprovante");
   if (parsed?.priority && parsed.priority !== "media") {
-    parts.push(`\n⚡ Prioridade ${parsed.priority}`);
+    parts.push(`\nPrioridade ${parsed.priority}`);
   }
 
   const url = `${evoUrl.replace(/\/$/, "")}/message/sendText/${evoInstance}`;

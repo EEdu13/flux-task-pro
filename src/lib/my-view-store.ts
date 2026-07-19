@@ -44,7 +44,7 @@ function safeWrite(key: string, value: unknown) {
 
 const DEFAULT_COLUMNS: MyViewColumn[] = [
   { id: "priv-note", name: "Anotação", type: "text" },
-  { id: "priv-tag", name: "Etiqueta", type: "select", options: ["🔥 Urgente", "🚀 Rápida", "🧠 Foco", "⏳ Aguarda"] },
+  { id: "priv-tag", name: "Etiqueta", type: "select", options: ["Urgente", "Rápida", "Foco", "Aguarda"] },
 ];
 
 export const COLOR_PALETTE = [
