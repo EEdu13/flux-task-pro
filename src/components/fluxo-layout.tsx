@@ -28,6 +28,7 @@ import {
   UserPlus,
   Flame,
   Contact,
+  FolderKanban,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -55,6 +56,7 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
   { to: "/minhas-tarefas", label: "Minhas tarefas", icon: CheckSquare },
   { to: "/pack", label: "Pack diário", icon: Flame },
+  { to: "/projetos", label: "Projetos", icon: FolderKanban },
   { to: "/inbox", label: "Caixa de entrada", icon: Inbox },
   { to: "/equipe", label: "Equipe", icon: Users },
   { to: "/contatos", label: "Contatos", icon: Contact },
