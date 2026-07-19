@@ -431,6 +431,19 @@ function PackPage() {
             )}
           </section>
         )}
+
+        {tab === "modelos" && (
+          <ModelosSection
+            users={users}
+            currentUserId={currentUser.id}
+            packTemplates={packTemplates}
+            createPackTemplate={createPackTemplate}
+            deletePackTemplate={deletePackTemplate}
+            applyPackTemplate={applyPackTemplate}
+            transferPack={transferPack}
+            tasks={tasks}
+          />
+        )}
       </div>
     </FluxoLayout>
   );
@@ -438,3 +451,371 @@ function PackPage() {
 
 // keep Trash2 tree-shaken from warning
 void Trash2;
+
+type ModelosProps = {
+  users: ReturnType<typeof useFluxo>["users"];
+  currentUserId: string;
+  packTemplates: ReturnType<typeof useFluxo>["packTemplates"];
+  createPackTemplate: ReturnType<typeof useFluxo>["createPackTemplate"];
+  deletePackTemplate: ReturnType<typeof useFluxo>["deletePackTemplate"];
+  applyPackTemplate: ReturnType<typeof useFluxo>["applyPackTemplate"];
+  transferPack: ReturnType<typeof useFluxo>["transferPack"];
+  tasks: ReturnType<typeof useFluxo>["tasks"];
+};
+
+function ModelosSection({
+  users,
+  currentUserId,
+  packTemplates,
+  createPackTemplate,
+  deletePackTemplate,
+  applyPackTemplate,
+  transferPack,
+  tasks,
+}: ModelosProps) {
+  const jobTitles = useMemo(
+    () => Array.from(new Set(users.map((u) => u.jobTitle).filter(Boolean))),
+    [users],
+  );
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState({
+    name: "",
+    scope: "cargo" as PackTemplateScope,
+    targetJobTitle: jobTitles[0] ?? "",
+    targetUserId: users[0]?.id ?? "",
+    itemsText: "",
+  });
+  const [applyOpen, setApplyOpen] = useState<{ templateId: string } | null>(null);
+  const [applyTargetId, setApplyTargetId] = useState(currentUserId);
+  const [transferFrom, setTransferFrom] = useState("");
+  const [transferTo, setTransferTo] = useState("");
+
+  const submitDraft = () => {
+    if (!draft.name.trim()) {
+      toast.error("Dê um nome ao modelo (ex.: Supervisor de Operações)");
+      return;
+    }
+    const items = draft.itemsText
+      .split("\n")
+      .map((l) => l.replace(/^[-*•\d.\s]+/, "").trim())
+      .filter(Boolean)
+      .map((title, i) => ({ id: `it-${Date.now()}-${i}`, title }));
+    if (items.length === 0) {
+      toast.error("Coloque pelo menos uma tarefa no modelo (uma por linha)");
+      return;
+    }
+    createPackTemplate({
+      name: draft.name.trim(),
+      scope: draft.scope,
+      targetJobTitle: draft.scope === "cargo" ? draft.targetJobTitle : undefined,
+      targetUserId: draft.scope === "pessoa" ? draft.targetUserId : undefined,
+      items,
+    });
+    setDraft({
+      name: "",
+      scope: "cargo",
+      targetJobTitle: jobTitles[0] ?? "",
+      targetUserId: users[0]?.id ?? "",
+      itemsText: "",
+    });
+    setCreating(false);
+    toast.success(`Modelo "${draft.name.trim()}" criado`);
+  };
+
+  const doApply = () => {
+    if (!applyOpen) return;
+    const n = applyPackTemplate(applyOpen.templateId, applyTargetId);
+    if (n > 0) {
+      const target = users.find((u) => u.id === applyTargetId);
+      toast.success(`Pack aplicado a ${target?.name.split(" ")[0] ?? "usuário"} — ${n} tarefas`);
+    } else {
+      toast.error("Modelo vazio ou usuário inválido");
+    }
+    setApplyOpen(null);
+  };
+
+  const doTransfer = () => {
+    if (!transferFrom || !transferTo || transferFrom === transferTo) {
+      toast.error("Escolha usuários diferentes");
+      return;
+    }
+    const n = transferPack(transferFrom, transferTo);
+    if (n > 0) {
+      const from = users.find((u) => u.id === transferFrom);
+      const to = users.find((u) => u.id === transferTo);
+      toast.success(
+        `${n} ${n === 1 ? "tarefa" : "tarefas"} do pack de ${from?.name.split(" ")[0]} → ${to?.name.split(" ")[0]}`,
+      );
+      setTransferFrom("");
+      setTransferTo("");
+    } else {
+      toast.error("Sem itens de pack em aberto para transferir");
+    }
+  };
+
+  const usersWithPack = users.filter((u) =>
+    tasks.some((t) => t.assigneeId === u.id && t.inPack && t.status !== "concluida"),
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <Layers className="h-3.5 w-3.5" /> Modelos de pack
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Salve rotinas de <b>cargo</b> (ex.: Supervisor, Analista) ou de <b>pessoa</b>. Ao
+              contratar alguém novo, aplique o modelo — sem redigitar tudo.
+            </p>
+          </div>
+          <button
+            onClick={() => setCreating((v) => !v)}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+          >
+            <Plus className="h-3.5 w-3.5" /> Novo modelo
+          </button>
+        </div>
+
+        {creating && (
+          <div className="mt-3 rounded-lg border border-dashed border-border bg-background p-3">
+            <div className="grid gap-2 md:grid-cols-2">
+              <input
+                autoFocus
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder='Nome (ex.: "Supervisor de Operações")'
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary"
+              />
+              <div className="flex gap-1 rounded-md bg-secondary p-1 text-[11px] font-semibold">
+                {(["cargo", "pessoa"] as PackTemplateScope[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setDraft((d) => ({ ...d, scope: s }))}
+                    className={`flex-1 rounded-md px-2 py-1 transition ${
+                      draft.scope === s ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                    }`}
+                  >
+                    {s === "cargo" ? "Para um cargo" : "Para uma pessoa"}
+                  </button>
+                ))}
+              </div>
+              {draft.scope === "cargo" ? (
+                <select
+                  value={draft.targetJobTitle}
+                  onChange={(e) => setDraft((d) => ({ ...d, targetJobTitle: e.target.value }))}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary md:col-span-2"
+                >
+                  {jobTitles.map((j) => (
+                    <option key={j} value={j}>
+                      {j}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  value={draft.targetUserId}
+                  onChange={(e) => setDraft((d) => ({ ...d, targetUserId: e.target.value }))}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary md:col-span-2"
+                >
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} — {u.jobTitle}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <textarea
+              value={draft.itemsText}
+              onChange={(e) => setDraft((d) => ({ ...d, itemsText: e.target.value }))}
+              rows={7}
+              placeholder={
+                "Uma tarefa por linha. Ex:\nRevisar KPIs da noite\nAlinhar plano com PCP\nAprovar folhas de ponto\nAtualizar quadro de operações"
+              }
+              className="mt-2 w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary"
+            />
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setCreating(false)}
+                className="rounded-md border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitDraft}
+                className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110"
+              >
+                Salvar modelo
+              </button>
+            </div>
+          </div>
+        )}
+
+        <ul className="mt-3 grid gap-2 md:grid-cols-2">
+          {packTemplates.length === 0 && (
+            <li className="col-span-full rounded-md border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+              Nenhum modelo ainda. Crie um para reaproveitar rotinas.
+            </li>
+          )}
+          {packTemplates.map((tpl) => (
+            <li key={tpl.id} className="rounded-lg border border-border bg-background p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{tpl.name}</div>
+                  <div className="mt-0.5 text-[10px] text-muted-foreground">
+                    {tpl.scope === "cargo"
+                      ? `Cargo: ${tpl.targetJobTitle}`
+                      : `Pessoa: ${users.find((u) => u.id === tpl.targetUserId)?.name ?? "—"}`}
+                    {" · "}
+                    {tpl.items.length} {tpl.items.length === 1 ? "item" : "itens"}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (confirm(`Excluir modelo "${tpl.name}"?`)) {
+                      deletePackTemplate(tpl.id);
+                      toast.success("Modelo excluído");
+                    }
+                  }}
+                  className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  title="Excluir modelo"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <ul className="mt-2 space-y-0.5">
+                {tpl.items.slice(0, 4).map((it) => (
+                  <li key={it.id} className="truncate text-[11px] text-muted-foreground">
+                    • {it.title}
+                  </li>
+                ))}
+                {tpl.items.length > 4 && (
+                  <li className="text-[10px] text-muted-foreground">
+                    +{tpl.items.length - 4} outros
+                  </li>
+                )}
+              </ul>
+              <button
+                onClick={() => {
+                  setApplyOpen({ templateId: tpl.id });
+                  setApplyTargetId(
+                    tpl.scope === "pessoa" && tpl.targetUserId
+                      ? tpl.targetUserId
+                      : currentUserId,
+                  );
+                }}
+                className="mt-2 w-full rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20"
+              >
+                Aplicar a alguém
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+          <ArrowLeftRight className="h-3.5 w-3.5" /> Transferir pack (férias, cobertura)
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Move todas as tarefas em aberto do pack de uma pessoa para outra. Ideal quando alguém
+          entra de férias ou fica ausente.
+        </p>
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_auto_1fr_auto]">
+          <select
+            value={transferFrom}
+            onChange={(e) => setTransferFrom(e.target.value)}
+            className="rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary"
+          >
+            <option value="">De: quem sai / cobre</option>
+            {usersWithPack.map((u) => {
+              const count = tasks.filter(
+                (t) => t.assigneeId === u.id && t.inPack && t.status !== "concluida",
+              ).length;
+              return (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({count})
+                </option>
+              );
+            })}
+          </select>
+          <span className="grid place-items-center text-muted-foreground">
+            <ArrowLeftRight className="h-3.5 w-3.5" />
+          </span>
+          <select
+            value={transferTo}
+            onChange={(e) => setTransferTo(e.target.value)}
+            className="rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:border-primary"
+          >
+            <option value="">Para: quem assume</option>
+            {users
+              .filter((u) => u.id !== transferFrom)
+              .map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+          </select>
+          <button
+            onClick={doTransfer}
+            className="rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:brightness-110"
+          >
+            Transferir
+          </button>
+        </div>
+      </section>
+
+      {applyOpen && (
+        <div
+          className="fixed inset-0 z-[200] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setApplyOpen(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-border bg-background p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Aplicar modelo</h3>
+              <button
+                onClick={() => setApplyOpen(null)}
+                className="rounded-md p-1 text-muted-foreground hover:bg-secondary"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Escolha para qual pessoa aplicar. Todos os itens entram no pack de hoje.
+            </p>
+            <select
+              value={applyTargetId}
+              onChange={(e) => setApplyTargetId(e.target.value)}
+              className="mt-3 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+            >
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} — {u.jobTitle}
+                </option>
+              ))}
+            </select>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={() => setApplyOpen(null)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={doApply}
+                className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
