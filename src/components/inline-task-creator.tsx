@@ -627,6 +627,17 @@ export function InlineTaskCreator({
                       </div>
                     </td>
                     <td className="hidden py-3 pr-3 md:table-cell">
+                      <input
+                        ref={(el) => {
+                          descRefs.current[row.id] = el;
+                        }}
+                        value={row.description}
+                        onChange={(e) => update(row.id, { description: e.target.value })}
+                        placeholder="Descrição (opcional) — detalhes, contexto…"
+                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
+                      />
+                    </td>
+                    <td className="hidden py-3 pr-3 md:table-cell">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
                           {[
