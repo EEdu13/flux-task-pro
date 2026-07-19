@@ -15,6 +15,9 @@ import type {
   MeetingMinute,
   Meta,
   Notification,
+  PackTemplate,
+  PackTemplateItem,
+  Project,
   Status,
   Task,
   User,
@@ -54,6 +57,8 @@ interface Store {
   notifications: Notification[];
   metas: Meta[];
   completions: CompletionEntry[];
+  projects: Project[];
+  packTemplates: PackTemplate[];
   currentUserId: string;
   isAuthenticated: boolean;
   login: (userId: string) => void;
@@ -103,6 +108,18 @@ interface Store {
   // permissions
   canAssignTo: (targetUserId: string) => boolean;
   visibleUsersForAssign: () => User[];
+  // projects
+  createProject: (p: Omit<Project, "id" | "createdAt" | "createdBy">) => string;
+  updateProject: (id: string, patch: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
+  visibleProjects: () => Project[];
+  projectTasks: (projectId: string) => Task[];
+  // pack templates
+  createPackTemplate: (p: Omit<PackTemplate, "id" | "createdAt" | "createdBy">) => string;
+  updatePackTemplate: (id: string, patch: Partial<PackTemplate>) => void;
+  deletePackTemplate: (id: string) => void;
+  applyPackTemplate: (templateId: string, targetUserId: string) => number;
+  transferPack: (fromUserId: string, toUserId: string) => number;
   // global task dialog
   taskDialog: TaskDialogState;
   openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
@@ -124,6 +141,8 @@ interface Persisted {
   notifications: Notification[];
   metas: Meta[];
   completions: CompletionEntry[];
+  projects: Project[];
+  packTemplates: PackTemplate[];
   currentUserId: string;
   isAuthenticated: boolean;
   callCounts: Record<string, Record<string, Record<string, number>>>;
@@ -139,6 +158,8 @@ function load(): Persisted {
     notifications: seedNotifications,
     metas: seedMetas,
     completions: seedCompletions,
+    projects: [],
+    packTemplates: [],
     currentUserId: "u1",
     isAuthenticated: false,
     callCounts: {},
@@ -996,6 +1017,164 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         (m) =>
           m.createdBy === currentUser.id || m.participantIds.includes(currentUser.id),
       ),
+
+    // === Projetos ===
+    createProject: (p) => {
+      const id = rid("prj");
+      setState((s) => ({
+        ...s,
+        projects: [
+          { ...p, id, createdAt: nowIso(), createdBy: currentUser.id },
+          ...s.projects,
+        ],
+      }));
+      return id;
+    },
+    updateProject: (id, patch) =>
+      setState((s) => ({
+        ...s,
+        projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      })),
+    deleteProject: (id) =>
+      setState((s) => ({
+        ...s,
+        projects: s.projects.filter((p) => p.id !== id),
+        // Desliga as subtarefas do projeto (elas continuam como tarefa normal)
+        tasks: s.tasks.map((t) => (t.projectId === id ? { ...t, projectId: undefined } : t)),
+      })),
+    visibleProjects: () => {
+      if (currentUser.role === "gerente") return state.projects;
+      return state.projects.filter(
+        (p) => p.ownerId === currentUser.id || p.memberIds.includes(currentUser.id),
+      );
+    },
+    projectTasks: (projectId) => state.tasks.filter((t) => t.projectId === projectId),
+
+    // === Pack templates ===
+    createPackTemplate: (p) => {
+      const id = rid("pkt");
+      setState((s) => ({
+        ...s,
+        packTemplates: [
+          { ...p, id, createdAt: nowIso(), createdBy: currentUser.id },
+          ...s.packTemplates,
+        ],
+      }));
+      return id;
+    },
+    updatePackTemplate: (id, patch) =>
+      setState((s) => ({
+        ...s,
+        packTemplates: s.packTemplates.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      })),
+    deletePackTemplate: (id) =>
+      setState((s) => ({
+        ...s,
+        packTemplates: s.packTemplates.filter((p) => p.id !== id),
+      })),
+    applyPackTemplate: (templateId, targetUserId) => {
+      const tpl = state.packTemplates.find((p) => p.id === templateId);
+      const target = state.users.find((u) => u.id === targetUserId);
+      if (!tpl || !target) return 0;
+      const end = new Date();
+      end.setHours(23, 59, 0, 0);
+      const dueISO = end.toISOString();
+      const newTasks: Task[] = tpl.items.map((item, i) => ({
+        id: rid("t"),
+        title: item.title,
+        sector: target.sector,
+        createdBy: currentUser.id,
+        assigneeId: targetUserId,
+        mentions: targetUserId !== currentUser.id ? [targetUserId] : [],
+        frequency: "diaria",
+        status: "pendente",
+        score: 10,
+        dueDate: dueISO,
+        recurring: false,
+        priority: "media",
+        tags: ["pack", `modelo:${tpl.name}`],
+        createdAt: nowIso(),
+        order: i,
+        comments: [],
+        checklist: [],
+        activity: [
+          {
+            id: rid("a"),
+            at: nowIso(),
+            userId: currentUser.id,
+            kind: "criada",
+            text: `criou pelo modelo de pack "${tpl.name}"`,
+          },
+        ],
+        inPack: true,
+        estimatedMinutes: item.estimatedMinutes,
+      }));
+      setState((s) => ({
+        ...s,
+        tasks: [...newTasks, ...s.tasks],
+        notifications:
+          targetUserId !== currentUser.id
+            ? [
+                {
+                  id: rid("n"),
+                  userId: targetUserId,
+                  type: "atribuida",
+                  title: `Pack "${tpl.name}" atribuído a você`,
+                  desc: `${newTasks.length} ${newTasks.length === 1 ? "tarefa" : "tarefas"} adicionadas ao seu pack de hoje`,
+                  at: nowIso(),
+                },
+                ...s.notifications,
+              ]
+            : s.notifications,
+      }));
+      return newTasks.length;
+    },
+    transferPack: (fromUserId, toUserId) => {
+      if (fromUserId === toUserId) return 0;
+      let moved = 0;
+      setState((s) => {
+        const target = s.users.find((u) => u.id === toUserId);
+        const tasks = s.tasks.map((t) => {
+          if (
+            t.assigneeId === fromUserId &&
+            t.inPack &&
+            t.status !== "concluida"
+          ) {
+            moved += 1;
+            return {
+              ...t,
+              assigneeId: toUserId,
+              sector: target?.sector ?? t.sector,
+              activity: [
+                ...t.activity,
+                {
+                  id: rid("a"),
+                  at: nowIso(),
+                  userId: currentUser.id,
+                  kind: "atribuicao" as ActivityKind,
+                  text: `pack transferido para ${target?.name ?? "outro usuário"}`,
+                },
+              ],
+            };
+          }
+          return t;
+        });
+        const notif: Notification = {
+          id: rid("n"),
+          userId: toUserId,
+          type: "atribuida",
+          title: "Pack transferido para você",
+          desc: `${moved} ${moved === 1 ? "tarefa" : "tarefas"} agora estão no seu pack`,
+          at: nowIso(),
+        };
+        return {
+          ...s,
+          tasks,
+          notifications: moved > 0 ? [notif, ...s.notifications] : s.notifications,
+        };
+      });
+      return moved;
+    },
   };
 
   return <StoreCtx.Provider value={store}>{children}</StoreCtx.Provider>;

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
+import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as PackRouteImport } from './routes/pack'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
 import { Route as MetasRouteImport } from './routes/metas'
@@ -36,6 +37,11 @@ const TarefasWaRoute = TarefasWaRouteImport.update({
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjetosRoute = ProjetosRouteImport.update({
+  id: '/projetos',
+  path: '/projetos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PackRoute = PackRouteImport.update({
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
+  '/projetos': typeof ProjetosRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
+  '/projetos': typeof ProjetosRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -173,6 +181,7 @@ export interface FileRoutesById {
   '/metas': typeof MetasRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
   '/pack': typeof PackRoute
+  '/projetos': typeof ProjetosRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/pack'
+    | '/projetos'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -215,6 +225,7 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/pack'
+    | '/projetos'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -235,6 +246,7 @@ export interface FileRouteTypes {
     | '/metas'
     | '/minhas-tarefas'
     | '/pack'
+    | '/projetos'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -256,6 +268,7 @@ export interface RootRouteChildren {
   MetasRoute: typeof MetasRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
   PackRoute: typeof PackRoute
+  ProjetosRoute: typeof ProjetosRoute
   RelatoriosRoute: typeof RelatoriosRoute
   TarefasWaRoute: typeof TarefasWaRoute
   ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
@@ -279,6 +292,13 @@ declare module '@tanstack/react-router' {
       path: '/relatorios'
       fullPath: '/relatorios'
       preLoaderRoute: typeof RelatoriosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projetos': {
+      id: '/projetos'
+      path: '/projetos'
+      fullPath: '/projetos'
+      preLoaderRoute: typeof ProjetosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pack': {
@@ -408,6 +428,7 @@ const rootRouteChildren: RootRouteChildren = {
   MetasRoute: MetasRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
   PackRoute: PackRoute,
+  ProjetosRoute: ProjetosRoute,
   RelatoriosRoute: RelatoriosRoute,
   TarefasWaRoute: TarefasWaRoute,
   ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,

@@ -15,6 +15,7 @@ import { toast } from "sonner";
 interface DraftRow {
   id: string;
   title: string;
+  description: string;
   dueDate: string; // yyyy-mm-dd
   assigneeId: string;
   sector: string;
@@ -51,6 +52,7 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
     title: "",
+    description: "",
     dueDate: defaults.dueDate ?? todayStr(),
     assigneeId: defaults.assigneeId ?? "",
     sector: defaults.sector ?? "",
@@ -83,6 +85,7 @@ export function InlineTaskCreator({
     }),
   ]);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const descRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -150,6 +153,7 @@ export function InlineTaskCreator({
     const est = parseHM(row.estimateHM);
     createTask({
       title: row.title.trim(),
+      description: row.description.trim() || undefined,
       sector: row.sector || currentUser.sector,
       createdBy: currentUser.id,
       assigneeId: row.assigneeId || currentUser.id,
@@ -379,8 +383,9 @@ export function InlineTaskCreator({
               <thead>
                 <tr className="border-b border-border bg-secondary/60 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <th className="w-8 py-2.5 pl-3 sm:pl-4">#</th>
-                  <th className="py-2.5 pr-3">Título da tarefa</th>
-                  <th className="hidden w-80 py-2.5 pr-3 md:table-cell">Prazo</th>
+                  <th className="min-w-[220px] py-2.5 pr-3">Título</th>
+                  <th className="hidden min-w-[240px] py-2.5 pr-3 md:table-cell">Descrição</th>
+                  <th className="hidden w-56 py-2.5 pr-3 md:table-cell">Prazo</th>
                   {!compact && <th className="hidden w-44 py-2.5 pr-3 md:table-cell">Responsável</th>}
                   {!compact && <th className="hidden w-40 py-2.5 pr-3 lg:table-cell">Setor</th>}
                   <th className="hidden w-24 py-2.5 pr-3 md:table-cell" title="Tempo estimado (hh:mm)">Tempo</th>
@@ -459,6 +464,12 @@ export function InlineTaskCreator({
                               e.preventDefault();
                               const u = matches[mention!.selectedIndex] ?? matches[0];
                               applyMention(row.id, u.id, u.name);
+                            } else {
+                              const el = descRefs.current[row.id];
+                              if (el) {
+                                e.preventDefault();
+                                el.focus();
+                              }
                             }
                           } else if (e.key === "Backspace" && row.title === "" && rows.length > 1) {
                             e.preventDefault();
@@ -614,6 +625,17 @@ export function InlineTaskCreator({
                           </select>
                         )}
                       </div>
+                    </td>
+                    <td className="hidden py-3 pr-3 md:table-cell">
+                      <input
+                        ref={(el) => {
+                          descRefs.current[row.id] = el;
+                        }}
+                        value={row.description}
+                        onChange={(e) => update(row.id, { description: e.target.value })}
+                        placeholder="Descrição (opcional) — detalhes, contexto…"
+                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
+                      />
                     </td>
                     <td className="hidden py-3 pr-3 md:table-cell">
                       <div className="flex flex-wrap items-center gap-1.5">
