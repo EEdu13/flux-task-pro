@@ -110,15 +110,19 @@ function ToolBtn({
   wide?: boolean;
 }) {
   const base =
-    "relative inline-flex items-center justify-center rounded-lg transition disabled:opacity-40";
-  const size = wide ? "h-9 px-3" : "h-9 w-9";
+    "relative inline-flex items-center justify-center transition disabled:opacity-40";
+  const size = danger
+    ? wide
+      ? "h-11 rounded-full px-6"
+      : "h-11 w-14 rounded-full"
+    : "h-11 w-11 rounded-full";
   const style = danger
-    ? "bg-red-600 text-white hover:bg-red-500"
+    ? "bg-red-600 text-white hover:bg-red-500 shadow-md"
     : muted
-      ? "bg-red-500/20 text-red-200 hover:bg-red-500/30"
+      ? "bg-red-500/90 text-white hover:bg-red-500"
       : active
         ? "bg-white/25 text-white"
-        : "text-white/85 hover:bg-white/10";
+        : "bg-white/10 text-white/90 hover:bg-white/20"
   return (
     <button
       type="button"
@@ -128,8 +132,8 @@ function ToolBtn({
       onClick={onClick}
       className={`${base} ${size} ${style}`}
     >
-      <Icon className="h-[18px] w-[18px]" />
-      {wide && <span className="ml-1.5 text-xs font-semibold">{label}</span>}
+      <Icon className="h-[20px] w-[20px]" />
+      {wide && danger && <span className="ml-2 text-sm font-medium">Sair</span>}
       {badge && badge > 0 ? (
         <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
           {badge}
@@ -167,6 +171,20 @@ function MediaToggle({
 
 function Divider() {
   return <span className="mx-0.5 h-6 w-px bg-white/10" />;
+}
+
+/* Meet-style live clock */
+function MeetClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <span className="tabular-nums">
+      {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+    </span>
+  );
 }
 
 function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
@@ -498,12 +516,15 @@ function CallContents({
     .map((m) => ({ at: m.at, from: m.fromName, text: m.text! }));
 
   return (
-    <div className="flex h-full w-full flex-col bg-black text-white" data-lk-theme="default">
+    <div
+      className={`fluxo-meet ${mini ? "fluxo-meet-mini" : ""} flex h-full w-full flex-col text-white`}
+      data-lk-theme="default"
+    >
       <div
-        className={`flex items-center justify-between gap-2 border-b border-white/10 bg-black/70 px-2 py-1 ${mini ? "cursor-move select-none" : ""}`}
+        className={`flex items-center justify-between gap-2 px-3 py-2 ${mini ? "cursor-move select-none border-b border-white/10 bg-black/70" : ""}`}
         onPointerDown={mini ? onDragStart : undefined}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-medium">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-medium text-white/80">
           {mini && <GripHorizontal className="h-3.5 w-3.5 opacity-60" />}
           {mini || !titleEditing ? (
             <>
@@ -567,14 +588,16 @@ function CallContents({
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={requestEnd}
-            className="rounded p-1 text-red-300 hover:bg-red-500/20"
-            title="Encerrar chamada"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          {mini && (
+            <button
+              type="button"
+              onClick={requestEnd}
+              className="rounded p-1 text-red-300 hover:bg-red-500/20"
+              title="Encerrar chamada"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -627,12 +650,15 @@ function CallContents({
           />
         )}
       </div>
-      <div className="relative flex flex-wrap items-center justify-center gap-2 border-t border-white/10 bg-black/80 px-2 py-1.5 sm:px-3">
-        {/* Left slot (reserved) */}
-        <div className="order-2 flex w-full items-center justify-center gap-1.5 sm:order-1 sm:w-auto sm:flex-1 sm:justify-start" />
+      <div className="relative flex items-center justify-between gap-2 px-3 py-3 sm:px-6">
+        {/* Left: meeting info (Meet-style time · code) */}
+        <div className="order-1 hidden min-w-0 flex-1 items-center gap-2 text-[13px] text-white/70 sm:flex">
+          {!mini && <MeetClock />}
+          {!mini && <span className="hidden truncate md:inline">· {roomName}</span>}
+        </div>
 
-        {/* Center: Teams-style icon toolbar */}
-        <div className="order-1 flex max-w-full flex-wrap items-center justify-center gap-0.5 overflow-x-auto rounded-xl bg-white/[0.03] px-1.5 py-1 sm:order-2 sm:flex-nowrap sm:overflow-visible">
+        {/* Center: circular control cluster */}
+        <div className="order-2 flex flex-wrap items-center justify-center gap-2 sm:flex-nowrap">
           <MediaToggle
             source={Track.Source.Microphone}
             IconOn={Mic}
@@ -658,18 +684,10 @@ function CallContents({
           )}
           {!mini && (
             <>
-              <Divider />
               <ToolBtn
                 icon={Hand}
                 label="Levantar a mão"
                 onClick={raiseHand}
-              />
-              <ToolBtn
-                icon={MessageSquare}
-                label="Chat da sala"
-                onClick={() => setChatOpen((v) => !v)}
-                active={chatOpen}
-                badge={!chatOpen ? unread : 0}
               />
               <div className="relative">
                 <ToolBtn
@@ -703,9 +721,6 @@ function CallContents({
                   </div>
                 )}
               </div>
-
-              <Divider />
-
               <div className="relative">
                 <ToolBtn
                   icon={UserPlus}
@@ -844,67 +859,83 @@ function CallContents({
                 autoStartTranscription={autoMinute}
                 chatLines={chatLines}
               />
-
-              <div className="relative">
-                <ToolBtn
-                  icon={MoreHorizontal}
-                  label="Mais opções"
-                  onClick={() => setShortcutsOpen((v) => !v)}
-                  active={shortcutsOpen}
-                />
-                {shortcutsOpen && (
-                  <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-md border border-white/10 bg-neutral-900 p-2 text-xs text-white shadow-xl">
-                    {onMinimize && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShortcutsOpen(false);
-                          onMinimize();
-                        }}
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-white/10"
-                      >
-                        <Maximize2 className="h-3.5 w-3.5 rotate-180" /> Modo mini
-                      </button>
-                    )}
-                    <div className="mt-2 border-t border-white/10 pt-2">
-                      <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/50">
-                        <Keyboard className="h-3 w-3" /> Atalhos
-                      </div>
-                      <ul className="space-y-1 px-2">
-                        {[
-                          ["M", "Mutar / desmutar mic"],
-                          ["V", "Ligar / desligar câmera"],
-                          ["C", "Abrir / fechar chat"],
-                          ["H", "Levantar a mão"],
-                          ["P", "Alternar modo apresentador"],
-                          ["E", "Encerrar chamada"],
-                        ].map(([key, desc]) => (
-                          <li key={key} className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="text-white/70">{desc}</span>
-                            <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
-                              {key}
-                            </kbd>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <ToolBtn
+                icon={PhoneOff}
+                label="Encerrar chamada"
+                onClick={requestEnd}
+                danger
+                wide
+              />
             </>
+          )}
+          {mini && (
+            <ToolBtn
+              icon={PhoneOff}
+              label="Encerrar chamada"
+              onClick={requestEnd}
+              danger
+            />
           )}
         </div>
 
-        {/* Right slot: red hangup */}
-        <div className="order-3 flex w-auto items-center justify-end sm:flex-1">
-          <ToolBtn
-            icon={PhoneOff}
-            label="Encerrar chamada"
-            onClick={requestEnd}
-            danger
-            wide={!mini}
-          />
-        </div>
+        {/* Right: chat / more (Meet-style) */}
+        {!mini && (
+          <div className="order-3 hidden min-w-0 flex-1 items-center justify-end gap-1 sm:flex">
+            <ToolBtn
+              icon={MessageSquare}
+              label="Chat da sala"
+              onClick={() => setChatOpen((v) => !v)}
+              active={chatOpen}
+              badge={!chatOpen ? unread : 0}
+            />
+            <div className="relative">
+              <ToolBtn
+                icon={MoreHorizontal}
+                label="Mais opções"
+                onClick={() => setShortcutsOpen((v) => !v)}
+                active={shortcutsOpen}
+              />
+              {shortcutsOpen && (
+                <div className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-md border border-white/10 bg-neutral-900 p-2 text-xs text-white shadow-xl">
+                  {onMinimize && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShortcutsOpen(false);
+                        onMinimize();
+                      }}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-white/10"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5 rotate-180" /> Modo mini
+                    </button>
+                  )}
+                  <div className="mt-2 border-t border-white/10 pt-2">
+                    <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/50">
+                      <Keyboard className="h-3 w-3" /> Atalhos
+                    </div>
+                    <ul className="space-y-1 px-2">
+                      {[
+                        ["M", "Mutar / desmutar mic"],
+                        ["V", "Ligar / desligar câmera"],
+                        ["C", "Abrir / fechar chat"],
+                        ["H", "Levantar a mão"],
+                        ["P", "Alternar modo apresentador"],
+                        ["E", "Encerrar chamada"],
+                      ].map(([key, desc]) => (
+                        <li key={key} className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-white/70">{desc}</span>
+                          <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
+                            {key}
+                          </kbd>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <RoomAudioRenderer />
       {endConfirm && !mini && (
