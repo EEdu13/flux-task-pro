@@ -199,3 +199,17 @@ html.fluxo-nudge-shake body {
   100% { opacity: 0; transform: perspective(1200px) translateZ(200px) rotateX(-12deg) scale(1.15); filter: blur(2px); }
 }
 .fluxo-attn-pop { animation: fluxo-attn-pop 4.2s cubic-bezier(.2,.7,.3,1) forwards; }
+
+/* Clippy-style periodic jump for the quick actions FAB */
+@keyframes fluxo-fab-jump {
+  0%, 88%, 100% { transform: translateY(0) rotate(0); }
+  90% { transform: translateY(-10px) rotate(-6deg); }
+  92% { transform: translateY(0) rotate(0); }
+  94% { transform: translateY(-6px) rotate(4deg); }
+  96% { transform: translateY(0) rotate(0); }
+}
+.fluxo-fab-jump {
+  animation: fluxo-fab-jump 9s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+.fluxo-fab-jump:hover { animation-play-state: paused; }
