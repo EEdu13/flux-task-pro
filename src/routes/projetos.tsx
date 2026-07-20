@@ -16,6 +16,9 @@ import {
   ChevronRight,
   Target,
   Flag,
+  Share2,
+  Copy,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 
