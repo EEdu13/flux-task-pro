@@ -380,11 +380,6 @@ function MinhasTarefas() {
         </div>
 
         <div className="mt-4">
-          {scope !== "pack" && (
-            <div className="mb-3">
-              <InlineTaskCreator />
-            </div>
-          )}
           {scope === "pack" ? (
             <PackView
               tasks={visible}
