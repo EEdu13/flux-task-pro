@@ -457,6 +457,7 @@ export function TaskDialog() {
                 )}
               </div>
 
+              {(!editing || editing.createdBy === currentUser.id) && (
               <div className="rounded-md border border-border bg-secondary/40 p-3">
                 <label className="flex cursor-pointer items-start gap-2 text-sm">
                   <input
@@ -476,6 +477,7 @@ export function TaskDialog() {
                   </span>
                 </label>
               </div>
+              )}
 
               {editing && (
                 <div className="rounded-md border border-border bg-secondary/40 p-3">
