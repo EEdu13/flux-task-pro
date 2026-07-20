@@ -15,17 +15,16 @@ import {
   Sparkles,
   ChevronRight,
   Target,
-  Flag,
   Share2,
   Copy,
   Check,
+  AtSign,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { ProjectStatus, Status } from "@/lib/fluxo-types";
-import { sectors } from "@/lib/fluxo-types";
 
 export const Route = createFileRoute("/projetos")({
   head: () => ({
@@ -75,10 +74,14 @@ function ProjetosPage() {
     updateTask,
     users,
     currentUser,
-    visibleUsersForAssign,
   } = useFluxo();
 
-  const assignees = visibleUsersForAssign();
+  // Todos da empresa podem ser chamados / atribuídos — sem limite por setor.
+  const assignees = useMemo(() => {
+    const me = users.find((u) => u.id === currentUser.id);
+    const others = users.filter((u) => u.id !== currentUser.id);
+    return me ? [me, ...others] : others;
+  }, [users, currentUser.id]);
   const projects = visibleProjects();
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id ?? null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -88,6 +91,7 @@ function ProjetosPage() {
   const [quickTitle, setQuickTitle] = useState("");
   const [quickAssignee, setQuickAssignee] = useState(currentUser.id);
   const [quickDate, setQuickDate] = useState("");
+  const [quickMentions, setQuickMentions] = useState<string[]>([]);
   const quickInputRef = useRef<HTMLInputElement>(null);
 
   const selected = projects.find((p) => p.id === selectedId) ?? null;
@@ -116,12 +120,15 @@ function ProjetosPage() {
     const assignee = users.find((u) => u.id === quickAssignee) ?? currentUser;
     const due = quickDate ? new Date(quickDate) : new Date(Date.now() + 3 * 24 * 3600e3);
     due.setHours(23, 59, 0, 0);
+    const mentionSet = new Set<string>(quickMentions);
+    if (assignee.id !== currentUser.id) mentionSet.add(assignee.id);
+    mentionSet.delete(currentUser.id);
     createTask({
       title: quickTitle.trim(),
       sector: assignee.sector,
       createdBy: currentUser.id,
       assigneeId: assignee.id,
-      mentions: assignee.id !== currentUser.id ? [assignee.id] : [],
+      mentions: Array.from(mentionSet),
       frequency: "diaria",
       status: "pendente",
       score: 15,
@@ -133,6 +140,7 @@ function ProjetosPage() {
     });
     setQuickTitle("");
     setQuickDate("");
+    setQuickMentions([]);
     quickInputRef.current?.focus();
   };
 
@@ -305,6 +313,8 @@ function ProjetosPage() {
                 setQuickAssignee={setQuickAssignee}
                 quickDate={quickDate}
                 setQuickDate={setQuickDate}
+                quickMentions={quickMentions}
+                setQuickMentions={setQuickMentions}
                 onQuickAdd={handleQuickAdd}
                 quickInputRef={quickInputRef}
               />
@@ -318,7 +328,6 @@ function ProjetosPage() {
           onClose={() => setCreateOpen(false)}
           assignees={assignees}
           currentUserId={currentUser.id}
-          defaultSector={currentUser.sector}
           onCreate={(payload) => {
             const id = createProject({
               ...payload,
@@ -356,6 +365,8 @@ interface ProjectDetailProps {
   setQuickAssignee: (v: string) => void;
   quickDate: string;
   setQuickDate: (v: string) => void;
+  quickMentions: string[];
+  setQuickMentions: (v: string[]) => void;
   onQuickAdd: () => void;
   quickInputRef: React.RefObject<HTMLInputElement | null>;
 }
@@ -379,11 +390,16 @@ function ProjectDetail({
   setQuickAssignee,
   quickDate,
   setQuickDate,
+  quickMentions,
+  setQuickMentions,
   onQuickAdd,
   quickInputRef,
 }: ProjectDetailProps) {
   const isOwner = selected.ownerId === currentUserId;
   const [shareOpen, setShareOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [hoverCol, setHoverCol] = useState<Status | null>(null);
   const groupedByStatus = useMemo(() => {
     const g: Record<Status, typeof subtasks> = {
       pendente: [],
@@ -507,7 +523,7 @@ function ProjectDetail({
 
       <div className="p-4">
         {/* Quick add row (Asana-style) */}
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-secondary/40 px-3 py-2 focus-within:border-primary focus-within:bg-secondary/70">
+        <div className="relative mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-secondary/40 px-3 py-2 focus-within:border-primary focus-within:bg-secondary/70">
           <Plus className="h-4 w-4 text-primary" />
           <input
             ref={quickInputRef}
@@ -519,6 +535,63 @@ function ProjectDetail({
             placeholder="Adicionar subtarefa… (Enter para salvar)"
             className="min-w-[220px] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMentionOpen((v) => !v)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+                quickMentions.length > 0
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background text-muted-foreground hover:border-primary/60 hover:text-foreground"
+              }`}
+              title="Mencionar pessoas nesta tarefa"
+            >
+              <AtSign className="h-3 w-3" />
+              {quickMentions.length > 0 ? `${quickMentions.length} menção${quickMentions.length === 1 ? "" : "s"}` : "Mencionar"}
+            </button>
+            {mentionOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMentionOpen(false)} />
+                <div className="absolute right-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+                  <div className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Mencionar na tarefa
+                  </div>
+                  <div className="max-h-56 overflow-y-auto p-1">
+                    {users
+                      .filter((u) => u.id !== currentUserId)
+                      .map((u) => {
+                        const on = quickMentions.includes(u.id);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() =>
+                              setQuickMentions(
+                                on
+                                  ? quickMentions.filter((x) => x !== u.id)
+                                  : [...quickMentions, u.id],
+                              )
+                            }
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition ${
+                              on ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
+                            }`}
+                          >
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                              {u.avatar || u.name.slice(0, 1)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{u.name}</div>
+                              <div className="truncate text-[10px] text-muted-foreground">{u.jobTitle}</div>
+                            </div>
+                            {on && <CheckCircle2 className="h-3.5 w-3.5 text-primary" />}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <select
             value={quickAssignee}
             onChange={(e) => setQuickAssignee(e.target.value)}
@@ -626,10 +699,28 @@ function ProjectDetail({
           <div className="grid gap-3 md:grid-cols-3">
             {statusColumns.map((col) => {
               const items = groupedByStatus[col.id];
+              const isHover = hoverCol === col.id;
               return (
                 <div
                   key={col.id}
-                  className={`flex flex-col rounded-xl border border-t-2 border-border bg-secondary/30 ${col.tone}`}
+                  onDragOver={(e) => {
+                    if (!dragId) return;
+                    e.preventDefault();
+                    setHoverCol(col.id);
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget === e.target) setHoverCol((h) => (h === col.id ? null : h));
+                  }}
+                  onDrop={() => {
+                    if (dragId) {
+                      updateTask(dragId, { status: col.id });
+                    }
+                    setDragId(null);
+                    setHoverCol(null);
+                  }}
+                  className={`flex flex-col rounded-xl border border-t-2 bg-secondary/30 transition ${col.tone} ${
+                    isHover ? "border-primary bg-primary/5 ring-2 ring-primary/40" : "border-border"
+                  }`}
                 >
                   <div className="flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     <span>{col.label}</span>
@@ -650,7 +741,19 @@ function ProjectDetail({
                       return (
                         <div
                           key={t.id}
-                          className="group rounded-lg border border-border bg-card p-2.5 text-sm shadow-sm transition hover:border-primary/50"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", t.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setDragId(t.id);
+                          }}
+                          onDragEnd={() => {
+                            setDragId(null);
+                            setHoverCol(null);
+                          }}
+                          className={`group cursor-grab rounded-lg border border-border bg-card p-2.5 text-sm shadow-sm transition hover:border-primary/50 active:cursor-grabbing ${
+                            dragId === t.id ? "opacity-40" : ""
+                          }`}
                         >
                           <div className="mb-1 flex items-start gap-2">
                             <button
@@ -766,18 +869,15 @@ function CreateProjectModal({
   onClose,
   assignees,
   currentUserId,
-  defaultSector,
   onCreate,
 }: {
   onClose: () => void;
   assignees: ReturnType<typeof useFluxo>["users"];
   currentUserId: string;
-  defaultSector: string;
   onCreate: (payload: CreateProjectPayload) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [sector, setSector] = useState(defaultSector);
   const [dueDate, setDueDate] = useState("");
   const [color, setColor] = useState(projectColorPalette[0]);
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -808,7 +908,6 @@ function CreateProjectModal({
       name: name.trim(),
       description: description.trim() || undefined,
       memberIds,
-      sector,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
       color,
     });
@@ -892,20 +991,7 @@ function CreateProjectModal({
             </div>
           </Field>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Setor" icon={<Flag className="h-3 w-3" />}>
-              <select
-                value={sector}
-                onChange={(e) => setSector(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-              >
-                {sectors.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+          <div className="grid gap-4">
             <Field label="Prazo previsto" icon={<Calendar className="h-3 w-3" />}>
               <input
                 type="date"
