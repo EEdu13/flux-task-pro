@@ -15,17 +15,16 @@ import {
   Sparkles,
   ChevronRight,
   Target,
-  Flag,
   Share2,
   Copy,
   Check,
+  AtSign,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { ProjectStatus, Status } from "@/lib/fluxo-types";
-import { sectors } from "@/lib/fluxo-types";
 
 export const Route = createFileRoute("/projetos")({
   head: () => ({
