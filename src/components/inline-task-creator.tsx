@@ -632,7 +632,7 @@ export function InlineTaskCreator({
                         )}
                       </div>
                     </td>
-                    <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
+                    <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
                       <input
                         ref={(el) => {
                           descRefs.current[row.id] = el;
