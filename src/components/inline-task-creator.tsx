@@ -381,7 +381,7 @@ export function InlineTaskCreator({
 
       {open && (
         <div>
-          <div className="flex flex-col gap-3 p-3 sm:p-4">
+          <div className="flex flex-col gap-1.5 p-2 sm:p-3">
             {rows.map((row, idx) => (
               <div
                 key={row.id}
@@ -404,17 +404,16 @@ export function InlineTaskCreator({
                   setDragRowId(null);
                   await addFilesToRow(row.id, e.dataTransfer.files);
                 }}
-                className={`relative rounded-lg border-2 border-foreground/40 bg-background p-3 shadow-sm transition ${
+                className={`relative rounded-md border border-foreground/40 bg-background px-2 py-1.5 shadow-sm transition ${
                   dragRowId === row.id ? "border-primary bg-primary/5" : "hover:border-foreground/60"
                 }`}
               >
-                <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-foreground/70">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary">
+                <div className="flex items-stretch gap-2">
+                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
                     {idx + 1}
                   </span>
-                  <span>Tarefa</span>
-                </div>
-                <div className="relative">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                <div className="relative min-w-0 flex-[1_1_38%]">
                   <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
@@ -504,7 +503,7 @@ export function InlineTaskCreator({
                           }
                         }}
                         placeholder="Ex: Fazer conciliação bancária de julho"
-                        className="w-full rounded-md border-2 border-foreground/30 bg-background px-3 py-3 text-lg font-bold text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20 sm:text-xl"
+                        className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm font-semibold text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary/20"
                         onPaste={(e) => handleTitlePaste(row.id, e)}
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
@@ -548,7 +547,7 @@ export function InlineTaskCreator({
                           document.body,
                         )}
                 </div>
-                <div className="mt-2">
+                <div className="min-w-0 flex-[1_1_62%]">
                   <input
                         ref={(el) => {
                           descRefs.current[row.id] = el;
@@ -556,11 +555,13 @@ export function InlineTaskCreator({
                         value={row.description}
                         onChange={(e) => update(row.id, { description: e.target.value })}
                         placeholder="Descrição (opcional) — detalhes, contexto…"
-                        className="w-full rounded-md border-2 border-foreground/30 bg-background px-3 py-2.5 text-base text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary/20"
                       />
                 </div>
+                  </div>
+                </div>
                 {row.attachments.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
+                  <div className="mt-1.5 flex flex-wrap gap-1 pl-8">
                     {row.attachments.map((a) => (
                       <span
                         key={a.id}
@@ -584,8 +585,8 @@ export function InlineTaskCreator({
                     ))}
                   </div>
                 )}
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-foreground/15 pt-3">
-                  <div className="inline-flex items-center gap-1 rounded-md border-2 border-foreground/40 bg-background p-0.5 text-xs">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-8">
+                  <div className="inline-flex items-center gap-0.5 rounded-md border border-foreground/30 bg-background p-0.5 text-[11px]">
                           {[
                             { label: "Hoje", get: todayStr },
                             { label: "Amanhã", get: tomorrowStr },
@@ -598,7 +599,7 @@ export function InlineTaskCreator({
                                 type="button"
                                 key={opt.label}
                                 onClick={() => update(row.id, { dueDate: iso })}
-                                className={`rounded px-2 py-1 font-semibold transition ${
+                                className={`rounded px-1.5 py-0.5 font-semibold transition ${
                                   active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"
                                 }`}
                               >
@@ -611,13 +612,13 @@ export function InlineTaskCreator({
                           type="date"
                           value={row.dueDate}
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="w-36 rounded-md border-2 border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                          className="w-32 rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground outline-none focus:border-primary"
                         />
                   {!compact && (
                     <select
                           value={row.assigneeId}
                           onChange={(e) => update(row.id, { assigneeId: e.target.value })}
-                          className="rounded-md border-2 border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                          className="rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground outline-none focus:border-primary"
                           title="Responsável"
                         >
                           {assignees.map((u) => (
@@ -627,44 +628,44 @@ export function InlineTaskCreator({
                           ))}
                     </select>
                   )}
-                  <div className="flex items-center gap-1 rounded-md border-2 border-foreground/40 bg-background px-2 py-1 text-xs focus-within:border-primary">
+                  <div className="flex items-center gap-1 rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] focus-within:border-primary">
                         <Timer className="h-3 w-3 text-foreground/70" />
                         <input
                           value={row.estimateHM}
                           onChange={(e) => update(row.id, { estimateHM: e.target.value })}
                           placeholder="00:30"
                           inputMode="numeric"
-                          className="w-16 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
+                          className="w-12 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
                           title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
                         />
                   </div>
-                  <div className="ml-auto inline-flex items-center gap-1">
+                  <div className="ml-auto inline-flex items-center gap-0.5">
                     <button
                           type="button"
                           onClick={() => update(row.id, { requireProof: !row.requireProof })}
-                          className={`inline-flex items-center gap-1 rounded-md border-2 px-2 py-1 text-xs font-semibold transition ${
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition ${
                             row.requireProof
                               ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
                               : "border-foreground/30 text-foreground/70 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
                           }`}
                           title="Exigir comprovante para concluir"
+                          aria-label="Exigir comprovante"
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">Comprovante</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="inline-flex items-center gap-1 rounded-md border-2 border-foreground/30 px-2 py-1 text-xs font-semibold text-foreground/70 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/30 text-foreground/70 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo"
+                          aria-label="Anexar arquivo"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">Anexar</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => remove(row.id)}
-                          className="inline-flex items-center justify-center rounded-md border-2 border-foreground/30 px-2 py-1 text-xs font-semibold text-foreground/70 transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/30 text-foreground/70 transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                           title="Remover esta linha"
                           aria-label="Remover esta linha"
                         >
