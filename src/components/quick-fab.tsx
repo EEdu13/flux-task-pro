@@ -548,14 +548,14 @@ export function QuickFab() {
         className="group hidden flex-col items-center gap-1 lg:flex"
       >
         <span
-          className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition group-hover:brightness-110 ${
-            open ? "rotate-45" : ""
+          className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition group-hover:brightness-110 ${
+            open ? "rotate-45" : "fluxo-fab-jump"
           }`}
         >
           {open ? <X className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
         </span>
-        <span className="rounded-md border border-border bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground shadow-sm">
-          Acesso rápido
+        <span className="rounded-md border border-foreground/20 bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-foreground shadow-sm">
+          Clique — acesso rápido
         </span>
       </button>
     </div>
