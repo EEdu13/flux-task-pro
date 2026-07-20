@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { InlineTaskCreator } from "@/components/inline-task-creator";
+
 import { MyView } from "@/components/my-view";
 import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
@@ -380,11 +380,6 @@ function MinhasTarefas() {
         </div>
 
         <div className="mt-4">
-          {scope !== "pack" && (
-            <div className="mb-3">
-              <InlineTaskCreator />
-            </div>
-          )}
           {scope === "pack" ? (
             <PackView
               tasks={visible}
