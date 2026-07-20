@@ -12,7 +12,6 @@ import {
   List as ListIcon,
   Calendar,
   Search,
-  MoreHorizontal,
   Sparkles,
   ChevronRight,
   Target,
