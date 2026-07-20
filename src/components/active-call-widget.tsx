@@ -673,13 +673,18 @@ function CallContents({
             labelOn="Desligar câmera"
             labelOff="Ligar câmera"
           />
-          {!mini && (
-            <MediaToggle
-              source={Track.Source.ScreenShare}
-              IconOn={MonitorOff}
-              IconOff={MonitorUp}
-              labelOn="Parar de compartilhar"
-              labelOff="Compartilhar tela"
+          <MediaToggle
+            source={Track.Source.ScreenShare}
+            IconOn={MonitorOff}
+            IconOff={MonitorUp}
+            labelOn="Parar de compartilhar"
+            labelOff="Compartilhar tela"
+          />
+          {mini && onMaximize && (
+            <ToolBtn
+              icon={Maximize2}
+              label="Voltar à sala"
+              onClick={onMaximize}
             />
           )}
           {!mini && (
