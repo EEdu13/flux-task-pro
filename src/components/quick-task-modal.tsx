@@ -7,26 +7,30 @@ export function QuickTaskModal() {
   if (!quickCreate.open) return null;
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/60 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-10"
+      className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/75 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-6"
       onClick={closeQuickCreate}
     >
       <div
-        className="w-full max-w-6xl rounded-2xl border border-border bg-background shadow-2xl"
+        className="w-full max-w-[98vw] rounded-2xl border-2 border-foreground/80 bg-background text-foreground shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex items-start justify-between gap-3 border-b-2 border-foreground/80 bg-secondary/60 px-4 py-3 sm:px-6 sm:py-4">
           <div>
-            <div className="text-base font-semibold tracking-tight sm:text-lg">Criar tarefas rapidamente</div>
-            <div className="mt-1 text-[11px] text-muted-foreground sm:text-xs">
-              Uma linha = uma tarefa. Preencha o título e os campos ao lado — <strong>tudo está visível abaixo</strong>.
+            <div className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
+              Criar tarefas rapidamente
+            </div>
+            <div className="mt-1 text-xs font-medium text-foreground/80 sm:text-sm">
+              Uma linha = uma tarefa. Preencha o título e os campos ao lado —{" "}
+              <strong className="text-foreground">tudo está visível abaixo</strong>.
             </div>
           </div>
           <button
             onClick={closeQuickCreate}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary"
+            className="inline-flex items-center gap-1.5 rounded-md border-2 border-foreground/70 bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground shadow-sm transition hover:bg-destructive hover:text-destructive-foreground"
             aria-label="Fechar"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
+            <span className="hidden sm:inline">Fechar</span>
           </button>
         </div>
         <div className="p-3 sm:p-5">
