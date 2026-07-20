@@ -701,6 +701,17 @@ function ProjectDetail({
           </div>
         )}
       </div>
+      {shareOpen && (
+        <ShareProjectModal
+          project={selected}
+          assignees={assignees}
+          users={users}
+          currentUserId={currentUserId}
+          isOwner={isOwner}
+          onClose={() => setShareOpen(false)}
+          onChange={(memberIds) => updateProject(selected.id, { memberIds })}
+        />
+      )}
     </>
   );
 }
