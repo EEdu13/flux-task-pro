@@ -383,6 +383,7 @@ function ProjectDetail({
   quickInputRef,
 }: ProjectDetailProps) {
   const isOwner = selected.ownerId === currentUserId;
+  const [shareOpen, setShareOpen] = useState(false);
   const groupedByStatus = useMemo(() => {
     const g: Record<Status, typeof subtasks> = {
       pendente: [],
