@@ -110,15 +110,19 @@ function ToolBtn({
   wide?: boolean;
 }) {
   const base =
-    "relative inline-flex items-center justify-center rounded-lg transition disabled:opacity-40";
-  const size = wide ? "h-9 px-3" : "h-9 w-9";
+    "relative inline-flex items-center justify-center transition disabled:opacity-40";
+  const size = danger
+    ? wide
+      ? "h-11 rounded-full px-6"
+      : "h-11 w-14 rounded-full"
+    : "h-11 w-11 rounded-full";
   const style = danger
-    ? "bg-red-600 text-white hover:bg-red-500"
+    ? "bg-red-600 text-white hover:bg-red-500 shadow-md"
     : muted
-      ? "bg-red-500/20 text-red-200 hover:bg-red-500/30"
+      ? "bg-red-500/90 text-white hover:bg-red-500"
       : active
         ? "bg-white/25 text-white"
-        : "text-white/85 hover:bg-white/10";
+        : "bg-white/10 text-white/90 hover:bg-white/20"
   return (
     <button
       type="button"
@@ -128,8 +132,8 @@ function ToolBtn({
       onClick={onClick}
       className={`${base} ${size} ${style}`}
     >
-      <Icon className="h-[18px] w-[18px]" />
-      {wide && <span className="ml-1.5 text-xs font-semibold">{label}</span>}
+      <Icon className="h-[20px] w-[20px]" />
+      {wide && danger && <span className="ml-2 text-sm font-medium">Sair</span>}
       {badge && badge > 0 ? (
         <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
           {badge}
