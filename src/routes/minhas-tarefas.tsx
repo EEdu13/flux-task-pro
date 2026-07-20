@@ -207,7 +207,7 @@ function MinhasTarefas() {
       if (priority !== "todas" && t.priority !== priority) return false;
       if (assignee !== "todos" && t.assigneeId !== assignee) return false;
       if (tag !== "todas" && !t.tags.includes(tag)) return false;
-      if (range) {
+      if (range && scope !== "pack") {
         const due = new Date(t.dueDate).getTime();
         if (due < range[0] || due > range[1]) return false;
       }
