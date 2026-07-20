@@ -602,6 +602,18 @@ export function InlineTaskCreator({
                         }}
                         value={row.description}
                         onChange={(e) => update(row.id, { description: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            jumpNext(row.id);
+                          } else if (e.key === "Tab" && e.shiftKey) {
+                            const el = inputRefs.current[row.id];
+                            if (el) {
+                              e.preventDefault();
+                              el.focus();
+                            }
+                          }
+                        }}
                         placeholder="Descrição (opcional) — detalhes, contexto…"
                         className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary/20"
                       />
