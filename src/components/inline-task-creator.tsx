@@ -71,7 +71,7 @@ export function InlineTaskCreator({
   defaultDueDate?: string;
   defaultAssigneeId?: string;
 }) {
-  const { currentUser, visibleUsersForAssign, createTask } = useFluxo();
+  const { currentUser, visibleUsersForAssign, createTask, quickCreate, closeQuickCreate } = useFluxo();
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState<DraftRow[]>(() => [
@@ -84,6 +84,7 @@ export function InlineTaskCreator({
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const descRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [dragRowId, setDragRowId] = useState<string | null>(null);
@@ -208,6 +209,53 @@ export function InlineTaskCreator({
 
   const remove = (id: string) => {
     setRows((rs) => (rs.length === 1 ? [makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })] : rs.filter((r) => r.id !== id)));
+  };
+
+  const handleEscape = () => {
+    if (!quickCreate.open) return;
+    if (confirmOpen || pasteOpen || discardOpen) return;
+    if (mention) {
+      setMention(null);
+      return;
+    }
+    const hasContent = rows.some((r) => r.title.trim() || r.description.trim() || r.attachments.length > 0);
+    if (hasContent) {
+      setDiscardOpen(true);
+    } else {
+      closeQuickCreate();
+    }
+  };
+
+  useEffect(() => {
+    if (!quickCreate.open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleEscape();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+
+  const saveAndClose = () => {
+    const valid = rows.filter((r) => r.title.trim());
+    if (valid.length === 0) {
+      setDiscardOpen(false);
+      closeQuickCreate();
+      return;
+    }
+    valid.forEach(commitRow);
+    toast.success(
+      `${valid.length} tarefa${valid.length > 1 ? "s" : ""} criada${valid.length > 1 ? "s" : ""}`,
+    );
+    setDiscardOpen(false);
+    closeQuickCreate();
+  };
+
+  const discardAndClose = () => {
+    setDiscardOpen(false);
+    closeQuickCreate();
   };
 
   const update = (id: string, patch: Partial<DraftRow>) =>
