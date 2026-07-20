@@ -164,6 +164,7 @@ export function TaskDialog() {
   const handleSubmit = () => {
     if (!title.trim()) return;
     const preserveTitle = editing && editing.createdBy !== currentUser.id;
+    const isCreator = !editing || editing.createdBy === currentUser.id;
     const estMinutes = parseHM(estimateHM);
     const payload = {
       title: preserveTitle ? editing!.title : title.trim(),
@@ -180,7 +181,7 @@ export function TaskDialog() {
       recurringUntil: recurring && recurringUntil ? new Date(recurringUntil + "T23:59:59").toISOString() : null,
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      requireProof,
+      requireProof: isCreator ? requireProof : !!editing?.requireProof,
       estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
     };
     if (editing) updateTask(editing.id, payload);
