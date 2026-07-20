@@ -313,6 +313,8 @@ function ProjetosPage() {
                 setQuickAssignee={setQuickAssignee}
                 quickDate={quickDate}
                 setQuickDate={setQuickDate}
+                quickMentions={quickMentions}
+                setQuickMentions={setQuickMentions}
                 onQuickAdd={handleQuickAdd}
                 quickInputRef={quickInputRef}
               />
