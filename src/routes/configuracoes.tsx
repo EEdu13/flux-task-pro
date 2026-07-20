@@ -17,7 +17,7 @@ import {
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors } from "@/lib/fluxo-types";
-import { useTheme } from "@/lib/use-theme";
+import { useTheme, usePalette, paletteOptions } from "@/lib/use-theme";
 import { phoneValidator } from "@/components/onboarding-modal";
 import { purgeAllRooms } from "@/lib/livekit-token.functions";
 
@@ -36,6 +36,7 @@ type Tab = "perfil" | "aparencia" | "notificacoes" | "conta";
 function SettingsPage() {
   const { currentUser, updateCurrentUser, logout, users } = useFluxo();
   const { theme, toggle } = useTheme();
+  const { palette, setPalette } = usePalette();
   const navigate = useNavigate();
 
   const [tab, setTab] = useState<Tab>("perfil");
