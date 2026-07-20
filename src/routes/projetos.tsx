@@ -414,11 +414,13 @@ function ProjectDetail({
     <>
       {/* Cover / header */}
       <div
-        className="relative overflow-hidden rounded-t-2xl px-6 py-5"
-        style={{
-          background: `linear-gradient(120deg, ${selected.color ?? "var(--primary)"} 0%, transparent 70%)`,
-        }}
+        className="relative overflow-hidden rounded-t-2xl border-b border-border bg-card px-6 py-5"
       >
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 w-1.5"
+          style={{ background: selected.color ?? "var(--primary)" }}
+        />
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -432,7 +434,7 @@ function ProjectDetail({
                 value={selected.name}
                 onChange={(e) => updateProject(selected.id, { name: e.target.value })}
                 disabled={!isOwner}
-                className="min-w-0 flex-1 bg-transparent text-xl font-semibold tracking-tight outline-none disabled:cursor-default"
+                className="min-w-0 flex-1 bg-transparent text-xl font-semibold tracking-tight text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-default"
               />
               <select
                 value={selected.status}
@@ -453,7 +455,7 @@ function ProjectDetail({
               placeholder="Adicione uma descrição para o projeto…"
               disabled={!isOwner}
               rows={1}
-              className="mt-2 w-full resize-none bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+              className="mt-2 w-full resize-none bg-transparent text-sm text-foreground/80 outline-none placeholder:text-muted-foreground"
             />
             <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
               <Metric icon={<Target className="h-3 w-3" />} label={`${progress}% concluído`} />
