@@ -719,7 +719,7 @@ export function InlineTaskCreator({
                         />
                       </div>
                     </td>
-                    <td className="border-l border-foreground/20 py-3 pr-3 pl-3 text-right sm:pr-4">
+                    <td className="border-l border-foreground/20 py-2 pr-2 pl-2 text-right sm:pr-3">
                       <div className="inline-flex items-center justify-end gap-1">
                         <button
                           type="button"
