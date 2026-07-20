@@ -426,7 +426,7 @@ export function InlineTaskCreator({
                     }`}
                   >
                     <td className="py-2 pl-2 text-xs font-bold text-foreground sm:pl-3">{idx + 1}</td>
-                    <td className="relative border-l border-foreground/20 py-3 pr-3 pl-3">
+                    <td className="relative border-l border-foreground/20 py-2 pr-2 pl-2">
                       <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
