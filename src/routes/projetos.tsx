@@ -457,20 +457,30 @@ function ProjectDetail({
               )}
             </div>
           </div>
-          {isOwner && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                if (confirm(`Excluir "${selected.name}"? As subtarefas viram tarefas normais.`)) {
-                  deleteProject(selected.id);
-                  toast.success("Projeto excluído");
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-md border border-border bg-card/70 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur hover:border-destructive/50 hover:text-destructive"
+              onClick={() => setShareOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/80 px-2.5 py-1.5 text-[11px] font-semibold text-foreground backdrop-blur hover:border-primary hover:text-primary"
+              title="Compartilhar projeto com colaboradores"
             >
-              <Trash2 className="h-3 w-3" />
-              Excluir
+              <Share2 className="h-3.5 w-3.5" />
+              Compartilhar
             </button>
-          )}
+            {isOwner && (
+              <button
+                onClick={() => {
+                  if (confirm(`Excluir "${selected.name}"? As subtarefas viram tarefas normais.`)) {
+                    deleteProject(selected.id);
+                    toast.success("Projeto excluído");
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-card/70 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur hover:border-destructive/50 hover:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" />
+                Excluir
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
           <div
