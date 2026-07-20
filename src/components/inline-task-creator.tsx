@@ -381,7 +381,7 @@ export function InlineTaskCreator({
 
       {open && (
         <div>
-          <div className="flex flex-col gap-3 p-3 sm:p-4">
+          <div className="flex flex-col gap-1.5 p-2 sm:p-3">
             {rows.map((row, idx) => (
               <div
                 key={row.id}
