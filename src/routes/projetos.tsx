@@ -523,7 +523,7 @@ function ProjectDetail({
 
       <div className="p-4">
         {/* Quick add row (Asana-style) */}
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-secondary/40 px-3 py-2 focus-within:border-primary focus-within:bg-secondary/70">
+        <div className="relative mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-secondary/40 px-3 py-2 focus-within:border-primary focus-within:bg-secondary/70">
           <Plus className="h-4 w-4 text-primary" />
           <input
             ref={quickInputRef}
@@ -535,6 +535,63 @@ function ProjectDetail({
             placeholder="Adicionar subtarefa… (Enter para salvar)"
             className="min-w-[220px] flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMentionOpen((v) => !v)}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+                quickMentions.length > 0
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background text-muted-foreground hover:border-primary/60 hover:text-foreground"
+              }`}
+              title="Mencionar pessoas nesta tarefa"
+            >
+              <AtSign className="h-3 w-3" />
+              {quickMentions.length > 0 ? `${quickMentions.length} menção${quickMentions.length === 1 ? "" : "s"}` : "Mencionar"}
+            </button>
+            {mentionOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMentionOpen(false)} />
+                <div className="absolute right-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+                  <div className="border-b border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Mencionar na tarefa
+                  </div>
+                  <div className="max-h-56 overflow-y-auto p-1">
+                    {users
+                      .filter((u) => u.id !== currentUserId)
+                      .map((u) => {
+                        const on = quickMentions.includes(u.id);
+                        return (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() =>
+                              setQuickMentions(
+                                on
+                                  ? quickMentions.filter((x) => x !== u.id)
+                                  : [...quickMentions, u.id],
+                              )
+                            }
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition ${
+                              on ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
+                            }`}
+                          >
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                              {u.avatar || u.name.slice(0, 1)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{u.name}</div>
+                              <div className="truncate text-[10px] text-muted-foreground">{u.jobTitle}</div>
+                            </div>
+                            {on && <CheckCircle2 className="h-3.5 w-3.5 text-primary" />}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <select
             value={quickAssignee}
             onChange={(e) => setQuickAssignee(e.target.value)}
