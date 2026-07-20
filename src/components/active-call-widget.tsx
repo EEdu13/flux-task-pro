@@ -1193,9 +1193,9 @@ function ChatPanel({
 }
 
 const MINI_STORAGE_KEY = "fluxo:mini-call-box";
-const DEFAULT_MINI = { x: -1, y: -1, w: 384, h: 260 };
-const MIN_W = 260;
-const MIN_H = 180;
+const DEFAULT_MINI = { x: -1, y: -1, w: 380, h: 440 };
+const MIN_W = 280;
+const MIN_H = 260;
 
 export function ActiveCallWidget() {
   const { active, minimized, setMinimized, endCall } = useActiveCall();
