@@ -699,10 +699,28 @@ function ProjectDetail({
           <div className="grid gap-3 md:grid-cols-3">
             {statusColumns.map((col) => {
               const items = groupedByStatus[col.id];
+              const isHover = hoverCol === col.id;
               return (
                 <div
                   key={col.id}
-                  className={`flex flex-col rounded-xl border border-t-2 border-border bg-secondary/30 ${col.tone}`}
+                  onDragOver={(e) => {
+                    if (!dragId) return;
+                    e.preventDefault();
+                    setHoverCol(col.id);
+                  }}
+                  onDragLeave={(e) => {
+                    if (e.currentTarget === e.target) setHoverCol((h) => (h === col.id ? null : h));
+                  }}
+                  onDrop={() => {
+                    if (dragId) {
+                      updateTask(dragId, { status: col.id });
+                    }
+                    setDragId(null);
+                    setHoverCol(null);
+                  }}
+                  className={`flex flex-col rounded-xl border border-t-2 bg-secondary/30 transition ${col.tone} ${
+                    isHover ? "border-primary bg-primary/5 ring-2 ring-primary/40" : "border-border"
+                  }`}
                 >
                   <div className="flex items-center justify-between px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     <span>{col.label}</span>
@@ -723,7 +741,19 @@ function ProjectDetail({
                       return (
                         <div
                           key={t.id}
-                          className="group rounded-lg border border-border bg-card p-2.5 text-sm shadow-sm transition hover:border-primary/50"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", t.id);
+                            e.dataTransfer.effectAllowed = "move";
+                            setDragId(t.id);
+                          }}
+                          onDragEnd={() => {
+                            setDragId(null);
+                            setHoverCol(null);
+                          }}
+                          className={`group cursor-grab rounded-lg border border-border bg-card p-2.5 text-sm shadow-sm transition hover:border-primary/50 active:cursor-grabbing ${
+                            dragId === t.id ? "opacity-40" : ""
+                          }`}
                         >
                           <div className="mb-1 flex items-start gap-2">
                             <button
