@@ -3,6 +3,73 @@ import { useEffect, useState } from "react";
 type Theme = "light" | "dark";
 
 const KEY = "fluxo.theme";
+const PALETTE_KEY = "fluxo.palette";
+
+export type Palette = "forest" | "ocean" | "sunset" | "noir";
+
+export const paletteOptions: {
+  id: Palette;
+  name: string;
+  description: string;
+  swatch: string[];
+}[] = [
+  {
+    id: "forest",
+    name: "Forest Precision",
+    description: "Verde profundo com creme quente. Padrão do Fluxo.",
+    swatch: ["#f4efe4", "#2f4a34", "#c8e26a", "#1a2820"],
+  },
+  {
+    id: "ocean",
+    name: "Ocean Trust",
+    description: "Azul corporativo, sereno e confiável.",
+    swatch: ["#f0f5fb", "#2653a8", "#7cc7e6", "#152340"],
+  },
+  {
+    id: "sunset",
+    name: "Sunset Energy",
+    description: "Laranja e âmbar quentes, alta energia.",
+    swatch: ["#fbf1e5", "#d9522a", "#f2b968", "#3a1e10"],
+  },
+  {
+    id: "noir",
+    name: "Noir Professional",
+    description: "Preto e branco monocromático com detalhe âmbar.",
+    swatch: ["#ffffff", "#141414", "#c5c5c5", "#e0a52a"],
+  },
+];
+
+function readPalette(): Palette {
+  if (typeof window === "undefined") return "forest";
+  const v = localStorage.getItem(PALETTE_KEY) as Palette | null;
+  if (v && paletteOptions.some((p) => p.id === v)) return v;
+  return "forest";
+}
+
+function applyPalette(p: Palette) {
+  if (typeof document === "undefined") return;
+  if (p === "forest") {
+    document.documentElement.removeAttribute("data-palette");
+  } else {
+    document.documentElement.setAttribute("data-palette", p);
+  }
+}
+
+/** Applies the saved palette on mount. Call once in the root component. */
+export function useApplyPalette() {
+  useEffect(() => {
+    applyPalette(readPalette());
+  }, []);
+}
+
+export function usePalette() {
+  const [palette, setPaletteState] = useState<Palette>(() => readPalette());
+  useEffect(() => {
+    applyPalette(palette);
+    localStorage.setItem(PALETTE_KEY, palette);
+  }, [palette]);
+  return { palette, setPalette: setPaletteState };
+}
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {

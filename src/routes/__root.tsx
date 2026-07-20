@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FluxoProvider } from "@/lib/fluxo-store";
 import { TaskTimerProvider } from "@/lib/task-timer";
+import { useApplyPalette } from "@/lib/use-theme";
 import { Toaster } from "@/components/ui/sonner";
 import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
@@ -129,6 +130,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useApplyPalette();
 
   return (
     <QueryClientProvider client={queryClient}>

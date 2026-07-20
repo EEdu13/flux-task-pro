@@ -17,7 +17,7 @@ import {
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors } from "@/lib/fluxo-types";
-import { useTheme } from "@/lib/use-theme";
+import { useTheme, usePalette, paletteOptions } from "@/lib/use-theme";
 import { phoneValidator } from "@/components/onboarding-modal";
 import { purgeAllRooms } from "@/lib/livekit-token.functions";
 
@@ -36,6 +36,7 @@ type Tab = "perfil" | "aparencia" | "notificacoes" | "conta";
 function SettingsPage() {
   const { currentUser, updateCurrentUser, logout, users } = useFluxo();
   const { theme, toggle } = useTheme();
+  const { palette, setPalette } = usePalette();
   const navigate = useNavigate();
 
   const [tab, setTab] = useState<Tab>("perfil");
@@ -227,6 +228,45 @@ function SettingsPage() {
                     </button>
                   );
                 })}
+              </div>
+              <div className="mt-6 border-t border-border pt-6">
+                <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+                  <Palette className="h-4 w-4" /> Paleta de cores
+                </h3>
+                <p className="mb-4 text-[11px] text-muted-foreground">
+                  Escolha a identidade visual do seu Fluxo. Vale para claro e escuro, e é salva neste dispositivo.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {paletteOptions.map((p) => {
+                    const active = palette === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => setPalette(p.id)}
+                        className={`flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition ${
+                          active ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40"
+                        }`}
+                      >
+                        <div className="flex h-12 w-12 shrink-0 overflow-hidden rounded-md border border-border">
+                          {p.swatch.map((c, i) => (
+                            <div key={i} className="flex-1" style={{ background: c }} />
+                          ))}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{p.name}</span>
+                            {active && (
+                              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary-foreground">
+                                Ativa
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">{p.description}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </section>
           )}

@@ -1,9 +1,22 @@
 import { X } from "lucide-react";
+import { useEffect } from "react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 
 export function QuickTaskModal() {
   const { quickCreate, closeQuickCreate } = useFluxo();
+  useEffect(() => {
+    if (!quickCreate.open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Let the creator decide (discard confirm if there's a draft).
+      window.dispatchEvent(new CustomEvent("fluxo:quickcreate-esc"));
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [quickCreate.open]);
   if (!quickCreate.open) return null;
   return (
     <div

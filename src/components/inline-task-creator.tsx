@@ -235,7 +235,12 @@ export function InlineTaskCreator({
       handleEscape();
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    const onCustom = () => handleEscape();
+    window.addEventListener("fluxo:quickcreate-esc", onCustom as EventListener);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("fluxo:quickcreate-esc", onCustom as EventListener);
+    };
   });
 
   const saveAndClose = () => {
