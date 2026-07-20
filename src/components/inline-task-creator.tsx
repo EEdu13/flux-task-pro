@@ -820,6 +820,41 @@ export function InlineTaskCreator({
         </div>
       )}
 
+      {discardOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Sair sem criar?</h3>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Você tem <strong>{validRows.length}</strong> tarefa{validRows.length > 1 ? "s" : ""} preenchida{validRows.length > 1 ? "s" : ""}. O que deseja fazer?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDiscardOpen(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+              >
+                Continuar editando
+              </button>
+              <button
+                onClick={discardAndClose}
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20"
+              >
+                Descartar
+              </button>
+              <button
+                onClick={saveAndClose}
+                disabled={validRows.length === 0}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+              >
+                Salvar {validRows.length > 0 ? validRows.length : ""}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pasteOpen && (
         <div
           className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
