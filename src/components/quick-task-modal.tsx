@@ -7,11 +7,11 @@ export function QuickTaskModal() {
   if (!quickCreate.open) return null;
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/75 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-6"
+      className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/85 p-0 pt-0 backdrop-blur-sm"
       onClick={closeQuickCreate}
     >
       <div
-        className="w-full max-w-[98vw] rounded-2xl border-2 border-foreground/80 bg-background text-foreground shadow-2xl"
+        className="w-[100vw] min-h-[100vh] rounded-none border-0 border-foreground/80 bg-background text-foreground shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b-2 border-foreground/80 bg-secondary/60 px-4 py-3 sm:px-6 sm:py-4">
@@ -33,7 +33,7 @@ export function QuickTaskModal() {
             <span className="hidden sm:inline">Fechar</span>
           </button>
         </div>
-        <div className="p-3 sm:p-5">
+        <div className="p-2 sm:p-4">
           <InlineTaskCreator
             defaultStatus={quickCreate.status ?? "pendente"}
             defaultDueDate={quickCreate.dueDate}
