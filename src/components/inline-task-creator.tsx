@@ -643,8 +643,8 @@ export function InlineTaskCreator({
                         className="w-full rounded-md border border-foreground/30 bg-background px-2 py-2 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
                       />
                     </td>
-                    <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
+                      <div className="flex flex-wrap items-center gap-1">
                         <div className="inline-flex rounded-md border border-foreground/40 bg-background p-0.5 text-xs">
                           {[
                             { label: "Hoje", get: todayStr },
@@ -671,12 +671,12 @@ export function InlineTaskCreator({
                           type="date"
                           value={row.dueDate}
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="w-36 rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                          className="w-32 rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
                         />
                       </div>
                     </td>
                     {!compact && (
-                      <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
+                      <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
                         <select
                           value={row.assigneeId}
                           onChange={(e) => update(row.id, { assigneeId: e.target.value })}
@@ -691,7 +691,7 @@ export function InlineTaskCreator({
                       </td>
                     )}
                     {!compact && (
-                      <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 lg:table-cell">
+                      <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 lg:table-cell">
                         <select
                           value={row.sector}
                           onChange={(e) => update(row.id, { sector: e.target.value })}
@@ -706,7 +706,7 @@ export function InlineTaskCreator({
                         </select>
                       </td>
                     )}
-                    <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
+                    <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
                       <div className="flex items-center gap-1 rounded-md border border-foreground/40 bg-background px-1.5 py-1 text-xs focus-within:border-primary">
                         <Timer className="h-3 w-3 text-foreground/70" />
                         <input
@@ -714,7 +714,7 @@ export function InlineTaskCreator({
                           onChange={(e) => update(row.id, { estimateHM: e.target.value })}
                           placeholder="00:30"
                           inputMode="numeric"
-                          className="w-16 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
+                          className="w-14 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
                           title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
                         />
                       </div>
