@@ -480,7 +480,7 @@ function DayView({
   }, [cursor, filtered]);
 
   const byStatus = useMemo(() => {
-    const g: Record<string, any[]> = { pendente: [], andamento: [], revisao: [], concluida: [] };
+    const g: Record<string, any[]> = { pendente: [], andamento: [], concluida: [] };
     dayTasks.forEach((t) => g[t.status as string]?.push(t));
     return g;
   }, [dayTasks]);
@@ -513,7 +513,7 @@ function DayView({
         </button>
       </div>
       <div className="grid grid-cols-1 gap-px bg-border md:grid-cols-4">
-        {(["pendente", "andamento", "revisao", "concluida"] as const).map((st) => (
+        {(["pendente", "andamento", "concluida"] as const).map((st) => (
           <div
             key={st}
             className="flex flex-col bg-card p-3"
