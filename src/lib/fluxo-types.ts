@@ -1,6 +1,6 @@
 export type Role = "gerente" | "supervisor" | "adm";
 export type Frequency = "diaria" | "semanal" | "mensal";
-export type Status = "pendente" | "andamento" | "revisao" | "concluida";
+export type Status = "pendente" | "andamento" | "concluida";
 export type Priority = "alta" | "media" | "baixa";
 
 export interface User {
@@ -214,7 +214,6 @@ export const freqLabels: Record<Frequency, string> = {
 export const statusLabels: Record<Status, string> = {
   pendente: "A fazer",
   andamento: "Em andamento",
-  revisao: "Em revisão",
   concluida: "Concluída",
 };
 
@@ -239,6 +238,5 @@ export const priorityColor: Record<Priority, string> = {
 export const statusColor: Record<Status, string> = {
   pendente: "oklch(0.55 0.02 260)",
   andamento: "oklch(0.52 0.22 275)",
-  revisao: "oklch(0.78 0.15 75)",
   concluida: "oklch(0.62 0.16 155)",
 };

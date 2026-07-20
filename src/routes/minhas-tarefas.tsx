@@ -681,12 +681,11 @@ function KanbanBoard({
   const cols: { id: Status; title: string; color: string }[] = [
     { id: "pendente", title: statusLabels.pendente, color: statusColor.pendente },
     { id: "andamento", title: statusLabels.andamento, color: statusColor.andamento },
-    { id: "revisao", title: statusLabels.revisao, color: statusColor.revisao },
     { id: "concluida", title: statusLabels.concluida, color: statusColor.concluida },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       {cols.map((col) => {
         const items = tasks.filter((t) => t.status === col.id).sort((a, b) => a.order - b.order);
         const isOver = dragOver?.col === col.id;

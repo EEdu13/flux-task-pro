@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer, ClipboardPaste } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
-import {
-  sectors,
-  type Status,
-} from "@/lib/fluxo-types";
+import { type Status } from "@/lib/fluxo-types";
 import type { Attachment } from "@/lib/fluxo-types";
 import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
 import { parseHM } from "@/lib/time-log";
@@ -384,50 +381,41 @@ export function InlineTaskCreator({
 
       {open && (
         <div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm text-foreground">
-              <thead>
-                <tr className="border-b-2 border-foreground/70 bg-secondary text-[11px] font-bold uppercase tracking-wider text-foreground">
-                  <th className="w-6 py-2 pl-2 sm:pl-3">#</th>
-                  <th className="w-[22%] min-w-[180px] border-l border-foreground/30 py-2 pr-2 pl-2">Título</th>
-                  <th className="hidden w-[22%] min-w-[160px] border-l border-foreground/30 py-2 pr-2 pl-2 md:table-cell">Descrição</th>
-                  <th className="hidden w-[16%] min-w-[150px] border-l border-foreground/30 py-2 pr-2 pl-2 md:table-cell">Prazo</th>
-                  {!compact && <th className="hidden w-[14%] min-w-[120px] border-l border-foreground/30 py-2 pr-2 pl-2 md:table-cell">Responsável</th>}
-                  {!compact && <th className="hidden w-[12%] min-w-[110px] border-l border-foreground/30 py-2 pr-2 pl-2 lg:table-cell">Setor</th>}
-                  <th className="hidden w-[8%] min-w-[72px] border-l border-foreground/30 py-2 pr-2 pl-2 md:table-cell" title="Tempo estimado (hh:mm)">Tempo</th>
-                  <th className="w-[120px] border-l border-foreground/30 py-2 pr-2 pl-2 text-right sm:w-[260px] sm:pr-3">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, idx) => (
-                  <tr
-                    key={row.id}
-                    onDragEnter={(e) => {
-                      if (!e.dataTransfer.types.includes("Files")) return;
-                      setDragRowId(row.id);
-                    }}
-                    onDragOver={(e) => {
-                      if (!e.dataTransfer.types.includes("Files")) return;
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "copy";
-                      setDragRowId(row.id);
-                    }}
-                    onDrop={async (e) => {
-                      if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      dragDepth.current = 0;
-                      setCardDrag(false);
-                      setDragRowId(null);
-                      await addFilesToRow(row.id, e.dataTransfer.files);
-                    }}
-                    className={`border-b-2 border-foreground/40 align-top last:border-0 odd:bg-background even:bg-secondary/30 hover:bg-primary/5 ${
-                      dragRowId === row.id ? "!bg-primary/10" : ""
-                    }`}
-                  >
-                    <td className="py-2 pl-2 text-xs font-bold text-foreground sm:pl-3">{idx + 1}</td>
-                    <td className="relative border-l border-foreground/20 py-2 pr-2 pl-2">
-                      <input
+          <div className="flex flex-col gap-3 p-3 sm:p-4">
+            {rows.map((row, idx) => (
+              <div
+                key={row.id}
+                onDragEnter={(e) => {
+                  if (!e.dataTransfer.types.includes("Files")) return;
+                  setDragRowId(row.id);
+                }}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes("Files")) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setDragRowId(row.id);
+                }}
+                onDrop={async (e) => {
+                  if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dragDepth.current = 0;
+                  setCardDrag(false);
+                  setDragRowId(null);
+                  await addFilesToRow(row.id, e.dataTransfer.files);
+                }}
+                className={`relative rounded-lg border-2 border-foreground/40 bg-background p-3 shadow-sm transition ${
+                  dragRowId === row.id ? "border-primary bg-primary/5" : "hover:border-foreground/60"
+                }`}
+              >
+                <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-foreground/70">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    {idx + 1}
+                  </span>
+                  <span>Tarefa</span>
+                </div>
+                <div className="relative">
+                  <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
                         }}
@@ -516,7 +504,7 @@ export function InlineTaskCreator({
                           }
                         }}
                         placeholder="Ex: Fazer conciliação bancária de julho"
-                        className="w-full rounded-md border border-foreground/30 bg-background px-2 py-2 text-sm font-medium text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        className="w-full rounded-md border-2 border-foreground/30 bg-background px-3 py-3 text-lg font-bold text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20 sm:text-xl"
                         onPaste={(e) => handleTitlePaste(row.id, e)}
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
@@ -559,93 +547,45 @@ export function InlineTaskCreator({
                           </div>,
                           document.body,
                         )}
-                      {row.attachments.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {row.attachments.map((a) => (
-                            <span
-                              key={a.id}
-                              className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/70 px-1.5 py-0.5 text-[10px]"
-                              title={`${a.name} · ${formatBytes(a.size)}`}
-                            >
-                              {isImage(a.type) ? (
-                                <ImageIcon className="h-2.5 w-2.5 text-primary" />
-                              ) : (
-                                <FileText className="h-2.5 w-2.5 text-muted-foreground" />
-                              )}
-                              <span className="max-w-[120px] truncate">{a.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeAttachment(row.id, a.id)}
-                                className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-                              >
-                                <X className="h-2.5 w-2.5" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {/* Mobile stacked controls */}
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 md:hidden">
-                        <input
-                          type="date"
-                          value={row.dueDate}
-                          onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
-                        />
-                        <div className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px]">
-                          <Timer className="h-3 w-3 text-muted-foreground" />
-                          <input
-                            value={row.estimateHM}
-                            onChange={(e) => update(row.id, { estimateHM: e.target.value })}
-                            placeholder="00:30"
-                            inputMode="numeric"
-                            className="w-14 bg-transparent font-mono outline-none placeholder:text-muted-foreground/50"
-                            title="Tempo estimado"
-                          />
-                        </div>
-                        {!compact && (
-                          <select
-                            value={row.assigneeId}
-                            onChange={(e) => update(row.id, { assigneeId: e.target.value })}
-                            className="min-w-0 max-w-[45%] flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
-                          >
-                            {assignees.map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        {!compact && (
-                          <select
-                            value={row.sector}
-                            onChange={(e) => update(row.id, { sector: e.target.value })}
-                            className="min-w-0 max-w-[45%] flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
-                          >
-                            <option value="">— setor —</option>
-                            {sectors.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </td>
-                    <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
-                      <input
+                </div>
+                <div className="mt-2">
+                  <input
                         ref={(el) => {
                           descRefs.current[row.id] = el;
                         }}
                         value={row.description}
                         onChange={(e) => update(row.id, { description: e.target.value })}
                         placeholder="Descrição (opcional) — detalhes, contexto…"
-                        className="w-full rounded-md border border-foreground/30 bg-background px-2 py-2 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        className="w-full rounded-md border-2 border-foreground/30 bg-background px-3 py-2.5 text-base text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
                       />
-                    </td>
-                    <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <div className="inline-flex rounded-md border border-foreground/40 bg-background p-0.5 text-xs">
+                </div>
+                {row.attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {row.attachments.map((a) => (
+                      <span
+                        key={a.id}
+                        className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/70 px-1.5 py-0.5 text-[11px]"
+                        title={`${a.name} · ${formatBytes(a.size)}`}
+                      >
+                        {isImage(a.type) ? (
+                          <ImageIcon className="h-3 w-3 text-primary" />
+                        ) : (
+                          <FileText className="h-3 w-3 text-muted-foreground" />
+                        )}
+                        <span className="max-w-[160px] truncate">{a.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(row.id, a.id)}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-foreground/15 pt-3">
+                  <div className="inline-flex items-center gap-1 rounded-md border-2 border-foreground/40 bg-background p-0.5 text-xs">
                           {[
                             { label: "Hoje", get: todayStr },
                             { label: "Amanhã", get: tomorrowStr },
@@ -666,79 +606,57 @@ export function InlineTaskCreator({
                               </button>
                             );
                           })}
-                        </div>
-                        <input
+                  </div>
+                  <input
                           type="date"
                           value={row.dueDate}
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="w-32 rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                          className="w-36 rounded-md border-2 border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
                         />
-                      </div>
-                    </td>
-                    {!compact && (
-                      <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
-                        <select
+                  {!compact && (
+                    <select
                           value={row.assigneeId}
                           onChange={(e) => update(row.id, { assigneeId: e.target.value })}
-                          className="w-full rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                          className="rounded-md border-2 border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
+                          title="Responsável"
                         >
                           {assignees.map((u) => (
                             <option key={u.id} value={u.id}>
                               {u.name}
                             </option>
                           ))}
-                        </select>
-                      </td>
-                    )}
-                    {!compact && (
-                      <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 lg:table-cell">
-                        <select
-                          value={row.sector}
-                          onChange={(e) => update(row.id, { sector: e.target.value })}
-                          className="w-full rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
-                        >
-                          <option value="">— setor —</option>
-                          {sectors.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    )}
-                    <td className="hidden border-l border-foreground/20 py-2 pr-2 pl-2 md:table-cell">
-                      <div className="flex items-center gap-1 rounded-md border border-foreground/40 bg-background px-1.5 py-1 text-xs focus-within:border-primary">
+                    </select>
+                  )}
+                  <div className="flex items-center gap-1 rounded-md border-2 border-foreground/40 bg-background px-2 py-1 text-xs focus-within:border-primary">
                         <Timer className="h-3 w-3 text-foreground/70" />
                         <input
                           value={row.estimateHM}
                           onChange={(e) => update(row.id, { estimateHM: e.target.value })}
                           placeholder="00:30"
                           inputMode="numeric"
-                          className="w-14 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
+                          className="w-16 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
                           title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
                         />
-                      </div>
-                    </td>
-                    <td className="border-l border-foreground/20 py-2 pr-2 pl-2 text-right sm:pr-3">
-                      <div className="inline-flex items-center justify-end gap-1">
-                        <button
+                  </div>
+                  <div className="ml-auto inline-flex items-center gap-1">
+                    <button
                           type="button"
                           onClick={() => update(row.id, { requireProof: !row.requireProof })}
-                          className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-xs font-medium transition ${
+                          className={`inline-flex items-center gap-1 rounded-md border-2 px-2 py-1 text-xs font-semibold transition ${
                             row.requireProof
                               ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                              : "border-border text-muted-foreground hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
+                              : "border-foreground/30 text-foreground/70 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
                           }`}
-                          title="Marca a tarefa como 'precisa comprovante' — quem concluir precisa anexar arquivo"
+                          title="Exigir comprovante para concluir"
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          <span className="hidden sm:inline">{row.requireProof ? "Exige comprov." : "Comprovante"}</span>
+                          <span className="hidden sm:inline">Comprovante</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-                          title="Anexar arquivo agora (ou arraste um arquivo pra cima desta linha)"
+                          className="inline-flex items-center gap-1 rounded-md border-2 border-foreground/30 px-2 py-1 text-xs font-semibold text-foreground/70 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          title="Anexar arquivo"
                         >
                           <Paperclip className="h-3.5 w-3.5" />
                           <span className="hidden sm:inline">Anexar</span>
@@ -746,18 +664,16 @@ export function InlineTaskCreator({
                         <button
                           type="button"
                           onClick={() => remove(row.id)}
-                          className="inline-flex items-center justify-center rounded-md border border-border px-1.5 py-1 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                          className="inline-flex items-center justify-center rounded-md border-2 border-foreground/30 px-2 py-1 text-xs font-semibold text-foreground/70 transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                           title="Remover esta linha"
                           aria-label="Remover esta linha"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
           {cardDrag && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5">
