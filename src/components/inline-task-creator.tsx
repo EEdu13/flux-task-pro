@@ -322,8 +322,8 @@ export function InlineTaskCreator({
 
   return (
     <div
-      className={`relative rounded-lg border bg-card shadow-sm transition ${
-        cardDrag ? "border-primary ring-2 ring-primary/30" : "border-border"
+      className={`relative rounded-lg border-2 bg-card text-foreground shadow-md transition ${
+        cardDrag ? "border-primary ring-2 ring-primary/30" : "border-foreground/70"
       }`}
       onDragEnter={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
@@ -359,12 +359,18 @@ export function InlineTaskCreator({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        className="flex w-full cursor-pointer items-center justify-between gap-3 border-b-2 border-foreground/70 bg-secondary/50 px-4 py-3 text-left hover:bg-secondary"
+        title={open ? "Clique para recolher" : "Clique para expandir"}
       >
         <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/40 bg-background text-foreground">
+            {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </span>
           <Sparkles className="h-4 w-4 text-primary" />
-          <span className="text-base font-semibold">Planilha de tarefas</span>
+          <span className="text-base font-bold text-foreground">Planilha de tarefas</span>
+          <span className="ml-1 hidden text-[11px] font-medium text-foreground/60 sm:inline">
+            (clique para {open ? "recolher" : "expandir"})
+          </span>
           <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-dashed border-primary/40 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary">
             <UploadCloud className="h-3 w-3" /> arraste arquivos aqui
           </span>
@@ -377,19 +383,19 @@ export function InlineTaskCreator({
       </button>
 
       {open && (
-        <div className="border-t border-border">
+        <div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-full text-left text-sm md:min-w-[900px]">
+            <table className="w-full min-w-full border-collapse text-left text-sm text-foreground md:min-w-[1000px]">
               <thead>
-                <tr className="border-b border-border bg-secondary/60 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <tr className="border-b-2 border-foreground/70 bg-secondary text-[11px] font-bold uppercase tracking-wider text-foreground">
                   <th className="w-8 py-2.5 pl-3 sm:pl-4">#</th>
-                  <th className="min-w-[220px] py-2.5 pr-3">Título</th>
-                  <th className="hidden min-w-[240px] py-2.5 pr-3 md:table-cell">Descrição</th>
-                  <th className="hidden w-56 py-2.5 pr-3 md:table-cell">Prazo</th>
-                  {!compact && <th className="hidden w-44 py-2.5 pr-3 md:table-cell">Responsável</th>}
-                  {!compact && <th className="hidden w-40 py-2.5 pr-3 lg:table-cell">Setor</th>}
-                  <th className="hidden w-24 py-2.5 pr-3 md:table-cell" title="Tempo estimado (hh:mm)">Tempo</th>
-                  <th className="w-[80px] py-2.5 pr-3 text-right sm:w-[280px] sm:pr-4">Ações</th>
+                  <th className="min-w-[260px] border-l border-foreground/30 py-2.5 pr-3 pl-3">Título</th>
+                  <th className="hidden min-w-[280px] border-l border-foreground/30 py-2.5 pr-3 pl-3 md:table-cell">Descrição</th>
+                  <th className="hidden w-56 border-l border-foreground/30 py-2.5 pr-3 pl-3 md:table-cell">Prazo</th>
+                  {!compact && <th className="hidden w-44 border-l border-foreground/30 py-2.5 pr-3 pl-3 md:table-cell">Responsável</th>}
+                  {!compact && <th className="hidden w-40 border-l border-foreground/30 py-2.5 pr-3 pl-3 lg:table-cell">Setor</th>}
+                  <th className="hidden w-24 border-l border-foreground/30 py-2.5 pr-3 pl-3 md:table-cell" title="Tempo estimado (hh:mm)">Tempo</th>
+                  <th className="w-[80px] border-l border-foreground/30 py-2.5 pr-3 pl-3 text-right sm:w-[280px] sm:pr-4">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -415,12 +421,12 @@ export function InlineTaskCreator({
                       setDragRowId(null);
                       await addFilesToRow(row.id, e.dataTransfer.files);
                     }}
-                    className={`border-b border-border/60 align-top last:border-0 odd:bg-secondary/25 even:bg-background hover:bg-primary/5 ${
+                    className={`border-b-2 border-foreground/40 align-top last:border-0 odd:bg-background even:bg-secondary/30 hover:bg-primary/5 ${
                       dragRowId === row.id ? "!bg-primary/10" : ""
                     }`}
                   >
-                    <td className="py-3 pl-3 text-xs font-semibold text-muted-foreground sm:pl-4">{idx + 1}</td>
-                    <td className="relative py-3 pr-3">
+                    <td className="py-3 pl-3 text-xs font-bold text-foreground sm:pl-4">{idx + 1}</td>
+                    <td className="relative border-l border-foreground/20 py-3 pr-3 pl-3">
                       <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
@@ -510,7 +516,7 @@ export function InlineTaskCreator({
                           }
                         }}
                         placeholder="Ex: Fazer conciliação bancária de julho"
-                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
+                        className="w-full rounded-md border border-foreground/30 bg-background px-2 py-2 text-sm font-medium text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
                         onPaste={(e) => handleTitlePaste(row.id, e)}
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
