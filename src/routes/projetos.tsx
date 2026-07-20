@@ -869,18 +869,15 @@ function CreateProjectModal({
   onClose,
   assignees,
   currentUserId,
-  defaultSector,
   onCreate,
 }: {
   onClose: () => void;
   assignees: ReturnType<typeof useFluxo>["users"];
   currentUserId: string;
-  defaultSector: string;
   onCreate: (payload: CreateProjectPayload) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [sector, setSector] = useState(defaultSector);
   const [dueDate, setDueDate] = useState("");
   const [color, setColor] = useState(projectColorPalette[0]);
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -911,7 +908,6 @@ function CreateProjectModal({
       name: name.trim(),
       description: description.trim() || undefined,
       memberIds,
-      sector,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
       color,
     });
@@ -995,20 +991,7 @@ function CreateProjectModal({
             </div>
           </Field>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Setor" icon={<Flag className="h-3 w-3" />}>
-              <select
-                value={sector}
-                onChange={(e) => setSector(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-              >
-                {sectors.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+          <div className="grid gap-4">
             <Field label="Prazo previsto" icon={<Calendar className="h-3 w-3" />}>
               <input
                 type="date"
