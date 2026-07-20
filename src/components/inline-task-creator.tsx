@@ -766,12 +766,12 @@ export function InlineTaskCreator({
               </div>
             </div>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-secondary/30 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-foreground/70 bg-secondary/60 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => addRow()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
+                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-foreground/50 bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:text-primary"
               >
                 <Plus className="h-4 w-4" /> Adicionar linha
               </button>
@@ -784,12 +784,12 @@ export function InlineTaskCreator({
                 <ClipboardPaste className="h-4 w-4" /> Colar do Excel
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-foreground/80">
               <span className="hidden md:inline">
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">Enter</kbd> próxima ·{" "}
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">@</kbd> menciona ·{" "}
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">↑↓</kbd> navega ·{" "}
-                <kbd className="rounded border border-border bg-muted px-1 font-mono">⌫</kbd> remove vazia
+                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">Enter</kbd> próxima ·{" "}
+                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">Tab</kbd> descrição ·{" "}
+                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">@</kbd> menciona ·{" "}
+                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">↑↓</kbd> navega
               </span>
               <button
                 type="button"
