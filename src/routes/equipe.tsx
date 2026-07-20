@@ -359,7 +359,7 @@ function UserTasksDrawer({
     }
     return g;
   }, [tasks]);
-  const order: (keyof typeof statusLabels)[] = ["pendente", "andamento", "revisao", "concluida"];
+  const order: (keyof typeof statusLabels)[] = ["pendente", "andamento", "concluida"];
 
   return (
     <div
