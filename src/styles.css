@@ -461,3 +461,13 @@ html.fluxo-nudge-shake body {
 .fluxo-meet.fluxo-meet-mini .lk-participant-tile {
   border-radius: 8px;
 }
+.fluxo-meet.fluxo-meet-mini button[title] {
+  /* nothing — placeholder for future mini tweaks */
+}
+.fluxo-meet.fluxo-meet-mini .lk-participant-tile .lk-participant-metadata {
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  left: 4px;
+  bottom: 4px;
+}
