@@ -148,89 +148,120 @@ export function MyView({
           <div className="text-sm font-semibold">Minha visão</div>
           <div className="text-[11px] text-muted-foreground">
             Arraste as linhas pela alça <GripVertical className="inline h-3 w-3" /> · dê{" "}
-            <strong>duplo clique</strong> em uma linha para ações rápidas · colunas, cores e notas são só suas.
+            <strong>duplo clique</strong> em uma linha para ações rápidas · arraste a borda direita das colunas para redimensionar.
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setManaging((m) => !m)}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-secondary"
-        >
-          <Settings2 className="h-3.5 w-3.5" /> {managing ? "Fechar colunas" : "Gerenciar colunas"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              // Persistência já é automática (useEffect no store); só confirma pro usuário.
+              toast.success("Visão salva — colunas, cores e notas ficam entre sessões");
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20"
+          >
+            <Save className="h-3.5 w-3.5" /> Salvar visão
+          </button>
+          <button
+            type="button"
+            onClick={() => setManaging((m) => !m)}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+          >
+            <Settings2 className="h-3.5 w-3.5" /> {managing ? "Fechar colunas" : "Gerenciar colunas"}
+          </button>
+        </div>
       </div>
 
       {managing && (
         <div className="border-b border-border bg-background px-4 py-3">
-          <div className="mb-2 text-xs font-semibold text-muted-foreground">Colunas personalizadas</div>
-          <div className="flex flex-wrap gap-2">
-            {view.columns.map((c) => (
-              <div
-                key={c.id}
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-2 py-1 text-xs"
-              >
-                <input
-                  value={c.name}
-                  onChange={(e) => view.updateColumn(c.id, { name: e.target.value })}
-                  className="w-28 bg-transparent outline-none"
-                />
-                <span className="text-[10px] text-muted-foreground">{COLUMN_TYPE_LABEL[c.type]}</span>
-                <button
-                  onClick={() => view.removeColumn(c.id)}
-                  className="ml-1 rounded p-0.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                  title="Remover coluna"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
-            <label className="text-xs">
-              <div className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Nome</div>
-              <input
-                value={newCol.name}
-                onChange={(e) => setNewCol((c) => ({ ...c, name: e.target.value }))}
-                placeholder="Ex.: Etapa, Cliente…"
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
-              />
-            </label>
-            <label className="text-xs">
-              <div className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">Tipo</div>
-              <select
-                value={newCol.type}
-                onChange={(e) => setNewCol((c) => ({ ...c, type: e.target.value as ColumnType }))}
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
-              >
-                <option value="text">Texto</option>
-                <option value="number">Número</option>
-                <option value="select">Lista</option>
-                <option value="date">Data</option>
-                <option value="time">Hora</option>
-                <option value="datetime">Data + hora</option>
-              </select>
-            </label>
+          {/* Nova coluna — uma linha só: nome → tipo → (opções) → adicionar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Nova coluna:</span>
+            <input
+              value={newCol.name}
+              onChange={(e) => setNewCol((c) => ({ ...c, name: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newCol.name.trim()) submitNewCol();
+              }}
+              placeholder="Nome (ex.: Cliente)"
+              className="w-40 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+            />
+            <select
+              value={newCol.type}
+              onChange={(e) => setNewCol((c) => ({ ...c, type: e.target.value as ColumnType }))}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+              title="Tipo da coluna"
+            >
+              <option value="text">Texto</option>
+              <option value="number">Número</option>
+              <option value="select">Lista</option>
+              <option value="date">Data</option>
+              <option value="time">Hora</option>
+              <option value="datetime">Data + hora</option>
+            </select>
             {newCol.type === "select" && (
-              <label className="flex-1 text-xs">
-                <div className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
-                  Opções (separadas por vírgula)
-                </div>
-                <input
-                  value={newCol.options}
-                  onChange={(e) => setNewCol((c) => ({ ...c, options: e.target.value }))}
-                  placeholder="Ex.: Alta, Média, Baixa"
-                  className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
-                />
-              </label>
+              <input
+                value={newCol.options}
+                onChange={(e) => setNewCol((c) => ({ ...c, options: e.target.value }))}
+                placeholder="Opções separadas por vírgula"
+                className="flex-1 min-w-[180px] rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+              />
             )}
             <button
               onClick={submitNewCol}
               disabled={!newCol.name.trim()}
               className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
             >
-              <Plus className="h-3.5 w-3.5" /> Adicionar coluna
+              <Plus className="h-3.5 w-3.5" /> Adicionar
             </button>
           </div>
+
+          {view.columns.length > 0 && (
+            <div className="mt-3 border-t border-border pt-2">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                Colunas existentes
+              </div>
+              <div className="flex flex-col gap-1">
+                {view.columns.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-2 py-1 text-xs"
+                  >
+                    <input
+                      value={c.name}
+                      onChange={(e) => view.updateColumn(c.id, { name: e.target.value })}
+                      className="w-40 rounded border border-transparent bg-transparent px-1 py-0.5 outline-none focus:border-border focus:bg-background"
+                    />
+                    <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {COLUMN_TYPE_LABEL[c.type]}
+                    </span>
+                    {c.type === "select" && (
+                      <input
+                        value={(c.options ?? []).join(", ")}
+                        onChange={(e) =>
+                          view.updateColumn(c.id, {
+                            options: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                          })
+                        }
+                        placeholder="Opções (vírgula)"
+                        className="flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 outline-none focus:border-border focus:bg-background"
+                      />
+                    )}
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {c.width ?? DEFAULT_COL_WIDTH}px
+                    </span>
+                    <button
+                      onClick={() => view.removeColumn(c.id)}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                      title="Remover coluna"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -245,8 +276,20 @@ export function MyView({
               <th className="w-24 py-2 pr-3">Prazo</th>
               <th className="w-40 py-2 pr-3">Responsável</th>
               {view.columns.map((c) => (
-                <th key={c.id} className="w-40 py-2 pr-3">
+                <th
+                  key={c.id}
+                  style={{ width: c.width ?? DEFAULT_COL_WIDTH }}
+                  className="relative py-2 pr-3 select-none"
+                >
                   {c.name}
+                  <span
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      setResizing({ id: c.id, startX: e.clientX, startW: c.width ?? DEFAULT_COL_WIDTH });
+                    }}
+                    className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
+                    title="Arraste para redimensionar"
+                  />
                 </th>
               ))}
               <th className="w-24 py-2 pr-3 text-right">Nota</th>
