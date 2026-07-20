@@ -1050,3 +1050,241 @@ function Field({
     </div>
   );
 }
+
+/* -------------------- Share project modal -------------------- */
+
+function ShareProjectModal({
+  project,
+  assignees,
+  users,
+  currentUserId,
+  isOwner,
+  onClose,
+  onChange,
+}: {
+  project: ReturnType<ReturnType<typeof useFluxo>["visibleProjects"]>[number];
+  assignees: ReturnType<typeof useFluxo>["users"];
+  users: ReturnType<typeof useFluxo>["users"];
+  currentUserId: string;
+  isOwner: boolean;
+  onClose: () => void;
+  onChange: (memberIds: string[]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [copied, setCopied] = useState(false);
+  const owner = users.find((u) => u.id === project.ownerId);
+  const members = project.memberIds
+    .map((id) => users.find((u) => u.id === id))
+    .filter((u): u is NonNullable<typeof u> => Boolean(u));
+
+  const candidates = assignees
+    .filter((u) => u.id !== project.ownerId && !project.memberIds.includes(u.id))
+    .filter((u) =>
+      query.trim() ? u.name.toLowerCase().includes(query.trim().toLowerCase()) : true,
+    );
+
+  const canEdit = isOwner || project.memberIds.includes(currentUserId);
+
+  const add = (id: string) => onChange([...project.memberIds, id]);
+  const remove = (id: string) => onChange(project.memberIds.filter((x) => x !== id));
+
+  const shareLink =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/projetos?p=${project.id}`
+      : `/projetos?p=${project.id}`;
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      toast.success("Link copiado", { description: "Envie para quem vai colaborar." });
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error("Não foi possível copiar o link.");
+    }
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
+          <div className="min-w-0">
+            <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Compartilhar projeto
+            </div>
+            <h3 className="truncate text-lg font-semibold text-foreground">{project.name}</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Colaboradores têm acesso completo — subtarefas, quadro, comentários e edição.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          {/* Share link */}
+          <div>
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Link do projeto
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={shareLink}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+              />
+              <button
+                onClick={copyLink}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:brightness-110"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copiado" : "Copiar"}
+              </button>
+            </div>
+          </div>
+
+          {/* Members list */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span>Com acesso</span>
+              <span>{members.length + 1} pessoa{members.length === 0 ? "" : "s"}</span>
+            </div>
+            <div className="divide-y divide-border overflow-hidden rounded-md border border-border">
+              {owner && (
+                <MemberRow
+                  name={owner.name}
+                  job={owner.jobTitle}
+                  avatar={owner.avatar || owner.name.slice(0, 1)}
+                  role="Responsável"
+                />
+              )}
+              {members.map((u) => (
+                <MemberRow
+                  key={u.id}
+                  name={u.name}
+                  job={u.jobTitle}
+                  avatar={u.avatar || u.name.slice(0, 1)}
+                  role="Colaborador"
+                  onRemove={canEdit ? () => remove(u.id) : undefined}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Add people */}
+          {canEdit && (
+            <div>
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Adicionar pessoas
+              </div>
+              <div className="rounded-md border border-border bg-background">
+                <div className="border-b border-border p-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Buscar por nome…"
+                      className="w-full rounded-md bg-secondary/40 py-1.5 pl-7 pr-2 text-xs text-foreground outline-none focus:bg-secondary"
+                    />
+                  </div>
+                </div>
+                <div className="max-h-56 overflow-y-auto p-1">
+                  {candidates.length === 0 ? (
+                    <div className="px-2 py-4 text-center text-[11px] text-muted-foreground">
+                      Todo mundo já tem acesso.
+                    </div>
+                  ) : (
+                    candidates.map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => add(u.id)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-secondary"
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                          {u.avatar || u.name.slice(0, 1)}
+                        </span>
+                        <div className="flex-1">
+                          <div className="font-medium text-foreground">{u.name}</div>
+                          <div className="text-[10px] text-muted-foreground">{u.jobTitle}</div>
+                        </div>
+                        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end border-t border-border bg-secondary/40 px-6 py-3">
+          <button
+            onClick={onClose}
+            className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+          >
+            Concluir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MemberRow({
+  name,
+  job,
+  avatar,
+  role,
+  onRemove,
+}: {
+  name: string;
+  job: string;
+  avatar: string;
+  role: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 bg-background px-3 py-2 text-xs">
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+        {avatar}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium text-foreground">{name}</div>
+        <div className="truncate text-[10px] text-muted-foreground">{job}</div>
+      </div>
+      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+        {role}
+      </span>
+      {onRemove && (
+        <button
+          onClick={onRemove}
+          className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          title="Remover acesso"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
