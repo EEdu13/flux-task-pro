@@ -884,6 +884,7 @@ function PackView({
   onTogglePack,
   onCompleteExternal,
   currentUserId,
+  onMove,
 }: {
   tasks: Task[];
   externalTasks: Task[];
@@ -893,6 +894,7 @@ function PackView({
   onTogglePack: (id: string, v: boolean) => void;
   onCompleteExternal: (id: string) => void;
   currentUserId: string;
+  onMove: (id: string, status: Status) => void;
 }) {
   const [focus, setFocus] = useState(() => focusSummaryToday(currentUserId));
   useEffect(() => {
@@ -901,61 +903,43 @@ function PackView({
     window.addEventListener("fluxo:focus-updated", on);
     return () => window.removeEventListener("fluxo:focus-updated", on);
   }, [currentUserId]);
-  const done = tasks.filter((t) => packDone.has(t.id));
-  const pending = tasks.filter((t) => !packDone.has(t.id));
   const total = tasks.length;
-  const pct = total === 0 ? 0 : Math.round((done.length / total) * 100);
+  const doneCount = tasks.filter((t) => t.status === "concluida").length;
+  const pct = total === 0 ? 0 : Math.round((doneCount / total) * 100);
   const today = new Date().toLocaleDateString("pt-BR", {
-    weekday: "long",
     day: "2-digit",
-    month: "long",
+    month: "short",
   });
+  const cols: { id: Status; label: string }[] = [
+    { id: "pendente", label: statusLabels.pendente },
+    { id: "andamento", label: statusLabels.andamento },
+    { id: "concluida", label: statusLabels.concluida },
+  ];
 
   return (
     <div className="space-y-4">
-      <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-transparent p-5">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20 text-amber-500">
-            <Flame className="h-7 w-7" />
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold">Meu pack diário</h2>
-              <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                Inegociável
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground first-letter:uppercase">{today}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Suas obrigações do dia. Bater 100% antes de tudo mantém o combo aceso.
-            </p>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold tabular-nums text-amber-500">{pct}%</div>
-            <div className="text-[11px] text-muted-foreground">
-              {done.length}/{total} concluídas
-            </div>
+      {/* Faixa compacta do pack — só o essencial */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
+        <div className="flex items-center gap-2">
+          <Flame className="h-4 w-4 text-amber-500" />
+          <span className="font-semibold">Pack de hoje</span>
+          <span className="text-muted-foreground">· {today}</span>
+        </div>
+        <div className="flex-1 min-w-[140px]">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-amber-500/15">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-all"
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
-        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-amber-500/10">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-primary">
-            <Timer className="h-3 w-3" />
-            <span className="font-semibold">Foco hoje:</span>
-            <span>
-              {focus.pomos} pomo{focus.pomos === 1 ? "" : "s"} · {Math.floor(focus.minutes / 60)}h{" "}
-              {focus.minutes % 60}m
-            </span>
-          </div>
-          <span className="text-muted-foreground">
-            Clique no ▶ ao lado de qualquer tarefa do pack pra iniciar 25min de foco.
-          </span>
-        </div>
+        <span className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+          {doneCount}/{total} · {pct}%
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] text-primary">
+          <Timer className="h-3 w-3" />
+          {focus.pomos}p · {Math.floor(focus.minutes / 60)}h{focus.minutes % 60}m
+        </span>
       </div>
 
       {total === 0 ? (
@@ -969,34 +953,53 @@ function PackView({
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {pending.map((t) => (
-            <PackRow
-              key={t.id}
-              task={t}
-              isDone={false}
-              onEdit={onEdit}
-              onToggleDone={onToggleDone}
-              onTogglePack={onTogglePack}
-            />
-          ))}
-          {done.length > 0 && (
-            <>
-              <div className="pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Concluídas hoje ({done.length})
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {cols.map((c) => {
+            const items = tasks.filter((t) => t.status === c.id);
+            return (
+              <div
+                key={c.id}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const id = e.dataTransfer.getData("text/plain");
+                  if (id) onMove(id, c.id);
+                }}
+                className="rounded-lg border border-border bg-secondary/30 p-2"
+              >
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: statusColor[c.id] }}
+                    />
+                    {c.label}
+                  </div>
+                  <span className="rounded-full bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {items.length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {items.map((t) => (
+                    <PackKanbanCard
+                      key={t.id}
+                      task={t}
+                      onEdit={onEdit}
+                      onMove={onMove}
+                      onTogglePack={onTogglePack}
+                      onToggleDone={onToggleDone}
+                      packDone={packDone}
+                    />
+                  ))}
+                  {items.length === 0 && (
+                    <div className="rounded-md border border-dashed border-border/70 py-4 text-center text-[10px] text-muted-foreground">
+                      Arraste aqui
+                    </div>
+                  )}
+                </div>
               </div>
-              {done.map((t) => (
-                <PackRow
-                  key={t.id}
-                  task={t}
-                  isDone
-                  onEdit={onEdit}
-                  onToggleDone={onToggleDone}
-                  onTogglePack={onTogglePack}
-                />
-              ))}
-            </>
-          )}
+            );
+          })}
         </div>
       )}
 
