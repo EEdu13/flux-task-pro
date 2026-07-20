@@ -632,7 +632,7 @@ export function InlineTaskCreator({
                         )}
                       </div>
                     </td>
-                    <td className="hidden py-3 pr-3 md:table-cell">
+                    <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
                       <input
                         ref={(el) => {
                           descRefs.current[row.id] = el;
@@ -640,12 +640,12 @@ export function InlineTaskCreator({
                         value={row.description}
                         onChange={(e) => update(row.id, { description: e.target.value })}
                         placeholder="Descrição (opcional) — detalhes, contexto…"
-                        className="w-full rounded-md border border-transparent bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-border focus:bg-background"
+                        className="w-full rounded-md border border-foreground/30 bg-background px-2 py-2 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-2 focus:ring-primary/20"
                       />
                     </td>
-                    <td className="hidden py-3 pr-3 md:table-cell">
+                    <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
+                        <div className="inline-flex rounded-md border border-foreground/40 bg-background p-0.5 text-xs">
                           {[
                             { label: "Hoje", get: todayStr },
                             { label: "Amanhã", get: tomorrowStr },
@@ -658,8 +658,8 @@ export function InlineTaskCreator({
                                 type="button"
                                 key={opt.label}
                                 onClick={() => update(row.id, { dueDate: iso })}
-                                className={`rounded px-2 py-1 font-medium transition ${
-                                  active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"
+                                className={`rounded px-2 py-1 font-semibold transition ${
+                                  active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"
                                 }`}
                               >
                                 {opt.label}
@@ -671,16 +671,16 @@ export function InlineTaskCreator({
                           type="date"
                           value={row.dueDate}
                           onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="w-36 rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                          className="w-36 rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
                         />
                       </div>
                     </td>
                     {!compact && (
-                      <td className="hidden py-3 pr-3 md:table-cell">
+                      <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
                         <select
                           value={row.assigneeId}
                           onChange={(e) => update(row.id, { assigneeId: e.target.value })}
-                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                          className="w-full rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
                         >
                           {assignees.map((u) => (
                             <option key={u.id} value={u.id}>
@@ -691,11 +691,11 @@ export function InlineTaskCreator({
                       </td>
                     )}
                     {!compact && (
-                      <td className="hidden py-3 pr-3 lg:table-cell">
+                      <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 lg:table-cell">
                         <select
                           value={row.sector}
                           onChange={(e) => update(row.id, { sector: e.target.value })}
-                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                          className="w-full rounded-md border border-foreground/40 bg-background px-2 py-1.5 text-xs font-medium text-foreground outline-none focus:border-primary"
                         >
                           <option value="">— setor —</option>
                           {sectors.map((s) => (
@@ -706,20 +706,20 @@ export function InlineTaskCreator({
                         </select>
                       </td>
                     )}
-                    <td className="hidden py-3 pr-3 md:table-cell">
-                      <div className="flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-1 text-xs focus-within:border-primary">
-                        <Timer className="h-3 w-3 text-muted-foreground" />
+                    <td className="hidden border-l border-foreground/20 py-3 pr-3 pl-3 md:table-cell">
+                      <div className="flex items-center gap-1 rounded-md border border-foreground/40 bg-background px-1.5 py-1 text-xs focus-within:border-primary">
+                        <Timer className="h-3 w-3 text-foreground/70" />
                         <input
                           value={row.estimateHM}
                           onChange={(e) => update(row.id, { estimateHM: e.target.value })}
                           placeholder="00:30"
                           inputMode="numeric"
-                          className="w-16 bg-transparent font-mono outline-none placeholder:text-muted-foreground/50"
+                          className="w-16 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
                           title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
                         />
                       </div>
                     </td>
-                    <td className="py-3 pr-3 text-right sm:pr-4">
+                    <td className="border-l border-foreground/20 py-3 pr-3 pl-3 text-right sm:pr-4">
                       <div className="inline-flex items-center justify-end gap-1">
                         <button
                           type="button"
