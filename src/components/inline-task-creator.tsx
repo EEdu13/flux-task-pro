@@ -703,7 +703,7 @@ export function InlineTaskCreator({
                     <button
                           type="button"
                           onClick={() => update(row.id, { requireProof: !row.requireProof })}
-                          className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition ${
+                          className={`group inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border px-1 transition-all ${
                             row.requireProof
                               ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
                               : "border-foreground/30 text-foreground/70 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
@@ -711,25 +711,34 @@ export function InlineTaskCreator({
                           title="Exigir comprovante para concluir"
                           aria-label="Exigir comprovante"
                         >
-                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                          <span className="max-w-0 whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[140px] group-hover:pl-0.5 group-hover:opacity-100">
+                            Exigir comprovante
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/30 text-foreground/70 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          className="group inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border border-foreground/30 px-1 text-foreground/70 transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo"
                           aria-label="Anexar arquivo"
                         >
-                          <Paperclip className="h-3.5 w-3.5" />
+                          <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                          <span className="max-w-0 whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[120px] group-hover:pl-0.5 group-hover:opacity-100">
+                            Anexar arquivo
+                          </span>
                         </button>
                         <button
                           type="button"
                           onClick={() => remove(row.id)}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/30 text-foreground/70 transition hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                          className="group inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border border-foreground/30 px-1 text-foreground/70 transition-all hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                           title="Remover esta linha"
                           aria-label="Remover esta linha"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                          <span className="max-w-0 whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[100px] group-hover:pl-0.5 group-hover:opacity-100">
+                            Remover
+                          </span>
                         </button>
                   </div>
                 </div>
