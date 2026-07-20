@@ -74,10 +74,14 @@ function ProjetosPage() {
     updateTask,
     users,
     currentUser,
-    visibleUsersForAssign,
   } = useFluxo();
 
-  const assignees = visibleUsersForAssign();
+  // Todos da empresa podem ser chamados / atribuídos — sem limite por setor.
+  const assignees = useMemo(() => {
+    const me = users.find((u) => u.id === currentUser.id);
+    const others = users.filter((u) => u.id !== currentUser.id);
+    return me ? [me, ...others] : others;
+  }, [users, currentUser.id]);
   const projects = visibleProjects();
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id ?? null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -87,6 +91,7 @@ function ProjetosPage() {
   const [quickTitle, setQuickTitle] = useState("");
   const [quickAssignee, setQuickAssignee] = useState(currentUser.id);
   const [quickDate, setQuickDate] = useState("");
+  const [quickMentions, setQuickMentions] = useState<string[]>([]);
   const quickInputRef = useRef<HTMLInputElement>(null);
 
   const selected = projects.find((p) => p.id === selectedId) ?? null;
@@ -115,12 +120,15 @@ function ProjetosPage() {
     const assignee = users.find((u) => u.id === quickAssignee) ?? currentUser;
     const due = quickDate ? new Date(quickDate) : new Date(Date.now() + 3 * 24 * 3600e3);
     due.setHours(23, 59, 0, 0);
+    const mentionSet = new Set<string>(quickMentions);
+    if (assignee.id !== currentUser.id) mentionSet.add(assignee.id);
+    mentionSet.delete(currentUser.id);
     createTask({
       title: quickTitle.trim(),
       sector: assignee.sector,
       createdBy: currentUser.id,
       assigneeId: assignee.id,
-      mentions: assignee.id !== currentUser.id ? [assignee.id] : [],
+      mentions: Array.from(mentionSet),
       frequency: "diaria",
       status: "pendente",
       score: 15,
@@ -132,6 +140,7 @@ function ProjetosPage() {
     });
     setQuickTitle("");
     setQuickDate("");
+    setQuickMentions([]);
     quickInputRef.current?.focus();
   };
 
@@ -317,7 +326,6 @@ function ProjetosPage() {
           onClose={() => setCreateOpen(false)}
           assignees={assignees}
           currentUserId={currentUser.id}
-          defaultSector={currentUser.sector}
           onCreate={(payload) => {
             const id = createProject({
               ...payload,
