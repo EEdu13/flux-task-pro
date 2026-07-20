@@ -71,7 +71,7 @@ export function InlineTaskCreator({
   defaultDueDate?: string;
   defaultAssigneeId?: string;
 }) {
-  const { currentUser, visibleUsersForAssign, createTask } = useFluxo();
+  const { currentUser, visibleUsersForAssign, createTask, quickCreate, closeQuickCreate } = useFluxo();
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState<DraftRow[]>(() => [
@@ -84,6 +84,7 @@ export function InlineTaskCreator({
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const descRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [dragRowId, setDragRowId] = useState<string | null>(null);
@@ -208,6 +209,53 @@ export function InlineTaskCreator({
 
   const remove = (id: string) => {
     setRows((rs) => (rs.length === 1 ? [makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })] : rs.filter((r) => r.id !== id)));
+  };
+
+  const handleEscape = () => {
+    if (!quickCreate.open) return;
+    if (confirmOpen || pasteOpen || discardOpen) return;
+    if (mention) {
+      setMention(null);
+      return;
+    }
+    const hasContent = rows.some((r) => r.title.trim() || r.description.trim() || r.attachments.length > 0);
+    if (hasContent) {
+      setDiscardOpen(true);
+    } else {
+      closeQuickCreate();
+    }
+  };
+
+  useEffect(() => {
+    if (!quickCreate.open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      handleEscape();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+
+  const saveAndClose = () => {
+    const valid = rows.filter((r) => r.title.trim());
+    if (valid.length === 0) {
+      setDiscardOpen(false);
+      closeQuickCreate();
+      return;
+    }
+    valid.forEach(commitRow);
+    toast.success(
+      `${valid.length} tarefa${valid.length > 1 ? "s" : ""} criada${valid.length > 1 ? "s" : ""}`,
+    );
+    setDiscardOpen(false);
+    closeQuickCreate();
+  };
+
+  const discardAndClose = () => {
+    setDiscardOpen(false);
+    closeQuickCreate();
   };
 
   const update = (id: string, patch: Partial<DraftRow>) =>
@@ -554,6 +602,18 @@ export function InlineTaskCreator({
                         }}
                         value={row.description}
                         onChange={(e) => update(row.id, { description: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            jumpNext(row.id);
+                          } else if (e.key === "Tab" && e.shiftKey) {
+                            const el = inputRefs.current[row.id];
+                            if (el) {
+                              e.preventDefault();
+                              el.focus();
+                            }
+                          }
+                        }}
                         placeholder="Descrição (opcional) — detalhes, contexto…"
                         className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary/20"
                       />
@@ -754,6 +814,41 @@ export function InlineTaskCreator({
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
               >
                 Criar {validRows.length}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {discardOpen && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Sair sem criar?</h3>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Você tem <strong>{validRows.length}</strong> tarefa{validRows.length > 1 ? "s" : ""} preenchida{validRows.length > 1 ? "s" : ""}. O que deseja fazer?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDiscardOpen(false)}
+                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"
+              >
+                Continuar editando
+              </button>
+              <button
+                onClick={discardAndClose}
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive hover:bg-destructive/20"
+              >
+                Descartar
+              </button>
+              <button
+                onClick={saveAndClose}
+                disabled={validRows.length === 0}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+              >
+                Salvar {validRows.length > 0 ? validRows.length : ""}
               </button>
             </div>
           </div>
