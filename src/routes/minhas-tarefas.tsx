@@ -1201,3 +1201,115 @@ function PackRow({
     </div>
   );
 }
+
+function PackKanbanCard({
+  task,
+  onEdit,
+  onMove,
+  onTogglePack,
+  onToggleDone,
+  packDone,
+}: {
+  task: Task;
+  onEdit: (id: string) => void;
+  onMove: (id: string, status: Status) => void;
+  onTogglePack: (id: string, v: boolean) => void;
+  onToggleDone: (id: string) => void;
+  packDone: Set<string>;
+}) {
+  const done = task.status === "concluida";
+  const doneToday = packDone.has(task.id);
+  return (
+    <div
+      draggable
+      onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
+      onClick={() => onEdit(task.id)}
+      className={`group cursor-grab rounded-md border bg-card p-2 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
+        done ? "border-emerald-500/30 opacity-70" : "border-amber-500/30"
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDone(task.id);
+          }}
+          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+            doneToday ? "border-emerald-500 bg-emerald-500 text-white" : "border-border bg-background"
+          }`}
+          title={doneToday ? "Desmarcar hoje" : "Marcar concluída hoje"}
+        >
+          {doneToday && <CheckCircle2 className="h-3 w-3" />}
+        </button>
+        <div className={`flex-1 text-sm font-medium leading-snug ${done ? "line-through" : ""}`}>
+          {task.title}
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePack(task.id, false);
+          }}
+          title="Remover do pack"
+          className="rounded p-0.5 text-amber-500 opacity-70 transition hover:opacity-100"
+        >
+          <Star className="h-3.5 w-3.5 fill-amber-500" />
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-1">
+        <div className="flex gap-0.5">
+          {task.status !== "pendente" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(task.id, "pendente");
+              }}
+              className="rounded border border-border px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground hover:bg-secondary"
+              title="Voltar para A fazer"
+            >
+              ← A fazer
+            </button>
+          )}
+          {task.status !== "andamento" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(task.id, "andamento");
+              }}
+              className="rounded border border-border px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground hover:bg-secondary"
+              title="Em andamento"
+            >
+              ▶ Andamento
+            </button>
+          )}
+          {task.status !== "concluida" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(task.id, "concluida");
+              }}
+              className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
+              title="Concluir"
+            >
+              ✓ Concluir
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <TaskTimerControls taskId={task.id} estimatedMinutes={task.estimatedMinutes} />
+          {!done && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                startFocus(task.id);
+              }}
+              title="Iniciar foco (25min)"
+              className="rounded p-0.5 text-primary opacity-70 hover:opacity-100"
+            >
+              <Play className="h-3 w-3 fill-primary" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
