@@ -173,6 +173,20 @@ function Divider() {
   return <span className="mx-0.5 h-6 w-px bg-white/10" />;
 }
 
+/* Meet-style live clock */
+function MeetClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <span className="tabular-nums">
+      {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+    </span>
+  );
+}
+
 function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
   const [effect, setEffectState] = useState<VideoEffect>(() => {
     if (typeof window === "undefined") return "none";
