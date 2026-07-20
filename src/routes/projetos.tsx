@@ -365,6 +365,8 @@ interface ProjectDetailProps {
   setQuickAssignee: (v: string) => void;
   quickDate: string;
   setQuickDate: (v: string) => void;
+  quickMentions: string[];
+  setQuickMentions: (v: string[]) => void;
   onQuickAdd: () => void;
   quickInputRef: React.RefObject<HTMLInputElement | null>;
 }
@@ -388,11 +390,16 @@ function ProjectDetail({
   setQuickAssignee,
   quickDate,
   setQuickDate,
+  quickMentions,
+  setQuickMentions,
   onQuickAdd,
   quickInputRef,
 }: ProjectDetailProps) {
   const isOwner = selected.ownerId === currentUserId;
   const [shareOpen, setShareOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [hoverCol, setHoverCol] = useState<Status | null>(null);
   const groupedByStatus = useMemo(() => {
     const g: Record<Status, typeof subtasks> = {
       pendente: [],
