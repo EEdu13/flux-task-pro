@@ -801,37 +801,49 @@ function CreateProjectModal({
         className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header with live color */}
-        <div
-          className="relative px-6 py-5"
-          style={{ background: `linear-gradient(120deg, ${color} 0%, transparent 80%)` }}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {/* Header — color strip + solid card for legible inputs */}
+        <div className="relative border-b border-border">
+          <div className="h-2 w-full" style={{ background: color }} />
+          <div className="flex items-start justify-between gap-3 px-6 py-5">
+            <div className="min-w-0 flex-1 space-y-3">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ background: color }}
+                />
                 Novo projeto
               </div>
-              <input
-                ref={nameRef}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-                }}
-                placeholder="Nome do projeto…"
-                className="w-full bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60"
-              />
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Descreva o objetivo, escopo ou contexto…"
-                rows={2}
-                className="mt-2 w-full resize-none bg-transparent text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60"
-              />
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Nome
+                </label>
+                <input
+                  ref={nameRef}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+                  }}
+                  placeholder="Ex.: Reestruturação do fluxo comercial"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-xl font-semibold tracking-tight text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Descrição
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Descreva o objetivo, escopo ou contexto do projeto…"
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
             </div>
             <button
               onClick={onClose}
-              className="rounded-md border border-border bg-card/70 p-1.5 text-muted-foreground backdrop-blur hover:text-foreground"
+              className="rounded-md border border-border bg-card p-1.5 text-muted-foreground hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
