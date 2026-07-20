@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { InlineTaskCreator } from "@/components/inline-task-creator";
+
 import { MyView } from "@/components/my-view";
 import { formatDueBucket } from "@/lib/use-theme";
 import { loadPackDone, savePackDone } from "@/lib/pack";
