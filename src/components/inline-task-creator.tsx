@@ -425,7 +425,7 @@ export function InlineTaskCreator({
                       dragRowId === row.id ? "!bg-primary/10" : ""
                     }`}
                   >
-                    <td className="py-3 pl-3 text-xs font-bold text-foreground sm:pl-4">{idx + 1}</td>
+                    <td className="py-2 pl-2 text-xs font-bold text-foreground sm:pl-3">{idx + 1}</td>
                     <td className="relative border-l border-foreground/20 py-3 pr-3 pl-3">
                       <input
                         ref={(el) => {
