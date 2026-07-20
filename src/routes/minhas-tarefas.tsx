@@ -335,7 +335,8 @@ function MinhasTarefas() {
           </div>
         </div>
 
-        {/* Filter bar */}
+        {/* Filter bar (hidden on Meu pack — pack é sempre hoje) */}
+        {scope !== "pack" && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex flex-wrap items-center gap-1 rounded-md border border-border bg-secondary/40 p-0.5">
             {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
@@ -378,6 +379,7 @@ function MinhasTarefas() {
           )}
           <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
         </div>
+        )}
 
         <div className="mt-4">
           {scope === "pack" ? (
