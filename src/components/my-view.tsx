@@ -5,6 +5,7 @@ import {
   Palette,
   StickyNote,
   Settings2,
+  Save,
   X,
   Check,
   GripVertical,
@@ -34,6 +35,8 @@ const COLUMN_TYPE_LABEL: Record<ColumnType, string> = {
   datetime: "Data + hora",
 };
 
+const DEFAULT_COL_WIDTH = 160;
+
 export function MyView({
   tasks,
   onEdit,
@@ -57,6 +60,24 @@ export function MyView({
 
   const ordered = useMemo(() => view.sortByOrder(tasks), [tasks, view]);
   const visibleIds = useMemo(() => ordered.map((t) => t.id), [ordered]);
+
+  // Column resize (pointer drag on right edge of each th)
+  const [resizing, setResizing] = useState<{ id: string; startX: number; startW: number } | null>(null);
+  useEffect(() => {
+    if (!resizing) return;
+    const move = (e: PointerEvent) => {
+      const delta = e.clientX - resizing.startX;
+      const next = Math.max(80, Math.min(600, resizing.startW + delta));
+      view.updateColumn(resizing.id, { width: next });
+    };
+    const up = () => setResizing(null);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, [resizing, view]);
 
   useEffect(() => {
     if (!rowMenu) return;
