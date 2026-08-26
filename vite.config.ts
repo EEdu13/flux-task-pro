@@ -12,4 +12,12 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Porta dedicada: a 8080 (padrão do wrapper) já é usada por outro projeto local.
+  // host: true expõe na rede local, pra outro notebook acessar via IP para testes.
+  vite: {
+    // host: true expõe na rede; allowedHosts: true aceita acesso pelo nome da
+    // máquina (ex.: http://NOTE-LAR-38-24:5199), assim o notebook 2 acha o
+    // servidor pelo nome e não quebra quando o IP muda.
+    server: { port: 5199, strictPort: true, host: true, allowedHosts: true },
+  },
 });

@@ -19,12 +19,28 @@ import {
   Copy,
   Check,
   AtSign,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
+import { ProjectTracking } from "@/components/project-tracking";
+import { ProjectPortfolio } from "@/components/project-portfolio";
 import { useFluxo } from "@/lib/fluxo-store";
-import type { ProjectStatus, Status } from "@/lib/fluxo-types";
+import type { CompletionEntry, ProjectStatus, Status } from "@/lib/fluxo-types";
+import { forecastProject, riskLabels, type RiskLevel } from "@/lib/project-forecast";
+
+type ProjectView = "lista" | "board" | "acompanhamento";
+
+/** Cor do selo de risco na lista lateral — leitura de relance. */
+const riskBadge: Record<RiskLevel, string> = {
+  concluido: "bg-primary/15 text-primary",
+  no_prazo: "bg-success/15 text-success",
+  atencao: "bg-warning/15 text-warning",
+  atrasado: "bg-destructive/15 text-destructive",
+  parado: "bg-muted text-muted-foreground",
+  sem_prazo: "bg-muted text-muted-foreground",
+};
 
 export const Route = createFileRoute("/projetos")({
   head: () => ({
@@ -74,6 +90,7 @@ function ProjetosPage() {
     updateTask,
     users,
     currentUser,
+    completions,
   } = useFluxo();
 
   // Todos da empresa podem ser chamados / atribuídos — sem limite por setor.
@@ -84,10 +101,11 @@ function ProjetosPage() {
   }, [users, currentUser.id]);
   const projects = visibleProjects();
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id ?? null);
+  const [topView, setTopView] = useState<"portfolio" | "detalhe">("portfolio");
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "todos">("todos");
-  const [view, setView] = useState<"lista" | "board">("lista");
+  const [view, setView] = useState<ProjectView>("lista");
   const [quickTitle, setQuickTitle] = useState("");
   const [quickAssignee, setQuickAssignee] = useState(currentUser.id);
   const [quickDate, setQuickDate] = useState("");
@@ -160,25 +178,54 @@ function ProjetosPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar projeto…"
-                className="w-56 rounded-md border border-border bg-card py-2 pl-8 pr-3 text-xs outline-none transition focus:border-primary"
-              />
+            {/* Seletor de visão: portfólio (global) x detalhe (por projeto) */}
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+              <button
+                onClick={() => setTopView("portfolio")}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  topView === "portfolio"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                Portfólio
+              </button>
+              <button
+                onClick={() => setTopView("detalhe")}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  topView === "detalhe"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <ListIcon className="h-3.5 w-3.5" />
+                Projetos
+              </button>
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as ProjectStatus | "todos")}
-              className="rounded-md border border-border bg-card px-2 py-2 text-xs outline-none focus:border-primary"
-            >
-              <option value="todos">Todos os status</option>
-              <option value="ativo">Em andamento</option>
-              <option value="pausado">Pausados</option>
-              <option value="concluido">Concluídos</option>
-            </select>
+            {topView === "detalhe" && (
+              <>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar projeto…"
+                    className="w-56 rounded-md border border-border bg-card py-2 pl-8 pr-3 text-xs outline-none transition focus:border-primary"
+                  />
+                </div>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as ProjectStatus | "todos")}
+                  className="rounded-md border border-border bg-card px-2 py-2 text-xs outline-none focus:border-primary"
+                >
+                  <option value="todos">Todos os status</option>
+                  <option value="ativo">Em andamento</option>
+                  <option value="pausado">Pausados</option>
+                  <option value="concluido">Concluídos</option>
+                </select>
+              </>
+            )}
             <button
               onClick={() => setCreateOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
@@ -189,6 +236,18 @@ function ProjetosPage() {
           </div>
         </header>
 
+        {topView === "portfolio" ? (
+          <ProjectPortfolio
+            projects={projects}
+            getTasks={projectTasks}
+            completions={completions}
+            users={users}
+            onOpen={(id) => {
+              setSelectedId(id);
+              setTopView("detalhe");
+            }}
+          />
+        ) : (
         <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
           <aside className="flex flex-col gap-2">
             <div className="mb-1 flex items-center justify-between px-1">
@@ -214,6 +273,7 @@ function ProjetosPage() {
               const pct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
               const active = p.id === selectedId;
               const owner = users.find((u) => u.id === p.ownerId);
+              const risk = forecastProject(p, tasks, completions).risk;
               return (
                 <button
                   key={p.id}
@@ -245,9 +305,11 @@ function ProjetosPage() {
                     >
                       {statusStyles[p.status].label}
                     </span>
-                    <span>·</span>
+                    <span className={`rounded-full px-1.5 py-[1px] font-semibold ${riskBadge[risk]}`}>
+                      {riskLabels[risk]}
+                    </span>
                     <span>
-                      {done}/{tasks.length} tarefas
+                      {done}/{tasks.length}
                     </span>
                     {owner && (
                       <>
@@ -301,6 +363,7 @@ function ProjetosPage() {
                 currentUserId={currentUser.id}
                 view={view}
                 setView={setView}
+                completions={completions}
                 updateProject={updateProject}
                 updateTask={updateTask}
                 deleteProject={(id) => {
@@ -321,6 +384,7 @@ function ProjetosPage() {
             )}
           </section>
         </div>
+        )}
       </div>
 
       {createOpen && (
@@ -354,8 +418,9 @@ interface ProjectDetailProps {
   users: ReturnType<typeof useFluxo>["users"];
   assignees: ReturnType<typeof useFluxo>["users"];
   currentUserId: string;
-  view: "lista" | "board";
-  setView: (v: "lista" | "board") => void;
+  view: ProjectView;
+  setView: (v: ProjectView) => void;
+  completions: CompletionEntry[];
   updateProject: ReturnType<typeof useFluxo>["updateProject"];
   updateTask: ReturnType<typeof useFluxo>["updateTask"];
   deleteProject: (id: string) => void;
@@ -381,6 +446,7 @@ function ProjectDetail({
   currentUserId,
   view,
   setView,
+  completions,
   updateProject,
   updateTask,
   deleteProject,
@@ -517,6 +583,13 @@ function ProjectDetail({
           <TabBtn active={view === "board"} onClick={() => setView("board")} icon={<LayoutGrid className="h-3.5 w-3.5" />}>
             Quadro
           </TabBtn>
+          <TabBtn
+            active={view === "acompanhamento"}
+            onClick={() => setView("acompanhamento")}
+            icon={<TrendingUp className="h-3.5 w-3.5" />}
+          >
+            Acompanhamento
+          </TabBtn>
         </div>
         <span className="text-[11px] text-muted-foreground">
           Cada subtarefa aparece em <b className="text-foreground">Minhas tarefas</b> da pessoa responsável.
@@ -524,7 +597,8 @@ function ProjectDetail({
       </div>
 
       <div className="p-4">
-        {/* Quick add row (Asana-style) */}
+        {/* Quick add row (Asana-style) — fora do acompanhamento, que é só leitura. */}
+        {view !== "acompanhamento" && (
         <div className="relative mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-secondary/40 px-3 py-2 focus-within:border-primary focus-within:bg-secondary/70">
           <Plus className="h-4 w-4 text-primary" />
           <input
@@ -621,8 +695,16 @@ function ProjectDetail({
             Adicionar
           </button>
         </div>
+        )}
 
-        {view === "lista" ? (
+        {view === "acompanhamento" ? (
+          <ProjectTracking
+            project={selected}
+            tasks={subtasks}
+            completions={completions}
+            users={users}
+          />
+        ) : view === "lista" ? (
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="grid grid-cols-[auto_1fr_140px_120px_36px] items-center gap-2 border-b border-border bg-secondary/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               <span className="w-4" />

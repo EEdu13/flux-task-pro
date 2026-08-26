@@ -112,6 +112,8 @@ interface Store {
   createProject: (p: Omit<Project, "id" | "createdAt" | "createdBy">) => string;
   updateProject: (id: string, patch: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  addProjectAttachments: (projectId: string, atts: Attachment[]) => void;
+  removeProjectAttachment: (projectId: string, attId: string) => void;
   visibleProjects: () => Project[];
   projectTasks: (projectId: string) => Task[];
   // pack templates
@@ -383,6 +385,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     visibleUsersForAssign().some((u) => u.id === targetUserId);
 
   const handleCompletionSideEffects = (s: Persisted, prev: Task, next: Task): Persisted => {
+    // Comemoração visual (sorteia 1 de 5 animações). Fora do ciclo de render.
+    if (typeof window !== "undefined") {
+      queueMicrotask(() => {
+        void import("@/components/celebration").then((m) => m.celebrate());
+      });
+    }
     const onTime = new Date(next.dueDate).getTime() >= Date.now();
     const points = computeScore(next.score, next.priority, onTime);
 
@@ -1034,6 +1042,26 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setState((s) => ({
         ...s,
         projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      })),
+    addProjectAttachments: (projectId, atts) => {
+      if (!atts.length) return;
+      setState((s) => ({
+        ...s,
+        projects: s.projects.map((p) =>
+          p.id === projectId
+            ? { ...p, attachments: [...(p.attachments ?? []), ...atts] }
+            : p,
+        ),
+      }));
+    },
+    removeProjectAttachment: (projectId, attId) =>
+      setState((s) => ({
+        ...s,
+        projects: s.projects.map((p) =>
+          p.id === projectId
+            ? { ...p, attachments: (p.attachments ?? []).filter((a) => a.id !== attId) }
+            : p,
+        ),
       })),
     deleteProject: (id) =>
       setState((s) => ({

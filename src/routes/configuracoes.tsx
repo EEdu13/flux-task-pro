@@ -20,6 +20,13 @@ import { roleLabels, sectors } from "@/lib/fluxo-types";
 import { useTheme, usePalette, paletteOptions } from "@/lib/use-theme";
 import { phoneValidator } from "@/components/onboarding-modal";
 import { purgeAllRooms } from "@/lib/livekit-token.functions";
+import {
+  desktopBringToFront,
+  desktopSelfTest,
+  isTauri,
+  showIncomingCallWindow,
+} from "@/lib/desktop";
+import { triggerTractor } from "@/components/tractor-banner";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
@@ -268,6 +275,10 @@ function SettingsPage() {
                   })}
                 </div>
               </div>
+
+              <div className="mt-6 border-t border-border pt-6">
+                <TractorControl />
+              </div>
             </section>
           )}
 
@@ -324,6 +335,9 @@ function SettingsPage() {
                   Gerenciar equipe
                 </button>
               </div>
+
+              <DesktopDiagnostics />
+
               <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6">
                 <h3 className="mb-1 text-sm font-semibold text-destructive">Zona sensível</h3>
                 <p className="mb-3 text-[11px] text-muted-foreground">
@@ -376,6 +390,123 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
       {children}
+    </div>
+  );
+}
+/**
+ * Diagnóstico do app desktop — permite testar as sobreposições nativas
+ * numa máquina só, sem precisar de duas pontas.
+ */
+function DesktopDiagnostics() {
+  const { currentUser } = useFluxo();
+  const [result, setResult] = useState<string>("");
+  const nativo = isTauri();
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6">
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+        Diagnóstico do app desktop
+      </h3>
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        Testa as sobreposições nativas sem precisar de outra pessoa ligando.
+      </p>
+
+      <div className="mb-3 flex items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Modo nativo:</span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+            nativo ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+          }`}
+        >
+          {nativo ? "Ativo" : "Inativo (rodando como página web)"}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={async () => setResult(await desktopSelfTest())}
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+        >
+          Testar notificação e piscar
+        </button>
+        <button
+          onClick={() =>
+            void showIncomingCallWindow({
+              callId: "teste",
+              caller: "Chamada de teste",
+              roomLabel: "Sala de teste",
+              userId: currentUser.id,
+              remote: false,
+            })
+          }
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+        >
+          Testar card de chamada
+        </button>
+        <button
+          onClick={() => {
+            setResult("Minimizando… a janela deve voltar sozinha em 4s.");
+            void (async () => {
+              const { getCurrentWindow } = await import("@tauri-apps/api/window");
+              await getCurrentWindow().minimize();
+              setTimeout(() => void desktopBringToFront(), 4000);
+            })();
+          }}
+          disabled={!nativo}
+          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-40"
+        >
+          Testar trazer pra frente
+        </button>
+      </div>
+
+      {result && (
+        <p className="mt-3 rounded-md bg-secondary/60 p-2 text-[11px] text-foreground">{result}</p>
+      )}
+    </div>
+  );
+}
+
+/** Aciona o trator da Larsil puxando a faixa (o timer automático vem depois). */
+function TractorControl() {
+  const [message, setMessage] = useState("Hora da pausa — beba água! 💧");
+  const [dur, setDur] = useState(16);
+  return (
+    <div>
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">🚜 Trator da Larsil</h3>
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        Um trator atravessa a tela puxando uma faixa com a sua mensagem. Depois a gente
+        configura de quanto em quanto tempo ele passa sozinho.
+      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="flex-1 text-xs">
+          <span className="mb-1 block font-medium text-muted-foreground">Mensagem da faixa</span>
+          <input
+            className="input"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Ex.: Hora da pausa — beba água! 💧"
+          />
+        </label>
+        <label className="text-xs">
+          <span className="mb-1 block font-medium text-muted-foreground">Duração</span>
+          <select
+            className="input w-28"
+            value={dur}
+            onChange={(e) => setDur(Number(e.target.value))}
+          >
+            <option value={10}>Rápido (10s)</option>
+            <option value={16}>Normal (16s)</option>
+            <option value={24}>Lento (24s)</option>
+            <option value={34}>Bem lento (34s)</option>
+          </select>
+        </label>
+        <button
+          onClick={() => triggerTractor({ message, durationSec: dur })}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-110"
+        >
+          Passar o trator agora
+        </button>
+      </div>
     </div>
   );
 }

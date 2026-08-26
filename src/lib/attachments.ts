@@ -21,10 +21,26 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
-// Chrome blocks top-level navigation to data: URLs and some browsers also
-// block downloads from large data URLs. Convert to a blob URL first, then
-// open in a new tab or trigger a download programmatically.
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+// Abre o anexo. No app desktop (Tauri), grava um arquivo temporário e abre com
+// o app padrão do Windows (visualizador de imagem, PDF…). No navegador, o
+// window.open não funciona com data: URL grande, então usamos um blob URL.
 export function openAttachment(a: { dataUrl: string; name: string }) {
+  if (isTauri()) {
+    void (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const bytes = new Uint8Array(await dataUrlToBlob(a.dataUrl).arrayBuffer());
+        await invoke("open_attachment_file", { name: a.name, data: Array.from(bytes) });
+      } catch (e) {
+        console.error("Falha ao abrir anexo no app nativo", e);
+      }
+    })();
+    return;
+  }
   const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
   window.open(url, "_blank", "noopener,noreferrer");
   setTimeout(() => URL.revokeObjectURL(url), 60_000);

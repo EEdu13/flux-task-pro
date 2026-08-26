@@ -62,6 +62,18 @@ export function useApplyPalette() {
   }, []);
 }
 
+/**
+ * Aplica o tema salvo já na raiz, antes de qualquer tela montar.
+ * Sem isso, o app pinta claro por um instante antes do escuro entrar.
+ */
+export function useApplyTheme() {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const saved = (localStorage.getItem(KEY) as Theme | null) ?? "dark";
+    document.documentElement.classList.toggle("dark", saved === "dark");
+  }, []);
+}
+
 export function usePalette() {
   const [palette, setPaletteState] = useState<Palette>(() => readPalette());
   useEffect(() => {
@@ -73,8 +85,8 @@ export function usePalette() {
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "light";
-    return (localStorage.getItem(KEY) as Theme) ?? "light";
+    if (typeof window === "undefined") return "dark";
+    return (localStorage.getItem(KEY) as Theme) ?? "dark";
   });
 
   useEffect(() => {

@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -13,7 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FluxoProvider } from "@/lib/fluxo-store";
 import { TaskTimerProvider } from "@/lib/task-timer";
-import { useApplyPalette } from "@/lib/use-theme";
+import { useApplyPalette, useApplyTheme } from "@/lib/use-theme";
 import { Toaster } from "@/components/ui/sonner";
 import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
@@ -21,6 +22,10 @@ import { CallInviterProvider } from "@/lib/call-inviter-context";
 import { RoomPresenceProvider } from "@/lib/room-presence-context";
 import { QuickFab } from "@/components/quick-fab";
 import { FloatingNotepad } from "@/components/floating-notepad";
+import { TitleBar } from "@/components/title-bar";
+import { InteractionFX } from "@/components/interaction-fx";
+import { Celebration } from "@/components/celebration";
+import { ChatProvider } from "@/lib/chat-store";
 
 function NotFoundComponent() {
   return (
@@ -131,24 +136,43 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   useApplyPalette();
+  useApplyTheme();
+  // A janela pequena de chamada (/chamada) é um card isolado: sem barra de
+  // título, sem FAB, sem widgets — só o próprio card.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const bareWindow = pathname.startsWith("/chamada");
+
+  if (bareWindow) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
       <FluxoProvider>
+        <ChatProvider>
         <TaskTimerProvider>
         <RoomPresenceProvider>
           <ActiveCallProvider>
             <CallInviterProvider>
+              {/* Barra de título nativa do app desktop; no navegador não renderiza. */}
+              <TitleBar />
               {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
               <Outlet />
               <ActiveCallWidget />
               <QuickFab />
               <FloatingNotepad />
+              <InteractionFX />
+              <Celebration />
               <Toaster />
             </CallInviterProvider>
           </ActiveCallProvider>
         </RoomPresenceProvider>
         </TaskTimerProvider>
+        </ChatProvider>
       </FluxoProvider>
     </QueryClientProvider>
   );

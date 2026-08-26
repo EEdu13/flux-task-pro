@@ -9,84 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
-import { Route as RelatoriosRouteImport } from './routes/relatorios'
-import { Route as ProjetosRouteImport } from './routes/projetos'
-import { Route as PackRouteImport } from './routes/pack'
-import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
-import { Route as MetasRouteImport } from './routes/metas'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as InboxRouteImport } from './routes/inbox'
-import { Route as EquipeRouteImport } from './routes/equipe'
-import { Route as ContatosRouteImport } from './routes/contatos'
-import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
-import { Route as CalendarioRouteImport } from './routes/calendario'
-import { Route as AtasRouteImport } from './routes/atas'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AtasRouteImport } from './routes/atas'
+import { Route as CalendarioRouteImport } from './routes/calendario'
+import { Route as ChamadaRouteImport } from './routes/chamada'
+import { Route as ChatRouteImport } from './routes/chat'
+import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
+import { Route as ContatosRouteImport } from './routes/contatos'
+import { Route as EquipeRouteImport } from './routes/equipe'
+import { Route as InboxRouteImport } from './routes/inbox'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MetasRouteImport } from './routes/metas'
+import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
+import { Route as PackRouteImport } from './routes/pack'
+import { Route as ProjetosRouteImport } from './routes/projetos'
+import { Route as RelatoriosRouteImport } from './routes/relatorios'
+import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
+import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
-import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
-import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
+import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 
-const TarefasWaRoute = TarefasWaRouteImport.update({
-  id: '/tarefas-wa',
-  path: '/tarefas-wa',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RelatoriosRoute = RelatoriosRouteImport.update({
-  id: '/relatorios',
-  path: '/relatorios',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProjetosRoute = ProjetosRouteImport.update({
-  id: '/projetos',
-  path: '/projetos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PackRoute = PackRouteImport.update({
-  id: '/pack',
-  path: '/pack',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
-  id: '/minhas-tarefas',
-  path: '/minhas-tarefas',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MetasRoute = MetasRouteImport.update({
-  id: '/metas',
-  path: '/metas',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InboxRoute = InboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EquipeRoute = EquipeRouteImport.update({
-  id: '/equipe',
-  path: '/equipe',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContatosRoute = ContatosRouteImport.update({
-  id: '/contatos',
-  path: '/contatos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
-  id: '/configuracoes',
-  path: '/configuracoes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CalendarioRoute = CalendarioRouteImport.update({
-  id: '/calendario',
-  path: '/calendario',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AtasRoute = AtasRouteImport.update({
@@ -94,9 +41,79 @@ const AtasRoute = AtasRouteImport.update({
   path: '/atas',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const CalendarioRoute = CalendarioRouteImport.update({
+  id: '/calendario',
+  path: '/calendario',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChamadaRoute = ChamadaRouteImport.update({
+  id: '/chamada',
+  path: '/chamada',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContatosRoute = ContatosRouteImport.update({
+  id: '/contatos',
+  path: '/contatos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EquipeRoute = EquipeRouteImport.update({
+  id: '/equipe',
+  path: '/equipe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MetasRoute = MetasRouteImport.update({
+  id: '/metas',
+  path: '/metas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
+  id: '/minhas-tarefas',
+  path: '/minhas-tarefas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PackRoute = PackRouteImport.update({
+  id: '/pack',
+  path: '/pack',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjetosRoute = ProjetosRouteImport.update({
+  id: '/projetos',
+  path: '/projetos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RelatoriosRoute = RelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TarefasWaRoute = TarefasWaRouteImport.update({
+  id: '/tarefas-wa',
+  path: '/tarefas-wa',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConvidadoRoomNameRoute = ConvidadoRoomNameRouteImport.update({
+  id: '/convidado/$roomName',
+  path: '/convidado/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SalasIndexRoute = SalasIndexRouteImport.update({
@@ -109,9 +126,9 @@ const SalasRoomNameRoute = SalasRoomNameRouteImport.update({
   path: '/salas/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ConvidadoRoomNameRoute = ConvidadoRoomNameRouteImport.update({
-  id: '/convidado/$roomName',
-  path: '/convidado/$roomName',
+const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
+  id: '/api/public/purge-rooms',
+  path: '/api/public/purge-rooms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicWhatsappWebhookRoute =
@@ -120,16 +137,13 @@ const ApiPublicWhatsappWebhookRoute =
     path: '/api/public/whatsapp-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
-  id: '/api/public/purge-rooms',
-  path: '/api/public/purge-rooms',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/atas': typeof AtasRoute
   '/calendario': typeof CalendarioRoute
+  '/chamada': typeof ChamadaRoute
+  '/chat': typeof ChatRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
@@ -151,6 +165,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/atas': typeof AtasRoute
   '/calendario': typeof CalendarioRoute
+  '/chamada': typeof ChamadaRoute
+  '/chat': typeof ChatRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
@@ -173,6 +189,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/atas': typeof AtasRoute
   '/calendario': typeof CalendarioRoute
+  '/chamada': typeof ChamadaRoute
+  '/chat': typeof ChatRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
@@ -196,6 +214,8 @@ export interface FileRouteTypes {
     | '/'
     | '/atas'
     | '/calendario'
+    | '/chamada'
+    | '/chat'
     | '/configuracoes'
     | '/contatos'
     | '/equipe'
@@ -217,6 +237,8 @@ export interface FileRouteTypes {
     | '/'
     | '/atas'
     | '/calendario'
+    | '/chamada'
+    | '/chat'
     | '/configuracoes'
     | '/contatos'
     | '/equipe'
@@ -238,6 +260,8 @@ export interface FileRouteTypes {
     | '/'
     | '/atas'
     | '/calendario'
+    | '/chamada'
+    | '/chat'
     | '/configuracoes'
     | '/contatos'
     | '/equipe'
@@ -260,6 +284,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AtasRoute: typeof AtasRoute
   CalendarioRoute: typeof CalendarioRoute
+  ChamadaRoute: typeof ChamadaRoute
+  ChatRoute: typeof ChatRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   ContatosRoute: typeof ContatosRoute
   EquipeRoute: typeof EquipeRoute
@@ -280,88 +306,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/tarefas-wa': {
-      id: '/tarefas-wa'
-      path: '/tarefas-wa'
-      fullPath: '/tarefas-wa'
-      preLoaderRoute: typeof TarefasWaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/relatorios': {
-      id: '/relatorios'
-      path: '/relatorios'
-      fullPath: '/relatorios'
-      preLoaderRoute: typeof RelatoriosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/projetos': {
-      id: '/projetos'
-      path: '/projetos'
-      fullPath: '/projetos'
-      preLoaderRoute: typeof ProjetosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pack': {
-      id: '/pack'
-      path: '/pack'
-      fullPath: '/pack'
-      preLoaderRoute: typeof PackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/minhas-tarefas': {
-      id: '/minhas-tarefas'
-      path: '/minhas-tarefas'
-      fullPath: '/minhas-tarefas'
-      preLoaderRoute: typeof MinhasTarefasRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/metas': {
-      id: '/metas'
-      path: '/metas'
-      fullPath: '/metas'
-      preLoaderRoute: typeof MetasRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inbox': {
-      id: '/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof InboxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/equipe': {
-      id: '/equipe'
-      path: '/equipe'
-      fullPath: '/equipe'
-      preLoaderRoute: typeof EquipeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/contatos': {
-      id: '/contatos'
-      path: '/contatos'
-      fullPath: '/contatos'
-      preLoaderRoute: typeof ContatosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/configuracoes': {
-      id: '/configuracoes'
-      path: '/configuracoes'
-      fullPath: '/configuracoes'
-      preLoaderRoute: typeof ConfiguracoesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/calendario': {
-      id: '/calendario'
-      path: '/calendario'
-      fullPath: '/calendario'
-      preLoaderRoute: typeof CalendarioRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/atas': {
@@ -371,11 +320,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AtasRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/calendario': {
+      id: '/calendario'
+      path: '/calendario'
+      fullPath: '/calendario'
+      preLoaderRoute: typeof CalendarioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chamada': {
+      id: '/chamada'
+      path: '/chamada'
+      fullPath: '/chamada'
+      preLoaderRoute: typeof ChamadaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/configuracoes': {
+      id: '/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/configuracoes'
+      preLoaderRoute: typeof ConfiguracoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contatos': {
+      id: '/contatos'
+      path: '/contatos'
+      fullPath: '/contatos'
+      preLoaderRoute: typeof ContatosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/equipe': {
+      id: '/equipe'
+      path: '/equipe'
+      fullPath: '/equipe'
+      preLoaderRoute: typeof EquipeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/metas': {
+      id: '/metas'
+      path: '/metas'
+      fullPath: '/metas'
+      preLoaderRoute: typeof MetasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/minhas-tarefas': {
+      id: '/minhas-tarefas'
+      path: '/minhas-tarefas'
+      fullPath: '/minhas-tarefas'
+      preLoaderRoute: typeof MinhasTarefasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pack': {
+      id: '/pack'
+      path: '/pack'
+      fullPath: '/pack'
+      preLoaderRoute: typeof PackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projetos': {
+      id: '/projetos'
+      path: '/projetos'
+      fullPath: '/projetos'
+      preLoaderRoute: typeof ProjetosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/relatorios': {
+      id: '/relatorios'
+      path: '/relatorios'
+      fullPath: '/relatorios'
+      preLoaderRoute: typeof RelatoriosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tarefas-wa': {
+      id: '/tarefas-wa'
+      path: '/tarefas-wa'
+      fullPath: '/tarefas-wa'
+      preLoaderRoute: typeof TarefasWaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/convidado/$roomName': {
+      id: '/convidado/$roomName'
+      path: '/convidado/$roomName'
+      fullPath: '/convidado/$roomName'
+      preLoaderRoute: typeof ConvidadoRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/salas/': {
@@ -392,11 +439,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalasRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/convidado/$roomName': {
-      id: '/convidado/$roomName'
-      path: '/convidado/$roomName'
-      fullPath: '/convidado/$roomName'
-      preLoaderRoute: typeof ConvidadoRoomNameRouteImport
+    '/api/public/purge-rooms': {
+      id: '/api/public/purge-rooms'
+      path: '/api/public/purge-rooms'
+      fullPath: '/api/public/purge-rooms'
+      preLoaderRoute: typeof ApiPublicPurgeRoomsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/whatsapp-webhook': {
@@ -406,13 +453,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/purge-rooms': {
-      id: '/api/public/purge-rooms'
-      path: '/api/public/purge-rooms'
-      fullPath: '/api/public/purge-rooms'
-      preLoaderRoute: typeof ApiPublicPurgeRoomsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -420,6 +460,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AtasRoute: AtasRoute,
   CalendarioRoute: CalendarioRoute,
+  ChamadaRoute: ChamadaRoute,
+  ChatRoute: ChatRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   ContatosRoute: ContatosRoute,
   EquipeRoute: EquipeRoute,

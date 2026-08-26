@@ -132,7 +132,14 @@ export function InlineTaskCreator({
   };
 
   const addRow = (afterId?: string) => {
-    const draft = makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector });
+    // Herda o responsável/setor/prazo da linha de origem, para que delegar
+    // várias tarefas para a mesma pessoa não jogue as seguintes de volta pra mim.
+    const source = afterId ? rows.find((r) => r.id === afterId) : rows[rows.length - 1];
+    const draft = makeDraft({
+      assigneeId: source?.assigneeId || defaultAssigneeId || currentUser.id,
+      sector: source?.sector || currentUser.sector,
+      dueDate: source?.dueDate,
+    });
     setRows((rs) => {
       if (!afterId) return [...rs, draft];
       const idx = rs.findIndex((r) => r.id === afterId);
@@ -203,7 +210,7 @@ export function InlineTaskCreator({
     toast.success(
       `${valid.length} tarefa${valid.length > 1 ? "s" : ""} criada${valid.length > 1 ? "s" : ""}`,
     );
-    setRows([makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })]);
+    setRows([makeDraft({ assigneeId: defaultAssigneeId ?? currentUser.id, sector: currentUser.sector })]);
     setConfirmOpen(false);
   };
 

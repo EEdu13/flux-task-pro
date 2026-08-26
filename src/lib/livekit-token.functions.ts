@@ -44,28 +44,15 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
     if (!apiKey || !apiSecret || !url) {
       throw new Error("LiveKit não configurado no servidor");
     }
-    // Enforce privacy on EVERY token issuance. If the room is private, we
-    // require a userId AND a matching room_members row. No exceptions.
+    // Impõe privacidade em CADA emissão de token. Sala privada exige userId + membro.
     {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: state } = await supabaseAdmin
-        .from("room_state")
-        .select("is_private")
-        .eq("room_name", data.roomName)
-        .maybeSingle();
-      if (state?.is_private) {
-        if (!data.userId) {
-          throw new Error("Sala privada: sessão inválida");
-        }
-        const { data: member } = await supabaseAdmin
-          .from("room_members")
-          .select("id")
-          .eq("room_name", data.roomName)
-          .eq("user_id", data.userId)
-          .maybeSingle();
-        if (!member) {
-          throw new Error("Sala privada: peça para entrar antes.");
-        }
+      const { getPool, isRoomMember, getRoomIsPrivate } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const isPrivate = await getRoomIsPrivate(pool, data.roomName);
+      if (isPrivate) {
+        if (!data.userId) throw new Error("Sala privada: sessão inválida");
+        const member = await isRoomMember(pool, data.roomName, data.userId);
+        if (!member) throw new Error("Sala privada: peça para entrar antes.");
       }
     }
     const { AccessToken } = await import("livekit-server-sdk");
@@ -145,7 +132,10 @@ export const listSectorRooms = createServerFn({ method: "POST" })
     } catch {
       liveRooms = [];
     }
-    // For each sector, collect rooms named `${sector}` or `${sector}-<n>` with n>=2.
+
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+
     const bySector: Record<
       string,
       {
@@ -155,7 +145,7 @@ export const listSectorRooms = createServerFn({ method: "POST" })
         activeSpeakers: string[];
       }[]
     > = {};
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
     await Promise.all(
       data.sectors.map(async (sector) => {
         const matches = new Set<string>([sector]);
@@ -164,24 +154,49 @@ export const listSectorRooms = createServerFn({ method: "POST" })
         const names = Array.from(matches).sort((a, b) =>
           a.localeCompare(b, "pt-BR", { numeric: true }),
         );
-        const { data: states } = await supabaseAdmin
-          .from("room_state")
-          .select("room_name, is_private, active_speakers, speakers_updated_at")
-          .in("room_name", names);
+
+        // Busca room_state das salas do setor (IN dinâmico e parametrizado).
+        const req = pool.request();
+        const placeholders = names.map((n, i) => {
+          req.input(`n${i}`, sql.NVarChar, n);
+          return `@n${i}`;
+        });
+        const states =
+          placeholders.length > 0
+            ? (
+                await req.query(
+                  `SELECT room_name, is_private, active_speakers, speakers_updated_at
+                     FROM dbo.room_state WHERE room_name IN (${placeholders.join(",")})`,
+                )
+              ).recordset
+            : [];
+
         const privacyMap = new Map<string, boolean>(
-          (states ?? []).map((s) => [s.room_name, !!s.is_private]),
+          states.map((s: { room_name: string; is_private: boolean }) => [s.room_name, !!s.is_private]),
         );
         const now = Date.now();
         const speakersMap = new Map<string, string[]>();
-        for (const s of states ?? []) {
-          const ts = s.speakers_updated_at ? Date.parse(s.speakers_updated_at) : 0;
-          if (ts && now - ts < 5000 && Array.isArray(s.active_speakers)) {
-            speakersMap.set(
-              s.room_name,
-              (s.active_speakers as unknown[]).filter((x): x is string => typeof x === "string"),
-            );
+        for (const s of states as {
+          room_name: string;
+          active_speakers: string | null;
+          speakers_updated_at: Date | null;
+        }[]) {
+          const ts = s.speakers_updated_at ? new Date(s.speakers_updated_at).getTime() : 0;
+          if (ts && now - ts < 5000 && s.active_speakers) {
+            try {
+              const arr = JSON.parse(s.active_speakers);
+              if (Array.isArray(arr)) {
+                speakersMap.set(
+                  s.room_name,
+                  arr.filter((x): x is string => typeof x === "string"),
+                );
+              }
+            } catch {
+              /* ignore json inválido */
+            }
           }
         }
+
         const withParts = await Promise.all(
           names.map(async (name) => {
             try {
@@ -228,51 +243,45 @@ export const createRoomCall = createServerFn({ method: "POST" })
     },
   )
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const expiresAt = new Date(Date.now() - 45_000).toISOString();
-    await supabaseAdmin
-      .from("room_call_events")
-      .update({ status: "missed", handled_at: new Date().toISOString() })
-      .eq("status", "ringing")
-      .lt("created_at", expiresAt);
+    const { getPool, sql, expireStaleCalls } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await expireStaleCalls(pool);
 
-    const { data: call, error } = await supabaseAdmin
-      .from("room_call_events")
-      .insert({
-        caller_user_id: data.callerUserId,
-        target_user_id: data.targetUserId,
-        room_name: data.roomName,
-        room_label: data.roomLabel,
-      })
-      .select("id, caller_user_id, target_user_id, room_name, room_label, status, created_at")
-      .single();
-
-    if (error) throw new Error("Não foi possível chamar essa pessoa agora");
+    const res = await pool
+      .request()
+      .input("caller", sql.NVarChar, data.callerUserId)
+      .input("target", sql.NVarChar, data.targetUserId)
+      .input("room", sql.NVarChar, data.roomName)
+      .input("label", sql.NVarChar, data.roomLabel)
+      .query(
+        `INSERT INTO dbo.room_call_events (caller_user_id, target_user_id, room_name, room_label)
+         OUTPUT INSERTED.id, INSERTED.caller_user_id, INSERTED.target_user_id,
+                INSERTED.room_name, INSERTED.room_label, INSERTED.status, INSERTED.created_at
+         VALUES (@caller, @target, @room, @label)`,
+      );
+    const call = res.recordset[0];
+    if (!call) throw new Error("Não foi possível chamar essa pessoa agora");
     return { call };
   });
 
 export const listIncomingRoomCalls = createServerFn({ method: "POST" })
   .inputValidator((input: { userId: string }) => ({ userId: sanitizeUserId(input?.userId) }))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const expiresAt = new Date(Date.now() - 45_000).toISOString();
-    await supabaseAdmin
-      .from("room_call_events")
-      .update({ status: "missed", handled_at: new Date().toISOString() })
-      .eq("status", "ringing")
-      .lt("created_at", expiresAt);
+    const { getPool, sql, expireStaleCalls } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await expireStaleCalls(pool);
 
-    const { data: calls, error } = await supabaseAdmin
-      .from("room_call_events")
-      .select("id, caller_user_id, target_user_id, room_name, room_label, status, created_at")
-      .eq("target_user_id", data.userId)
-      .eq("status", "ringing")
-      .gte("created_at", expiresAt)
-      .order("created_at", { ascending: false })
-      .limit(3);
-
-    if (error) throw new Error("Não foi possível buscar chamadas");
-    return { calls: calls ?? [] };
+    const res = await pool
+      .request()
+      .input("uid", sql.NVarChar, data.userId)
+      .query(
+        `SELECT TOP 3 id, caller_user_id, target_user_id, room_name, room_label, status, created_at
+           FROM dbo.room_call_events
+          WHERE target_user_id=@uid AND status='ringing'
+            AND created_at >= DATEADD(second, -45, SYSUTCDATETIME())
+          ORDER BY created_at DESC`,
+      );
+    return { calls: res.recordset ?? [] };
   });
 
 export const updateRoomCallStatus = createServerFn({ method: "POST" })
@@ -289,15 +298,18 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
     return { callId, status: input.status, userId: sanitizeUserId(input.userId) };
   })
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("room_call_events")
-      .update({ status: data.status, handled_at: new Date().toISOString() })
-      .eq("id", data.callId)
-      .eq("target_user_id", data.userId)
-      .eq("status", "ringing");
-
-    if (error) throw new Error("Não foi possível atualizar a chamada");
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, data.callId)
+      .input("uid", sql.NVarChar, data.userId)
+      .input("status", sql.NVarChar, data.status)
+      .query(
+        `UPDATE dbo.room_call_events
+           SET status=@status, handled_at=SYSUTCDATETIME()
+         WHERE id=@id AND target_user_id=@uid AND status='ringing'`,
+      );
     return { ok: true };
   });
 
@@ -311,57 +323,50 @@ export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
     return { userId, sinceIso };
   })
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Auto-expire stale ringing calls first so callers get a "missed" event.
-    const expiresAt = new Date(Date.now() - 45_000).toISOString();
-    await supabaseAdmin
-      .from("room_call_events")
-      .update({ status: "missed", handled_at: new Date().toISOString() })
-      .eq("status", "ringing")
-      .lt("created_at", expiresAt);
+    const { getPool, sql, expireStaleCalls } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await expireStaleCalls(pool);
 
-    const { data: calls, error } = await supabaseAdmin
-      .from("room_call_events")
-      .select("id, target_user_id, room_name, room_label, status, handled_at, created_at")
-      .eq("caller_user_id", data.userId)
-      .in("status", ["declined", "missed"])
-      .gte("handled_at", data.sinceIso)
-      .order("handled_at", { ascending: false })
-      .limit(10);
-
-    if (error) throw new Error("Não foi possível buscar atualizações de chamada");
-    return { calls: calls ?? [] };
+    const res = await pool
+      .request()
+      .input("uid", sql.NVarChar, data.userId)
+      .input("since", sql.DateTime2, new Date(data.sinceIso))
+      .query(
+        `SELECT TOP 10 id, target_user_id, room_name, room_label, status, handled_at, created_at
+           FROM dbo.room_call_events
+          WHERE caller_user_id=@uid AND status IN ('declined','missed')
+            AND handled_at >= @since
+          ORDER BY handled_at DESC`,
+      );
+    return { calls: res.recordset ?? [] };
   });
 
-export const purgeAllRooms = createServerFn({ method: "POST" })
-  .handler(async () => {
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl = process.env.LIVEKIT_URL;
-    if (!apiKey || !apiSecret || !wsUrl) throw new Error("LiveKit não configurado");
-    const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
-    const { RoomServiceClient } = await import("livekit-server-sdk");
-    const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
-    const rooms = await svc.listRooms();
-    const names = rooms.map((r) => r.name);
-    await Promise.all(
-      names.map(async (n) => {
-        try {
-          await svc.deleteRoom(n);
-        } catch {
-          /* ignore */
-        }
-      }),
-    );
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("room_knocks").delete().neq("room_name", "");
-    await supabaseAdmin.from("room_members").delete().neq("room_name", "");
-    await supabaseAdmin
-      .from("room_state")
-      .update({ is_private: false, updated_at: new Date().toISOString() })
-      .neq("room_name", "");
-    return { deleted: names };
-  });
+export const purgeAllRooms = createServerFn({ method: "POST" }).handler(async () => {
+  const apiKey = process.env.LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const wsUrl = process.env.LIVEKIT_URL;
+  if (!apiKey || !apiSecret || !wsUrl) throw new Error("LiveKit não configurado");
+  const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+  const { RoomServiceClient } = await import("livekit-server-sdk");
+  const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+  const rooms = await svc.listRooms();
+  const names = rooms.map((r) => r.name);
+  await Promise.all(
+    names.map(async (n) => {
+      try {
+        await svc.deleteRoom(n);
+      } catch {
+        /* ignore */
+      }
+    }),
+  );
+  const { getPool } = await import("@/integrations/db.server");
+  const pool = await getPool();
+  await pool.request().query(`DELETE FROM dbo.room_knocks`);
+  await pool.request().query(`DELETE FROM dbo.room_members`);
+  await pool.request().query(`UPDATE dbo.room_state SET is_private=0, updated_at=SYSUTCDATETIME()`);
+  return { deleted: names };
+});
 
 // ================= Room privacy / membership / knocks =================
 
@@ -375,38 +380,21 @@ export const getRoomAccess = createServerFn({ method: "POST" })
     userId: sanitizeUserId(input?.userId),
   }))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { getPool, isRoomMember, getRoomIsPrivate, setRoomStatePrivacy, upsertMember } =
+      await import("@/integrations/db.server");
+    const pool = await getPool();
     const forcePrivate = isDiretoriaRoom(data.roomName);
-    let [{ data: state }, { data: member }] = await Promise.all([
-      supabaseAdmin
-        .from("room_state")
-        .select("is_private")
-        .eq("room_name", data.roomName)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("room_members")
-        .select("id")
-        .eq("room_name", data.roomName)
-        .eq("user_id", data.userId)
-        .maybeSingle(),
-    ]);
-    // Diretoria rooms are always private and must have a room_state row.
-    if (forcePrivate && (!state || !state.is_private)) {
-      await supabaseAdmin.from("room_state").upsert(
-        {
-          room_name: data.roomName,
-          is_private: true,
-          pin: null,
-          updated_by: data.userId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "room_name" },
-      );
-      state = { is_private: true };
+    let isPrivateState = await getRoomIsPrivate(pool, data.roomName);
+    const member = await isRoomMember(pool, data.roomName, data.userId);
+
+    // Salas de diretoria são sempre privadas e precisam de linha em room_state.
+    if (forcePrivate && !isPrivateState) {
+      await setRoomStatePrivacy(pool, data.roomName, true, data.userId);
+      isPrivateState = true;
     }
-    const isPrivate = forcePrivate || !!state?.is_private;
-    // If the room is private but empty (no live participants), admit the
-    // caller as the first member so they don't wait for approval from nobody.
+    const isPrivate = forcePrivate || !!isPrivateState;
+
+    // Sala privada e vazia: admite o primeiro a chegar como membro.
     if (isPrivate && !member) {
       const apiKey = process.env.LIVEKIT_API_KEY;
       const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -414,9 +402,7 @@ export const getRoomAccess = createServerFn({ method: "POST" })
       let empty = true;
       if (apiKey && apiSecret && wsUrl) {
         try {
-          const httpUrl = wsUrl
-            .replace(/^wss:\/\//, "https://")
-            .replace(/^ws:\/\//, "http://");
+          const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
           const { RoomServiceClient } = await import("livekit-server-sdk");
           const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
           try {
@@ -430,21 +416,14 @@ export const getRoomAccess = createServerFn({ method: "POST" })
         }
       }
       if (empty) {
-        await supabaseAdmin.from("room_members").upsert(
-          {
-            room_name: data.roomName,
-            user_id: data.userId,
-            added_by: data.userId,
-          },
-          { onConflict: "room_name,user_id" },
-        );
+        await upsertMember(pool, data.roomName, data.userId, data.userId);
         return { isPrivate, isMember: true, canJoin: true, pin: null, hasPin: false };
       }
     }
     return {
       isPrivate,
-      isMember: !!member,
-      canJoin: !isPrivate || !!member,
+      isMember: member,
+      canJoin: !isPrivate || member,
       pin: null,
       hasPin: false,
     };
@@ -457,57 +436,44 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
     userId: sanitizeUserId(input?.userId),
   }))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Diretoria rooms are always private and cannot be opened.
+    const { getPool, setRoomStatePrivacy, upsertMember } = await import("@/integrations/db.server");
+    const pool = await getPool();
     const isPrivate = isDiretoriaRoom(data.roomName) || data.isPrivate;
-    await supabaseAdmin.from("room_state").upsert(
-      {
-        room_name: data.roomName,
-        is_private: isPrivate,
-        pin: null,
-        updated_by: data.userId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "room_name" },
-    );
+    await setRoomStatePrivacy(pool, data.roomName, isPrivate, data.userId);
     if (isPrivate) {
-      // Grandfather everyone currently connected to LiveKit as a member so
-      // they aren't kicked, but nobody new can enter without a knock.
+      // Mantém quem já está conectado como membro (não expulsa ninguém).
       const apiKey = process.env.LIVEKIT_API_KEY;
       const apiSecret = process.env.LIVEKIT_API_SECRET;
       const wsUrl = process.env.LIVEKIT_URL;
       const memberIds = new Set<string>([data.userId]);
       if (apiKey && apiSecret && wsUrl) {
         try {
-          const httpUrl = wsUrl
-            .replace(/^wss:\/\//, "https://")
-            .replace(/^ws:\/\//, "http://");
+          const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
           const { RoomServiceClient } = await import("livekit-server-sdk");
           const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
           const parts = await svc.listParticipants(data.roomName);
           for (const p of parts) {
-            // participant identity is "<userId>-<name>"; take the userId prefix
             const uid = (p.identity || "").split("-")[0];
             if (uid && /^[a-zA-Z0-9_-]+$/.test(uid)) memberIds.add(uid);
           }
         } catch {
-          /* ignore — worst case only the caller is grandfathered */
+          /* ignore */
         }
       }
-      const rows = Array.from(memberIds).map((uid) => ({
-        room_name: data.roomName,
-        user_id: uid,
-        added_by: data.userId,
-      }));
-      if (rows.length > 0) {
-        await supabaseAdmin
-          .from("room_members")
-          .upsert(rows, { onConflict: "room_name,user_id" });
+      for (const uid of memberIds) {
+        await upsertMember(pool, data.roomName, uid, data.userId);
       }
     } else {
-      // room reopened: wipe pending knocks and member list
-      await supabaseAdmin.from("room_knocks").delete().eq("room_name", data.roomName);
-      await supabaseAdmin.from("room_members").delete().eq("room_name", data.roomName);
+      // Sala reaberta: limpa pedidos e lista de membros.
+      const { sql } = await import("@/integrations/db.server");
+      await pool
+        .request()
+        .input("room", sql.NVarChar, data.roomName)
+        .query(`DELETE FROM dbo.room_knocks WHERE room_name=@room`);
+      await pool
+        .request()
+        .input("room", sql.NVarChar, data.roomName)
+        .query(`DELETE FROM dbo.room_members WHERE room_name=@room`);
     }
     return { ok: true, pin: null };
   });
@@ -519,20 +485,10 @@ export const inviteToRoom = createServerFn({ method: "POST" })
     inviterUserId: sanitizeUserId(input?.inviterUserId),
   }))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // inviter must already be a member (or room open)
-    await supabaseAdmin
-      .from("room_members")
-      .upsert(
-        { room_name: data.roomName, user_id: data.inviterUserId, added_by: data.inviterUserId },
-        { onConflict: "room_name,user_id" },
-      );
-    await supabaseAdmin
-      .from("room_members")
-      .upsert(
-        { room_name: data.roomName, user_id: data.targetUserId, added_by: data.inviterUserId },
-        { onConflict: "room_name,user_id" },
-      );
+    const { getPool, upsertMember } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await upsertMember(pool, data.roomName, data.inviterUserId, data.inviterUserId);
+    await upsertMember(pool, data.roomName, data.targetUserId, data.inviterUserId);
     return { ok: true };
   });
 
@@ -546,40 +502,34 @@ export const knockRoom = createServerFn({ method: "POST" })
         : sanitizeUserId(input?.userId),
   }))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // if already member, nothing to do
-    const { data: member } = await supabaseAdmin
-      .from("room_members")
-      .select("id")
-      .eq("room_name", data.roomName)
-      .eq("user_id", data.userId)
-      .maybeSingle();
-    if (member) return { status: "approved" as const, knockId: null };
+    const { getPool, sql, isRoomMember } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    if (await isRoomMember(pool, data.roomName, data.userId)) {
+      return { status: "approved" as const, knockId: null };
+    }
+    // Reaproveita pedido pendente/aprovado se existir.
+    const existing = await pool
+      .request()
+      .input("room", sql.NVarChar, data.roomName)
+      .input("uid", sql.NVarChar, data.userId)
+      .query(
+        `SELECT TOP 1 id, status FROM dbo.room_knocks
+          WHERE room_name=@room AND requester_user_id=@uid AND status IN ('pending','approved')
+          ORDER BY created_at DESC`,
+      );
+    const ex = existing.recordset[0] as { id: string; status: "pending" | "approved" } | undefined;
+    if (ex) return { status: ex.status, knockId: ex.id };
 
-    // reuse latest still-pending knock, else insert
-    const { data: existing } = await supabaseAdmin
-      .from("room_knocks")
-      .select("id, status")
-      .eq("room_name", data.roomName)
-      .eq("requester_user_id", data.userId)
-      .in("status", ["pending", "approved"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (existing)
-      return { status: existing.status as "pending" | "approved", knockId: existing.id };
-
-    const { data: inserted, error } = await supabaseAdmin
-      .from("room_knocks")
-      .insert({
-        room_name: data.roomName,
-        requester_user_id: data.userId,
-        requester_name: data.userName,
-      })
-      .select("id")
-      .single();
-    if (error) throw new Error("Não foi possível pedir para entrar");
-    return { status: "pending" as const, knockId: inserted.id };
+    const inserted = await pool
+      .request()
+      .input("room", sql.NVarChar, data.roomName)
+      .input("uid", sql.NVarChar, data.userId)
+      .input("name", sql.NVarChar, data.userName)
+      .query(
+        `INSERT INTO dbo.room_knocks (room_name, requester_user_id, requester_name)
+         OUTPUT INSERTED.id VALUES (@room, @uid, @name)`,
+      );
+    return { status: "pending" as const, knockId: inserted.recordset[0].id as string };
   });
 
 export const getKnockStatus = createServerFn({ method: "POST" })
@@ -589,13 +539,18 @@ export const getKnockStatus = createServerFn({ method: "POST" })
     return { knockId: id };
   })
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: k } = await supabaseAdmin
-      .from("room_knocks")
-      .select("status")
-      .eq("id", data.knockId)
-      .maybeSingle();
-    return { status: (k?.status ?? "unknown") as "pending" | "approved" | "denied" | "unknown" };
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, data.knockId)
+      .query(`SELECT status FROM dbo.room_knocks WHERE id=@id`);
+    const status = (r.recordset[0]?.status ?? "unknown") as
+      | "pending"
+      | "approved"
+      | "denied"
+      | "unknown";
+    return { status };
   });
 
 export const listRoomKnocks = createServerFn({ method: "POST" })
@@ -603,14 +558,18 @@ export const listRoomKnocks = createServerFn({ method: "POST" })
     roomName: sanitizeRoomName(input?.roomName),
   }))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: knocks } = await supabaseAdmin
-      .from("room_knocks")
-      .select("id, requester_user_id, requester_name, status, created_at")
-      .eq("room_name", data.roomName)
-      .eq("status", "pending")
-      .order("created_at", { ascending: true });
-    return { knocks: knocks ?? [] };
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("room", sql.NVarChar, data.roomName)
+      .query(
+        `SELECT id, requester_user_id, requester_name, status, created_at
+           FROM dbo.room_knocks
+          WHERE room_name=@room AND status='pending'
+          ORDER BY created_at ASC`,
+      );
+    return { knocks: r.recordset ?? [] };
   });
 
 export const resolveKnock = createServerFn({ method: "POST" })
@@ -624,35 +583,36 @@ export const resolveKnock = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: knock } = await supabaseAdmin
-      .from("room_knocks")
-      .select("id, room_name, requester_user_id, status")
-      .eq("id", data.knockId)
-      .maybeSingle();
-    if (!knock || knock.status !== "pending") return { ok: false };
-    await supabaseAdmin
-      .from("room_knocks")
-      .update({
-        status: data.approve ? "approved" : "denied",
-        handled_by: data.resolverUserId,
-        handled_at: new Date().toISOString(),
-      })
-      .eq("id", knock.id);
-    if (data.approve) {
-      await supabaseAdmin.from("room_members").upsert(
-        {
-          room_name: knock.room_name,
-          user_id: knock.requester_user_id,
-          added_by: data.resolverUserId,
-        },
-        { onConflict: "room_name,user_id" },
+    const { getPool, sql, upsertMember } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const kr = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, data.knockId)
+      .query(
+        `SELECT id, room_name, requester_user_id, status FROM dbo.room_knocks WHERE id=@id`,
       );
+    const knock = kr.recordset[0] as
+      | { id: string; room_name: string; requester_user_id: string; status: string }
+      | undefined;
+    if (!knock || knock.status !== "pending") return { ok: false };
+
+    await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, knock.id)
+      .input("status", sql.NVarChar, data.approve ? "approved" : "denied")
+      .input("by", sql.NVarChar, data.resolverUserId)
+      .query(
+        `UPDATE dbo.room_knocks
+           SET status=@status, handled_by=@by, handled_at=SYSUTCDATETIME()
+         WHERE id=@id`,
+      );
+    if (data.approve) {
+      await upsertMember(pool, knock.room_name, knock.requester_user_id, data.resolverUserId);
     }
     return { ok: true };
   });
 
-// Publish who is currently speaking so it can show on the room card outside.
+// Publica quem está falando para aparecer no card da sala.
 export const updateActiveSpeakers = createServerFn({ method: "POST" })
   .inputValidator((input: { roomName: string; speakers: string[] }) => {
     const roomName = sanitizeRoomName(input?.roomName);
@@ -666,22 +626,23 @@ export const updateActiveSpeakers = createServerFn({ method: "POST" })
     return { roomName, speakers };
   })
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("room_state").upsert(
-      {
-        room_name: data.roomName,
-        active_speakers: data.speakers,
-        speakers_updated_at: new Date().toISOString(),
-      },
-      { onConflict: "room_name" },
-    );
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("room", sql.NVarChar, data.roomName)
+      .input("spk", sql.NVarChar(sql.MAX), JSON.stringify(data.speakers))
+      .query(
+        `IF EXISTS (SELECT 1 FROM dbo.room_state WHERE room_name=@room)
+           UPDATE dbo.room_state SET active_speakers=@spk, speakers_updated_at=SYSUTCDATETIME() WHERE room_name=@room;
+         ELSE
+           INSERT INTO dbo.room_state (room_name, active_speakers, speakers_updated_at) VALUES (@room, @spk, SYSUTCDATETIME());`,
+      );
     return { ok: true };
   });
 
 // =============== External guest invites ===============
-// Signed short-lived tokens so anyone with the link can join the room
-// as a guest without a Fluxo account. Signed with LIVEKIT_API_SECRET so
-// no extra secret / DB row is required.
+// Tokens curtos assinados com LIVEKIT_API_SECRET — sem linha no banco.
 
 function base64UrlEncode(buf: ArrayBuffer | Uint8Array) {
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
@@ -744,30 +705,17 @@ async function verifyGuestToken(token: string, secret: string): Promise<{ r: str
 }
 
 export const createGuestInvite = createServerFn({ method: "POST" })
-  .inputValidator(
-    (input: { roomName: string; inviterUserId: string; hours?: number }) => ({
-      roomName: sanitizeRoomName(input?.roomName),
-      inviterUserId: sanitizeUserId(input?.inviterUserId),
-      hours: Math.max(1, Math.min(72, Math.floor(input?.hours ?? 24))),
-    }),
-  )
+  .inputValidator((input: { roomName: string; inviterUserId: string; hours?: number }) => ({
+    roomName: sanitizeRoomName(input?.roomName),
+    inviterUserId: sanitizeUserId(input?.inviterUserId),
+    hours: Math.max(1, Math.min(72, Math.floor(input?.hours ?? 24))),
+  }))
   .handler(async ({ data }) => {
     const secret = process.env.LIVEKIT_API_SECRET;
     if (!secret) throw new Error("LiveKit não configurado no servidor");
-    // Ensure inviter is a member (so, if the room is private, guests aren't
-    // blocked at the LiveKit token step — we bypass the member check on the
-    // guest path anyway, but this also grandfathers the inviter cleanly).
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin
-      .from("room_members")
-      .upsert(
-        {
-          room_name: data.roomName,
-          user_id: data.inviterUserId,
-          added_by: data.inviterUserId,
-        },
-        { onConflict: "room_name,user_id" },
-      );
+    const { getPool, upsertMember } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await upsertMember(pool, data.roomName, data.inviterUserId, data.inviterUserId);
     const exp = Math.floor(Date.now() / 1000) + data.hours * 3600;
     const token = await signGuestToken({ r: data.roomName, e: exp }, secret);
     return { token, expiresAt: exp };

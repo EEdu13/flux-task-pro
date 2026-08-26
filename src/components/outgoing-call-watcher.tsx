@@ -44,7 +44,9 @@ export function OutgoingCallWatcher() {
       }
     }
     poll();
-    const id = window.setInterval(poll, 2000);
+    // 1,5s — mesmo ritmo da sondagem de chamadas recebidas, para quem ligou
+    // saber rápido que foi recusado.
+    const id = window.setInterval(poll, 1500);
     return () => {
       cancelled = true;
       window.clearInterval(id);

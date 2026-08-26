@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Phone, PhoneOff } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listIncomingRoomCalls, updateRoomCallStatus } from "@/lib/livekit-token.functions";
+import {
+  closeIncomingCallWindow,
+  desktopBringToFront,
+  desktopFlashTaskbar,
+  onCallAction,
+  showIncomingCallWindow,
+} from "@/lib/desktop";
 
 const RING_WINDOW_MS = 45_000;
 
@@ -26,6 +33,7 @@ export function IncomingCall() {
   const [remoteCalls, setRemoteCalls] = useState<IncomingRoomCall[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const ringIntervalRef = useRef<number | null>(null);
+  const alertedRef = useRef<string | null>(null);
 
   // Mark pre-existing notifications as "seen" on mount so we don't ring for old ones
   useEffect(() => {
@@ -100,6 +108,28 @@ export function IncomingCall() {
     };
   }, [notifications, remoteCalls, currentUser.id, initialized]);
 
+  // A cada NOVA chamada abre o card nativo no canto da tela (estilo Teams),
+  // pisca a barra e notifica — funciona mesmo com a janela escondida na bandeja.
+  useEffect(() => {
+    if (!active) {
+      void closeIncomingCallWindow();
+      return;
+    }
+    if (alertedRef.current === active.id) return;
+    alertedRef.current = active.id;
+    const caller = users.find((u) => u.id === active.fromUserId);
+    const room = DEPARTMENT_ROOMS.find((r) => r.name === active.roomName);
+    const callerName = caller?.name ?? "Alguém";
+    void showIncomingCallWindow({
+      callId: active.id,
+      caller: callerName,
+      roomLabel: room?.label ?? active.roomLabel ?? active.roomName,
+      userId: currentUser.id,
+      remote: active.source === "remote",
+    });
+    void desktopFlashTaskbar();
+  }, [active, users, currentUser.id]);
+
   // Play ringtone while active
   useEffect(() => {
     if (!active) {
@@ -145,34 +175,52 @@ export function IncomingCall() {
     };
   }, [active]);
 
+  // Resolve a chamada — usado tanto pelos botões do app quanto pelo card nativo.
+  const resolveCall = useCallback(
+    async (action: "accept" | "decline") => {
+      if (!active) return;
+      seenRef.current.add(`handled:${active.source}:${active.id}`);
+      if (active.source === "remote") {
+        setRemoteCalls((calls) => calls.filter((c) => c.id !== active.id));
+        await updateRoomCallStatus({
+          data: {
+            callId: active.id,
+            status: action === "accept" ? "accepted" : "declined",
+            userId: currentUser.id,
+          },
+        }).catch(() => {});
+      } else {
+        dismissRoomCall(active.id);
+      }
+      void closeIncomingCallWindow();
+      if (action === "accept") {
+        void desktopBringToFront();
+        if (active.roomName) {
+          navigate({ to: "/salas/$roomName", params: { roomName: active.roomName } });
+        }
+      }
+    },
+    [active, currentUser.id, dismissRoomCall, navigate],
+  );
+
+  // Escuta o que o usuário escolheu no card nativo do canto da tela.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void onCallAction(({ action }) => {
+      void resolveCall(action);
+    }).then((u) => {
+      unlisten = u;
+    });
+    return () => unlisten?.();
+  }, [resolveCall]);
+
   if (!active) return null;
 
   const caller = users.find((u) => u.id === active.fromUserId);
   const room = DEPARTMENT_ROOMS.find((r) => r.name === active.roomName);
 
-  const accept = async () => {
-    seenRef.current.add(`handled:${active.source}:${active.id}`);
-    if (active.source === "remote") {
-      setRemoteCalls((calls) => calls.filter((c) => c.id !== active.id));
-      await updateRoomCallStatus({ data: { callId: active.id, status: "accepted", userId: currentUser.id } }).catch(
-        () => {},
-      );
-    } else {
-      dismissRoomCall(active.id);
-    }
-    if (active.roomName) navigate({ to: "/salas/$roomName", params: { roomName: active.roomName } });
-  };
-  const decline = async () => {
-    seenRef.current.add(`handled:${active.source}:${active.id}`);
-    if (active.source === "remote") {
-      setRemoteCalls((calls) => calls.filter((c) => c.id !== active.id));
-      await updateRoomCallStatus({ data: { callId: active.id, status: "declined", userId: currentUser.id } }).catch(
-        () => {},
-      );
-    } else {
-      dismissRoomCall(active.id);
-    }
-  };
+  const accept = () => resolveCall("accept");
+  const decline = () => resolveCall("decline");
 
   return (
     <div className="fixed bottom-4 right-4 z-[100] w-80 overflow-hidden rounded-xl border border-border bg-card shadow-2xl">

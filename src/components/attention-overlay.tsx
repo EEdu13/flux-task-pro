@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useRef, useState } from "react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { desktopBringToFront, desktopFlashTaskbar } from "@/lib/desktop";
+import { listNudgesFn, sendNudgeFn } from "@/lib/attention.functions";
 
 interface AttnEvent {
   fromName: string;
@@ -24,8 +25,11 @@ export function AttentionOverlay() {
         /* ignore cross-origin */
       }
       flashTitle(`🔔 ${detail.fromName} chamou sua atenção!`);
-      showNudgeNotification(detail.fromName);
       playNudgeSound();
+      // No app desktop: puxa a janela pra frente e pisca a barra (estilo MSN).
+      // Sem toast do Windows — o overlay do app já é a notificação visual.
+      void desktopBringToFront();
+      void desktopFlashTaskbar();
       const root = document.documentElement;
       root.classList.remove("fluxo-nudge-shake");
       // force reflow to restart the animation
@@ -53,23 +57,48 @@ export function AttentionOverlay() {
     }
   }, []);
 
-  // Subscribe to a Supabase realtime channel scoped to this user so nudges
-  // sent from other tabs / other users actually reach *this* device.
+  // Recebe cutucadas por polling no nosso backend (Azure SQL).
+  // Trocamos o realtime do Supabase por esta sondagem porque é a mesma
+  // mecânica das chamadas — que funciona de forma confiável entre máquinas.
+  const seenRef = useRef<Set<string>>(new Set());
+  const sinceRef = useRef<string>(new Date().toISOString());
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.id) return;
-    const ch = supabase.channel(`attention:${currentUser.id}`, {
-      config: { broadcast: { self: false } },
-    });
-    ch.on("broadcast", { event: "nudge" }, (payload) => {
-      const p = payload.payload as AttnEvent | undefined;
-      if (!p) return;
-      window.dispatchEvent(
-        new CustomEvent("fluxo:attention", { detail: p }),
-      );
-    });
-    ch.subscribe();
+    let cancelled = false;
+    seenRef.current = new Set();
+    sinceRef.current = new Date().toISOString();
+
+    async function poll() {
+      try {
+        const res = await listNudgesFn({
+          data: { userId: currentUser.id, sinceIso: sinceRef.current },
+        });
+        if (cancelled) return;
+        // Do mais antigo para o mais novo, para a ordem fazer sentido.
+        const list = [...(res.nudges ?? [])].reverse();
+        for (const n of list) {
+          const id = String(n.id);
+          if (seenRef.current.has(id)) continue;
+          seenRef.current.add(id);
+          const at = new Date(n.created_at).toISOString();
+          if (at > sinceRef.current) sinceRef.current = at;
+          window.dispatchEvent(
+            new CustomEvent("fluxo:attention", {
+              detail: { fromName: n.from_name, fromAvatar: n.from_avatar ?? undefined },
+            }),
+          );
+        }
+      } catch {
+        /* rede instável: tenta de novo no próximo ciclo */
+      }
+    }
+
+    void poll();
+    // 1s: a consulta é leve e o "chamar atenção" precisa ser imediato.
+    const id = window.setInterval(poll, 1000);
     return () => {
-      supabase.removeChannel(ch);
+      cancelled = true;
+      window.clearInterval(id);
     };
   }, [currentUser?.id, isAuthenticated]);
 
@@ -232,30 +261,18 @@ function fallbackNotification(fromName: string) {
   }
 }
 
-// Send a nudge to another user via Supabase realtime broadcast. Returns a
-// promise that resolves when the message has been queued.
+/**
+ * Envia uma cutucada para outro usuário, gravando no nosso backend (Azure SQL).
+ * O destinatário recebe na próxima sondagem (até ~2s).
+ */
 export async function sendNudge(
   targetUserId: string,
   fromName: string,
   fromAvatar?: string,
+  fromUserId?: string,
 ) {
-  const ch = supabase.channel(`attention:${targetUserId}`, {
-    config: { broadcast: { self: false, ack: true } },
+  if (!fromUserId) throw new Error("Remetente inválido");
+  await sendNudgeFn({
+    data: { fromUserId, fromName, fromAvatar, targetUserId },
   });
-  await new Promise<void>((resolve) => {
-    ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") resolve();
-    });
-    // safety timeout
-    window.setTimeout(() => resolve(), 1500);
-  });
-  try {
-    await ch.send({
-      type: "broadcast",
-      event: "nudge",
-      payload: { fromName, fromAvatar },
-    });
-  } finally {
-    window.setTimeout(() => supabase.removeChannel(ch), 500);
-  }
 }

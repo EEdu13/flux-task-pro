@@ -117,6 +117,11 @@ export interface Project {
   createdAt: string;
   createdBy: string;
   color?: string;       // ex.: oklch(...)
+  /**
+   * Fotos e arquivos de acompanhamento do projeto — telas, comprovantes,
+   * evidências. Visíveis a todos que enxergam o projeto.
+   */
+  attachments?: Attachment[];
 }
 
 export type PackTemplateScope = "cargo" | "pessoa";
@@ -192,11 +197,11 @@ export interface CompletionEntry {
 }
 
 export const sectors = [
-  { id: "comercial", name: "Comercial", color: "oklch(0.62 0.16 155)" },
-  { id: "operacoes", name: "Operações", color: "oklch(0.62 0.16 230)" },
-  { id: "marketing", name: "Marketing", color: "oklch(0.6 0.2 330)" },
-  { id: "financeiro", name: "Financeiro", color: "oklch(0.78 0.15 75)" },
-  { id: "rh", name: "Recursos Humanos", color: "oklch(0.52 0.22 275)" },
+  { id: "comercial", name: "Comercial", color: "oklch(0.792 0.181 146)" },
+  { id: "operacoes", name: "Operações", color: "oklch(0.746 0.148 233)" },
+  { id: "marketing", name: "Marketing", color: "oklch(0.72 0.20 330)" },
+  { id: "financeiro", name: "Financeiro", color: "oklch(0.828 0.171 84)" },
+  { id: "rh", name: "Recursos Humanos", color: "oklch(0.70 0.19 288)" },
 ];
 
 export const roleLabels: Record<Role, string> = {
@@ -229,14 +234,15 @@ export const priorityMultiplier: Record<Priority, number> = {
   baixa: 1,
 };
 
+/* Valores claros o bastante para contrastar no tema escuro. */
 export const priorityColor: Record<Priority, string> = {
-  alta: "oklch(0.58 0.22 25)",
-  media: "oklch(0.72 0.15 70)",
-  baixa: "oklch(0.55 0.02 260)",
+  alta: "oklch(0.70 0.20 20)",
+  media: "oklch(0.828 0.171 84)",
+  baixa: "oklch(0.66 0.03 155)",
 };
 
 export const statusColor: Record<Status, string> = {
-  pendente: "oklch(0.55 0.02 260)",
-  andamento: "oklch(0.52 0.22 275)",
-  concluida: "oklch(0.62 0.16 155)",
+  pendente: "oklch(0.68 0.025 155)",
+  andamento: "oklch(0.746 0.148 233)",
+  concluida: "oklch(0.792 0.181 146)",
 };

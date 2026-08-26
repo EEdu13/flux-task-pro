@@ -29,6 +29,7 @@ import {
   Flame,
   Contact,
   FolderKanban,
+  MessageCircle,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -49,11 +50,14 @@ import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
 import { IncomingCall } from "@/components/incoming-call";
 import { OutgoingCallWatcher } from "@/components/outgoing-call-watcher";
+import { TractorBanner } from "@/components/tractor-banner";
+import { ChatDock } from "@/components/chat-dock";
 import { toast } from "sonner";
 import { useCallInviter } from "@/lib/call-inviter-context";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
+  { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/minhas-tarefas", label: "Minhas tarefas", icon: CheckSquare },
   { to: "/pack", label: "Pack diário", icon: Flame },
   { to: "/projetos", label: "Projetos", icon: FolderKanban },
@@ -215,7 +219,7 @@ export function FluxoLayout({
 
   return (
   <UndoProvider>
-    <div className="flex min-h-screen w-full bg-background text-foreground">
+    <div className="fluxo-app-root flex min-h-screen w-full bg-background text-foreground">
       {/* Mobile drawer backdrop */}
       {mobileOpen && (
         <div
@@ -224,7 +228,7 @@ export function FluxoLayout({
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-sidebar text-sidebar-foreground transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:transition-[width] ${
+        className={`fluxo-sidebar fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-sidebar text-sidebar-foreground transition-transform duration-200 lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:transition-[width] ${
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${collapsed ? "lg:w-16" : "lg:w-60"}`}
       >
@@ -538,7 +542,7 @@ export function FluxoLayout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card px-3 sm:gap-3 sm:px-6">
+        <header className="fluxo-topbar sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card px-3 sm:gap-3 sm:px-6">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -899,6 +903,8 @@ export function FluxoLayout({
       <IncomingCall />
       <AttentionOverlay />
       <OutgoingCallWatcher />
+      <TractorBanner />
+      <ChatDock />
       <TaskContextMenu />
       <CommandPalette />
       <TeamDelegatePanel />

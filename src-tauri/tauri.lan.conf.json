@@ -1,0 +1,24 @@
+{
+  "build": {
+    "devUrl": "http://NOTE-LAR-38-24:5199"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Fluxo Task Pro",
+        "url": "http://NOTE-LAR-38-24:5199",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": true,
+        "theme": "Dark",
+        "dragDropEnabled": false,
+        "decorations": false
+      }
+    ]
+  }
+}

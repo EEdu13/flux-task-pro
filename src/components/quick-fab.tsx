@@ -129,7 +129,7 @@ export function QuickFab() {
     setOpen(false);
     setMode("menu");
     try {
-      await sendNudge(uid, currentUser.name, currentUser.avatar);
+      await sendNudge(uid, currentUser.name, currentUser.avatar, currentUser.id);
       toast.success(
         `Você chamou a atenção de ${target?.name?.split(" ")[0] ?? "alguém"}`,
       );
