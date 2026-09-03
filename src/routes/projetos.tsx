@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TravaScroll } from "@/components/trava-scroll";
 import {
   FolderKanban,
   Plus,
@@ -22,10 +23,12 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
+import { confirmar } from "@/components/confirm-dialog";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { ProjectTracking } from "@/components/project-tracking";
 import { ProjectPortfolio } from "@/components/project-portfolio";
+import { CampoData } from "@/components/campo-data";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { CompletionEntry, ProjectStatus, Status } from "@/lib/fluxo-types";
 import { forecastProject, riskLabels, type RiskLevel } from "@/lib/project-forecast";
@@ -552,11 +555,16 @@ function ProjectDetail({
             </button>
             {isOwner && (
               <button
-                onClick={() => {
-                  if (confirm(`Excluir "${selected.name}"? As subtarefas viram tarefas normais.`)) {
-                    deleteProject(selected.id);
-                    toast.success("Projeto excluído");
-                  }
+                onClick={async () => {
+                  const ok = await confirmar({
+                    titulo: "Excluir este projeto?",
+                    descricao: `"${selected.name}" some, mas as subtarefas não: elas viram tarefas normais e continuam com seus responsáveis.`,
+                    confirmar: "Excluir projeto",
+                    perigo: true,
+                  });
+                  if (!ok) return;
+                  deleteProject(selected.id);
+                  toast.success("Projeto excluído");
                 }}
                 className="inline-flex items-center gap-1 rounded-md border border-border bg-card/70 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur hover:border-destructive/50 hover:text-destructive"
               >
@@ -680,12 +688,12 @@ function ProjectDetail({
               </option>
             ))}
           </select>
-          <input
-            type="date"
+          <CampoData
             value={quickDate}
-            onChange={(e) => setQuickDate(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
+            onChange={setQuickDate}
+            placeholder="Prazo"
             title="Prazo"
+            className="py-1 text-[11px]"
           />
           <button
             onClick={onQuickAdd}
@@ -1002,6 +1010,7 @@ function CreateProjectModal({
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
+      <TravaScroll />
       <div
         className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -1077,11 +1086,12 @@ function CreateProjectModal({
 
           <div className="grid gap-4">
             <Field label="Prazo previsto" icon={<Calendar className="h-3 w-3" />}>
-              <input
-                type="date"
+              <CampoData
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                onChange={setDueDate}
+                formato="longo"
+                placeholder="Sem prazo definido"
+                className="w-full px-3 py-2 text-sm"
               />
             </Field>
           </div>
@@ -1287,6 +1297,7 @@ function ShareProjectModal({
       className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
+      <TravaScroll />
       <div
         className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}

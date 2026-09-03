@@ -1,13 +1,239 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, Image as ImageIcon, UploadCloud, ShieldCheck, Timer, ClipboardPaste } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, UploadCloud, ShieldCheck, Timer, ClipboardPaste, Search, Check } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
-import { type Status } from "@/lib/fluxo-types";
-import type { Attachment } from "@/lib/fluxo-types";
-import { filesToAttachments, formatBytes, isImage } from "@/lib/attachments";
+import { type Status, type Priority, type Frequency } from "@/lib/fluxo-types";
+import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
+import { DIAS_SEMANA, ULTIMO_DIA_DO_MES, descreverRecorrencia } from "@/lib/recorrencia";
+import { AnimatePresence, motion } from "framer-motion";
+import { filesToAttachments, formatBytes, isImage, openAttachment } from "@/lib/attachments";
+import { CampoData } from "@/components/campo-data";
+import { isoParaData } from "@/lib/data-iso";
 import { parseHM } from "@/lib/time-log";
 import { parseExcelPaste, type ParsedPasteRow } from "@/lib/excel-paste";
+import { UserAvatar } from "@/components/user-avatar";
+import { iniciaisDoNome } from "@/integrations/iam/types";
+import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
 import { toast } from "sonner";
+import { TravaScroll } from "@/components/trava-scroll";
+
+/** Chave da dica de primeira vez (responsável × @). */
+const DICA_KEY = "fluxo.grade.dica-mencao";
+
+/** Chave da dica do expansor (checklist, repetição, tags). */
+const DICA_EXTRAS_KEY = "fluxo.grade.dica-extras";
+
+/**
+ * Rótulo dos grupos da faixa de controles.
+ * Em /45 sumia no tema escuro — o rótulo só serve se der para ler de relance.
+ */
+const ROTULO = "text-[10px] font-bold uppercase tracking-wide text-foreground/75";
+
+/** "REGINALDO MARCOS GONCALVES JUNIOR" → "Reginaldo Junior". */
+function nomeCurto(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "";
+  const cap = (p: string) => p[0]!.toUpperCase() + p.slice(1).toLowerCase();
+  if (partes.length === 1) return cap(partes[0]!);
+  return `${cap(partes[0]!)} ${cap(partes[partes.length - 1]!)}`;
+}
+
+/**
+ * Responsável com foto e lista própria.
+ *
+ * O <select> nativo mostrava o nome cru em CAIXA ALTA e, ao abrir, entregava o
+ * popup do sistema operacional — caixa cinza sem foto, destoando de todo o resto
+ * do app. Aqui a lista é nossa: mesma linguagem do menu de menção logo acima
+ * (portal, bg-popover, foto + nome), com busca quando o time é grande.
+ */
+function SeletorResponsavel({
+  valor,
+  pessoas,
+  aoMudar,
+}: {
+  valor: string;
+  pessoas: { id: string; name: string; jobTitle?: string }[];
+  aoMudar: (id: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [ativo, setAtivo] = useState(0);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const painelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const atual = pessoas.find((p) => p.id === valor);
+  const nome = atual?.name ?? "";
+  const comBusca = pessoas.length > 6;
+
+  const alvo = busca.trim().toLowerCase();
+  const filtradas = alvo ? pessoas.filter((p) => p.name.toLowerCase().includes(alvo)) : pessoas;
+
+  const abrir = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const largura = Math.max(r.width, 260);
+      const altura = Math.min(320, 56 + pessoas.length * 44);
+      // Vira para cima quando não cabe abaixo — a grade fica no meio da tela e
+      // as últimas linhas abririam para fora da janela.
+      const paraCima = r.bottom + altura > window.innerHeight && r.top > altura;
+      setPos({
+        top: paraCima ? r.top - altura - 4 : r.bottom + 4,
+        left: Math.min(r.left, window.innerWidth - largura - 8),
+        width: largura,
+      });
+    }
+    setBusca("");
+    setAtivo(Math.max(0, pessoas.findIndex((p) => p.id === valor)));
+    setAberto(true);
+  };
+
+  useEffect(() => {
+    if (!aberto) return;
+    const foraDaqui = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (painelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setAberto(false);
+    };
+    const fechar = () => setAberto(false);
+    document.addEventListener("mousedown", foraDaqui);
+    // O modal da grade rola; sem isto o painel ficaria flutuando fora do campo.
+    window.addEventListener("scroll", fechar, true);
+    window.addEventListener("resize", fechar);
+    return () => {
+      document.removeEventListener("mousedown", foraDaqui);
+      window.removeEventListener("scroll", fechar, true);
+      window.removeEventListener("resize", fechar);
+    };
+  }, [aberto]);
+
+  const escolher = (id: string) => {
+    aoMudar(id);
+    setAberto(false);
+    btnRef.current?.focus();
+  };
+
+  const naTecla = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setAberto(false);
+      btnRef.current?.focus();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setAtivo((i) => Math.min(i + 1, filtradas.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setAtivo((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const p = filtradas[ativo];
+      if (p) escolher(p.id);
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrir())}
+        onKeyDown={(e) => {
+          if (!aberto && (e.key === "ArrowDown" || e.key === "Enter")) {
+            e.preventDefault();
+            abrir();
+          }
+        }}
+        title={nome || "Escolher responsável"}
+        aria-label="Responsável"
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        className={`inline-flex h-6 items-center gap-1.5 rounded-md border bg-background py-0.5 pl-0.5 pr-1.5 text-[11px] font-medium text-foreground transition ${
+          aberto ? "border-primary ring-1 ring-primary/20" : "border-foreground/30 hover:border-primary/60"
+        }`}
+      >
+        <UserAvatar
+          nome={nome}
+          iniciais={nome ? iniciaisDoNome(nome) : "?"}
+          className="h-5 w-5 text-[8px]"
+        />
+        <span className="max-w-[130px] truncate">{nome ? nomeCurto(nome) : "Escolher…"}</span>
+        <ChevronDown
+          className={`h-3 w-3 shrink-0 text-foreground/60 transition-transform ${aberto ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {aberto && pos && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={painelRef}
+            role="listbox"
+            onKeyDown={naTecla}
+            className="fixed z-[200] flex max-h-80 flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-2xl"
+            style={{ top: pos.top, left: pos.left, width: pos.width }}
+          >
+            {comBusca && (
+              <div className="border-b border-border p-1.5">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={busca}
+                    onChange={(e) => {
+                      setBusca(e.target.value);
+                      setAtivo(0);
+                    }}
+                    placeholder="Buscar pessoa…"
+                    className="w-full rounded-md border border-border bg-background py-1.5 pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="flex-1 overflow-y-auto p-1">
+              {filtradas.length === 0 && (
+                <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                  Ninguém encontrado.
+                </div>
+              )}
+              {filtradas.map((p, i) => {
+                const sel = p.id === valor;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="option"
+                    aria-selected={sel}
+                    onClick={() => escolher(p.id)}
+                    onMouseEnter={() => setAtivo(i)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition ${
+                      i === ativo ? "bg-secondary" : ""
+                    }`}
+                  >
+                    <UserAvatar
+                      nome={p.name}
+                      iniciais={iniciaisDoNome(p.name)}
+                      className="h-7 w-7 text-[10px]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium text-foreground">
+                        {nomeCurto(p.name)}
+                      </span>
+                      {p.jobTitle && (
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {p.jobTitle}
+                        </span>
+                      )}
+                    </span>
+                    {sel && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
 
 interface DraftRow {
   id: string;
@@ -21,6 +247,16 @@ interface DraftRow {
   requireProof: boolean;
   /** Estimated time as user-typed hh:mm string (empty = none) */
   estimateHM: string;
+  /* Campos que a grade fixava em silêncio. Prioridade nascia sempre "media" e
+     recorrência sempre desligada, sem a pessoa poder escolher — a grade era o
+     único jeito de criar em massa e o único que não deixava definir isso. */
+  priority: Priority;
+  recurring: boolean;
+  frequency: Frequency;
+  recurringWeekdays: number[];
+  recurringMonthDay: number | null;
+  checklist: ChecklistItem[];
+  tags: string;
 }
 
 const rid = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -57,8 +293,22 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     mentions: [],
     requireProof: false,
     estimateHM: "",
+    priority: defaults.priority ?? "media",
+    recurring: false,
+    frequency: "diaria",
+    recurringWeekdays: [],
+    recurringMonthDay: null,
+    checklist: [],
+    tags: "",
   };
 }
+
+/** Cor e rótulo de cada prioridade nos botões da faixa. */
+const PRIORIDADES: { id: Priority; label: string; curto: string; cor: string }[] = [
+  { id: "alta", label: "Alta", curto: "Alta", cor: "text-destructive border-destructive/50 bg-destructive/10" },
+  { id: "media", label: "Média", curto: "Média", cor: "text-warning border-warning/50 bg-warning/10" },
+  { id: "baixa", label: "Baixa", curto: "Baixa", cor: "text-primary border-primary/50 bg-primary/10" },
+];
 
 export function InlineTaskCreator({
   defaultStatus = "pendente",
@@ -89,6 +339,45 @@ export function InlineTaskCreator({
   const [pasteText, setPasteText] = useState("");
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [cardDrag, setCardDrag] = useState(false);
+  /** Uma linha por vez com o painel de extras aberto; senão a grade vira parede. */
+  const [linhaAberta, setLinhaAberta] = useState<string | null>(null);
+  const [novoPasso, setNovoPasso] = useState<Record<string, string>>({});
+  // Dica de primeira vez: "responsável" e "@" associam pessoas à tarefa com
+  // sentidos diferentes, e nada na tela contava isso. Some depois de dispensada.
+  const [dicaAberta, setDicaAberta] = useState(false);
+  useEffect(() => {
+    try {
+      setDicaAberta(localStorage.getItem(DICA_KEY) !== "1");
+    } catch {
+      setDicaAberta(true);
+    }
+  }, []);
+  const dispensarDica = () => {
+    setDicaAberta(false);
+    try {
+      localStorage.setItem(DICA_KEY, "1");
+    } catch {
+      /* sem localStorage a dica volta na próxima; aceitável */
+    }
+  };
+  // Chave própria: quem já entendeu o @ não precisa reaprender o expansor, e
+  // vice-versa. Dispensar uma não some com a outra.
+  const [dicaExtrasAberta, setDicaExtrasAberta] = useState(false);
+  useEffect(() => {
+    try {
+      setDicaExtrasAberta(localStorage.getItem(DICA_EXTRAS_KEY) !== "1");
+    } catch {
+      setDicaExtrasAberta(true);
+    }
+  }, []);
+  const dispensarDicaExtras = () => {
+    setDicaExtrasAberta(false);
+    try {
+      localStorage.setItem(DICA_EXTRAS_KEY, "1");
+    } catch {
+      /* idem */
+    }
+  };
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFileRowId = useRef<string | null>(null);
@@ -153,7 +442,11 @@ export function InlineTaskCreator({
 
   const commitRow = (row: DraftRow): boolean => {
     if (!row.title.trim()) return false;
-    const due = new Date(row.dueDate || todayStr());
+    // isoParaData e não new Date(iso): "2026-08-31" sozinho é lido como
+    // meia-noite UTC, que no Brasil (UTC−3) cai às 21h do dia 30 — o
+    // setHours abaixo então marcava o prazo para 30/08 23:59, um dia antes
+    // do que a pessoa escolheu.
+    const due = isoParaData(row.dueDate) ?? isoParaData(todayStr()) ?? new Date();
     due.setHours(23, 59, 0, 0);
     const est = parseHM(row.estimateHM);
     createTask({
@@ -163,13 +456,20 @@ export function InlineTaskCreator({
       createdBy: currentUser.id,
       assigneeId: row.assigneeId || currentUser.id,
       mentions: row.mentions,
-      frequency: "diaria",
+      frequency: row.frequency,
       status: defaultStatus,
       score: 10,
       dueDate: due.toISOString(),
-      recurring: false,
-      priority: "media",
-      tags: [],
+      recurring: row.recurring,
+      // Só o campo da frequência escolhida: trocar de semanal para mensal não
+      // pode deixar dias da semana órfãos decidindo a série.
+      recurringWeekdays:
+        row.recurring && row.frequency === "semanal" ? row.recurringWeekdays : null,
+      recurringMonthDay:
+        row.recurring && row.frequency === "mensal" ? row.recurringMonthDay : null,
+      priority: row.priority,
+      tags: row.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      checklist: row.checklist.length ? row.checklist : undefined,
       attachments: row.attachments.length ? row.attachments : undefined,
       requireProof: row.requireProof || undefined,
       estimatedMinutes: est && est > 0 ? est : undefined,
@@ -272,6 +572,39 @@ export function InlineTaskCreator({
 
   const update = (id: string, patch: Partial<DraftRow>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const adicionarPasso = (rowId: string) => {
+    const texto = (novoPasso[rowId] ?? "").trim();
+    if (!texto) return;
+    setRows((rs) =>
+      rs.map((r) =>
+        r.id === rowId
+          ? {
+              ...r,
+              checklist: [
+                ...r.checklist,
+                { id: `${rowId}-c${r.checklist.length}-${Date.now().toString(36)}`, text: texto, done: false },
+              ],
+            }
+          : r,
+      ),
+    );
+    setNovoPasso((n) => ({ ...n, [rowId]: "" }));
+  };
+
+  /**
+   * Resumo do que está preenchido atrás do expansor.
+   * Sem isso, uma linha com checklist e recorrência definidos fica visualmente
+   * idêntica a uma linha vazia depois de fechado o painel.
+   */
+  const resumoExtras = (r: DraftRow): string => {
+    const partes: string[] = [];
+    if (r.checklist.length > 0) partes.push(`${r.checklist.length} passo${r.checklist.length > 1 ? "s" : ""}`);
+    if (r.recurring) partes.push("repete");
+    const tags = r.tags.split(",").map((t) => t.trim()).filter(Boolean);
+    if (tags.length > 0) partes.push(`${tags.length} tag${tags.length > 1 ? "s" : ""}`);
+    return partes.join(" · ");
+  };
 
   const applyParsedRows = (parsed: ParsedPasteRow[], anchorRowId?: string) => {
     if (parsed.length === 0) {
@@ -441,7 +774,64 @@ export function InlineTaskCreator({
 
       {open && (
         <div>
-          <div className="flex flex-col gap-1.5 p-2 sm:p-3">
+          {dicaAberta && (
+            <div className="mx-2 mt-2 flex items-start gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-foreground/90 sm:mx-3">
+              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <p className="flex-1">
+                O <strong className="font-semibold text-foreground">responsável</strong> é quem
+                executa a tarefa. Para que outra pessoa apenas{" "}
+                <strong className="font-semibold text-foreground">acompanhe</strong>, escreva{" "}
+                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono">@</kbd>{" "}
+                seguido do nome dela no título.
+              </p>
+              <button
+                type="button"
+                onClick={dispensarDica}
+                className="shrink-0 rounded p-0.5 text-foreground/50 transition hover:bg-foreground/10 hover:text-foreground"
+                title="Não mostrar de novo"
+                aria-label="Dispensar dica"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {dicaExtrasAberta && (
+            <div className="mx-2 mt-2 flex items-start gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-foreground/90 sm:mx-3">
+              <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <p className="flex-1">
+                Cada linha guarda <strong className="font-semibold text-foreground">checklist</strong>,{" "}
+                <strong className="font-semibold text-foreground">repetição</strong> e{" "}
+                <strong className="font-semibold text-foreground">tags</strong> no botão ao lado da
+                estimativa. Fechado, ele mostra o que você já preencheu.
+              </p>
+              <button
+                type="button"
+                onClick={dispensarDicaExtras}
+                className="shrink-0 rounded p-0.5 text-foreground/50 transition hover:bg-foreground/10 hover:text-foreground"
+                title="Não mostrar de novo"
+                aria-label="Dispensar dica"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {/* Cabeçalho das colunas: sem ele os dois campos eram só caixas
+              anônimas, e o placeholder some no instante em que se digita. */}
+          <div className="flex items-center gap-2 px-4 pb-1 pt-3 sm:px-5">
+            <span className="h-0 w-6 shrink-0" aria-hidden />
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <div className="min-w-0 flex-[1_1_58%] text-[10px] font-bold uppercase tracking-wide text-foreground/85">
+                Tarefa <span className="text-destructive">*</span>
+              </div>
+              <div className="min-w-0 flex-[1_1_42%] text-[10px] font-bold uppercase tracking-wide text-foreground/65">
+                Descrição{" "}
+                <span className="font-medium normal-case tracking-normal text-foreground/50">
+                  (opcional)
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5 px-2 pb-2 sm:px-3 sm:pb-3">
             {rows.map((row, idx) => (
               <div
                 key={row.id}
@@ -473,7 +863,7 @@ export function InlineTaskCreator({
                     {idx + 1}
                   </span>
                   <div className="flex min-w-0 flex-1 items-center gap-2">
-                <div className="relative min-w-0 flex-[1_1_38%]">
+                <div className="relative min-w-0 flex-[1_1_58%]">
                   <input
                         ref={(el) => {
                           inputRefs.current[row.id] = el;
@@ -563,7 +953,7 @@ export function InlineTaskCreator({
                           }
                         }}
                         placeholder="Ex: Fazer conciliação bancária de julho"
-                        className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm font-semibold text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm font-semibold text-foreground outline-none placeholder:text-foreground/55 focus:border-primary focus:ring-1 focus:ring-primary/20"
                         onPaste={(e) => handleTitlePaste(row.id, e)}
                       />
                       {mention?.rowId === row.id && typeof document !== "undefined" &&
@@ -607,7 +997,7 @@ export function InlineTaskCreator({
                           document.body,
                         )}
                 </div>
-                <div className="min-w-0 flex-[1_1_62%]">
+                <div className="min-w-0 flex-[1_1_42%]">
                   <input
                         ref={(el) => {
                           descRefs.current[row.id] = el;
@@ -627,7 +1017,7 @@ export function InlineTaskCreator({
                           }
                         }}
                         placeholder="Descrição (opcional) — detalhes, contexto…"
-                        className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        className="w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-foreground/55 focus:border-primary focus:ring-1 focus:ring-primary/20"
                       />
                 </div>
                   </div>
@@ -637,14 +1027,31 @@ export function InlineTaskCreator({
                     {row.attachments.map((a) => (
                       <span
                         key={a.id}
-                        className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/70 px-1.5 py-0.5 text-[11px]"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/70 py-0.5 pl-0.5 pr-1.5 text-[11px]"
                         title={`${a.name} · ${formatBytes(a.size)}`}
                       >
-                        {isImage(a.type) ? (
-                          <ImageIcon className="h-3 w-3 text-primary" />
-                        ) : (
-                          <FileText className="h-3 w-3 text-muted-foreground" />
-                        )}
+                        {/* Miniatura clicável — abre no visualizador do sistema.
+                            Mesmo gesto do painel da tarefa (attachment-list),
+                            só que no tamanho que cabe na faixa da grade. */}
+                        <button
+                          type="button"
+                          onClick={() => openAttachment(a)}
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded border border-border/60 bg-background transition-colors hover:border-primary"
+                          title={isImage(a.type) ? `Ver ${a.name}` : `Abrir ${a.name}`}
+                          aria-label={isImage(a.type) ? `Ver ${a.name}` : `Abrir ${a.name}`}
+                        >
+                          {isImage(a.type) ? (
+                            <img
+                              src={a.dataUrl}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <FileText className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </button>
                         <span className="max-w-[160px] truncate">{a.name}</span>
                         <button
                           type="button"
@@ -657,8 +1064,14 @@ export function InlineTaskCreator({
                     ))}
                   </div>
                 )}
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-8">
-                  <div className="inline-flex items-center gap-0.5 rounded-md border border-foreground/30 bg-background p-0.5 text-[11px]">
+                {/* Faixa de controles agrupada. Antes era uma fileira de seis
+                    controles com a mesma borda e altura, sem nada dizendo que
+                    tratavam de coisas diferentes (quando / quem / quanto tempo). */}
+                <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-2 pl-8">
+                  <div className="flex flex-col gap-1">
+                    <span className={ROTULO}>Prazo</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="inline-flex h-6 items-center gap-0.5 rounded-md border border-foreground/30 bg-background p-0.5 text-[11px]">
                           {[
                             { label: "Hoje", get: todayStr },
                             { label: "Amanhã", get: tomorrowStr },
@@ -679,81 +1092,311 @@ export function InlineTaskCreator({
                               </button>
                             );
                           })}
-                  </div>
-                  <input
-                          type="date"
+                      </div>
+                      <CampoData
                           value={row.dueDate}
-                          onChange={(e) => update(row.id, { dueDate: e.target.value })}
-                          className="w-32 rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground outline-none focus:border-primary"
+                          onChange={(v) => update(row.id, { dueDate: v })}
+                          limpavel={false}
+                          placeholder="Escolher"
+                          title="Prazo da tarefa"
+                          className="h-6 w-31 border-foreground/30 text-[11px] font-medium text-foreground"
                         />
+                    </div>
+                  </div>
                   {!compact && (
-                    <select
-                          value={row.assigneeId}
-                          onChange={(e) => update(row.id, { assigneeId: e.target.value })}
-                          className="rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground outline-none focus:border-primary"
-                          title="Responsável"
-                        >
-                          {assignees.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
-                          ))}
-                    </select>
+                    <div className="flex flex-col gap-1">
+                      <span className={ROTULO}>Responsável</span>
+                      <SeletorResponsavel
+                        valor={row.assigneeId}
+                        pessoas={assignees}
+                        aoMudar={(id) => update(row.id, { assigneeId: id })}
+                      />
+                    </div>
                   )}
-                  <div className="flex items-center gap-1 rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] focus-within:border-primary">
+                  <div className="flex flex-col gap-1">
+                    <span className={ROTULO}>Prioridade</span>
+                    <div className="inline-flex h-6 items-center gap-0.5 rounded-md border border-foreground/30 bg-background p-0.5 text-[11px]">
+                      {PRIORIDADES.map((p) => {
+                        const ativa = row.priority === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => update(row.id, { priority: p.id })}
+                            aria-pressed={ativa}
+                            className={`rounded px-1.5 py-0.5 font-semibold transition ${
+                              ativa ? p.cor + " border" : "border border-transparent text-foreground/60 hover:bg-secondary"
+                            }`}
+                          >
+                            {p.curto}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className={ROTULO}>
+                      Estimativa <span className="font-medium normal-case text-foreground/45">(opc.)</span>
+                    </span>
+                    <div className="flex h-6 items-center gap-1 rounded-md border border-foreground/30 bg-background px-1.5 text-[11px] focus-within:border-primary">
                         <Timer className="h-3 w-3 text-foreground/70" />
                         <input
                           value={row.estimateHM}
                           onChange={(e) => update(row.id, { estimateHM: e.target.value })}
                           placeholder="00:30"
                           inputMode="numeric"
-                          className="w-12 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/40"
+                          className="w-12 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/55"
                           title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
                         />
+                    </div>
                   </div>
-                  <div className="ml-auto inline-flex items-center gap-0.5">
-                    <button
+                  {/* Checklist, recorrência e tags ficam atrás deste botão. Ele
+                      mora ao lado da estimativa, e não no canto com as ações:
+                      empurrado para a direita junto do anexar e da lixeira, era
+                      lido como ação secundária e passava despercebido. */}
+                  <button
+                    type="button"
+                    onClick={() => setLinhaAberta((a) => (a === row.id ? null : row.id))}
+                    aria-expanded={linhaAberta === row.id}
+                    className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-[10px] font-semibold transition ${
+                      resumoExtras(row)
+                        ? "border-primary/50 bg-primary/10 text-primary"
+                        : "border-dashed border-foreground/40 text-foreground/70 hover:border-primary hover:border-solid hover:text-primary"
+                    }`}
+                    title="Checklist, recorrência e tags"
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
+                        linhaAberta === row.id ? "rotate-180" : ""
+                      }`}
+                    />
+                    {resumoExtras(row) || "Checklist, repetição, tags"}
+                  </button>
+                  {/* Ações. "Comprovante" fica sempre escrito — o escudo sozinho
+                      não conta o que faz. Anexar mantém só o ícone (clipe é
+                      convenção universal) e a lixeira sai de perto dos outros
+                      dois: era idêntica a eles, sendo a única irreversível. */}
+                  <div className="ml-auto flex items-end gap-1.5">
+                    <div className="flex flex-col gap-1">
+                      <span className={ROTULO}>Opções</span>
+                      <div className="flex items-center gap-1">
+                        <button
                           type="button"
                           onClick={() => update(row.id, { requireProof: !row.requireProof })}
-                          className={`group inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border px-1 transition-all ${
+                          className={`inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10px] font-semibold transition ${
                             row.requireProof
                               ? "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400"
                               : "border-foreground/30 text-foreground/70 hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-600"
                           }`}
-                          title="Exigir comprovante para concluir"
-                          aria-label="Exigir comprovante"
+                          title="Quem concluir a tarefa terá que anexar um comprovante"
+                          aria-pressed={row.requireProof}
                         >
                           <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-                          <span className="max-w-0 whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[140px] group-hover:pl-0.5 group-hover:opacity-100">
-                            Exigir comprovante
-                          </span>
+                          <span className="whitespace-nowrap">Comprovante</span>
                         </button>
+                        {/* Largura fixa, rótulo no title.
+                            Com o rótulo abrindo no hover (max-w-0 → max-w-[120px])
+                            o botão mudava de largura, a faixa refluía, ele saía
+                            de baixo do cursor, o hover caía e recolhia — voltando
+                            para baixo do cursor. Um laço que piscava sem parar. */}
                         <button
                           type="button"
                           onClick={() => openFilePicker(row.id)}
-                          className="group inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border border-foreground/30 px-1 text-foreground/70 transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-foreground/30 text-foreground/70 transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
                           title="Anexar arquivo"
                           aria-label="Anexar arquivo"
                         >
-                          <Paperclip className="h-3.5 w-3.5 shrink-0" />
-                          <span className="max-w-0 whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[120px] group-hover:pl-0.5 group-hover:opacity-100">
-                            Anexar arquivo
-                          </span>
+                          <Paperclip className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => remove(row.id)}
-                          className="group inline-flex h-6 items-center gap-1 overflow-hidden rounded-md border border-foreground/30 px-1 text-foreground/70 transition-all hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
-                          title="Remover esta linha"
-                          aria-label="Remover esta linha"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                          <span className="max-w-0 whitespace-nowrap text-[10px] font-semibold opacity-0 transition-all duration-200 group-hover:max-w-[100px] group-hover:pl-0.5 group-hover:opacity-100">
-                            Remover
-                          </span>
-                        </button>
+                      </div>
+                    </div>
+                    <span className="mx-0.5 h-6 w-px shrink-0 bg-foreground/20" aria-hidden />
+                    <button
+                      type="button"
+                      onClick={() => remove(row.id)}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-destructive/40 text-destructive transition hover:border-destructive hover:bg-destructive/15"
+                      title="Remover esta linha"
+                      aria-label="Remover esta linha"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
+
+                <AnimatePresence initial={false}>
+                {linhaAberta === row.id && (
+                  <motion.div
+                    key="extras"
+                    // Altura animada com overflow escondido: sem isso o painel
+                    // aparece de estalo e empurra as linhas de baixo num salto.
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{
+                      height: { type: "spring", stiffness: 400, damping: 38, mass: 0.7 },
+                      opacity: { duration: 0.15 },
+                    }}
+                    className="overflow-hidden"
+                  >
+                  <div className="mt-2 grid gap-3 rounded-md border border-border bg-secondary/30 p-3 pl-8 sm:grid-cols-3">
+                    <div>
+                      <span className={ROTULO}>
+                        Checklist{" "}
+                        <span className="font-medium normal-case text-foreground/45">(opcional)</span>
+                      </span>
+                      <div className="mt-1.5 flex gap-1">
+                        <input
+                          value={novoPasso[row.id] ?? ""}
+                          onChange={(e) =>
+                            setNovoPasso((n) => ({ ...n, [row.id]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              adicionarPasso(row.id);
+                            }
+                          }}
+                          placeholder="Um passo e Enter…"
+                          className="h-6 min-w-0 flex-1 rounded-md border border-foreground/30 bg-background px-1.5 text-[11px] outline-none placeholder:text-foreground/50 focus:border-primary"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => adicionarPasso(row.id)}
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-foreground/30 text-foreground/70 transition hover:border-primary hover:text-primary"
+                          aria-label="Adicionar passo"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {row.checklist.length > 0 && (
+                        <ul className="mt-1.5 space-y-1">
+                          {row.checklist.map((c, i) => (
+                            <li
+                              key={c.id}
+                              className="group flex items-center gap-1.5 text-[11px] text-foreground/80"
+                            >
+                              <span className="w-3 shrink-0 text-right text-foreground/45">{i + 1}.</span>
+                              <span className="min-w-0 flex-1 truncate">{c.text}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  update(row.id, {
+                                    checklist: row.checklist.filter((x) => x.id !== c.id),
+                                  })
+                                }
+                                className="shrink-0 text-foreground/40 opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                                aria-label={`Remover ${c.text}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div>
+                      <span className={ROTULO}>
+                        Recorrência{" "}
+                        <span className="font-medium normal-case text-foreground/45">(opcional)</span>
+                      </span>
+                      <label className="mt-1.5 flex items-center gap-1.5 text-[11px] text-foreground/85">
+                        <input
+                          type="checkbox"
+                          checked={row.recurring}
+                          onChange={(e) => update(row.id, { recurring: e.target.checked })}
+                        />
+                        Repete ao concluir
+                      </label>
+                      {row.recurring && (
+                        <div className="mt-1.5 space-y-1.5">
+                          <select
+                            value={row.frequency}
+                            onChange={(e) =>
+                              update(row.id, { frequency: e.target.value as Frequency })
+                            }
+                            className="h-6 w-full rounded-md border border-foreground/30 bg-background px-1 text-[11px] outline-none focus:border-primary"
+                          >
+                            <option value="diaria">Todo dia</option>
+                            <option value="semanal">Toda semana</option>
+                            <option value="mensal">Todo mês</option>
+                          </select>
+                          {row.frequency === "semanal" && (
+                            <div className="flex flex-wrap gap-0.5">
+                              {DIAS_SEMANA.map((nome, dia) => {
+                                const on = row.recurringWeekdays.includes(dia);
+                                return (
+                                  <button
+                                    key={nome}
+                                    type="button"
+                                    onClick={() =>
+                                      update(row.id, {
+                                        recurringWeekdays: on
+                                          ? row.recurringWeekdays.filter((d) => d !== dia)
+                                          : [...row.recurringWeekdays, dia].sort((a, b) => a - b),
+                                      })
+                                    }
+                                    aria-pressed={on}
+                                    className={`h-6 w-7 rounded border text-[10px] font-semibold transition ${
+                                      on
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-foreground/30 text-foreground/60 hover:border-primary/50"
+                                    }`}
+                                  >
+                                    {nome}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {row.frequency === "mensal" && (
+                            <select
+                              value={row.recurringMonthDay ?? ""}
+                              onChange={(e) =>
+                                update(row.id, {
+                                  recurringMonthDay:
+                                    e.target.value === "" ? null : Number(e.target.value),
+                                })
+                              }
+                              className="h-6 w-full rounded-md border border-foreground/30 bg-background px-1 text-[11px] outline-none focus:border-primary"
+                            >
+                              <option value="">Mesmo dia do prazo</option>
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                                <option key={d} value={d}>
+                                  Dia {d}
+                                </option>
+                              ))}
+                              <option value={ULTIMO_DIA_DO_MES}>Último dia do mês</option>
+                            </select>
+                          )}
+                          <p className="text-[10px] text-primary">
+                            {descreverRecorrencia({
+                              recurring: row.recurring,
+                              frequency: row.frequency,
+                              recurringWeekdays: row.recurringWeekdays,
+                              recurringMonthDay: row.recurringMonthDay,
+                            })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <span className={ROTULO}>
+                        Tags <span className="font-medium normal-case text-foreground/45">(opcional)</span>
+                      </span>
+                      <input
+                        value={row.tags}
+                        onChange={(e) => update(row.id, { tags: e.target.value })}
+                        placeholder="financeiro, urgente"
+                        className="mt-1.5 h-6 w-full rounded-md border border-foreground/30 bg-background px-1.5 text-[11px] outline-none placeholder:text-foreground/50 focus:border-primary"
+                      />
+                      <p className="mt-1 text-[10px] text-foreground/50">Separe por vírgula.</p>
+                    </div>
+                  </div>
+                  </motion.div>
+                )}
+                </AnimatePresence>
               </div>
             ))}
           </div>
@@ -783,11 +1426,19 @@ export function InlineTaskCreator({
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-foreground/80">
+              <span className="text-[10px] text-foreground/60">
+                <span className="text-destructive">*</span> obrigatório
+              </span>
               <span className="hidden md:inline">
-                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">Enter</kbd> próxima ·{" "}
-                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">Tab</kbd> descrição ·{" "}
-                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">@</kbd> menciona ·{" "}
-                <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">↑↓</kbd> navega
+                {ATALHOS_GRADE.map((a, i) => (
+                  <span key={a.tecla}>
+                    {i > 0 && " · "}
+                    <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">
+                      {a.tecla}
+                    </kbd>{" "}
+                    {a.acao}
+                  </span>
+                ))}
               </span>
               <button
                 type="button"
@@ -804,6 +1455,7 @@ export function InlineTaskCreator({
 
       {confirmOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <TravaScroll />
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-2xl">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -843,6 +1495,7 @@ export function InlineTaskCreator({
 
       {discardOpen && (
         <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 p-4">
+          <TravaScroll />
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 shadow-2xl">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -881,6 +1534,7 @@ export function InlineTaskCreator({
           className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
           onClick={() => setPasteOpen(false)}
         >
+          <TravaScroll />
           <div
             className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}

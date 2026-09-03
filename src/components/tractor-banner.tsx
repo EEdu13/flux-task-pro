@@ -11,33 +11,79 @@ export interface TractorEventDetail {
   durationSec?: number;
 }
 
+interface Travessia {
+  key: number;
+  message: string;
+  dur: number;
+  /** Faixa vertical: 0 é a de cima. Evita um trator por cima do outro. */
+  faixa: number;
+}
+
+/** Quantos cabem na tela ao mesmo tempo sem virar bagunça. */
+const MAX_FAIXAS = 3;
+/** Distância entre faixas — o trator tem ~100px de altura mais a faixa. */
+const ALTURA_FAIXA = 120;
+
+let contadorChave = 0;
+
 export function TractorBanner() {
-  const [run, setRun] = useState<{ key: number; message: string; dur: number } | null>(null);
+  const [runs, setRuns] = useState<Travessia[]>([]);
 
   useEffect(() => {
-    let key = 0;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<TractorEventDetail>).detail ?? {};
-      key += 1;
-      setRun({
-        key,
-        message: detail.message?.trim() || "Hora da pausa — beba água! 💧",
-        dur: Math.min(60, Math.max(6, detail.durationSec ?? 16)),
+      setRuns((atuais) => {
+        // Cada trator ganha uma faixa livre em vez de sobrepor o anterior.
+        // Cheio, o novo é descartado — quatro faixas simultâneas já tomariam
+        // metade da tela e nenhuma seria legível.
+        const ocupadas = new Set(atuais.map((r) => r.faixa));
+        let faixa = -1;
+        for (let i = 0; i < MAX_FAIXAS; i++) {
+          if (!ocupadas.has(i)) {
+            faixa = i;
+            break;
+          }
+        }
+        if (faixa === -1) return atuais;
+
+        contadorChave += 1;
+        return [
+          ...atuais,
+          {
+            key: contadorChave,
+            faixa,
+            message: detail.message?.trim() || "Hora da pausa — beba água! 💧",
+            dur: Math.min(60, Math.max(6, detail.durationSec ?? 16)),
+          },
+        ];
       });
     };
     window.addEventListener("fluxo:tractor", handler as EventListener);
     return () => window.removeEventListener("fluxo:tractor", handler as EventListener);
   }, []);
 
-  if (!run) return null;
+  if (runs.length === 0) return null;
 
   return (
     <div className="fluxo-tractor-layer" aria-hidden>
+      {runs.map((run) => (
+        <Convoy
+          key={run.key}
+          run={run}
+          onEnd={() => setRuns((atuais) => atuais.filter((r) => r.key !== run.key))}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Uma travessia. Separado para o laço não empurrar todo o SVG um nível adentro. */
+function Convoy({ run, onEnd }: { run: Travessia; onEnd: () => void }) {
+  return (
       <div
-        key={run.key}
         className="fluxo-tractor-convoy"
-        style={{ animationDuration: `${run.dur}s` }}
-        onAnimationEnd={() => setRun(null)}
+        style={{ animationDuration: `${run.dur}s`, top: run.faixa * ALTURA_FAIXA }}
+        onAnimationEnd={onEnd}
       >
         {/* Faixa (trailer) */}
         <div className="fluxo-tractor-banner">
@@ -135,7 +181,6 @@ export function TractorBanner() {
           </svg>
         </div>
       </div>
-    </div>
   );
 }
 

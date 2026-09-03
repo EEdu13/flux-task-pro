@@ -3,6 +3,7 @@ import { X, UserPlus, Plus } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { statusLabels } from "@/lib/fluxo-types";
 import { toast } from "sonner";
+import { TravaScroll } from "@/components/trava-scroll";
 
 export function TeamDelegatePanel() {
   const {
@@ -92,6 +93,7 @@ export function TeamDelegatePanel() {
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col bg-background/95 backdrop-blur">
+      <TravaScroll />
       <div className="flex items-center gap-3 border-b border-border bg-card px-3 py-2 sm:px-4 sm:py-3">
         <UserPlus className="h-5 w-5 text-primary" />
         <div className="min-w-0 flex-1">

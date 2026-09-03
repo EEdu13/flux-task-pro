@@ -11,10 +11,16 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+// Preload das duas fontes do app. Sem isto o navegador só descobre os .woff2
+// depois de baixar e parsear o CSS inteiro, e nessa janela ele já pintou a tela
+// em Segoe UI (o fallback real no Windows) — daí o lampejo de fonte trocando.
+// Subset latin só: cobre o português. O latin-ext carrega pelo CSS se precisar.
+import soraWoff2 from "@fontsource-variable/sora/files/sora-latin-wght-normal.woff2?url";
+import manropeWoff2 from "@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { FluxoProvider } from "@/lib/fluxo-store";
 import { TaskTimerProvider } from "@/lib/task-timer";
-import { useApplyPalette, useApplyTheme } from "@/lib/use-theme";
+import { useApplyPalette, useApplyTheme, SCRIPT_TEMA_INICIAL } from "@/lib/use-theme";
 import { Toaster } from "@/components/ui/sonner";
 import { ActiveCallProvider } from "@/lib/active-call-context";
 import { ActiveCallWidget } from "@/components/active-call-widget";
@@ -25,6 +31,9 @@ import { FloatingNotepad } from "@/components/floating-notepad";
 import { TitleBar } from "@/components/title-bar";
 import { InteractionFX } from "@/components/interaction-fx";
 import { Celebration } from "@/components/celebration";
+import { TransitionVeil } from "@/components/transition-veil";
+import { ConfirmHost } from "@/components/confirm-dialog";
+import { MotionConfig } from "framer-motion";
 import { ChatProvider } from "@/lib/chat-store";
 
 function NotFoundComponent() {
@@ -106,6 +115,24 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/74be6d4c-d20a-4ea5-b031-c61481212a47/id-preview-01378b6a--16ea518b-6e0d-4dec-904f-0cfdb1a55070.lovable.app-1783543670810.png" },
     ],
     links: [
+      // Antes do stylesheet de propósito: o navegador dispara o download das
+      // fontes junto com o CSS em vez de esperar ele terminar.
+      // `crossOrigin` é obrigatório — fonte sempre é buscada em modo CORS, e sem
+      // o atributo o preload é descartado e o arquivo baixa duas vezes.
+      {
+        rel: "preload",
+        as: "font",
+        type: "font/woff2",
+        href: manropeWoff2,
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "preload",
+        as: "font",
+        type: "font/woff2",
+        href: soraWoff2,
+        crossOrigin: "anonymous",
+      },
       {
         rel: "stylesheet",
         href: appCss,
@@ -124,6 +151,9 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        {/* Antes de qualquer pintura: sem isto o app aparece na paleta padrão
+            por um quadro e só depois troca para a escolhida. */}
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA_INICIAL }} />
       </head>
       <body>
         {children}
@@ -151,6 +181,10 @@ function RootComponent() {
   }
 
   return (
+    // `reducedMotion="user"` faz TODA animação do framer-motion respeitar a
+    // preferência do sistema — as transições novas de página e aba, e também as
+    // que já existiam. O CSS já tinha esses blocos; as de JS não tinham.
+    <MotionConfig reducedMotion="user">
     <QueryClientProvider client={queryClient}>
       <FluxoProvider>
         <ChatProvider>
@@ -167,6 +201,12 @@ function RootComponent() {
               <FloatingNotepad />
               <InteractionFX />
               <Celebration />
+              {/* Fora do <Outlet /> de propósito: precisa sobreviver à troca de
+                  rota entre o login e o painel, que é justamente o que ele cobre. */}
+              <TransitionVeil />
+              {/* Também fora do <Outlet />: a confirmação é chamada de
+                  qualquer tela e precisa sobreviver à troca de rota. */}
+              <ConfirmHost />
               <Toaster />
             </CallInviterProvider>
           </ActiveCallProvider>
@@ -175,5 +215,6 @@ function RootComponent() {
         </ChatProvider>
       </FluxoProvider>
     </QueryClientProvider>
+    </MotionConfig>
   );
 }

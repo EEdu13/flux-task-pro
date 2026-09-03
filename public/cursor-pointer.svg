@@ -1,28 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+<!--
+  Cursor sobre elementos clicáveis: mão com o indicador apontando.
+
+  Mesmo acabamento da seta padrão (mesmo gradiente, mesmo contorno grafite,
+  mesma sombra) para os dois parecerem o mesmo conjunto — muda a silhueta, que
+  é o que a pessoa reconhece de relance.
+
+  O ponto sensível fica na PONTA DO INDICADOR, em ~(13.5, 2.5) do viewBox de 36.
+  Renderizado a 26px isso cai em ~(10, 2), que é o hotspot declarado no CSS.
+  Errar esse par faz o clique acontecer longe de onde o dedo aponta.
+
+  Proporção do punho: a linha dos nós fica em y=14.5 e a base em y=33.5, o que
+  dá 19 unidades de altura contra 25.5 de largura. Na primeira versão os nós
+  ficavam em 17.5 e a base em 33 — 15.5 de altura para a mesma largura, e o
+  punho parecia achatado sob um dedo comprido demais.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 36 36">
   <defs>
-    <linearGradient id="gp" x1="0" y1="0" x2="0.9" y2="1">
-      <stop offset="0" stop-color="#a7f3d0"/>
-      <stop offset="0.5" stop-color="#22d3ee"/>
-      <stop offset="1" stop-color="#0e7490"/>
+    <linearGradient id="gh" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6eae8"/>
     </linearGradient>
-    <filter id="shp" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="1.5" dy="2.5" stdDeviation="1.8" flood-color="#000" flood-opacity="0.55"/>
+    <filter id="shh" x="-30%" y="-30%" width="170%" height="170%">
+      <feDropShadow dx="1" dy="1.6" stdDeviation="1.2" flood-color="#000" flood-opacity="0.38"/>
     </filter>
   </defs>
-  <path d="M4 2.5
-           L4 27
-           Q4 29 6 27.5
-           L11 22.5
-           L15 30.5
-           Q16 32 17.7 31
-           L19.5 30
-           Q21 29 20.2 27.3
-           L16.8 20.5
-           L23.5 20.5
-           Q26 20.5 24.3 18.6
-           L6.5 2.4
-           Q4 0.6 4 2.5 Z"
-        fill="url(#gp)" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round" filter="url(#shp)"/>
-  <path d="M7 6 L7 20" stroke="#ecfeff" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="28" cy="10" r="3" fill="#22d3ee" stroke="#ffffff" stroke-width="1.4"/>
+  <path d="M11 5
+           Q11 2.5 13.5 2.5
+           Q16 2.5 16 5
+           L16 14.5
+           L18.5 14.5
+           Q18.5 12.5 20.5 12.5
+           Q22.5 12.5 22.5 14.5
+           L22.5 15.6
+           L24.4 15.6
+           Q24.4 13.9 26.2 13.9
+           Q28 13.9 28 15.6
+           L28 16.8
+           L29.4 16.8
+           Q31 16.8 31 18.8
+           L31 26
+           Q31 33.5 24.2 33.5
+           L17.6 33.5
+           Q13.2 33.5 11.2 30.1
+           L6.6 22.7
+           Q5.5 20.7 7.5 19.6
+           Q9.2 18.8 10.3 20.4
+           L11 21.5
+           Z"
+        fill="url(#gh)" stroke="#1b211e" stroke-width="2" stroke-linejoin="round"
+        stroke-linecap="round" filter="url(#shh)"/>
 </svg>

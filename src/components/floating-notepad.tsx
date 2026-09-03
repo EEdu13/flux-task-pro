@@ -34,7 +34,15 @@ interface NotepadState {
 
 const LS_PREFIX = "fluxo.notepad.v2:";
 const lsKey = (userId: string) => `${LS_PREFIX}${userId}`;
-const rid = () => `nt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+/* Id de nota agora é UUID.
+   O formato antigo (`nt-mf3k2a-x9d1`) não cabe na coluna `uniqueidentifier` de
+   `gestor.blocos_de_notas` — nota criada com ele nunca chegaria ao banco.
+   `crypto.randomUUID` existe em todo navegador atual e no Tauri. */
+const rid = () => crypto.randomUUID();
+
+/** Nota do formato antigo, que existe só neste computador. */
+const ehUuid = (id: string) => /^[0-9a-f-]{36}$/i.test(id);
 
 function loadState(userId: string): NotepadState {
   if (typeof window === "undefined") {
@@ -100,6 +108,86 @@ export function FloatingNotepad() {
       /* ignore quota */
     }
   }, [state, currentUser.id]);
+
+  /* ---------- Sincronia com o banco ----------
+
+     O `localStorage` acima continua sendo a gravação imediata: é ele que faz a
+     nota sobreviver a um fechamento súbito, sem esperar rede. O banco entra por
+     cima, para a nota acompanhar a pessoa entre computadores.
+
+     Note o que NÃO sobe: posição, tamanho e se a janela está aberta. Isso é
+     preferência de tela, por máquina — quem usa monitor grande no escritório
+     não quer a janelinha no mesmo canto do notebook. */
+
+  /** O que já foi gravado, por id, para não reenviar o que não mudou. */
+  const gravadoRef = useRef<Record<string, string>>({});
+  const carregouDoBancoRef = useRef(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || carregouDoBancoRef.current) return;
+    carregouDoBancoRef.current = true;
+
+    void (async () => {
+      try {
+        const { listarNotas, salvarNota } = await import("@/lib/notas.functions");
+        const { notas } = await listarNotas();
+
+        if (notas.length) {
+          // O banco é a verdade quando tem conteúdo.
+          setState((s) => ({ ...s, tabs: notas, activeId: notas[0]!.id }));
+          for (const n of notas) gravadoRef.current[n.id] = JSON.stringify([n.title, n.content]);
+          return;
+        }
+
+        /* Banco vazio e notas locais com conteúdo: é a primeira vez desta
+           pessoa. Sobe o que existe aqui, trocando o id antigo por UUID — o
+           formato `nt-...` não caberia na coluna. Assim ninguém perde o que
+           escreveu antes desta migração. */
+        const comConteudo = state.tabs.filter((t) => t.content.trim() || t.title !== "Nota 1");
+        if (!comConteudo.length) return;
+
+        const migradas = comConteudo.map((t) => ({ ...t, id: ehUuid(t.id) ? t.id : rid() }));
+        for (const [i, t] of migradas.entries()) {
+          await salvarNota({ data: { id: t.id, title: t.title, content: t.content, ordem: i } });
+          gravadoRef.current[t.id] = JSON.stringify([t.title, t.content]);
+        }
+        setState((s) => ({ ...s, tabs: migradas, activeId: migradas[0]!.id }));
+      } catch (e) {
+        // Sem rede, o bloco de notas continua funcionando pelo localStorage.
+        console.warn("[notas] não sincronizou:", (e as Error)?.message);
+      }
+    })();
+  }, [isAuthenticated, state.tabs]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    /* Um segundo de pausa antes de gravar.
+       O efeito do `localStorage` roda a cada tecla, e tem que rodar mesmo. Mas
+       uma requisição por letra digitada seria absurdo — a pausa agrupa a frase
+       inteira numa gravação só. */
+    const t = setTimeout(() => {
+      void (async () => {
+        const { salvarNota } = await import("@/lib/notas.functions");
+        for (const [i, aba] of state.tabs.entries()) {
+          // Nota do formato antigo fica local até a pessoa mexer nela.
+          if (!ehUuid(aba.id)) continue;
+          const assinatura = JSON.stringify([aba.title, aba.content]);
+          if (gravadoRef.current[aba.id] === assinatura) continue;
+          try {
+            await salvarNota({
+              data: { id: aba.id, title: aba.title, content: aba.content, ordem: i },
+            });
+            gravadoRef.current[aba.id] = assinatura;
+          } catch {
+            // Fica para a próxima pausa; o localStorage já guardou.
+          }
+        }
+      })();
+    }, 1000);
+
+    return () => clearTimeout(t);
+  }, [state.tabs, isAuthenticated]);
 
   // toggle event from other components
   useEffect(() => {
@@ -168,6 +256,17 @@ export function FloatingNotepad() {
     setSuggestions(null);
   };
   const removeTab = (id: string) => {
+    /* Apaga no banco também, senão a nota volta no próximo login.
+       Isto é fácil de esquecer: a tela some com a aba, o `localStorage` some
+       com ela, e tudo parece certo — até a pessoa abrir o Fluxo em outro
+       computador e a nota apagada estar lá. */
+    if (ehUuid(id) && isAuthenticated) {
+      delete gravadoRef.current[id];
+      void import("@/lib/notas.functions")
+        .then((api) => api.apagarNota({ data: { id } }))
+        .catch((e) => console.warn("[notas] não apagou no banco:", (e as Error)?.message));
+    }
+
     setState((s) => {
       if (s.tabs.length === 1) {
         const fresh: Tab = { id: rid(), title: "Nota 1", content: "", updatedAt: Date.now() };

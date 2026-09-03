@@ -19,7 +19,7 @@ export function OutgoingCallWatcher() {
     async function poll() {
       try {
         const res = await listOutgoingRoomCallUpdates({
-          data: { userId: currentUser.id, sinceIso: sinceRef.current },
+          data: { sinceIso: sinceRef.current },
         });
         if (cancelled) return;
         for (const c of res.calls) {

@@ -4,6 +4,7 @@ import { AtSign, Bell, Check, CheckCircle2, Clock, Inbox as InboxIcon, PhoneMiss
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
+import { tituloDoAviso } from "@/lib/aviso";
 
 export const Route = createFileRoute("/inbox")({
   head: () => ({
@@ -26,7 +27,7 @@ const filters = [
 ] as const;
 
 function InboxPage() {
-  const { notifications, currentUser, markNotifRead, markAllNotifsRead, openTask, callUserToRoom } = useFluxo();
+  const { notifications, users, currentUser, markNotifRead, markAllNotifsRead, openTask, callUserToRoom } = useFluxo();
   const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("todas");
   const navigate = useNavigate();
 
@@ -130,7 +131,7 @@ function InboxPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm font-medium">
-                      {n.title}
+                      {tituloDoAviso(n, users)}
                       {!n.read && (
                         <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
                           novo

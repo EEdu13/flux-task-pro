@@ -50,7 +50,7 @@ export function IncomingCall() {
     let cancelled = false;
     async function pollIncomingCalls() {
       try {
-        const res = await listIncomingRoomCalls({ data: { userId: currentUser.id } });
+        const res = await listIncomingRoomCalls();
         if (cancelled) return;
         // detect missed: previously tracked & ringing, now gone from ringing list and not handled locally
         const currentIds = new Set(res.calls.map((c) => c.id));
@@ -186,7 +186,6 @@ export function IncomingCall() {
           data: {
             callId: active.id,
             status: action === "accept" ? "accepted" : "declined",
-            userId: currentUser.id,
           },
         }).catch(() => {});
       } else {

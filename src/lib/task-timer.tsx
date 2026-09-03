@@ -52,6 +52,35 @@ export function TaskTimerProvider({ children }: { children: ReactNode }) {
     setRunning(null);
   }, [userId]);
 
+  /* O banco é a verdade — o local é o que aparece antes dele responder.
+     Ao trocar de computador o total local nasce zerado; esta busca o corrige
+     assim que a resposta chega. Some quando não há sessão real: sem ela não
+     há como o servidor saber de quem é o tempo. */
+  useEffect(() => {
+    // O id da pessoa é o número da IAM em texto — não um GUID de tarefa.
+    // Vazio ou não numérico é o placeholder de ninguém logado ainda.
+    if (!userId || !Number.isInteger(Number(userId))) return;
+    let vivo = true;
+    void (async () => {
+      try {
+        const { listarSessoesDeTempo } = await import("./tempo.functions");
+        const { sessoes } = await listarSessoesDeTempo();
+        if (!vivo) return;
+        const doServidor: Record<string, number> = {};
+        for (const s of sessoes) {
+          if (s.pessoaId !== userId) continue;
+          doServidor[s.taskId] = (doServidor[s.taskId] ?? 0) + s.seconds;
+        }
+        setTotals((prev) => ({ ...prev, ...doServidor }));
+      } catch (e) {
+        console.warn("[fluxo] tempo não carregou do banco:", (e as Error)?.message);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [userId]);
+
   // Refresh totals when time log is updated from other sources
   useEffect(() => {
     const on = () => setTotals(loadTimeLog(userId).totals);
@@ -92,6 +121,22 @@ export function TaskTimerProvider({ children }: { children: ReactNode }) {
         ...prev,
         [state.taskId]: (prev[state.taskId] ?? 0) + seconds,
       }));
+
+      // Só sobe ao banco quem tem tarefa de banco: uma sessão apontando para
+      // uma tarefa do formato antigo daria erro de formato no servidor.
+      if (/^[0-9a-f-]{36}$/i.test(state.taskId)) {
+        void import("./tempo.functions")
+          .then((api) =>
+            api.registrarSessaoDeTempo({
+              data: {
+                tarefaId: state.taskId,
+                iniciouEm: new Date(session.startedAt).toISOString(),
+                encerrouEm: new Date(session.endedAt).toISOString(),
+              },
+            }),
+          )
+          .catch((e) => console.warn("[fluxo] sessão de tempo não gravou:", (e as Error)?.message));
+      }
     },
     [userId],
   );

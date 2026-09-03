@@ -22,8 +22,21 @@ export function Celebration() {
       const effects = [confettiRain, lineFireworks, rocket, starsRise, centerPop];
       pick(effects)(layer);
     };
+    // Estouro em ponto específico — usado quando algo pequeno aparece na tela
+    // (a foto no login, por exemplo) e o sorteio de tela cheia seria demais.
+    const handlerAt = (e: Event) => {
+      const layer = layerRef.current;
+      if (!layer || reduce) return;
+      const { x, y } = (e as CustomEvent<{ x: number; y: number }>).detail ?? { x: 0, y: 0 };
+      burstAt(layer, x, y);
+    };
+
     window.addEventListener("fluxo:celebrate", handler);
-    return () => window.removeEventListener("fluxo:celebrate", handler);
+    window.addEventListener("fluxo:celebrate-at", handlerAt);
+    return () => {
+      window.removeEventListener("fluxo:celebrate", handler);
+      window.removeEventListener("fluxo:celebrate-at", handlerAt);
+    };
   }, []);
 
   return <div ref={layerRef} className="fx-celebrate-layer" aria-hidden />;
@@ -128,8 +141,29 @@ function centerPop(layer: HTMLElement) {
   }
 }
 
+/* 6) Estouro radial contido, em torno de um ponto dado */
+function burstAt(layer: HTMLElement, x: number, y: number) {
+  for (let i = 0; i < 34; i++) {
+    const p = spawn(layer, "cel-burst", 1200);
+    const angle = (Math.PI * 2 * i) / 34 + rand(-0.15, 0.15);
+    const dist = rand(50, 130);
+    p.style.left = `${x}px`;
+    p.style.top = `${y}px`;
+    p.style.background = pick(CONFETTI);
+    p.style.setProperty("--dx", `${Math.cos(angle) * dist}px`);
+    p.style.setProperty("--dy", `${Math.sin(angle) * dist}px`);
+    p.style.setProperty("--dur", `${rand(0.7, 1.1)}s`);
+  }
+}
+
 /** Dispara a comemoração (usado pelo store ao concluir uma tarefa). */
 export function celebrate() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("fluxo:celebrate"));
+}
+
+/** Estouro contido em torno de um ponto da tela (coordenadas de viewport). */
+export function celebrateAt(x: number, y: number) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("fluxo:celebrate-at", { detail: { x, y } }));
 }

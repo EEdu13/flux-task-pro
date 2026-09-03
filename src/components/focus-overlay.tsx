@@ -3,6 +3,7 @@ import { Pause, Play, X, CheckCircle2, Coffee } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { addFocusEntry } from "@/lib/focus-log";
 import { toast } from "sonner";
+import { TravaScroll } from "@/components/trava-scroll";
 
 const FOCUS_MINUTES = 25;
 
@@ -65,6 +66,15 @@ export function FocusOverlay() {
         minutes,
         endedAt: Date.now(),
       });
+      // A tarefa é opcional na tabela — um pomodoro sem tarefa do banco ainda
+      // conta para o resumo do dia, só não aponta para nenhuma.
+      void import("@/lib/foco.functions")
+        .then((api) =>
+          api.registrarSessaoDeFoco({
+            data: { tarefaId: /^[0-9a-f-]{36}$/i.test(taskId) ? taskId : null, minutos: minutes },
+          }),
+        )
+        .catch((e) => console.warn("[fluxo] sessão de foco não gravou:", (e as Error)?.message));
       setRunning(false);
       setTaskId(null);
       startedRef.current = null;
@@ -124,7 +134,11 @@ export function FocusOverlay() {
   const pct = 1 - remaining / (FOCUS_MINUTES * 60);
 
   return (
-    <div className="fixed inset-0 z-[220] flex flex-col items-center justify-center bg-background/95 backdrop-blur-md">
+    // z-440: o modo foco é uma tomada de tela — precisa cobrir inclusive o
+    // diálogo de tarefa (z-420), que é de onde a sessão de foco costuma ser
+    // iniciada.
+    <div className="fixed inset-0 z-440 flex flex-col items-center justify-center bg-background/95 backdrop-blur-md">
+      <TravaScroll />
       <button
         onClick={() => finish(false)}
         className="absolute right-4 top-4 rounded-md p-2 text-muted-foreground hover:bg-secondary"

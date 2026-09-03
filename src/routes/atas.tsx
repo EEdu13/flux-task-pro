@@ -15,6 +15,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { MeetingMinute, MinuteTopic } from "@/lib/fluxo-types";
 import { toast } from "sonner";
+import { confirmar } from "@/components/confirm-dialog";
 
 export const Route = createFileRoute("/atas")({
   component: AtasPage,
@@ -43,7 +44,8 @@ const kindStyle: Record<MinuteTopic["kind"], string> = {
 };
 
 function AtasPage() {
-  const { visibleMinutes, users, minuteTopicToTask, deleteMinute, openTask } = useFluxo();
+  const { visibleMinutes, users, currentUser, minuteTopicToTask, deleteMinute, openTask } =
+    useFluxo();
   const minutes = visibleMinutes();
   const [selectedId, setSelectedId] = useState<string | null>(minutes[0]?.id ?? null);
   const [q, setQ] = useState("");
@@ -134,17 +136,23 @@ function AtasPage() {
               key={selected.id}
               minute={selected}
               usersLookup={Object.fromEntries(users.map((u) => [u.id, u.name]))}
+              currentUserId={currentUser.id}
               onConvert={(topicId) => {
                 const taskId = minuteTopicToTask(selected.id, topicId);
                 if (taskId) toast.success("Tópico virou tarefa");
               }}
               onOpenTask={(taskId) => openTask(taskId)}
-              onDelete={() => {
-                if (confirm("Excluir esta ata?")) {
-                  deleteMinute(selected.id);
-                  toast.success("Ata excluída");
-                  setSelectedId(null);
-                }
+              onDelete={async () => {
+                const ok = await confirmar({
+                  titulo: "Excluir esta ata?",
+                  descricao: `A ata de "${selected.roomLabel}" some com todos os tópicos e decisões registrados. Não dá para desfazer.`,
+                  confirmar: "Excluir",
+                  perigo: true,
+                });
+                if (!ok) return;
+                deleteMinute(selected.id);
+                toast.success("Ata excluída");
+                setSelectedId(null);
               }}
             />
           ) : (
@@ -162,12 +170,14 @@ function AtasPage() {
 function MinuteDetail({
   minute,
   usersLookup,
+  currentUserId,
   onConvert,
   onOpenTask,
   onDelete,
 }: {
   minute: MeetingMinute;
   usersLookup: Record<string, string>;
+  currentUserId: string;
   onConvert: (topicId: string) => void;
   onOpenTask: (taskId: string) => void;
   onDelete: () => void;
@@ -204,13 +214,19 @@ function MinuteDetail({
           >
             <Copy className="h-4 w-4" />
           </button>
-          <button
-            onClick={onDelete}
-            className="rounded-md border border-border p-2 text-destructive hover:bg-destructive/10"
-            title="Excluir"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          {/* Só quem gerou apaga — a mesma regra que o servidor aplica.
+              Estar na reunião dá direito de ler, não de destruir o registro
+              dela para todo mundo. Mostrar o botão a quem não pode usá-lo
+              produziria uma ata que some da tela e volta no login seguinte. */}
+          {minute.createdBy === currentUserId && (
+            <button
+              onClick={onDelete}
+              className="rounded-md border border-border p-2 text-destructive hover:bg-destructive/10"
+              title="Excluir"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

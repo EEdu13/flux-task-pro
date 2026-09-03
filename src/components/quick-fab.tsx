@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import type { Priority } from "@/lib/fluxo-types";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { sendNudge } from "@/components/attention-overlay";
+import { AnimatePresence, motion } from "framer-motion";
 
 type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
 type PackTab = "concluir" | "meu" | "outro";
@@ -37,6 +38,8 @@ export function QuickFab() {
   const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
   const [packTab, setPackTab] = useState<PackTab>("concluir");
   const [packBulk, setPackBulk] = useState("");
+  /** Texto da faixa do trator. Vazio = cutucada comum. */
+  const [faixa, setFaixa] = useState("");
   const [packTarget, setPackTarget] = useState<string>("");
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -126,12 +129,24 @@ export function QuickFab() {
 
   const nudgeUser = async (uid: string) => {
     const target = users.find((u) => u.id === uid);
+    const primeiroNome = target?.name?.split(" ")[0] ?? "alguém";
+    const mensagem = faixa.trim();
     setOpen(false);
     setMode("menu");
+    setFaixa("");
     try {
-      await sendNudge(uid, currentUser.name, currentUser.avatar, currentUser.id);
+      await sendNudge(
+        uid,
+        currentUser.name,
+        currentUser.avatar,
+        currentUser.id,
+        mensagem ? "trator" : "cutucada",
+        mensagem || undefined,
+      );
       toast.success(
-        `Você chamou a atenção de ${target?.name?.split(" ")[0] ?? "alguém"}`,
+        mensagem
+          ? `🚜 O trator saiu para ${primeiroNome}`
+          : `Você chamou a atenção de ${primeiroNome}`,
       );
     } catch {
       toast.error("Não foi possível enviar agora");
@@ -197,8 +212,28 @@ export function QuickFab() {
   if (!isAuthenticated) return null;
 
   return (
-    <div ref={rootRef} className="fixed bottom-24 right-5 z-[60] flex flex-col items-end gap-2 lg:bottom-5">
-      {open && mode === "menu" && (
+    // z acima do ChatDock (z-120): o balão do chat mora no mesmo canto e ficava
+    // por cima dos painéis daqui. Continua abaixo dos avisos (200) e do trator
+    // (250), que são eventos e devem cobrir tudo.
+    <div
+      ref={rootRef}
+      className="fixed bottom-24 right-5 z-[130] flex flex-col items-end gap-2 lg:bottom-5"
+    >
+      {/* Um envelope animado para os cinco painéis, em vez de repetir a
+          animação em cada um. A chave é o `mode`: trocar de painel também
+          anima, não só abrir e fechar. */}
+      <AnimatePresence mode="wait">
+        {open && (
+          <motion.div
+            key={mode}
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.7 }}
+            style={{ transformOrigin: "bottom right" }}
+            className="flex flex-col items-end gap-2"
+          >
+      {mode === "menu" && (
         <div className="flex flex-col items-stretch gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-2xl">
           <FabItem
             icon={Zap}
@@ -248,7 +283,7 @@ export function QuickFab() {
         </div>
       )}
 
-      {open && mode === "pack" && (
+      {mode === "pack" && (
         <div className="w-[340px] rounded-xl border border-border bg-card p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -415,7 +450,7 @@ export function QuickFab() {
         </div>
       )}
 
-      {open && mode === "attention" && (
+      {mode === "attention" && (
         <div className="w-[300px] rounded-xl border border-border bg-card p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -429,8 +464,28 @@ export function QuickFab() {
             </button>
           </div>
           <p className="mb-2 text-[10px] text-muted-foreground">
-            Estilo MSN — treme a tela da pessoa por 1 segundo. Use com moderação.
+            {faixa.trim()
+              ? "O trator vai atravessar a tela da pessoa puxando essa faixa."
+              : "Estilo MSN — treme a tela da pessoa por 1 segundo. Use com moderação."}
           </p>
+          {/* Acima da lista de propósito: a lista rola, e um campo embaixo dela
+              sumiria da vista justamente enquanto se procura a pessoa. */}
+          <div className="mb-2">
+            <input
+              value={faixa}
+              onChange={(e) => setFaixa(e.target.value.slice(0, 200))}
+              placeholder="Mensagem na faixa (opcional) 🚜"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+            />
+            {faixa.trim() && (
+              <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                <span>{faixa.length}/200</span>
+                <button onClick={() => setFaixa("")} className="hover:text-foreground">
+                  limpar
+                </button>
+              </div>
+            )}
+          </div>
           <ul className="max-h-72 space-y-1 overflow-y-auto">
             {users
               .filter((u) => u.id !== currentUser.id)
@@ -449,7 +504,9 @@ export function QuickFab() {
                         {u.jobTitle}
                       </span>
                     </span>
-                    <Sparkles className="h-3.5 w-3.5 text-lime-500 opacity-0 group-hover:opacity-100" />
+                    {/* O ícone acompanha o campo: dá para ver o que vai
+                        acontecer ANTES de clicar, não depois. */}
+                    <span className="text-sm">{faixa.trim() ? "🚜" : "✨"}</span>
                   </button>
                 </li>
               ))}
@@ -457,7 +514,7 @@ export function QuickFab() {
         </div>
       )}
 
-      {open && mode === "quick" && (
+      {mode === "quick" && (
         <div className="w-[300px] rounded-xl border border-border bg-card p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -490,7 +547,7 @@ export function QuickFab() {
         </div>
       )}
 
-      {open && mode === "mention" && (
+      {mode === "mention" && (
         <div className="w-[320px] rounded-xl border border-border bg-card p-3 shadow-2xl">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
@@ -538,12 +595,17 @@ export function QuickFab() {
           </button>
         </div>
       )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <button
+      <motion.button
         onClick={() => {
           setOpen((v) => !v);
           setMode("menu");
         }}
+        whileTap={{ scale: 0.9 }}
+        transition={{ type: "spring", stiffness: 500, damping: 25 }}
         title="Ações rápidas"
         className="group hidden flex-col items-center gap-1 lg:flex"
       >
@@ -557,7 +619,7 @@ export function QuickFab() {
         <span className="rounded-md border border-foreground/20 bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-foreground shadow-sm">
           Clique — acesso rápido
         </span>
-      </button>
+      </motion.button>
     </div>
   );
 }

@@ -3,10 +3,14 @@ import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Pa
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
-import type { Attachment } from "@/lib/fluxo-types";
+import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import { formatHM, parseHM } from "@/lib/time-log";
 import { TaskTimerControls } from "@/components/task-timer-controls";
+import { confirmar } from "@/components/confirm-dialog";
+import { CampoData } from "@/components/campo-data";
+import { DIAS_SEMANA, ULTIMO_DIA_DO_MES, descreverRecorrencia } from "@/lib/recorrencia";
+import { toast } from "sonner";
 import {
   sectors,
   freqLabels,
@@ -55,6 +59,8 @@ export function TaskDialog() {
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
+  const [recurringWeekdays, setRecurringWeekdays] = useState<number[]>([]);
+  const [recurringMonthDay, setRecurringMonthDay] = useState<number | null>(null);
   const [requireProof, setRequireProof] = useState(false);
   const [estimateHM, setEstimateHM] = useState("");
   const [tags, setTags] = useState("");
@@ -62,6 +68,8 @@ export function TaskDialog() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [newComment, setNewComment] = useState("");
   const [newChecklist, setNewChecklist] = useState("");
+  /** Itens montados antes da tarefa existir. Só usado no modo criação. */
+  const [rascunhoChecklist, setRascunhoChecklist] = useState<ChecklistItem[]>([]);
   const [pendingCommentAtts, setPendingCommentAtts] = useState<Attachment[]>([]);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const taskAttInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +90,8 @@ export function TaskDialog() {
       setDueDate(editing.dueDate.slice(0, 10));
       setRecurring(editing.recurring);
       setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
+      setRecurringWeekdays(editing.recurringWeekdays ?? []);
+      setRecurringMonthDay(editing.recurringMonthDay ?? null);
       setRequireProof(!!editing.requireProof);
       setEstimateHM(
         editing.estimatedMinutes
@@ -101,10 +111,13 @@ export function TaskDialog() {
       setDueDate(taskDialog.initialDueDate ?? new Date().toISOString().slice(0, 10));
       setRecurring(false);
       setRecurringUntil("");
+      setRecurringWeekdays([]);
+      setRecurringMonthDay(null);
       setRequireProof(false);
       setEstimateHM("");
       setTags("");
       setMentions([]);
+      setRascunhoChecklist([]);
     }
   }, [open, editing, currentUser.id, currentUser.sector, taskDialog.initialStatus, taskDialog.initialDueDate]);
 
@@ -114,18 +127,53 @@ export function TaskDialog() {
   const canEditContent = !editing || editing.createdBy === currentUser.id;
   const canDelete = !!editing && (editing.createdBy === currentUser.id || currentUser.role === "gerente");
 
+  /* Checklist nos dois modos: editando mexe direto na store, criando acumula no
+     rascunho e vai junto no createTask. A tela é a mesma; só a origem muda. */
+  const itensChecklist = editing ? editing.checklist : rascunhoChecklist;
+
+  const adicionarItemChecklist = () => {
+    const texto = newChecklist.trim();
+    if (!texto) return;
+    if (editing) addChecklistItem(editing.id, texto);
+    else
+      setRascunhoChecklist((itens) => [
+        ...itens,
+        { id: `rc-${Date.now().toString(36)}-${itens.length}`, text: texto, done: false },
+      ]);
+    setNewChecklist("");
+  };
+
+  const alternarItemChecklist = (itemId: string) => {
+    if (editing) toggleChecklistItem(editing.id, itemId);
+    else
+      setRascunhoChecklist((itens) =>
+        itens.map((c) => (c.id === itemId ? { ...c, done: !c.done } : c)),
+      );
+  };
+
+  const removerItemChecklist = (itemId: string) => {
+    if (editing) removeChecklistItem(editing.id, itemId);
+    else setRascunhoChecklist((itens) => itens.filter((c) => c.id !== itemId));
+  };
+
   const handleTaskFilePick = async (files: FileList | null) => {
     if (!files || !editing) return;
     const { ok, rejected } = await filesToAttachments(files, currentUser.id);
     if (ok.length) addTaskAttachments(editing.id, ok);
-    if (rejected.length) alert(`Arquivos ignorados (muito grandes):\n${rejected.join("\n")}`);
+    if (rejected.length)
+      toast.error(rejected.length === 1 ? "Arquivo muito grande" : "Arquivos muito grandes", {
+        description: `Não anexado: ${rejected.join(", ")}`,
+      });
   };
 
   const handleCommentFilePick = async (files: FileList | null) => {
     if (!files) return;
     const { ok, rejected } = await filesToAttachments(files, currentUser.id);
     if (ok.length) setPendingCommentAtts((prev) => [...prev, ...ok]);
-    if (rejected.length) alert(`Arquivos ignorados (muito grandes):\n${rejected.join("\n")}`);
+    if (rejected.length)
+      toast.error(rejected.length === 1 ? "Arquivo muito grande" : "Arquivos muito grandes", {
+        description: `Não anexado: ${rejected.join(", ")}`,
+      });
   };
 
   const submitComment = () => {
@@ -179,25 +227,41 @@ export function TaskDialog() {
       dueDate: new Date(dueDate + "T17:00:00").toISOString(),
       recurring,
       recurringUntil: recurring && recurringUntil ? new Date(recurringUntil + "T23:59:59").toISOString() : null,
+      // Guardar só o que vale para a frequência escolhida: trocar de semanal
+      // para mensal não pode deixar dias da semana órfãos decidindo a série.
+      recurringWeekdays: recurring && frequency === "semanal" ? recurringWeekdays : null,
+      recurringMonthDay: recurring && frequency === "mensal" ? recurringMonthDay : null,
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       requireProof: isCreator ? requireProof : !!editing?.requireProof,
       estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
     };
     if (editing) updateTask(editing.id, payload);
-    else createTask(payload);
+    else createTask({ ...payload, checklist: rascunhoChecklist });
     closeTaskDialog();
   };
 
-  const handleDelete = () => {
-    if (editing && confirm("Excluir esta tarefa?")) {
-      deleteTask(editing.id);
-      closeTaskDialog();
-    }
+  const handleDelete = async () => {
+    if (!editing) return;
+    const ok = await confirmar({
+      titulo: "Excluir esta tarefa?",
+      descricao: `"${editing.title}" sai da lista de todo mundo, junto com comentários e anexos. Não dá para desfazer.`,
+      confirmar: "Excluir",
+      perigo: true,
+    });
+    if (!ok) return;
+    deleteTask(editing.id);
+    closeTaskDialog();
+    toast.success("Tarefa excluída");
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeTaskDialog}>
+    // z-420: este diálogo é aberto DE DENTRO de painéis que ficam bem mais
+    // acima (delegar e paleta de comandos em 200, modais em 300, grade em
+    // 400). Em z-50 ele abria atrás de quem o abriu — a tela só escurecia um
+    // pouco e a tarefa ficava invisível. Tem que passar de todos os
+    // lançadores, e ficar abaixo do confirm (500) e da barra de título (9999).
+    <div className="fixed inset-0 z-420 flex items-center justify-center bg-black/50 p-4" onClick={closeTaskDialog}>
       <div
         className="w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -209,14 +273,32 @@ export function TaskDialog() {
           </button>
         </div>
 
-        {editing && (
-          <div className="flex gap-1 border-b border-border px-5">
+        {/* Ao criar, só Detalhes e Checklist. Comentários e Timeline dependem de
+            uma tarefa que já existe; checklist não — montar os passos faz parte
+            de pensar a tarefa, e obrigava a criar, salvar e reabrir. */}
+        <div className="flex gap-1 border-b border-border px-5">
             {(
               [
                 { id: "detalhes", label: "Detalhes", icon: null },
-                { id: "checklist", label: `Checklist${editing.checklist.length ? ` (${editing.checklist.filter((c) => c.done).length}/${editing.checklist.length})` : ""}`, icon: ListChecks },
-                { id: "comentarios", label: `Comentários${editing.comments.length ? ` (${editing.comments.length})` : ""}`, icon: MessageSquare },
-                { id: "timeline", label: "Timeline", icon: Activity },
+                {
+                  id: "checklist",
+                  label: `Checklist${
+                    editing
+                      ? editing.checklist.length
+                        ? ` (${editing.checklist.filter((c) => c.done).length}/${editing.checklist.length})`
+                        : ""
+                      : rascunhoChecklist.length
+                        ? ` (${rascunhoChecklist.length})`
+                        : ""
+                  }`,
+                  icon: ListChecks,
+                },
+                ...(editing
+                  ? [
+                      { id: "comentarios" as Tab, label: `Comentários${editing.comments.length ? ` (${editing.comments.length})` : ""}`, icon: MessageSquare },
+                      { id: "timeline" as Tab, label: "Timeline", icon: Activity },
+                    ]
+                  : []),
               ] as { id: Tab; label: string; icon: typeof Activity | null }[]
             ).map((t) => (
               <button
@@ -231,8 +313,7 @@ export function TaskDialog() {
                 {tab === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         <div className="max-h-[70vh] overflow-y-auto p-5">
           {tab === "detalhes" && (
@@ -342,7 +423,13 @@ export function TaskDialog() {
                   </select>
                 </Field>
                 <Field label="Prazo">
-                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="input" />
+                  <CampoData
+                    value={dueDate}
+                    onChange={setDueDate}
+                    formato="longo"
+                    placeholder="Sem prazo"
+                    className="w-full px-3 py-2 text-sm"
+                  />
                 </Field>
                 <Field label="Tags (separadas por vírgula)">
                   <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
@@ -432,14 +519,92 @@ export function TaskDialog() {
                     </button>
                   )}
                 </div>
+                {/* Especificação fina, só do tipo escolhido. Antes "mensal" não
+                    dizia qual dia e "semanal" não dizia quais dias — a série
+                    caía sempre no mesmo dia do prazo original. */}
+                {recurring && frequency === "semanal" && (
+                  <div className="mt-3 border-t border-border/60 pt-2.5">
+                    <span className="text-[11px] font-medium text-foreground">
+                      Repete nestes dias:
+                    </span>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {DIAS_SEMANA.map((nome, dia) => {
+                        const marcado = recurringWeekdays.includes(dia);
+                        return (
+                          <button
+                            key={nome}
+                            type="button"
+                            onClick={() =>
+                              setRecurringWeekdays((atual) =>
+                                atual.includes(dia)
+                                  ? atual.filter((d) => d !== dia)
+                                  : [...atual, dia].sort((a, b) => a - b),
+                              )
+                            }
+                            aria-pressed={marcado}
+                            className={`h-7 w-9 rounded-md border text-[11px] font-semibold transition ${
+                              marcado
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            }`}
+                          >
+                            {nome}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => setRecurringWeekdays([1, 2, 3, 4, 5])}
+                        className="ml-1 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+                      >
+                        Dias úteis
+                      </button>
+                    </div>
+                    {recurringWeekdays.length === 0 && (
+                      <p className="mt-1.5 text-[10px] text-muted-foreground">
+                        Sem nenhum marcado, repete no mesmo dia da semana do prazo.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {recurring && frequency === "mensal" && (
+                  <div className="mt-3 border-t border-border/60 pt-2.5">
+                    <span className="text-[11px] font-medium text-foreground">Repete no dia:</span>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <select
+                        value={recurringMonthDay ?? ""}
+                        onChange={(e) =>
+                          setRecurringMonthDay(e.target.value === "" ? null : Number(e.target.value))
+                        }
+                        className="input max-w-[13rem] py-1 text-xs"
+                      >
+                        <option value="">Mesmo dia do prazo</option>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={d}>
+                            Dia {d}
+                          </option>
+                        ))}
+                        <option value={ULTIMO_DIA_DO_MES}>Último dia do mês</option>
+                      </select>
+                      {recurringMonthDay !== null && recurringMonthDay > 28 && (
+                        <span className="text-[10px] text-warning">
+                          Meses mais curtos usam o último dia disponível.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {recurring && (
                   <div className="mt-2 flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Repetir até (opcional):</span>
-                    <input
-                      type="date"
+                    <CampoData
                       value={recurringUntil}
-                      onChange={(e) => setRecurringUntil(e.target.value)}
-                      className="input max-w-[10rem] py-1"
+                      onChange={setRecurringUntil}
+                      placeholder="Sem limite"
+                      title="Repetir até"
+                      className="max-w-40 py-1 text-xs"
                     />
                     {recurringUntil && (
                       <button
@@ -450,8 +615,15 @@ export function TaskDialog() {
                         limpar
                       </button>
                     )}
-                    <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium">
-                      {freqLabels[frequency]}
+                    {/* A regra por extenso vale mais que o rótulo da frequência:
+                        "Mensal" não conta que cai no dia 15. */}
+                    <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                      {descreverRecorrencia({
+                        recurring,
+                        frequency,
+                        recurringWeekdays,
+                        recurringMonthDay,
+                      })}
                     </span>
                   </div>
                 )}
@@ -522,43 +694,45 @@ export function TaskDialog() {
             </div>
           )}
 
-          {tab === "checklist" && editing && (
+          {tab === "checklist" && (
             <div className="space-y-3">
+              {!editing && (
+                <p className="text-xs text-muted-foreground">
+                  Os itens são salvos junto com a tarefa.
+                </p>
+              )}
               <div className="flex gap-2">
                 <input
                   value={newChecklist}
                   onChange={(e) => setNewChecklist(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && newChecklist.trim()) {
-                      addChecklistItem(editing.id, newChecklist);
-                      setNewChecklist("");
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      adicionarItemChecklist();
                     }
                   }}
                   placeholder="Adicionar item…"
                   className="input flex-1"
                 />
                 <button
-                  onClick={() => {
-                    if (newChecklist.trim()) {
-                      addChecklistItem(editing.id, newChecklist);
-                      setNewChecklist("");
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground"
+                  type="button"
+                  onClick={adicionarItemChecklist}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground transition hover:brightness-110"
                 >
                   <Plus className="h-3.5 w-3.5" /> Adicionar
                 </button>
               </div>
               <ul className="space-y-1">
-                {editing.checklist.length === 0 && (
+                {itensChecklist.length === 0 && (
                   <li className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
                     Nenhum item ainda. Quebre a tarefa em passos objetivos.
                   </li>
                 )}
-                {editing.checklist.map((c) => (
+                {itensChecklist.map((c) => (
                   <li key={c.id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/50">
                     <button
-                      onClick={() => toggleChecklistItem(editing.id, c.id)}
+                      type="button"
+                      onClick={() => alternarItemChecklist(c.id)}
                       className={`flex h-4 w-4 items-center justify-center rounded border ${
                         c.done ? "border-primary bg-primary text-primary-foreground" : "border-border"
                       }`}
@@ -569,7 +743,8 @@ export function TaskDialog() {
                       {c.text}
                     </span>
                     <button
-                      onClick={() => removeChecklistItem(editing.id, c.id)}
+                      type="button"
+                      onClick={() => removerItemChecklist(c.id)}
                       className="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
                     >
                       <X className="h-3.5 w-3.5" />

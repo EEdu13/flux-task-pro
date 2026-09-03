@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Command } from "cmdk";
 import { useNavigate } from "@tanstack/react-router";
+import { TravaScroll } from "@/components/trava-scroll";
 import {
   CheckSquare,
   Users,
@@ -105,6 +106,7 @@ export function CommandPalette() {
       className="fixed inset-0 z-[200] flex items-start justify-center bg-black/60 p-4 pt-[10vh]"
       onClick={() => setOpen(false)}
     >
+      <TravaScroll />
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"

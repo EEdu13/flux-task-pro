@@ -8,7 +8,6 @@ import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
 import { PreCall } from "@/components/pre-call";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
-import { supabase } from "@/integrations/supabase/client";
 import {
   getKnockStatus,
   getRoomAccess,
@@ -82,7 +81,7 @@ function RoomPage() {
     let retry: number | undefined;
     const run = async () => {
       try {
-        const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
+        const res = await getRoomAccess({ data: { roomName } });
         if (cancelled) return;
         setIsPrivate(res.isPrivate);
         if (!res.isPrivate) {
@@ -91,7 +90,7 @@ function RoomPage() {
           setAccess({ kind: "member", isPrivate: true });
         } else {
           const k = await knockRoom({
-            data: { roomName, userId: currentUser.id, userName: currentUser.name },
+            data: { roomName, userName: currentUser.name },
           });
           if (cancelled) return;
           if (k.status === "approved") {
@@ -128,19 +127,14 @@ function RoomPage() {
       }
     };
     tick();
+    // Havia aqui uma assinatura de realtime do Supabase em `public.room_knocks`.
+    // Os pedidos migraram para o Azure SQL (`dbo.room_knocks`), então ela
+    // escutava uma tabela que ninguém mais escreve: nunca disparava e ainda
+    // mantinha um WebSocket aberto à toa. Quem faz o trabalho é a sondagem.
     const id = window.setInterval(tick, 2500);
-    const channel = supabase
-      .channel(`knock-${knockId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "room_knocks", filter: `id=eq.${knockId}` },
-        () => tick(),
-      )
-      .subscribe();
     return () => {
       cancelled = true;
       window.clearInterval(id);
-      try { supabase.removeChannel(channel); } catch { /* ignore */ }
     };
   }, [access]);
 
@@ -160,7 +154,6 @@ function RoomPage() {
       roomLabel,
       identity,
       name: currentUser.name,
-      userId: currentUser.id,
       meetingTitle: pendingPreCall?.title,
       autoMinute: pendingPreCall?.autoMinute ?? true,
     });
@@ -179,7 +172,7 @@ function RoomPage() {
       try {
         const [ks, st] = await Promise.all([
           listRoomKnocks({ data: { roomName } }),
-          getRoomAccess({ data: { roomName, userId: currentUser.id } }),
+          getRoomAccess({ data: { roomName } }),
         ]);
         if (cancelled) return;
         // Play a soft chime when a NEW pending knock appears.
@@ -221,17 +214,11 @@ function RoomPage() {
       }
     };
     tick();
+    // Aqui também havia realtime do Supabase prometendo aviso instantâneo do
+    // pedido de entrada. Apontava para `public.room_knocks`, abandonada na
+    // migração para o Azure SQL — nunca chegou a disparar. A sondagem abaixo é
+    // que sustenta o recurso.
     const id = window.setInterval(tick, 2500);
-    // Instant push via Supabase realtime — fires tick as soon as a knock is
-    // inserted/updated so the person inside sees it without waiting for poll.
-    const channel = supabase
-      .channel(`room-knocks-${roomName}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "room_knocks", filter: `room_name=eq.${roomName}` },
-        () => tick(),
-      )
-      .subscribe();
     // Request browser notification permission once, silently.
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
       try { Notification.requestPermission().catch(() => {}); } catch { /* ignore */ }
@@ -239,7 +226,6 @@ function RoomPage() {
     return () => {
       cancelled = true;
       window.clearInterval(id);
-      try { supabase.removeChannel(channel); } catch { /* ignore */ }
     };
   }, [canSeeKnocks, roomName, currentUser.id, roomLabel]);
 
@@ -247,7 +233,7 @@ function RoomPage() {
     const next = !isPrivate;
     setIsPrivate(next);
     try {
-      await setRoomPrivacy({ data: { roomName, isPrivate: next, userId: currentUser.id } });
+      await setRoomPrivacy({ data: { roomName, isPrivate: next } });
     } catch {
       setIsPrivate(!next);
     }
@@ -257,7 +243,7 @@ function RoomPage() {
     async (knockId: string, approve: boolean) => {
       setKnocks((k) => k.filter((x) => x.id !== knockId));
       try {
-        await resolveKnock({ data: { knockId, approve, resolverUserId: currentUser.id } });
+        await resolveKnock({ data: { knockId, approve } });
       } catch {
         /* ignore */
       }
@@ -328,7 +314,7 @@ function RoomPage() {
               setShowPreCall(false);
               if ((isDiretoria || r.makePrivate) && !isPrivate) {
                 setRoomPrivacy({
-                  data: { roomName, isPrivate: true, userId: currentUser.id },
+                  data: { roomName, isPrivate: true },
                 }).catch(() => {});
               }
             }}

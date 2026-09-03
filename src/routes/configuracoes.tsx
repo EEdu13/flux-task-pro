@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   Bell,
+  Loader2,
   LogOut,
   Mail,
   Moon,
@@ -27,6 +28,13 @@ import {
   showIncomingCallWindow,
 } from "@/lib/desktop";
 import { triggerTractor } from "@/components/tractor-banner";
+import { UserAvatar } from "@/components/user-avatar";
+import { formatarTelefone, mascararTelefone, telefoneParaGuardar } from "@/lib/telefone";
+import { transicionar } from "@/components/transition-veil";
+import { confirmar } from "@/components/confirm-dialog";
+import { useAcaoPendente } from "@/lib/use-acao-pendente";
+import { toast } from "sonner";
+import { motion } from "framer-motion";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
@@ -42,9 +50,12 @@ type Tab = "perfil" | "aparencia" | "notificacoes" | "conta";
 
 function SettingsPage() {
   const { currentUser, updateCurrentUser, logout, users } = useFluxo();
-  const { theme, toggle } = useTheme();
+  const { theme, setTheme } = useTheme();
   const { palette, setPalette } = usePalette();
   const navigate = useNavigate();
+  // Fechar salas fala com o LiveKit nos EUA: sem estado de pendência o botão
+  // fica parado por segundos e aceita clique repetido.
+  const { pendente: fechandoSalas, executar: fecharSalas } = useAcaoPendente();
 
   const [tab, setTab] = useState<Tab>("perfil");
   const [name, setName] = useState(currentUser.name);
@@ -77,7 +88,8 @@ function SettingsPage() {
     updateCurrentUser({
       name: name.trim(),
       email: trimmedEmail,
-      phone: trimmedPhone ? phoneValidator.normalizePhone(trimmedPhone) : "",
+      // Guarda com DDI: é o formato que o WhatsApp precisa e o que a empresa usa.
+      phone: trimmedPhone ? telefoneParaGuardar(trimmedPhone) : "",
       jobTitle: jobTitle.trim(),
       sector,
       contactCompleted: !!(trimmedEmail && trimmedPhone),
@@ -86,10 +98,14 @@ function SettingsPage() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const doLogout = () => {
-    logout();
-    navigate({ to: "/login" });
-  };
+  const doLogout = () =>
+    void transicionar(
+      { tipo: "saida", nome: currentUser.name, iniciais: currentUser.avatar },
+      () => {
+        logout();
+        navigate({ to: "/login" });
+      },
+    );
 
   const tabs: { id: Tab; label: string; icon: typeof UserIcon }[] = [
     { id: "perfil", label: "Perfil e contato", icon: UserIcon },
@@ -108,26 +124,44 @@ function SettingsPage() {
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
+                className={`relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
                   active
-                    ? "bg-secondary text-foreground"
+                    ? "text-foreground"
                     : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                 }`}
               >
-                <t.icon className="h-4 w-4" />
-                {t.label}
+                {/* Mesmo truque do menu lateral: um fundo só, que desliza. */}
+                {active && (
+                  <motion.span
+                    layoutId="config-aba-ativa"
+                    className="absolute inset-0 rounded-md bg-secondary"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <t.icon className="relative h-4 w-4" />
+                <span className="relative">{t.label}</span>
               </button>
             );
           })}
         </aside>
 
-        <div className="min-w-0 space-y-6">
+        {/* A chave é a aba: trocar remonta e reexecuta a entrada, dando a
+            sensação de conteúdo novo chegando em vez de troca seca. */}
+        <motion.div
+          key={tab}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="min-w-0 space-y-6"
+        >
           {tab === "perfil" && (
             <section className="rounded-lg border border-border bg-card p-6">
               <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                  {currentUser.avatar}
-                </div>
+                <UserAvatar
+                  nome={currentUser.name}
+                  iniciais={currentUser.avatar}
+                  className="h-12 w-12 text-sm"
+                />
                 <div>
                   <div className="text-sm font-semibold">{currentUser.name}</div>
                   <div className="text-[11px] text-muted-foreground">
@@ -170,10 +204,11 @@ function SettingsPage() {
                     <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                     <input
                       type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      value={mascararTelefone(phone)}
+                      maxLength={15}
+                      onChange={(e) => setPhone(mascararTelefone(e.target.value))}
                       className="flex-1 bg-transparent text-sm focus:outline-none"
-                      placeholder="+55 11 99999-0000"
+                      placeholder="(00) 00000-0000"
                     />
                   </div>
                 </Field>
@@ -212,9 +247,11 @@ function SettingsPage() {
                   return (
                     <button
                       key={t}
-                      onClick={() => {
-                        if (theme !== t) toggle();
-                      }}
+                      // `setTheme(t)` diz o alvo em vez de pedir uma inversão.
+                      // Com `toggle()` o botão dependia de `theme` estar atual
+                      // para acertar o destino; aqui "Claro" significa claro,
+                      // independente do que o componente pensa que está valendo.
+                      onClick={() => setTheme(t)}
                       className={`flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition ${
                         active ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
                       }`}
@@ -292,7 +329,7 @@ function SettingsPage() {
                 {[
                   { key: "push" as const, label: "Notificações no painel", desc: "Alertas em tempo real dentro do Fluxo." },
                   { key: "email" as const, label: "Email", desc: currentUser.email || "Preencha o email no perfil." },
-                  { key: "whatsapp" as const, label: "WhatsApp", desc: currentUser.phone || "Preencha o telefone no perfil." },
+                  { key: "whatsapp" as const, label: "WhatsApp", desc: formatarTelefone(currentUser.phone) || "Preencha o telefone no perfil." },
                   { key: "weeklyDigest" as const, label: "Resumo semanal", desc: "Toda segunda pela manhã." },
                 ].map((row) => (
                   <li key={row.key} className="flex items-center justify-between py-3">
@@ -351,25 +388,53 @@ function SettingsPage() {
                     <LogOut className="h-3.5 w-3.5" /> Sair da conta
                   </button>
                   <button
-                    onClick={async () => {
-                      if (!confirm("Fechar TODAS as salas e desconectar todo mundo agora?")) return;
-                      try {
-                        const r = await purgeAllRooms();
-                        alert(`Fechadas: ${r.deleted.length} salas`);
-                      } catch (e) {
-                        alert("Falhou: " + String(e));
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                    disabled={fechandoSalas}
+                    onClick={() =>
+                      fecharSalas(async () => {
+                        const ok = await confirmar({
+                          titulo: "Fechar todas as salas?",
+                          descricao:
+                            "Todo mundo que estiver em chamada agora será desconectado na hora, sem aviso prévio. Não dá para desfazer.",
+                          confirmar: "Fechar todas",
+                          perigo: true,
+                        });
+                        if (!ok) return;
+                        try {
+                          const r = await purgeAllRooms();
+                          const n = r.deleted.length;
+                          toast.success(
+                            n === 0
+                              ? "Nenhuma sala estava aberta"
+                              : `${n} sala${n > 1 ? "s" : ""} fechada${n > 1 ? "s" : ""}`,
+                          );
+                        } catch {
+                          toast.error("Não foi possível fechar as salas", {
+                            description: "Verifique a conexão e tente de novo.",
+                          });
+                        }
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <PowerOff className="h-3.5 w-3.5" /> Fechar todas as salas
+                    {fechandoSalas ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <PowerOff className="h-3.5 w-3.5" />
+                    )}
+                    {fechandoSalas ? "Fechando…" : "Fechar todas as salas"}
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm("Isto vai apagar todos os dados locais deste demo. Continuar?")) {
-                        localStorage.clear();
-                        location.reload();
-                      }
+                    onClick={async () => {
+                      const ok = await confirmar({
+                        titulo: "Redefinir dados locais?",
+                        descricao:
+                          "Apaga tema, paleta, preferências e rascunhos guardados neste computador. Suas tarefas no servidor não são afetadas. A página recarrega em seguida.",
+                        confirmar: "Apagar e recarregar",
+                        perigo: true,
+                      });
+                      if (!ok) return;
+                      localStorage.clear();
+                      location.reload();
                     }}
                     className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
                   >
@@ -379,7 +444,7 @@ function SettingsPage() {
               </div>
             </section>
           )}
-        </div>
+        </motion.div>
       </div>
     </FluxoLayout>
   );
@@ -401,6 +466,7 @@ function DesktopDiagnostics() {
   const { currentUser } = useFluxo();
   const [result, setResult] = useState<string>("");
   const nativo = isTauri();
+  const { pendente: testando, executar: testar } = useAcaoPendente();
 
   return (
     <div className="rounded-lg border border-border bg-card p-6">
@@ -424,10 +490,12 @@ function DesktopDiagnostics() {
 
       <div className="flex flex-wrap gap-2">
         <button
-          onClick={async () => setResult(await desktopSelfTest())}
-          className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+          disabled={testando}
+          onClick={() => testar(async () => setResult(await desktopSelfTest()))}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Testar notificação e piscar
+          {testando && <Loader2 className="h-3 w-3 animate-spin" />}
+          {testando ? "Testando…" : "Testar notificação e piscar"}
         </button>
         <button
           onClick={() =>
@@ -489,8 +557,18 @@ function TractorControl() {
         </label>
         <label className="text-xs">
           <span className="mb-1 block font-medium text-muted-foreground">Duração</span>
+          {/* Largura pelo conteúdo, não em número fixo. O `w-28` daqui valia
+              112px, e a opção mais longa ("Bem lento (34s)") precisa de ~150
+              contando o padding e a seta — por isso até "Normal (16s)" saía
+              cortado. `min-w-fit` manda o campo caber na opção mais larga,
+              seja ela qual for: se alguém acrescentar uma duração amanhã, ele
+              se ajusta sozinho em vez de cortar de novo.
+
+              No celular a linha vira coluna e o `width: 100%` do .input volta
+              a mandar, então o campo continua ocupando a largura toda como os
+              outros — o min-width só age quando sobra espaço. */}
           <select
-            className="input w-28"
+            className="input min-w-fit"
             value={dur}
             onChange={(e) => setDur(Number(e.target.value))}
           >

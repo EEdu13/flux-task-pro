@@ -36,81 +36,114 @@ export function getPool(): Promise<sql.ConnectionPool> {
 
 export { sql };
 
-/* -------------------- Helpers compartilhados -------------------- */
+/* -------------------- Helpers compartilhados --------------------
 
-/** Expira chamadas "ringing" com mais de 45s, marcando como "missed". */
+   Estes falam com o schema `gestor`. As tabelas `dbo.room_*` continuam de pé
+   com o mesmo conteúdo, intocadas — elas são a rede de segurança da virada, e
+   deixam de ser lidas a partir daqui.
+
+   Três coisas mudaram de forma junto com o schema:
+
+   1. Pessoa é `INT`, não texto. O texto existia porque os ids do dado falso
+      (`u1`, `u2`) não eram números; agora o banco recusa qualquer coisa que
+      não seja o id numérico da IAM.
+   2. Tempo é `DATETIMEOFFSET`, não `datetime2`. Por isso `SYSDATETIMEOFFSET()`
+      no lugar de `SYSUTCDATETIME()`: o valor passa a carregar o fuso em vez de
+      depender de quem lê saber que era UTC.
+   3. As situações estão em português, como no resto do schema. A tradução
+      para os termos que o app usa acontece em `livekit-token.functions.ts`,
+      num lugar só. */
+
+/** Expira chamadas que ficaram tocando mais de 45s, marcando como perdidas. */
 export async function expireStaleCalls(pool: sql.ConnectionPool): Promise<void> {
   await pool
     .request()
     .query(
-      `UPDATE dbo.room_call_events
-         SET status='missed', handled_at=SYSUTCDATETIME()
-       WHERE status='ringing'
-         AND created_at < DATEADD(second, -45, SYSUTCDATETIME())`,
+      `UPDATE gestor.chamadas
+         SET situacao='perdida', respondida_em=SYSDATETIMEOFFSET()
+       WHERE situacao='tocando'
+         AND em < DATEADD(second, -45, SYSDATETIMEOFFSET())`,
     );
 }
 
-/** Insere o membro se ainda não existir (equivalente ao upsert por (room,user)). */
+/**
+ * Insere o participante se ainda não existir.
+ *
+ * A tabela nova tem chave primária `(sala, pessoa_id)`, o que a antiga não
+ * tinha — ela usava um GUID e nada impedia a mesma pessoa de entrar duas vezes.
+ * O `NOT EXISTS` evita o erro no caminho normal; se duas requisições chegarem
+ * no mesmo instante, a chave recusa a segunda em vez de duplicar.
+ */
 export async function upsertMember(
   pool: sql.ConnectionPool,
   roomName: string,
-  userId: string,
-  addedBy: string,
+  pessoaId: number,
+  adicionadoPor: number,
 ): Promise<void> {
   await pool
     .request()
-    .input("room", sql.NVarChar, roomName)
-    .input("uid", sql.NVarChar, userId)
-    .input("by", sql.NVarChar, addedBy)
+    .input("sala", sql.NVarChar, roomName)
+    .input("pessoa", sql.Int, pessoaId)
+    .input("por", sql.Int, adicionadoPor)
     .query(
-      `IF NOT EXISTS (SELECT 1 FROM dbo.room_members WHERE room_name=@room AND user_id=@uid)
-         INSERT INTO dbo.room_members (room_name, user_id, added_by) VALUES (@room, @uid, @by)`,
+      `INSERT INTO gestor.sala_participantes (sala, pessoa_id, adicionado_por)
+       SELECT @sala, @pessoa, @por
+        WHERE NOT EXISTS (
+          SELECT 1 FROM gestor.sala_participantes WHERE sala=@sala AND pessoa_id=@pessoa
+        )`,
     );
 }
 
-/** Define a privacidade da sala (cria a linha em room_state se não existir). */
+/** Define a privacidade da sala (cria a linha se ainda não existir). */
 export async function setRoomStatePrivacy(
   pool: sql.ConnectionPool,
   roomName: string,
   isPrivate: boolean,
-  updatedBy: string,
+  atualizadaPor: number,
 ): Promise<void> {
   await pool
     .request()
-    .input("room", sql.NVarChar, roomName)
+    .input("sala", sql.NVarChar, roomName)
     .input("priv", sql.Bit, isPrivate)
-    .input("by", sql.NVarChar, updatedBy)
+    .input("por", sql.Int, atualizadaPor)
     .query(
-      `IF EXISTS (SELECT 1 FROM dbo.room_state WHERE room_name=@room)
-         UPDATE dbo.room_state SET is_private=@priv, pin=NULL, updated_by=@by, updated_at=SYSUTCDATETIME() WHERE room_name=@room;
+      // A coluna `pin` sumiu no schema novo, e com razão: ela só era gravada
+      // como NULL e devolvida como `false`. Nunca guardou senha nenhuma.
+      `IF EXISTS (SELECT 1 FROM gestor.salas WHERE sala=@sala)
+         UPDATE gestor.salas
+            SET privada=@priv, atualizada_por=@por, atualizada_em=SYSDATETIMEOFFSET()
+          WHERE sala=@sala;
        ELSE
-         INSERT INTO dbo.room_state (room_name, is_private, pin, updated_by) VALUES (@room, @priv, NULL, @by);`,
+         INSERT INTO gestor.salas (sala, privada, atualizada_por) VALUES (@sala, @priv, @por);`,
     );
 }
 
-/** true/false/undefined — se a sala é privada segundo o room_state. */
+/** true/false/undefined — se a sala é privada. `undefined` = sala sem linha. */
 export async function getRoomIsPrivate(
   pool: sql.ConnectionPool,
   roomName: string,
 ): Promise<boolean | undefined> {
   const r = await pool
     .request()
-    .input("room", sql.NVarChar, roomName)
-    .query(`SELECT is_private FROM dbo.room_state WHERE room_name=@room`);
-  const row = r.recordset[0] as { is_private: boolean } | undefined;
-  return row?.is_private;
+    .input("sala", sql.NVarChar, roomName)
+    .query(`SELECT privada FROM gestor.salas WHERE sala=@sala`);
+  const row = r.recordset[0] as { privada: boolean } | undefined;
+  return row?.privada;
 }
 
-/** É membro da sala? */
+/** É participante da sala? */
 export async function isRoomMember(
   pool: sql.ConnectionPool,
   roomName: string,
-  userId: string,
+  pessoaId: number,
 ): Promise<boolean> {
   const r = await pool
     .request()
-    .input("room", sql.NVarChar, roomName)
-    .input("uid", sql.NVarChar, userId)
-    .query(`SELECT TOP 1 id FROM dbo.room_members WHERE room_name=@room AND user_id=@uid`);
+    .input("sala", sql.NVarChar, roomName)
+    .input("pessoa", sql.Int, pessoaId)
+    .query(
+      `SELECT TOP 1 1 AS achou FROM gestor.sala_participantes
+        WHERE sala=@sala AND pessoa_id=@pessoa`,
+    );
   return r.recordset.length > 0;
 }

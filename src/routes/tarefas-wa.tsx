@@ -1,137 +1,165 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { resolveWhatsAppContact } from "@/lib/whatsapp-contacts";
-
-type TarefaWA = {
-  id: string;
-  titulo: string;
-  telefone: string | null;
-  status: string;
-  criado_em: string;
-};
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { FluxoLayout } from "@/components/fluxo-layout";
+import { useFluxo } from "@/lib/fluxo-store";
+import { entradasDoWhatsapp, encaminharEntrada } from "@/lib/whatsapp.functions";
+import type { EntradaWhatsapp } from "@/lib/whatsapp.functions";
 
 export const Route = createFileRoute("/tarefas-wa")({
   head: () => ({
     meta: [
-      { title: "Tarefas WhatsApp" },
-      { name: "description", content: "Tarefas criadas via WhatsApp." },
+      { title: "Entrada do WhatsApp" },
+      { name: "description", content: "Mensagens que chegaram pelo WhatsApp." },
     ],
   }),
-  component: TarefasWAPage,
+  component: EntradaWhatsappPage,
 });
 
-function TarefasWAPage() {
-  const [rows, setRows] = useState<TarefaWA[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+/* Esta tela era pública e lia a tabela inteira do Supabase com a chave anônima:
+   quem soubesse o endereço via o telefone e o texto das mensagens de todo mundo,
+   e podia marcar qualquer uma como concluída. Agora ela passa por sessão como o
+   resto do sistema, e o servidor decide o que cada pessoa enxerga. */
+function EntradaWhatsappPage() {
+  const { users, currentUser, visibleUsersForAssign } = useFluxo();
+  const [entradas, setEntradas] = useState<EntradaWhatsapp[]>([]);
+  const [podeEncaminhar, setPodeEncaminhar] = useState(false);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const { data, error } = await supabase
-        .from("tarefas")
-        .select("*")
-        .order("criado_em", { ascending: false })
-        .limit(200);
-      if (!alive) return;
-      if (error) setErr(error.message);
-      else setRows((data ?? []) as TarefaWA[]);
-      setLoading(false);
-    })();
-
-    const channel = supabase
-      .channel("tarefas-wa")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "tarefas" },
-        (payload) => {
-          setRows((curr) => {
-            if (payload.eventType === "INSERT") {
-              return [payload.new as TarefaWA, ...curr];
-            }
-            if (payload.eventType === "UPDATE") {
-              return curr.map((r) =>
-                r.id === (payload.new as TarefaWA).id
-                  ? (payload.new as TarefaWA)
-                  : r,
-              );
-            }
-            if (payload.eventType === "DELETE") {
-              return curr.filter((r) => r.id !== (payload.old as TarefaWA).id);
-            }
-            return curr;
-          });
-        },
-      )
-      .subscribe();
-
-    return () => {
-      alive = false;
-      supabase.removeChannel(channel);
-    };
+  const carregar = useCallback(async () => {
+    try {
+      const r = await entradasDoWhatsapp();
+      setEntradas(r.entradas);
+      setPodeEncaminhar(r.podeEncaminhar);
+      setErro(null);
+    } catch (e) {
+      setErro((e as Error)?.message ?? "Falha ao carregar");
+    } finally {
+      setCarregando(false);
+    }
   }, []);
 
-  async function toggleStatus(row: TarefaWA) {
-    const next = row.status === "concluida" ? "pendente" : "concluida";
-    await supabase.from("tarefas").update({ status: next }).eq("id", row.id);
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const nomeDe = (id: string | null) =>
+    id ? (users.find((u) => u.id === id)?.name ?? `pessoa ${id}`) : null;
+
+  async function encaminhar(entrada: EntradaWhatsapp, paraPessoaId: string) {
+    try {
+      const r = await encaminharEntrada({ data: { id: entrada.id, paraPessoaId } });
+      if (!r.ok) {
+        toast.error("Esta mensagem já virou tarefa");
+      } else {
+        toast.success(`Tarefa criada para ${nomeDe(paraPessoaId) ?? "a pessoa"}`);
+      }
+      await carregar();
+    } catch (e) {
+      toast.error((e as Error)?.message ?? "Não foi possível encaminhar");
+    }
   }
 
+  const pendentes = entradas.filter((e) => e.processadaEm === null);
+  const resolvidas = entradas.filter((e) => e.processadaEm !== null);
+
   return (
-    <div className="mx-auto max-w-3xl p-6 space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Tarefas via WhatsApp</h1>
-        <p className="text-sm text-muted-foreground">
-          Atualiza em tempo real conforme as mensagens chegam no webhook.
-        </p>
-      </header>
+    <FluxoLayout title="Entrada do WhatsApp">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <header className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Entrada do WhatsApp</h1>
+          <p className="text-sm text-muted-foreground">
+            O que o bot recebeu. Quando ele reconhece o telefone, a tarefa é criada na
+            hora; quando não reconhece, a mensagem fica aqui esperando alguém encaminhar.
+          </p>
+        </header>
 
-      {loading && <p className="text-sm text-muted-foreground">Carregando…</p>}
-      {err && <p className="text-sm text-destructive">Erro: {err}</p>}
+        {carregando && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {erro && <p className="text-sm text-destructive">Erro: {erro}</p>}
 
-      <ul className="divide-y rounded-lg border bg-card">
-        {rows.length === 0 && !loading && (
-          <li className="p-4 text-sm text-muted-foreground">
-            Nenhuma tarefa ainda. Envie uma mensagem no WhatsApp conectado.
-          </li>
+        {!carregando && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold">
+              Sem dono ({pendentes.length})
+            </h2>
+            {pendentes.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border p-4 text-xs text-muted-foreground">
+                Nada esperando. Toda mensagem que chegou já virou tarefa de alguém.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+                {pendentes.map((e) => (
+                  <li key={e.id} className="space-y-2 p-3">
+                    <p className="text-sm font-medium">{e.titulo}</p>
+                    {e.descricao && (
+                      <p className="text-xs text-muted-foreground">{e.descricao}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {e.telefone ?? "sem telefone"} ·{" "}
+                      {new Date(e.criadoEm).toLocaleString("pt-BR")}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void encaminhar(e, currentUser.id)}
+                        className="rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                      >
+                        Pegar para mim
+                      </button>
+                      {/* Passar para outra pessoa é de quem chefia — a mesma
+                          regra que o servidor aplica. Sem isto, o botão
+                          apareceria para todo mundo e falharia ao ser usado. */}
+                      {podeEncaminhar && (
+                        <select
+                          defaultValue=""
+                          onChange={(ev) => {
+                            const id = ev.target.value;
+                            ev.target.value = "";
+                            if (id) void encaminhar(e, id);
+                          }}
+                          className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                        >
+                          <option value="">Encaminhar para…</option>
+                          {visibleUsersForAssign()
+                            .filter((u) => u.id !== currentUser.id)
+                            .map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
-        {rows.map((r) => (
-          <li key={r.id} className="flex items-center gap-3 p-3">
-            <button
-              type="button"
-              onClick={() => toggleStatus(r)}
-              className={`h-5 w-5 shrink-0 rounded border ${
-                r.status === "concluida"
-                  ? "bg-primary border-primary"
-                  : "border-muted-foreground/40"
-              }`}
-              aria-label="Alternar status"
-            />
-            <div className="min-w-0 flex-1">
-              <p
-                className={`truncate text-sm ${
-                  r.status === "concluida"
-                    ? "line-through text-muted-foreground"
-                    : ""
-                }`}
-              >
-                {r.titulo}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {(() => {
-                  const c = resolveWhatsAppContact(r.telefone);
-                  return c ? `${c.name} · ` : "";
-                })()}
-                {r.telefone ?? "—"} ·{" "}
-                {new Date(r.criado_em).toLocaleString("pt-BR")}
-              </p>
-            </div>
-            <span className="text-xs rounded-full border px-2 py-0.5 text-muted-foreground">
-              {r.status}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
+
+        {!carregando && resolvidas.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold">Já viraram tarefa ({resolvidas.length})</h2>
+            <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+              {resolvidas.map((e) => (
+                <li key={e.id} className="flex items-center gap-3 p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">{e.titulo}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {nomeDe(e.responsavelId) ?? "sem dono"} · {e.telefone ?? "—"} ·{" "}
+                      {new Date(e.criadoEm).toLocaleString("pt-BR")}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                    virou tarefa
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    </FluxoLayout>
   );
 }

@@ -1,14 +1,16 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { motion } from "framer-motion";
 import { useEffect, useState, type ReactNode } from "react";
+import { TravaScroll } from "@/components/trava-scroll";
+import larsilSimbolo from "@/assets/bolabranca.png";
 import {
   BarChart3,
   Bell,
   Building2,
   Calendar,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Home,
   Inbox,
   LogOut,
@@ -33,11 +35,13 @@ import {
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels } from "@/lib/fluxo-types";
+import { tituloDoAviso } from "@/lib/aviso";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
 import { QuickTaskModal } from "@/components/quick-task-modal";
 import { OnboardingModal } from "@/components/onboarding-modal";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
 import { AttentionOverlay } from "@/components/attention-overlay";
 import { TaskContextMenu } from "@/components/task-context-menu";
 import { CommandPalette } from "@/components/command-palette";
@@ -52,6 +56,8 @@ import { IncomingCall } from "@/components/incoming-call";
 import { OutgoingCallWatcher } from "@/components/outgoing-call-watcher";
 import { TractorBanner } from "@/components/tractor-banner";
 import { ChatDock } from "@/components/chat-dock";
+import { UserAvatar } from "@/components/user-avatar";
+import { transicionar } from "@/components/transition-veil";
 import { toast } from "sonner";
 import { useCallInviter } from "@/lib/call-inviter-context";
 
@@ -91,7 +97,6 @@ export function FluxoLayout({
   const {
     users,
     currentUser,
-    setCurrentUserId,
     notifications,
     markNotifRead,
     markAllNotifsRead,
@@ -190,6 +195,7 @@ export function FluxoLayout({
 
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
+
   const myScore = userScorePct(currentUser.id, tasks, completions);
   const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
 
@@ -214,6 +220,17 @@ export function FluxoLayout({
     return () => window.removeEventListener("keydown", onKey);
   }, [openNewTask]);
 
+  // Sair passa pelo mesmo véu da entrada — a troca acontece escondida, e a
+  // pessoa vê a despedida em vez de um piscar de tela.
+  const sair = () =>
+    void transicionar(
+      { tipo: "saida", nome: currentUser.name, iniciais: currentUser.avatar },
+      () => {
+        logout();
+        navigate({ to: "/login" });
+      },
+    );
+
   if (!isAuthenticated) return null;
   const needsOnboarding = !currentUser.contactCompleted || !currentUser.email || !currentUser.phone;
 
@@ -233,14 +250,45 @@ export function FluxoLayout({
         } ${collapsed ? "lg:w-16" : "lg:w-60"}`}
       >
         <div className={`flex h-14 items-center gap-2 border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "px-4"}`}>
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-bold">
-            F
-          </div>
+          {/* A marca no lugar do "F".
+
+              O quadrado colorido saiu junto, e isso não é liberdade: o
+              `--sidebar-primary` que o pintava é CLARO em todas as paletas
+              (L de 0.62 a 0.97 — no Noir ele é quase branco), e o
+              `bolabranca.png` é branco. Logo branca dentro de quadrado claro
+              simplesmente não aparece. Já a barra lateral é escura em todas
+              elas (L de 0.09 a 0.22), então o branco puro cai em cima de ~15:1
+              em qualquer tema, sem depender de paleta nenhuma.
+
+              36px onde o quadrado tinha 32: o desenho tem vazados internos e
+              pesa menos que um bloco maciço do mesmo tamanho. É o mesmo ajuste
+              ótico do login. De quebra, 36px é a medida do botão "Criar
+              tarefa" logo abaixo quando a barra está recolhida — os dois se
+              alinham sozinhos na coluna estreita. */}
+          {/* O glow herda a cor do quadrado que saiu: `--sidebar-primary` é o
+              mesmo token que pintava o fundo do "F". Em vez de sumir, a cor da
+              paleta virou a luz em volta da marca — e continua trocando junto
+              com o tema. No Noir, que é monocromático, ela é quase branca, e o
+              halo sai branco: certo por construção, não por acidente.
+
+              Duas camadas em vez de uma: a de 7px desenha a borda acesa, a de
+              16px espalha o brilho. Uma sombra só ou fica dura demais na borda
+              ou vira uma mancha sem foco. Proporcional às medidas do login
+              (10 e 26px), ajustada para os 36px daqui. */}
+          <img
+            src={larsilSimbolo}
+            alt="Larsil"
+            className="h-9 w-9 shrink-0 object-contain"
+            style={{
+              filter:
+                "drop-shadow(0 0 7px color-mix(in oklab, var(--sidebar-primary) 50%, transparent)) drop-shadow(0 0 16px color-mix(in oklab, var(--sidebar-primary) 25%, transparent))",
+            }}
+          />
           {(!collapsed || mobileOpen) && (
             <>
               <div className="flex-1">
                 <div className="text-sm font-semibold">Fluxo</div>
-                <div className="text-[10px] text-sidebar-foreground/60">Workspace Acme</div>
+                <div className="text-[10px] text-sidebar-foreground/60">Workspace Larsil</div>
               </div>
               <button
                 type="button"
@@ -285,14 +333,24 @@ export function FluxoLayout({
                 key={n.to}
                 to={n.to}
                 title={collapsed ? n.label : undefined}
-                className={`flex items-center gap-2.5 rounded-md text-sm transition ${
+                className={`relative flex items-center gap-2.5 rounded-md text-sm transition ${
                   collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"
                 } ${
                   active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    ? "text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                 }`}
               >
+                {/* O fundo do item ativo é um único elemento compartilhado: o
+                    `layoutId` faz o framer-motion deslizá-lo de um item para o
+                    outro em vez de apagar aqui e acender ali. */}
+                {active && (
+                  <motion.span
+                    layoutId="nav-ativo"
+                    className="absolute inset-0 rounded-md bg-sidebar-accent"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
                 <div className="relative">
                   <n.icon className="h-4 w-4" />
                   {collapsed && badge ? (
@@ -303,9 +361,9 @@ export function FluxoLayout({
                 </div>
                 {!collapsed && (
                   <>
-                    <span className="flex-1">{n.label}</span>
+                    <span className="relative flex-1">{n.label}</span>
                     {badge ? (
-                      <span className="rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
+                      <span className="relative rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
                         {badge}
                       </span>
                     ) : null}
@@ -470,31 +528,18 @@ export function FluxoLayout({
         </nav>
 
         <div className="mt-auto border-t border-sidebar-border p-3">
-          <button
-            onClick={() => setCollapsed((c) => !c)}
-            title={collapsed ? "Expandir menu" : "Recolher menu"}
-            className={`mb-3 flex items-center gap-2 rounded-md text-xs text-sidebar-foreground/70 transition hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
-              collapsed ? "mx-auto h-8 w-8 justify-center" : "w-full px-2 py-1.5"
-            }`}
-          >
-            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-            {!collapsed && <span>Recolher menu</span>}
-          </button>
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
-              <div
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-                title={currentUser.name}
-              >
-                {currentUser.avatar}
-              </div>
+              <UserAvatar
+                nome={currentUser.name}
+                iniciais={currentUser.avatar}
+                className="h-9 w-9 text-xs"
+              />
               <button
-                onClick={() => {
-                  logout();
-                  navigate({ to: "/login" });
-                }}
+                onClick={sair}
                 title="Sair"
-                className="rounded p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                aria-label="Sair"
+                className="botao-sair rounded-md p-1.5"
               >
                 <LogOut className="h-4 w-4" />
               </button>
@@ -502,9 +547,11 @@ export function FluxoLayout({
           ) : (
             <>
           <div className="mb-2 flex items-center gap-2 rounded-md p-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-              {currentUser.avatar}
-            </div>
+            <UserAvatar
+              nome={currentUser.name}
+              iniciais={currentUser.avatar}
+              className="h-9 w-9 text-xs"
+            />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">{currentUser.name}</div>
               <div className="truncate text-[10px] text-sidebar-foreground/60">
@@ -512,34 +559,60 @@ export function FluxoLayout({
               </div>
             </div>
             <button
-              onClick={() => {
-                logout();
-                navigate({ to: "/login" });
-              }}
+              onClick={sair}
               title="Sair"
-              className="rounded p-1 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              aria-label="Sair"
+              className="botao-sair shrink-0 rounded-md p-1.5"
             >
               <LogOut className="h-4 w-4" />
             </button>
           </div>
-          <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
-            Simular usuário
-          </label>
-          <select
-            value={currentUser.id}
-            onChange={(e) => setCurrentUserId(e.target.value)}
-            className="w-full rounded-md border border-sidebar-border bg-sidebar-accent/40 px-2 py-1.5 text-xs text-sidebar-foreground"
-          >
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} — {roleLabels[u.role]}
-              </option>
-            ))}
-          </select>
+          {/* O seletor "Simular usuário" ficava aqui.
+
+              Ele existia para trocar entre as nove pessoas do dado falso e
+              testar cada perfil. Sem elas ele listaria uma única opção — quem
+              está logado — e trocar para si mesmo não faz nada.
+
+              Além de inútil, era arriscado: `setCurrentUserId` troca a
+              identidade no cliente sem passar pela IAM, e o servidor confia no
+              userId que o cliente manda. Numa tela de produção isso é um
+              seletor de "seja outra pessoa". */}
             </>
           )}
         </div>
       </aside>
+
+      {/* Alça de recolher o menu.
+
+          Ela mora FORA da <aside> de propósito. A barra é um container de
+          rolagem (`overflow-y-auto`), e um filho posicionado lá dentro rola
+          junto com o menu — ou seja, o "meio" dele mudaria de lugar conforme
+          a lista de salas abre e fecha. Presa na viewport, ela fica sempre no
+          meio da altura da tela, que é o meio da barra.
+
+          O `left` sai da largura da própria barra menos metade do botão: os
+          28px do círculo ficam repartidos meio a meio sobre a borda, que é o
+          que faz ela parecer uma aba puxada da lateral em vez de um botão
+          solto por cima. E acompanha a mesma duração de 200ms da animação de
+          largura da barra, senão ela chegaria antes ou depois da borda.
+
+          Só no desktop: no celular a barra é uma gaveta, que abre pelo ☰ e
+          fecha pelo X — recolher não significa nada ali. */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expandir menu" : "Recolher menu"}
+        style={{ left: collapsed ? "calc(4rem - 14px)" : "calc(15rem - 14px)" }}
+        className="fluxo-alca-menu fixed top-1/2 z-30 hidden h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground/60 shadow-sm transition-[left,background-color,border-color,color,scale] duration-200 hover:scale-110 hover:border-primary/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:flex"
+      >
+        {collapsed ? (
+          <ChevronRight className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronLeft className="h-3.5 w-3.5" />
+        )}
+      </button>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="fluxo-topbar sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-card px-3 sm:gap-3 sm:px-6">
@@ -553,7 +626,7 @@ export function FluxoLayout({
           </button>
           <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
             <Building2 className="hidden h-4 w-4 sm:block" />
-            <span className="hidden sm:inline">Acme</span>
+            <span className="hidden sm:inline">Larsil</span>
             {breadcrumb && (
               <>
                 <span className="hidden sm:inline">/</span>
@@ -679,7 +752,7 @@ export function FluxoLayout({
                             />
                             <div className="flex-1">
                               <div className="flex items-center gap-2 text-sm font-medium">
-                                {n.title}
+                                {tituloDoAviso(n, users)}
                                 {!n.read && (
                                   <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
                                     novo
@@ -703,9 +776,11 @@ export function FluxoLayout({
               className="hidden items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs sm:flex"
               title={`${myScore.done} de ${myScore.assigned} tarefas do mês`}
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                {currentUser.avatar}
-              </div>
+              <UserAvatar
+                nome={currentUser.name}
+                iniciais={currentUser.avatar}
+                className="h-6 w-6 text-[10px]"
+              />
               <span className="hidden font-medium sm:block">{currentUser.name.split(" ")[0]}</span>
               <div className="hidden h-1 w-16 overflow-hidden rounded-full bg-secondary sm:block">
                 <div
@@ -724,7 +799,20 @@ export function FluxoLayout({
             </div>
           </div>
         </header>
-        <main className="min-w-0 flex-1 p-3 pb-24 sm:p-4 md:p-6 lg:pb-4">{children}</main>
+        <main className="min-w-0 flex-1 p-3 pb-24 sm:p-4 md:p-6 lg:pb-4">
+          {/* Entrada do conteúdo a cada troca de rota. Sem animação de saída de
+              propósito: esperar a página velha sair antes de mostrar a nova
+              soma latência a cada clique do menu, e navegação precisa parecer
+              instantânea. A chave remonta e reexecuta o `initial`. */}
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {children}
+          </motion.div>
+        </main>
       </div>
 
       {/* Mobile bottom tab bar */}
@@ -909,15 +997,35 @@ export function FluxoLayout({
       <CommandPalette />
       <TeamDelegatePanel />
       <FocusOverlay />
+      {/* O respiro do topo sai da própria --titlebar-h: a barra de título é
+          fixed com z-index acima deste modal, então sem isso o card desliza por
+          baixo dela. E o card ganha teto de altura com rolagem interna, em vez
+          de crescer até encostar na barra. */}
       {gridOpen && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 p-2 pt-4 backdrop-blur-sm sm:p-4 sm:pt-10">
-          <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
-            <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-3 py-2 sm:px-4 sm:py-2.5">
+        <div
+          className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 px-2 pb-6 backdrop-blur-sm sm:px-4"
+          style={{ paddingTop: "calc(var(--titlebar-h) + 1.5rem)" }}
+        >
+          <TravaScroll />
+          <div
+            className="flex w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+            style={{ maxHeight: "calc(100vh - var(--titlebar-h) - 3.5rem)" }}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-border bg-secondary/60 px-3 py-2 sm:px-4 sm:py-2.5">
               <div className="flex items-center gap-2">
                 <Plus className="h-4 w-4 text-primary" />
                 <div className="text-sm font-semibold">Criar tarefas em grade</div>
-                <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                  Digite, Tab para próxima linha, Enter para criar todas
+                {/* Lê de ATALHOS_GRADE: este texto dizia o oposto do que o
+                    código faz e do que o rodapé do painel mostrava. */}
+                <span className="hidden items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
+                  {ATALHOS_GRADE.map((a) => (
+                    <span key={a.tecla} className="inline-flex items-center gap-1">
+                      <kbd className="rounded border border-border bg-background px-1 font-mono text-foreground">
+                        {a.tecla}
+                      </kbd>
+                      {a.acao}
+                    </span>
+                  ))}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -930,7 +1038,7 @@ export function FluxoLayout({
                 </button>
               </div>
             </div>
-            <div className="p-3 sm:p-4">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4">
               <InlineTaskCreator />
             </div>
           </div>

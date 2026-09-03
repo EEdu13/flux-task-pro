@@ -28,6 +28,7 @@ import { loadPackDone, savePackDone } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
 import { startFocus } from "@/components/focus-overlay";
 import { TaskTimerControls } from "@/components/task-timer-controls";
+import { CampoData } from "@/components/campo-data";
 import {
   freqLabels,
   sectors,
@@ -362,18 +363,20 @@ function MinhasTarefas() {
           />
           {datePreset === "entre" && (
             <div className="inline-flex items-center gap-1">
-              <input
-                type="date"
+              <CampoData
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="rounded-md border border-border bg-secondary px-2 py-1 text-xs"
+                onChange={setDateFrom}
+                placeholder="Início"
+                title="Data inicial"
+                className="bg-secondary py-1 text-xs"
               />
               <span className="text-xs text-muted-foreground">até</span>
-              <input
-                type="date"
+              <CampoData
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="rounded-md border border-border bg-secondary px-2 py-1 text-xs"
+                onChange={setDateTo}
+                placeholder="Fim"
+                title="Data final"
+                className="bg-secondary py-1 text-xs"
               />
             </div>
           )}
@@ -899,7 +902,29 @@ function PackView({
   const [focus, setFocus] = useState(() => focusSummaryToday(currentUserId));
   useEffect(() => {
     setFocus(focusSummaryToday(currentUserId));
-    const on = () => setFocus(focusSummaryToday(currentUserId));
+
+    /* O local responde na hora; o banco é quem sabe o total de verdade se a
+       pessoa fez um pomodoro noutro computador mais cedo hoje. A busca roda
+       de novo a cada "fluxo:focus-updated" — o mesmo evento que atualiza o
+       local — para o número não ficar defasado depois do primeiro pomodoro
+       do dia. */
+    void (async () => {
+      try {
+        const { focoDeHoje } = await import("@/lib/foco.functions");
+        const r = await focoDeHoje();
+        setFocus(r);
+      } catch (e) {
+        console.warn("[fluxo] foco de hoje não carregou:", (e as Error)?.message);
+      }
+    })();
+
+    const on = () => {
+      setFocus(focusSummaryToday(currentUserId));
+      void import("@/lib/foco.functions")
+        .then((api) => api.focoDeHoje())
+        .then(setFocus)
+        .catch(() => {});
+    };
     window.addEventListener("fluxo:focus-updated", on);
     return () => window.removeEventListener("fluxo:focus-updated", on);
   }, [currentUserId]);

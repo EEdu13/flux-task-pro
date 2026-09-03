@@ -176,6 +176,28 @@ async function reportDesktopError(msg: string) {
   }
 }
 
+/**
+ * Tela cheia de verdade — a da JANELA, não a do elemento HTML.
+ *
+ * requestFullscreen() é a API do navegador: dentro do Tauri quem manda no
+ * tamanho é a janela nativa, e o WebView acaba desencontrado dela (sobra uma
+ * faixa preta onde o conteúdo não alcança). Pedindo direto ao Tauri, janela e
+ * conteúdo mudam juntos.
+ *
+ * @returns true se a troca aconteceu; false no navegador ou se a ponte falhou.
+ */
+export async function desktopSetFullscreen(ligado: boolean): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setFullscreen(ligado);
+    return true;
+  } catch (e) {
+    console.error("[fluxo] setFullscreen falhou", e);
+    return false;
+  }
+}
+
 /** Diagnóstico: dispara as sobreposições para teste em uma máquina só. */
 export async function desktopSelfTest(): Promise<string> {
   if (!isTauri()) {

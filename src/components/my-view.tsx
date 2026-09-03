@@ -20,6 +20,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { statusColor, statusLabels, type Task } from "@/lib/fluxo-types";
 import { COLOR_PALETTE, useMyView, type ColumnType } from "@/lib/my-view-store";
 import { toast } from "sonner";
+import { confirmar } from "@/components/confirm-dialog";
 
 function fmtDue(iso: string) {
   const d = new Date(iso);
@@ -576,8 +577,16 @@ export function MyView({
                 itemBtn(
                   <Trash2 className="h-3.5 w-3.5" />,
                   "Excluir tarefa",
-                  () => {
-                    if (confirm(`Excluir "${t.title}"?`)) deleteTask(t.id);
+                  async () => {
+                    const ok = await confirmar({
+                      titulo: "Excluir esta tarefa?",
+                      descricao: `"${t.title}" sai da lista de todo mundo, junto com comentários e anexos. Não dá para desfazer.`,
+                      confirmar: "Excluir",
+                      perigo: true,
+                    });
+                    if (!ok) return;
+                    deleteTask(t.id);
+                    toast.success("Tarefa excluída");
                   },
                   true,
                 )}

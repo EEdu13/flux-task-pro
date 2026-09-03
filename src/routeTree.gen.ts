@@ -14,6 +14,7 @@ import { Route as AtasRouteImport } from './routes/atas'
 import { Route as CalendarioRouteImport } from './routes/calendario'
 import { Route as ChamadaRouteImport } from './routes/chamada'
 import { Route as ChatRouteImport } from './routes/chat'
+import { Route as ConferirDadosAntigosRouteImport } from './routes/conferir-dados-antigos'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as ContatosRouteImport } from './routes/contatos'
 import { Route as EquipeRouteImport } from './routes/equipe'
@@ -28,8 +29,11 @@ import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
 import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
+import { Route as ApiAnexoIdRouteImport } from './routes/api/anexo.$id'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
+import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram-webhook'
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
+import { Route as ApiPublicFotoNomeRouteImport } from './routes/api/public/foto/$nome'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -54,6 +58,11 @@ const ChamadaRoute = ChamadaRouteImport.update({
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConferirDadosAntigosRoute = ConferirDadosAntigosRouteImport.update({
+  id: '/conferir-dados-antigos',
+  path: '/conferir-dados-antigos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
@@ -126,17 +135,33 @@ const SalasRoomNameRoute = SalasRoomNameRouteImport.update({
   path: '/salas/$roomName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAnexoIdRoute = ApiAnexoIdRouteImport.update({
+  id: '/api/anexo/$id',
+  path: '/api/anexo/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
   id: '/api/public/purge-rooms',
   path: '/api/public/purge-rooms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicTelegramWebhookRoute =
+  ApiPublicTelegramWebhookRouteImport.update({
+    id: '/api/public/telegram-webhook',
+    path: '/api/public/telegram-webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicWhatsappWebhookRoute =
   ApiPublicWhatsappWebhookRouteImport.update({
     id: '/api/public/whatsapp-webhook',
     path: '/api/public/whatsapp-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicFotoNomeRoute = ApiPublicFotoNomeRouteImport.update({
+  id: '/api/public/foto/$nome',
+  path: '/api/public/foto/$nome',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -144,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/calendario': typeof CalendarioRoute
   '/chamada': typeof ChamadaRoute
   '/chat': typeof ChatRoute
+  '/conferir-dados-antigos': typeof ConferirDadosAntigosRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
@@ -158,8 +184,11 @@ export interface FileRoutesByFullPath {
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
+  '/api/anexo/$id': typeof ApiAnexoIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -167,6 +196,7 @@ export interface FileRoutesByTo {
   '/calendario': typeof CalendarioRoute
   '/chamada': typeof ChamadaRoute
   '/chat': typeof ChatRoute
+  '/conferir-dados-antigos': typeof ConferirDadosAntigosRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
@@ -181,8 +211,11 @@ export interface FileRoutesByTo {
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
+  '/api/anexo/$id': typeof ApiAnexoIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -191,6 +224,7 @@ export interface FileRoutesById {
   '/calendario': typeof CalendarioRoute
   '/chamada': typeof ChamadaRoute
   '/chat': typeof ChatRoute
+  '/conferir-dados-antigos': typeof ConferirDadosAntigosRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
   '/equipe': typeof EquipeRoute
@@ -205,8 +239,11 @@ export interface FileRoutesById {
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
+  '/api/anexo/$id': typeof ApiAnexoIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -216,6 +253,7 @@ export interface FileRouteTypes {
     | '/calendario'
     | '/chamada'
     | '/chat'
+    | '/conferir-dados-antigos'
     | '/configuracoes'
     | '/contatos'
     | '/equipe'
@@ -230,8 +268,11 @@ export interface FileRouteTypes {
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
+    | '/api/anexo/$id'
     | '/api/public/purge-rooms'
+    | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/public/foto/$nome'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -239,6 +280,7 @@ export interface FileRouteTypes {
     | '/calendario'
     | '/chamada'
     | '/chat'
+    | '/conferir-dados-antigos'
     | '/configuracoes'
     | '/contatos'
     | '/equipe'
@@ -253,8 +295,11 @@ export interface FileRouteTypes {
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas'
+    | '/api/anexo/$id'
     | '/api/public/purge-rooms'
+    | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/public/foto/$nome'
   id:
     | '__root__'
     | '/'
@@ -262,6 +307,7 @@ export interface FileRouteTypes {
     | '/calendario'
     | '/chamada'
     | '/chat'
+    | '/conferir-dados-antigos'
     | '/configuracoes'
     | '/contatos'
     | '/equipe'
@@ -276,8 +322,11 @@ export interface FileRouteTypes {
     | '/convidado/$roomName'
     | '/salas/$roomName'
     | '/salas/'
+    | '/api/anexo/$id'
     | '/api/public/purge-rooms'
+    | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/public/foto/$nome'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -286,6 +335,7 @@ export interface RootRouteChildren {
   CalendarioRoute: typeof CalendarioRoute
   ChamadaRoute: typeof ChamadaRoute
   ChatRoute: typeof ChatRoute
+  ConferirDadosAntigosRoute: typeof ConferirDadosAntigosRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   ContatosRoute: typeof ContatosRoute
   EquipeRoute: typeof EquipeRoute
@@ -300,8 +350,11 @@ export interface RootRouteChildren {
   ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
+  ApiAnexoIdRoute: typeof ApiAnexoIdRoute
   ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
+  ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
+  ApiPublicFotoNomeRoute: typeof ApiPublicFotoNomeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -339,6 +392,13 @@ declare module '@tanstack/react-router' {
       path: '/chat'
       fullPath: '/chat'
       preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conferir-dados-antigos': {
+      id: '/conferir-dados-antigos'
+      path: '/conferir-dados-antigos'
+      fullPath: '/conferir-dados-antigos'
+      preLoaderRoute: typeof ConferirDadosAntigosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/configuracoes': {
@@ -439,6 +499,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalasRoomNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/anexo/$id': {
+      id: '/api/anexo/$id'
+      path: '/api/anexo/$id'
+      fullPath: '/api/anexo/$id'
+      preLoaderRoute: typeof ApiAnexoIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/purge-rooms': {
       id: '/api/public/purge-rooms'
       path: '/api/public/purge-rooms'
@@ -446,11 +513,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPurgeRoomsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/telegram-webhook': {
+      id: '/api/public/telegram-webhook'
+      path: '/api/public/telegram-webhook'
+      fullPath: '/api/public/telegram-webhook'
+      preLoaderRoute: typeof ApiPublicTelegramWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/whatsapp-webhook': {
       id: '/api/public/whatsapp-webhook'
       path: '/api/public/whatsapp-webhook'
       fullPath: '/api/public/whatsapp-webhook'
       preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/foto/$nome': {
+      id: '/api/public/foto/$nome'
+      path: '/api/public/foto/$nome'
+      fullPath: '/api/public/foto/$nome'
+      preLoaderRoute: typeof ApiPublicFotoNomeRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -462,6 +543,7 @@ const rootRouteChildren: RootRouteChildren = {
   CalendarioRoute: CalendarioRoute,
   ChamadaRoute: ChamadaRoute,
   ChatRoute: ChatRoute,
+  ConferirDadosAntigosRoute: ConferirDadosAntigosRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   ContatosRoute: ContatosRoute,
   EquipeRoute: EquipeRoute,
@@ -476,8 +558,11 @@ const rootRouteChildren: RootRouteChildren = {
   ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
+  ApiAnexoIdRoute: ApiAnexoIdRoute,
   ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
+  ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
+  ApiPublicFotoNomeRoute: ApiPublicFotoNomeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

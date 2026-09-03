@@ -336,7 +336,7 @@ function CallContents({
     setGuestCopied(false);
     try {
       const res = await createGuestInvite({
-        data: { roomName, inviterUserId: currentUser.id, hours: 24 },
+        data: { roomName, hours: 24 },
       });
       const url = `${window.location.origin}/convidado/${roomName}?t=${encodeURIComponent(res.token)}`;
       setGuestUrl(url);
@@ -363,7 +363,7 @@ function CallContents({
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await getRoomAccess({ data: { roomName, userId: currentUser.id } });
+        const res = await getRoomAccess({ data: { roomName } });
         if (!cancelled) {
           setIsPrivate(res.isPrivate);
         }
@@ -386,7 +386,7 @@ function CallContents({
     setPrivBusy(true);
     try {
       await setRoomPrivacy({
-        data: { roomName, isPrivate: next, userId: currentUser.id },
+        data: { roomName, isPrivate: next },
       });
     } catch {
       setIsPrivate(!next);

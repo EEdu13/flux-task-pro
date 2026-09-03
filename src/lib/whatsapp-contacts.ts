@@ -1,7 +1,6 @@
 // Mapa de telefone (WhatsApp) → usuário do sistema.
 // A chave é apenas dígitos; a comparação usa sufixo, então "4399608994"
 // também casa com "5544399608994" (com DDI) e vice-versa.
-import { seedUsers } from "./fluxo-seed";
 import type { User } from "./fluxo-types";
 
 export type WhatsAppContact = {
@@ -10,10 +9,19 @@ export type WhatsAppContact = {
   avatar: string;
 };
 
-export const whatsappContacts: Record<string, WhatsAppContact> = {
-  // Elisa Prado — número real conectado ao bot
-  "4399608994": { userId: "u6", name: "Elisa Prado", avatar: "EP" },
-};
+/**
+ * Vazio de propósito.
+ *
+ * Havia aqui um telefone real apontando para "Elisa Prado", que é uma pessoa
+ * inventada — o bot atendia o número certo e criava a tarefa em nome de alguém
+ * que não trabalha na Larsil.
+ *
+ * O lugar definitivo disto não é uma constante no código: é a IAM, que já sabe
+ * quem é quem. Enquanto esse endpoint de telefone → pessoa não existir, o bot
+ * não reconhece o remetente, e a tarefa cai sem dono em vez de cair no dono
+ * errado.
+ */
+export const whatsappContacts: Record<string, WhatsAppContact> = {};
 
 function digits(s: string | null | undefined): string {
   return (s ?? "").replace(/\D+/g, "");
@@ -44,9 +52,12 @@ function norm(s: string): string {
  * Resolve um "hint" de nome (ex: "elisa", "joão prado") para um usuário.
  * Casa por prefixo/inclusão em nome completo ou primeiro nome.
  */
+/* `users` deixou de ter valor padrão. Ele era `seedUsers`, ou seja: esquecer de
+   passar a lista não dava erro, só resolvia o nome contra pessoas inventadas.
+   Agora quem chama é obrigado a dizer contra quem está comparando. */
 export function resolveUserByName(
   hint: string | null | undefined,
-  users: User[] = seedUsers,
+  users: User[],
 ): User | null {
   const h = norm(hint ?? "");
   if (!h) return null;
@@ -67,6 +78,6 @@ export function resolveUserByName(
   return null;
 }
 
-export function knownUsersForPrompt(users: User[] = seedUsers): string {
+export function knownUsersForPrompt(users: User[]): string {
   return users.map((u) => `- ${u.name} (${u.jobTitle}, ${u.sector})`).join("\n");
 }

@@ -76,22 +76,22 @@
   /* Forest Precision — light companion. Branco limpo (sem creme) + verde saturado. */
   --radius: 0.5rem;
   --background: oklch(0.98 0.004 155);
-  --foreground: oklch(0.20 0.03 158);
+  --foreground: oklch(0.2 0.03 158);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.20 0.03 158);
+  --card-foreground: oklch(0.2 0.03 158);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.20 0.03 158);
+  --popover-foreground: oklch(0.2 0.03 158);
   --primary: oklch(0.52 0.15 145);
   --primary-foreground: oklch(0.99 0.01 120);
   --secondary: oklch(0.95 0.008 155);
   --secondary-foreground: oklch(0.26 0.04 155);
   --muted: oklch(0.955 0.006 155);
-  --muted-foreground: oklch(0.50 0.02 155);
-  --accent: oklch(0.90 0.13 125);
+  --muted-foreground: oklch(0.5 0.02 155);
+  --accent: oklch(0.9 0.13 125);
   --accent-foreground: oklch(0.22 0.06 140);
-  --destructive: oklch(0.60 0.22 20);
+  --destructive: oklch(0.6 0.22 20);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.90 0.008 155);
+  --border: oklch(0.9 0.008 155);
   --input: oklch(0.92 0.008 155);
   --ring: oklch(0.72 0.19 128);
   --success: oklch(0.58 0.17 148);
@@ -101,13 +101,13 @@
   --chart-2: oklch(0.72 0.19 128);
   --chart-3: oklch(0.58 0.14 235);
   --chart-4: oklch(0.78 0.16 78);
-  --chart-5: oklch(0.30 0.06 158);
+  --chart-5: oklch(0.3 0.06 158);
   --sidebar: oklch(0.145 0.014 158);
   --sidebar-foreground: oklch(0.88 0.015 150);
   --sidebar-primary: oklch(0.867 0.204 127);
   --sidebar-primary-foreground: oklch(0.17 0.04 145);
   --sidebar-accent: oklch(0.24 0.022 158);
-  --sidebar-accent-foreground: oklch(0.90 0.19 127);
+  --sidebar-accent-foreground: oklch(0.9 0.19 127);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.867 0.204 127);
   --shadow-sm: 0 1px 2px oklch(0.2 0.03 155 / 0.06);
@@ -119,11 +119,11 @@
 
 /* ————— Ocean Trust ————— */
 :root[data-palette="ocean"] {
-  --background: oklch(0.975 0.008 240);
+  --background: oklch(0.975 0.010 240);
   --foreground: oklch(0.22 0.04 250);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0.008 240);
   --card-foreground: oklch(0.22 0.04 250);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.99 0.008 240);
   --popover-foreground: oklch(0.22 0.04 250);
   --primary: oklch(0.48 0.14 240);
   --primary-foreground: oklch(0.98 0.01 240);
@@ -133,10 +133,10 @@
   --muted-foreground: oklch(0.48 0.04 245);
   --accent: oklch(0.82 0.14 210);
   --accent-foreground: oklch(0.22 0.05 245);
-  --destructive: oklch(0.58 0.20 30);
+  --destructive: oklch(0.58 0.2 30);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.88 0.02 235);
-  --input: oklch(0.90 0.015 235);
+  --input: oklch(0.9 0.015 235);
   --ring: oklch(0.48 0.14 240);
   --success: oklch(0.62 0.16 165);
   --warning: oklch(0.78 0.15 75);
@@ -146,21 +146,21 @@
   --chart-3: oklch(0.82 0.14 210);
   --chart-4: oklch(0.55 0.09 190);
   --chart-5: oklch(0.32 0.08 250);
-  --sidebar: oklch(0.20 0.04 250);
+  --sidebar: oklch(0.2 0.04 250);
   --sidebar-foreground: oklch(0.92 0.02 220);
   --sidebar-primary: oklch(0.82 0.14 210);
-  --sidebar-primary-foreground: oklch(0.20 0.05 250);
+  --sidebar-primary-foreground: oklch(0.2 0.05 250);
   --sidebar-accent: oklch(0.26 0.05 250);
   --sidebar-accent-foreground: oklch(0.96 0.02 220);
-  --sidebar-border: oklch(0.30 0.05 250);
+  --sidebar-border: oklch(0.3 0.05 250);
   --sidebar-ring: oklch(0.82 0.14 210);
 }
 :root[data-palette="ocean"].dark {
   --background: oklch(0.16 0.03 250);
   --foreground: oklch(0.95 0.02 220);
-  --card: oklch(0.20 0.04 250);
+  --card: oklch(0.2 0.04 250);
   --card-foreground: oklch(0.95 0.02 220);
-  --popover: oklch(0.20 0.04 250);
+  --popover: oklch(0.2 0.04 250);
   --popover-foreground: oklch(0.95 0.02 220);
   --primary: oklch(0.75 0.14 220);
   --primary-foreground: oklch(0.18 0.05 250);
@@ -169,16 +169,16 @@
   --muted: oklch(0.26 0.04 250);
   --muted-foreground: oklch(0.72 0.03 230);
   --accent: oklch(0.32 0.06 230);
-  --accent-foreground: oklch(0.92 0.10 220);
+  --accent-foreground: oklch(0.92 0.1 220);
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.75 0.14 220);
   --sidebar: oklch(0.13 0.03 250);
-  --sidebar-foreground: oklch(0.90 0.02 220);
+  --sidebar-foreground: oklch(0.9 0.02 220);
   --sidebar-primary: oklch(0.75 0.14 220);
   --sidebar-primary-foreground: oklch(0.18 0.05 250);
   --sidebar-accent: oklch(0.22 0.04 250);
-  --sidebar-accent-foreground: oklch(0.92 0.10 220);
+  --sidebar-accent-foreground: oklch(0.92 0.1 220);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.75 0.14 220);
 }
@@ -191,7 +191,7 @@
   --card-foreground: oklch(0.24 0.04 25);
   --popover: oklch(0.99 0.008 65);
   --popover-foreground: oklch(0.24 0.04 25);
-  --primary: oklch(0.62 0.20 30);
+  --primary: oklch(0.62 0.2 30);
   --primary-foreground: oklch(0.99 0.02 80);
   --secondary: oklch(0.94 0.02 60);
   --secondary-foreground: oklch(0.28 0.05 30);
@@ -202,16 +202,16 @@
   --destructive: oklch(0.55 0.22 15);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.88 0.02 55);
-  --input: oklch(0.90 0.02 55);
-  --ring: oklch(0.62 0.20 30);
+  --input: oklch(0.9 0.02 55);
+  --ring: oklch(0.62 0.2 30);
   --success: oklch(0.62 0.16 150);
   --warning: oklch(0.78 0.15 75);
   --info: oklch(0.55 0.09 210);
-  --chart-1: oklch(0.62 0.20 30);
+  --chart-1: oklch(0.62 0.2 30);
   --chart-2: oklch(0.72 0.17 55);
   --chart-3: oklch(0.82 0.15 80);
   --chart-4: oklch(0.55 0.18 350);
-  --chart-5: oklch(0.35 0.10 25);
+  --chart-5: oklch(0.35 0.1 25);
   --sidebar: oklch(0.22 0.05 25);
   --sidebar-foreground: oklch(0.92 0.02 60);
   --sidebar-primary: oklch(0.82 0.15 55);
@@ -224,12 +224,12 @@
 :root[data-palette="sunset"].dark {
   --background: oklch(0.16 0.03 25);
   --foreground: oklch(0.95 0.02 60);
-  --card: oklch(0.20 0.04 25);
+  --card: oklch(0.2 0.04 25);
   --card-foreground: oklch(0.95 0.02 60);
-  --popover: oklch(0.20 0.04 25);
+  --popover: oklch(0.2 0.04 25);
   --popover-foreground: oklch(0.95 0.02 60);
   --primary: oklch(0.78 0.17 50);
-  --primary-foreground: oklch(0.20 0.05 25);
+  --primary-foreground: oklch(0.2 0.05 25);
   --secondary: oklch(0.26 0.04 25);
   --secondary-foreground: oklch(0.95 0.02 60);
   --muted: oklch(0.26 0.04 25);
@@ -240,16 +240,29 @@
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.78 0.17 50);
   --sidebar: oklch(0.14 0.03 25);
-  --sidebar-foreground: oklch(0.90 0.02 60);
+  --sidebar-foreground: oklch(0.9 0.02 60);
   --sidebar-primary: oklch(0.78 0.17 50);
-  --sidebar-primary-foreground: oklch(0.20 0.05 25);
+  --sidebar-primary-foreground: oklch(0.2 0.05 25);
   --sidebar-accent: oklch(0.22 0.04 25);
   --sidebar-accent-foreground: oklch(0.92 0.12 55);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.78 0.17 50);
 }
 
-/* ————— Noir Professional ————— */
+/* ————— Noir Professional —————
+   Preto, cinza e branco. Nada mais.
+
+   O âmbar que existia aqui não era um detalhe: era a cor do item ativo da
+   barra lateral, do anel de foco e de uma das séries do gráfico. Aparecia o
+   tempo todo, e uma paleta monocromática com um ponto amarelo permanente não
+   é monocromática — é cinza com um sotaque.
+
+   Sem matiz nenhum, o trabalho todo passa para a claridade. Por isso as
+   camadas ganharam degraus maiores que nas outras paletas: onde o azul do
+   Ocean se separa por cor, aqui só o tom separa, e degrau curto vira borrão.
+
+   As quatro cores de status continuam coloridas e são a única exceção —
+   ver a nota no fim do bloco. */
 :root[data-palette="noir"] {
   --background: oklch(0.98 0 0);
   --foreground: oklch(0.18 0 0);
@@ -260,59 +273,450 @@
   --primary: oklch(0.22 0 0);
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.94 0 0);
-  --secondary-foreground: oklch(0.20 0 0);
-  --muted: oklch(0.94 0 0);
+  --secondary-foreground: oklch(0.2 0 0);
+  --muted: oklch(0.945 0 0);
   --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.83 0.16 85);
-  --accent-foreground: oklch(0.20 0.05 80);
-  --destructive: oklch(0.55 0.22 25);
-  --destructive-foreground: oklch(1 0 0);
+  /* Era âmbar. Vira o cinza de repouso — é fundo de hover e de item marcado. */
+  --accent: oklch(0.9 0 0);
+  --accent-foreground: oklch(0.2 0 0);
   --border: oklch(0.88 0 0);
-  --input: oklch(0.90 0 0);
+  --input: oklch(0.9 0 0);
   --ring: oklch(0.22 0 0);
-  --success: oklch(0.55 0.16 150);
-  --warning: oklch(0.78 0.15 75);
-  --info: oklch(0.50 0.09 240);
-  --chart-1: oklch(0.22 0 0);
-  --chart-2: oklch(0.45 0 0);
-  --chart-3: oklch(0.65 0 0);
-  --chart-4: oklch(0.83 0.16 85);
-  --chart-5: oklch(0.30 0.05 250);
+  /* Cinco tons espaçados por igual: sem cor, é o contraste que separa as
+     séries do gráfico uma da outra. */
+  --chart-1: oklch(0.2 0 0);
+  --chart-2: oklch(0.36 0 0);
+  --chart-3: oklch(0.52 0 0);
+  --chart-4: oklch(0.68 0 0);
+  --chart-5: oklch(0.82 0 0);
   --sidebar: oklch(0.14 0 0);
   --sidebar-foreground: oklch(0.92 0 0);
-  --sidebar-primary: oklch(0.83 0.16 85);
-  --sidebar-primary-foreground: oklch(0.16 0.03 80);
-  --sidebar-accent: oklch(0.22 0 0);
-  --sidebar-accent-foreground: oklch(0.96 0 0);
+  /* Branco onde antes era âmbar: numa barra preta, o item ativo se marca
+     por ser o mais claro da coluna. */
+  --sidebar-primary: oklch(0.97 0 0);
+  --sidebar-primary-foreground: oklch(0.14 0 0);
+  --sidebar-accent: oklch(0.24 0 0);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
   --sidebar-border: oklch(0.26 0 0);
-  --sidebar-ring: oklch(0.83 0.16 85);
+  --sidebar-ring: oklch(0.97 0 0);
+
+  /* ——— A única exceção ———
+     Status não é decoração, é informação: no kanban a cor diz o estado antes
+     de qualquer texto ser lido, e um "Excluir" cinza fica idêntico a um
+     "Cancelar". Ficaram, mas com croma bem abaixo do das outras paletas —
+     sinalizam sem gritar dentro de uma tela sem cor. */
+  --destructive: oklch(0.52 0.13 25);
+  --destructive-foreground: oklch(1 0 0);
+  --success: oklch(0.53 0.09 150);
+  --warning: oklch(0.7 0.08 75);
+  --info: oklch(0.5 0.07 240);
 }
 :root[data-palette="noir"].dark {
   --background: oklch(0.12 0 0);
   --foreground: oklch(0.96 0 0);
   --card: oklch(0.16 0 0);
   --card-foreground: oklch(0.96 0 0);
-  --popover: oklch(0.16 0 0);
+  /* Popover um degrau acima do card: sem cor para separá-los, iguais em
+     claridade eles se fundiriam quando um abre sobre o outro. */
+  --popover: oklch(0.185 0 0);
   --popover-foreground: oklch(0.96 0 0);
   --primary: oklch(0.96 0 0);
   --primary-foreground: oklch(0.12 0 0);
   --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(0.96 0 0);
   --muted: oklch(0.22 0 0);
-  --muted-foreground: oklch(0.70 0 0);
-  --accent: oklch(0.83 0.16 85);
-  --accent-foreground: oklch(0.16 0.03 80);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.28 0 0);
+  --accent-foreground: oklch(0.96 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.96 0 0);
+  --sidebar: oklch(0.09 0 0);
+  --sidebar-foreground: oklch(0.92 0 0);
+  --sidebar-primary: oklch(0.96 0 0);
+  --sidebar-primary-foreground: oklch(0.12 0 0);
+  --sidebar-accent: oklch(0.2 0 0);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.96 0 0);
+}
+
+/* ————— Superfícies de autenticação —————
+   Login e véu de transição são sempre escuros, independentes de claro/escuro,
+   mas precisam acompanhar a paleta. Derivam de `--sidebar` e `--sidebar-primary`
+   porque essas duas já são pensadas para superfície escura em qualquer tema —
+   e como cada paleta as redefine, estas seguem junto sem nenhuma duplicação. */
+:root {
+  --auth-base: var(--sidebar);
+  --auth-glow: var(--sidebar-primary);
+  --auth-deep: color-mix(in oklab, var(--sidebar-primary) 42%, black);
+}
+
+/* ————— Barra de rolagem —————
+   Mesma ideia das superfícies acima: derivar de um token que cada paleta já
+   redefine, para as oito seguirem juntas sem nenhuma duplicação.
+
+   A base é `--foreground` porque ele é o único token com contraste garantido
+   contra o fundo, em toda paleta e nos dois temas — é a definição dele. Uma
+   cor fixa aqui exigiria oito ajustes e ainda erraria no dia em que alguém
+   criasse a nona paleta. */
+:root {
+  --barra-polegar: color-mix(in oklab, var(--color-foreground) 28%, transparent);
+  --barra-polegar-hover: color-mix(in oklab, var(--color-foreground) 46%, transparent);
+}
+
+/* ————— Nebula Focus —————
+   Roxo profundo de céu noturno com um lilás estelar de destaque. Pensada para
+   o modo escuro, que é onde ela realmente acontece; o claro é o companheiro. */
+:root[data-palette="nebula"] {
+  --background: oklch(0.975 0.010 300);
+  --foreground: oklch(0.22 0.04 300);
+  --card: oklch(0.99 0.008 300);
+  --card-foreground: oklch(0.22 0.04 300);
+  --popover: oklch(0.99 0.008 300);
+  --popover-foreground: oklch(0.22 0.04 300);
+  --primary: oklch(0.48 0.18 300);
+  --primary-foreground: oklch(0.98 0.01 300);
+  --secondary: oklch(0.94 0.02 300);
+  --secondary-foreground: oklch(0.25 0.05 300);
+  --muted: oklch(0.945 0.015 300);
+  --muted-foreground: oklch(0.48 0.04 300);
+  --accent: oklch(0.8 0.15 320);
+  --accent-foreground: oklch(0.22 0.06 305);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.89 0.02 300);
+  --input: oklch(0.91 0.018 300);
+  --ring: oklch(0.48 0.18 300);
+  --success: oklch(0.6 0.16 155);
+  --warning: oklch(0.78 0.15 75);
+  --info: oklch(0.58 0.14 265);
+  --chart-1: oklch(0.48 0.18 300);
+  --chart-2: oklch(0.65 0.16 320);
+  --chart-3: oklch(0.72 0.13 275);
+  --chart-4: oklch(0.8 0.15 320);
+  --chart-5: oklch(0.32 0.08 300);
+  --sidebar: oklch(0.17 0.045 300);
+  --sidebar-foreground: oklch(0.9 0.02 300);
+  --sidebar-primary: oklch(0.78 0.16 320);
+  --sidebar-primary-foreground: oklch(0.18 0.05 305);
+  --sidebar-accent: oklch(0.24 0.05 300);
+  --sidebar-accent-foreground: oklch(0.94 0.06 315);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.78 0.16 320);
+}
+:root[data-palette="nebula"].dark {
+  --background: oklch(0.14 0.035 300);
+  --foreground: oklch(0.95 0.02 300);
+  --card: oklch(0.185 0.042 300);
+  --card-foreground: oklch(0.95 0.02 300);
+  --popover: oklch(0.21 0.045 300);
+  --popover-foreground: oklch(0.95 0.02 300);
+  --primary: oklch(0.72 0.19 305);
+  --primary-foreground: oklch(0.15 0.05 300);
+  --secondary: oklch(0.25 0.045 300);
+  --secondary-foreground: oklch(0.95 0.02 300);
+  --muted: oklch(0.25 0.045 300);
+  --muted-foreground: oklch(0.72 0.03 300);
+  --accent: oklch(0.32 0.07 310);
+  --accent-foreground: oklch(0.9 0.14 315);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.96 0 0);
-  --sidebar: oklch(0.10 0 0);
-  --sidebar-foreground: oklch(0.92 0 0);
-  --sidebar-primary: oklch(0.83 0.16 85);
-  --sidebar-primary-foreground: oklch(0.14 0.03 80);
-  --sidebar-accent: oklch(0.20 0 0);
-  --sidebar-accent-foreground: oklch(0.96 0 0);
+  --ring: oklch(0.72 0.19 305);
+  --sidebar: oklch(0.11 0.03 300);
+  --sidebar-foreground: oklch(0.9 0.02 300);
+  --sidebar-primary: oklch(0.72 0.19 305);
+  --sidebar-primary-foreground: oklch(0.15 0.05 300);
+  --sidebar-accent: oklch(0.22 0.045 300);
+  --sidebar-accent-foreground: oklch(0.92 0.12 315);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.83 0.16 85);
+  --sidebar-ring: oklch(0.72 0.19 305);
+}
+
+/* ————— Magenta Pulse —————
+   Rosa vibrante com apoio coral. O primário é forte de propósito: como só
+   aparece na ação principal e no estado "agora", ele marca sem saturar a tela. */
+:root[data-palette="magenta"] {
+  --background: oklch(0.978 0.010 350);
+  --foreground: oklch(0.23 0.04 350);
+  --card: oklch(0.99 0.008 350);
+  --card-foreground: oklch(0.23 0.04 350);
+  --popover: oklch(0.99 0.008 350);
+  --popover-foreground: oklch(0.23 0.04 350);
+  --primary: oklch(0.58 0.21 350);
+  --primary-foreground: oklch(0.99 0.01 350);
+  --secondary: oklch(0.945 0.02 350);
+  --secondary-foreground: oklch(0.27 0.05 350);
+  --muted: oklch(0.95 0.015 350);
+  --muted-foreground: oklch(0.49 0.04 350);
+  --accent: oklch(0.84 0.13 20);
+  --accent-foreground: oklch(0.25 0.06 355);
+  --destructive: oklch(0.55 0.22 28);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0.02 350);
+  --input: oklch(0.92 0.018 350);
+  --ring: oklch(0.58 0.21 350);
+  --success: oklch(0.6 0.16 155);
+  --warning: oklch(0.78 0.15 75);
+  --info: oklch(0.58 0.13 250);
+  --chart-1: oklch(0.58 0.21 350);
+  --chart-2: oklch(0.72 0.17 5);
+  --chart-3: oklch(0.84 0.13 20);
+  --chart-4: oklch(0.66 0.15 320);
+  --chart-5: oklch(0.34 0.09 350);
+  --sidebar: oklch(0.18 0.045 350);
+  --sidebar-foreground: oklch(0.91 0.02 350);
+  --sidebar-primary: oklch(0.78 0.17 352);
+  --sidebar-primary-foreground: oklch(0.19 0.05 350);
+  --sidebar-accent: oklch(0.25 0.05 350);
+  --sidebar-accent-foreground: oklch(0.94 0.08 350);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.78 0.17 352);
+}
+/* O escuro da Magenta tinha três defeitos, e nenhum era o rosa em si:
+
+   1. As superfícies ficavam em 350, em cima da fronteira rosa/vermelho. Naquele
+      matiz, tinta escura vira marrom sujo — o mesmo croma que na Nebula (300)
+      dá ameixa rica, aqui dava rosa empoeirado. Vieram para 342, magenta de
+      verdade, longe da borda.
+
+   2. O destaque estava solto em 10, a vinte graus das superfícies e do outro
+      lado da fronteira. Longe demais para harmonizar, perto demais para ser
+      contraste: virava só uma mancha morna que não fazia nada. Continua sendo
+      o "apoio coral" da descrição, mas agora com croma e claridade suficientes
+      para ser visto — é o único ponto quente contra o magenta frio.
+
+   3. O primário em L 0.75 era mais claro que o da Nebula (0.72) e ardia sobre
+      quase-preto. Desceu para 0.72 e ganhou croma: menos brilho, mais cor. */
+:root[data-palette="magenta"].dark {
+  --background: oklch(0.138 0.032 342);
+  --foreground: oklch(0.952 0.016 340);
+  --card: oklch(0.183 0.04 342);
+  --card-foreground: oklch(0.952 0.016 340);
+  --popover: oklch(0.208 0.044 342);
+  --popover-foreground: oklch(0.952 0.016 340);
+  --primary: oklch(0.72 0.21 348);
+  --primary-foreground: oklch(0.15 0.05 345);
+  --secondary: oklch(0.248 0.043 342);
+  --secondary-foreground: oklch(0.952 0.016 340);
+  --muted: oklch(0.248 0.043 342);
+  --muted-foreground: oklch(0.735 0.028 342);
+  --accent: oklch(0.36 0.09 14);
+  --accent-foreground: oklch(0.88 0.13 25);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.21 348);
+  --sidebar: oklch(0.105 0.028 342);
+  --sidebar-foreground: oklch(0.91 0.016 340);
+  --sidebar-primary: oklch(0.72 0.21 348);
+  --sidebar-primary-foreground: oklch(0.15 0.05 345);
+  --sidebar-accent: oklch(0.218 0.042 342);
+  --sidebar-accent-foreground: oklch(0.93 0.1 348);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.72 0.21 348);
+}
+
+/* ————— Ruby Resolve —————
+   Carmim de joia sobre grafite frio.
+
+   A primeira versão desta paleta era a Sunset mais escura, e por um motivo
+   específico: as duas eram quentes em tudo. Fundo creme, neutros quentes,
+   destaque âmbar — mudava só a claridade do primário.
+
+   A separação verdadeira não está no vermelho, está no que o cerca. A Sunset
+   é sol: calor por toda a tela. Esta é joia num engaste: os neutros puxam para
+   o frio (matiz 270, o azul-cinza do grafite) e o vermelho é a ÚNICA coisa
+   quente que aparece. O mesmo carmim sobre creme viraria pôr do sol; sobre
+   grafite, vira rubi.
+
+   Duas consequências disso nos tokens:
+
+   1. O matiz do primário é 14, não 22. Passa do vermelho-fogo para o
+      vermelho-sangue, que puxa levemente para o rosa e briga menos com laranja.
+   2. `--accent` deixou de ser âmbar. Âmbar era exatamente o que colava as duas
+      paletas — agora é rosa-empoeirado, que fica na família do primário.
+
+   E o cuidado que já existia continua: `--destructive` também é vermelho, e num
+   tema vermelho "Salvar" e "Excluir" viram o mesmo botão. Agora eles se separam
+   por dois eixos ao mesmo tempo — o primário é escuro e frio (L 0.44, matiz 14),
+   o destrutivo é claro e quente (L 0.60, matiz 32). */
+:root[data-palette="ruby"] {
+  /* Os neutros carregam só um sopro de vermelho (matiz 22, croma ~0.007).
+     A versão anterior usava violeta-acinzentado, matiz 270, tentando fugir da
+     Sunset pelo lado frio — e o que saía era uma tela que não conversava com o
+     próprio primário. Neutro quase puro deixa o vermelho ser a única cor com
+     opinião, que é como sistema moderno de cor única se comporta. */
+  --background: oklch(0.977 0.008 28);
+  --foreground: oklch(0.2 0.016 28);
+  --card: oklch(0.99 0.006 28);
+  --card-foreground: oklch(0.2 0.016 28);
+  --popover: oklch(0.99 0.006 28);
+  --popover-foreground: oklch(0.2 0.016 28);
+  /* #ed0004 — R237, G0, B4. É o vermelho mais vermelho que cabe aqui.
+
+     Duas medidas o definem, e as duas são fronteiras reais, não gosto:
+
+     Matiz 29 é onde mora o vermelho puro do sRGB. Cada grau abaixo empurra
+     azul para dentro da cor: em 22 o resultado era #db0832, azul 50 contra
+     verde 8, e essa sobra de azul é o que o olho lê como rosa.
+
+     Croma 0.244 em L 0.595 é o pico. O croma máximo do vermelho não é
+     constante — ele cresce com a claridade até L ~0.63 e despenca depois. Em
+     L 0.565, onde esta cor estava, o teto era 0.232; subindo a claridade
+     junto, o teto sobe para 0.244. Foi por não ter subido os dois juntos que
+     a versão anterior parava em #d8201e, mais escura do que precisava.
+
+     O que trava daqui para cima é o texto branco por cima: 4.55:1 ainda passa
+     em AA, e o próximo passo (#f00004) já cai para 4.46:1 e reprova. O
+     vermelho puro #ff0000 daria 4.00:1. Então este é o limite — mais vermelho
+     que isto só sacrificando a legibilidade do botão. */
+  --primary: oklch(0.595 0.244 29);
+  /* Branco puro, não o quase-branco tingido que as outras paletas usam.
+     No limite do gamut a folga é de centésimos: com oklch(0.99 0.01 28) o
+     contraste caía para 4.38:1 e reprovava em AA. Os 0.01 de tinta custavam
+     exatamente a diferença. */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.945 0.009 28);
+  --secondary-foreground: oklch(0.25 0.02 28);
+  --muted: oklch(0.95 0.007 28);
+  --muted-foreground: oklch(0.47 0.018 28);
+  /* Coral, não rosa: o destaque anterior era #ff9cab, com azul 24 acima do
+     verde. Este é #f7a597, com azul 14 abaixo — salmão quente. */
+  --accent: oklch(0.8 0.1 30);
+  --accent-foreground: oklch(0.26 0.06 32);
+  /* Mais escuro e mais alaranjado que o primário — ver a nota no fim. */
+  --destructive: oklch(0.45 0.14 42);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0.009 28);
+  --input: oklch(0.92 0.008 28);
+  --ring: oklch(0.595 0.244 29);
+  --success: oklch(0.58 0.15 152);
+  --warning: oklch(0.78 0.15 75);
+  --info: oklch(0.58 0.13 250);
+  --chart-1: oklch(0.595 0.244 29);
+  --chart-2: oklch(0.7 0.16 35);
+  --chart-3: oklch(0.8 0.1 30);
+  --chart-4: oklch(0.5 0.035 28);
+  --chart-5: oklch(0.32 0.025 28);
+  --sidebar: oklch(0.16 0.016 28);
+  --sidebar-foreground: oklch(0.9 0.012 28);
+  --sidebar-primary: oklch(0.62 0.25 29);
+  --sidebar-primary-foreground: oklch(0.14 0.03 28);
+  --sidebar-accent: oklch(0.235 0.02 28);
+  --sidebar-accent-foreground: oklch(0.93 0.09 30);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.62 0.25 29);
+}
+:root[data-palette="ruby"].dark {
+  /* Quase-preto neutro, com um traço de vermelho. Metade do croma do escuro
+     da Sunset (0.014 contra 0.03): lá o fundo é marrom quente de propósito,
+     aqui precisa ler como preto para o escarlate acender em cima dele. */
+  --background: oklch(0.145 0.014 28);
+  --foreground: oklch(0.95 0.01 28);
+  --card: oklch(0.19 0.018 28);
+  --card-foreground: oklch(0.95 0.01 28);
+  --popover: oklch(0.215 0.02 28);
+  --popover-foreground: oklch(0.95 0.01 28);
+  /* #f90f0d. No escuro o texto por cima é quase-preto, então o contraste deixa
+     de ser o limitador e dá para ir direto ao pico do gamut: L 0.62 com croma
+     0.25 é praticamente o vermelho puro.
+
+     Não fui ao #ff0000 exato de propósito. Vermelho saturado ao máximo contra
+     preto vibra na retina — o olho não consegue focar as duas bordas ao mesmo
+     tempo. Os 15 de verde e 13 de azul que sobram aqui não mudam a cor que se
+     vê e tiram esse tremor. */
+  --primary: oklch(0.62 0.25 29);
+  --primary-foreground: oklch(0.15 0.03 28);
+  --secondary: oklch(0.255 0.02 28);
+  --secondary-foreground: oklch(0.95 0.01 28);
+  --muted: oklch(0.255 0.02 28);
+  --muted-foreground: oklch(0.72 0.016 28);
+  --accent: oklch(0.33 0.075 32);
+  --accent-foreground: oklch(0.86 0.12 30);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.62 0.25 29);
+  --sidebar: oklch(0.11 0.012 28);
+  --sidebar-foreground: oklch(0.9 0.012 28);
+  --sidebar-primary: oklch(0.62 0.25 29);
+  --sidebar-primary-foreground: oklch(0.15 0.03 28);
+  --sidebar-accent: oklch(0.225 0.02 28);
+  --sidebar-accent-foreground: oklch(0.93 0.1 30);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.62 0.25 29);
+}
+
+/* ————— Lagoon Clarity —————
+   Verde-azulado de fundo de mar, com espuma clara no destaque.
+
+   Mesmo cuidado da Ruby, do outro lado: `--success` é verde em toda paleta.
+   Aqui o primário fica no teal (matiz 185, puxando para o azul) e o sucesso
+   continua no verde-grama (matiz 152). É também o que separa esta paleta da
+   Forest Precision, que é verde-folha com lima — esta é mais funda e mais fria. */
+:root[data-palette="lagoon"] {
+  --background: oklch(0.977 0.010 185);
+  --foreground: oklch(0.22 0.035 190);
+  --card: oklch(0.99 0.008 185);
+  --card-foreground: oklch(0.22 0.035 190);
+  --popover: oklch(0.99 0.008 185);
+  --popover-foreground: oklch(0.22 0.035 190);
+  --primary: oklch(0.46 0.09 185);
+  --primary-foreground: oklch(0.99 0.01 185);
+  --secondary: oklch(0.945 0.018 185);
+  --secondary-foreground: oklch(0.26 0.045 190);
+  --muted: oklch(0.95 0.014 185);
+  --muted-foreground: oklch(0.48 0.03 190);
+  --accent: oklch(0.8 0.11 175);
+  --accent-foreground: oklch(0.24 0.05 190);
+  --destructive: oklch(0.55 0.22 28);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.9 0.018 185);
+  --input: oklch(0.92 0.016 185);
+  --ring: oklch(0.46 0.09 185);
+  --success: oklch(0.58 0.15 152);
+  --warning: oklch(0.78 0.15 75);
+  --info: oklch(0.58 0.13 250);
+  --chart-1: oklch(0.46 0.09 185);
+  --chart-2: oklch(0.65 0.12 178);
+  --chart-3: oklch(0.8 0.11 175);
+  --chart-4: oklch(0.54 0.1 215);
+  --chart-5: oklch(0.3 0.06 190);
+  --sidebar: oklch(0.17 0.035 190);
+  --sidebar-foreground: oklch(0.91 0.018 185);
+  --sidebar-primary: oklch(0.72 0.13 180);
+  --sidebar-primary-foreground: oklch(0.15 0.035 190);
+  --sidebar-accent: oklch(0.24 0.045 190);
+  --sidebar-accent-foreground: oklch(0.93 0.08 178);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.72 0.13 180);
+}
+:root[data-palette="lagoon"].dark {
+  --background: oklch(0.14 0.022 190);
+  --foreground: oklch(0.945 0.015 185);
+  --card: oklch(0.185 0.028 190);
+  --card-foreground: oklch(0.945 0.015 185);
+  --popover: oklch(0.21 0.031 190);
+  --popover-foreground: oklch(0.945 0.015 185);
+  /* Espuma iluminada: no escuro o teal profundo sumiria contra o fundo. */
+  --primary: oklch(0.72 0.13 180);
+  --primary-foreground: oklch(0.14 0.035 190);
+  --secondary: oklch(0.25 0.031 190);
+  --secondary-foreground: oklch(0.945 0.015 185);
+  --muted: oklch(0.25 0.031 190);
+  --muted-foreground: oklch(0.72 0.025 188);
+  --accent: oklch(0.3 0.055 185);
+  --accent-foreground: oklch(0.87 0.11 176);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.13 180);
+  --sidebar: oklch(0.11 0.02 190);
+  --sidebar-foreground: oklch(0.91 0.018 185);
+  --sidebar-primary: oklch(0.72 0.13 180);
+  --sidebar-primary-foreground: oklch(0.14 0.035 190);
+  --sidebar-accent: oklch(0.22 0.031 190);
+  --sidebar-accent-foreground: oklch(0.92 0.09 178);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.72 0.13 180);
 }
 
 /* ————— Escuro Elétrico — o tema padrão do Fluxo —————
@@ -333,7 +737,7 @@
   --muted: oklch(0.255 0.02 158);
   --muted-foreground: oklch(0.715 0.022 152);
   --accent: oklch(0.31 0.06 132);
-  --accent-foreground: oklch(0.90 0.19 127);
+  --accent-foreground: oklch(0.9 0.19 127);
   --destructive: oklch(0.712 0.174 15);
   --destructive-foreground: oklch(0.16 0.02 158);
   --border: oklch(1 0 0 / 11%);
@@ -352,7 +756,7 @@
   --sidebar-primary: oklch(0.867 0.204 127);
   --sidebar-primary-foreground: oklch(0.17 0.04 145);
   --sidebar-accent: oklch(0.21 0.02 158);
-  --sidebar-accent-foreground: oklch(0.90 0.19 127);
+  --sidebar-accent-foreground: oklch(0.9 0.19 127);
   --sidebar-border: oklch(1 0 0 / 9%);
   --sidebar-ring: oklch(0.867 0.204 127);
   /* No escuro, profundidade vem de sombra densa + luz de borda no topo. */
@@ -360,6 +764,75 @@
   --shadow-md: 0 8px 24px oklch(0 0 0 / 0.45);
   --shadow-lg: 0 24px 56px oklch(0 0 0 / 0.6);
   --rim: inset 0 1px 0 oklch(1 0 0 / 0.06);
+}
+
+/* ————— Vermelho do "Sair" da barra lateral —————
+
+   Um valor só, fora das paletas, e isso é uma decisão e não preguiça: a barra
+   lateral é escura em TODAS as paletas, clara e escura (L de 0.09 a 0.22).
+   Não existe o caso "vermelho sobre fundo claro" aqui.
+
+   Por que não usar o --destructive de cada paleta: ele foi calibrado para ser
+   FUNDO de botão com texto branco por cima, ou seja, escuro de propósito.
+   Como TEXTO sobre a barra escura ele vai na direção contrária e afunda —
+   medido: 2.46 no Ruby sobre a barra e 2.12 sobre o accent do hover, contra um
+   piso de 3:1 para ícone. Sunset (2.73), Noir (2.80) e Lagoon (2.97) também
+   reprovavam. E no Ruby o --destructive é #913100, um marrom queimado: ele foi
+   escolhido justamente para NÃO brigar com o primário vermelho vivo daquela
+   paleta, então nem vermelho ele é.
+
+   Este aqui: oklch(0.64 0.22 26) = #f53d3d. O matiz 26 é onde o verde e o azul
+   empatam (G = B = 61), o ponto em que o vermelho não puxa nem para rosa nem
+   para laranja. Dá 4.70 sobre a barra mais clara e 3.99 sobre o hover mais
+   claro — folga confortável em cima do piso, em qualquer paleta. */
+:root {
+  --sair: oklch(0.64 0.22 26);
+}
+
+/* O fundo já vem ligado, não só no hover — o hover apenas intensifica.
+
+   Os 14% em repouso são o teto, não um chute: acima disso o próprio fundo
+   clareia e come o contraste do ícone. Medido no composto real (o vermelho
+   14% pintado por cima da barra, que é o que o olho vê), no pior caso das
+   paletas: 3.96 em repouso e 4.62 no hover, contra o piso de 3:1.
+
+   No hover o fundo escurece e o ícone CLAREIA junto — se só o fundo mudasse,
+   o contraste cairia justo no momento em que a pessoa está mirando o botão. */
+.botao-sair {
+  color: var(--sair);
+  background-color: color-mix(in oklab, var(--sair) 14%, transparent);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+.botao-sair:hover {
+  background-color: color-mix(in oklab, var(--sair) 26%, transparent);
+  color: color-mix(in oklab, var(--sair) 78%, white);
+}
+
+/* O tema é trocado por classe (.dark), não por prefers-color-scheme — então o
+   navegador não faz ideia de em qual tema está. Sem color-scheme, tudo que o
+   próprio Chromium desenha sai no esquema claro: o ícone do seletor de data
+   vira um glifo preto sobre fundo quase preto (praticamente invisível), a
+   lista do <select> abre branca, a barra de rolagem nativa idem.
+   Isto alinha os controles nativos ao tema em uma linha. */
+:root {
+  color-scheme: light;
+}
+:root.dark {
+  color-scheme: dark;
+}
+
+/* Ainda há inputs nativos de data/hora fora do CampoData (filtros, etc.).
+   O color-scheme acima já deixa o ícone claro no escuro; aqui só damos a ele
+   o mesmo comportamento de hover dos outros ícones da interface. */
+::-webkit-calendar-picker-indicator {
+  opacity: 0.65;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
 }
 
 @layer base {
@@ -370,7 +843,14 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: "Manrope Variable", "Manrope", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-family:
+      "Manrope Variable",
+      "Manrope",
+      ui-sans-serif,
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Text",
+      sans-serif;
     font-feature-settings: "ss01", "ss02", "cv11";
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -379,21 +859,109 @@
   }
 
   /* Hierarquia: display pesado e apertado contra corpo neutro. */
-  h1, h2, h3, h4, h5, h6, .font-display {
-    font-family: "Sora Variable", "Sora", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .font-display {
+    font-family:
+      "Sora Variable",
+      "Sora",
+      ui-sans-serif,
+      -apple-system,
+      BlinkMacSystemFont,
+      "SF Pro Display",
+      sans-serif;
     letter-spacing: -0.028em;
     font-weight: 650;
   }
-  h1 { letter-spacing: -0.038em; font-weight: 700; }
-  h2 { letter-spacing: -0.032em; }
+  h1 {
+    letter-spacing: -0.038em;
+    font-weight: 700;
+  }
+  h2 {
+    letter-spacing: -0.032em;
+  }
 
   /* Números alinham em coluna — placares, prazos, contadores. */
-  th, td, time, .tabular, [class*="score"], [class*="tabular"] {
+  th,
+  td,
+  time,
+  .tabular,
+  [class*="score"],
+  [class*="tabular"] {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
 
-  html { scroll-behavior: smooth; }
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Reserva para navegador sem View Transition (Safari antigo, Firefox
+     antigo). O caminho bom está no fim deste arquivo; este aqui é o plano B.
+
+     A classe entra no <html> um instante antes da troca e sai quando ela
+     acaba. É de propósito que não seja permanente: uma transição valendo para
+     `*` o tempo todo atrasaria todo hover, todo foco e toda mudança de estado
+     do app — e ainda brigaria com as transições que cada componente já tem.
+
+     `box-shadow` saiu da lista. Era a propriedade mais cara aqui: o compositor
+     não sabe interpolá-la, então cada cartão com sombra repintava a cada
+     quadro. Cortá-la é o que separa um fade suave de um fade que engasga —
+     e a sombra trocando de tom no meio de um fade de 220 ms não é percebida.
+
+     `transform` e `opacity` também ficam de fora, por outro motivo: são o que
+     os componentes animam por conta própria, e incluí-las faria um menu que
+     está abrindo travar no meio quando alguém troca o tema. */
+  html.trocando-tema,
+  html.trocando-tema *,
+  html.trocando-tema *::before,
+  html.trocando-tema *::after {
+    transition:
+      background-color 220ms cubic-bezier(0.22, 0.61, 0.24, 1),
+      border-color 220ms cubic-bezier(0.22, 0.61, 0.24, 1),
+      color 220ms cubic-bezier(0.22, 0.61, 0.24, 1),
+      fill 220ms cubic-bezier(0.22, 0.61, 0.24, 1),
+      stroke 220ms cubic-bezier(0.22, 0.61, 0.24, 1) !important;
+    transition-delay: 0s !important;
+  }
+
+  /* A media query cobre quem pediu menos movimento mesmo se a classe entrar. */
+  @media (prefers-reduced-motion: reduce) {
+    html.trocando-tema,
+    html.trocando-tema *,
+    html.trocando-tema *::before,
+    html.trocando-tema *::after {
+      transition: none !important;
+    }
+  }
+
+  /* A janela não se arrasta.
+
+     No touchpad, dois dedos empurrando além do fim da página faziam a tela
+     inteira deslizar e voltar — para os lados, para cima e para baixo. Num app
+     de janela fixa isso não é rolagem, é a interface parecendo solta.
+
+     `overscroll-behavior: none` mata os dois efeitos de uma vez: o elástico ao
+     passar do limite e o encadeamento, em que uma lista interna que chegou ao
+     fim continua empurrando a página atrás dela. No eixo X ainda desliga o
+     gesto de voltar/avançar do WebView, que num app não tem para onde ir. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  /* `clip` e não `hidden`: os dois cortam o transbordo horizontal, mas `hidden`
+     transforma o body em contêiner de rolagem e quebra todo `position: sticky`
+     de dentro — o cabeçalho da equipe e o do portfólio dependem dele. `clip`
+     corta sem criar contêiner. Os `overflow-x-auto` internos (kanban, tabelas,
+     bloco de notas) continuam rolando normalmente. */
+  body {
+    overflow-x: clip;
+  }
 
   /* Feedback de pressão universal nos botões — sutil, só no :active, e sem
      afetar layout (transform não reflui). Não sobrescreve transições próprias. */
@@ -413,29 +981,117 @@
     outline-offset: 2px;
   }
 
-  /* Barras de rolagem no tom do app. Sem isso o Windows crava barra clara
-     no meio do tema escuro e entrega que é uma página web. */
+  /* Barras de rolagem no tom do app. Sem isso o Windows crava barra clara no
+     meio do tema escuro e entrega que é uma página web.
+
+     O polegar saía de `--color-border`, e essa era a falha: no tema escuro
+     `--border` é branco a 10% de opacidade. Serve para separar dois painéis
+     encostados, onde um traço quase invisível basta — mas como polegar de
+     barra some, e sobra uma barra que existe e não se vê.
+
+     Agora sai do texto, que é o token que sempre tem contraste garantido com
+     o fundo em qualquer paleta e em qualquer tema. A mistura é com
+     `transparent`, não com o fundo, para o polegar compor certo tanto sobre
+     `--background` quanto sobre `--card`, que não têm a mesma cor. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-border) transparent;
+    scrollbar-color: var(--barra-polegar) transparent;
   }
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  /* 3 px de borda transparente com recorte no conteúdo deixam o polegar com
+     6 px visíveis e uma calha de respiro dos dois lados. Barra colada na
+     borda da tela parece defeito de renderização. */
   ::-webkit-scrollbar-thumb {
-    background: var(--color-border);
-    border-radius: 999px;
-    border: 2px solid transparent;
+    background: var(--barra-polegar);
     background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    transition: background-color 140ms ease;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-muted-foreground);
+    background: var(--barra-polegar-hover);
     background-clip: content-box;
   }
-  ::-webkit-scrollbar-corner { background: transparent; }
+  /* Arrastando, o polegar assume a cor da paleta: é o retorno que diz que o
+     gesto pegou, e amarra a barra à identidade do tema em vez de deixá-la
+     como um cinza genérico. */
+  ::-webkit-scrollbar-thumb:active {
+    background: var(--color-primary);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* ————— Troca de tema: revelação circular —————
+
+   Fora do @layer base de propósito: pseudo-elemento de View Transition não
+   deve poder ser vencido por nenhuma regra sem camada.
+
+   Por que não bastava animar as cores. A primeira versão colocava uma
+   transição em `html.trocando-tema *`, o que significa cada elemento da
+   árvore animando background-color, border-color, color e box-shadow ao mesmo
+   tempo. Numa tela de kanban são milhares de animações independentes, todas
+   na thread principal, e `box-shadow` ainda repinta a cada quadro porque não
+   é uma propriedade que o compositor saiba interpolar sozinho. O resultado
+   era exatamente o que se sente: engasgo em vez de fluidez.
+
+   A View Transition inverte isso. O navegador fotografa a tela antes e depois
+   da mudança e anima as duas fotos na GPU — UMA animação composta, custo
+   independente do tamanho da árvore. De quebra atravessa o que transição de
+   CSS nunca alcançou: gradiente, imagem, sombra, e elemento que aparece ou
+   some no meio da troca.
+
+   A forma é um círculo crescendo do ponto onde a pessoa tocou. Além de
+   bonito, dá origem ao movimento: o tema parece ter sido acionado dali, e não
+   ter aparecido do nada. As coordenadas e o raio chegam por variável, escritas
+   pelo `comTransicao` em use-theme.ts antes de a troca começar. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* Desliga o cross-fade padrão — quem anima aqui é o clip-path. */
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* O tema antigo fica parado embaixo enquanto o novo é revelado por cima. */
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+  /* Curva com saída longa: acelera rápido e desacelera até parar, que é como
+     uma cortina se abre. `ease` desaceleraria nas duas pontas e daria a
+     impressão de que a animação hesita para começar. */
+  animation: fluxo-revelar-tema 460ms cubic-bezier(0.22, 0.61, 0.24, 1) both;
+}
+
+@keyframes fluxo-revelar-tema {
+  from {
+    clip-path: circle(0 at var(--troca-x, 50%) var(--troca-y, 50%));
+  }
+  to {
+    clip-path: circle(var(--troca-r, 100vmax) at var(--troca-x, 50%) var(--troca-y, 50%));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -470,6 +1126,13 @@ html.tauri-app .fluxo-sidebar {
 html.tauri-app .fluxo-topbar {
   top: var(--titlebar-h);
 }
+/* A alça vive no meio da ALTURA DA BARRA, não da viewport. No navegador as
+   duas coisas coincidem; no app nativo a barra começa 34px abaixo, então o
+   meio dela desce metade disso. Sem esta linha ela ficaria 17px acima do
+   centro real — pouco, mas o suficiente para parecer desalinhada. */
+html.tauri-app .fluxo-alca-menu {
+  top: calc(50vh + var(--titlebar-h) / 2);
+}
 /* Outros cabeçalhos fixos no topo também descem. */
 html.tauri-app .fixed.top-0:not([data-tauri-drag-region]) {
   top: var(--titlebar-h);
@@ -481,31 +1144,134 @@ html.tauri-app .fixed.inset-0:not([data-tauri-drag-region]) {
   padding-top: var(--titlebar-h);
 }
 
+/* ————— Modo apresentação —————
+   A janela vai a tela cheia, então a barra de título própria (z-9999) sairia
+   por cima do painel — e os 34px que o body reserva para ela virariam uma
+   faixa vazia no rodapé. Nos dois casos: some com ela. */
+/* ————— Superfície de login no documento inteiro —————
+
+   O login é sempre escuro, independente do tema — mas o fundo dele vive num
+   `<div>` interno. Isso deixava um vão: a calha da barra de rolagem é pintada
+   pelo elemento que ROLA, ou seja o `<html>`, que continua com o fundo do tema.
+   Com o tema claro ativo, a tela ficava preta e ao lado dela uma faixa branca
+   de cima a baixo.
+
+   `color-scheme: dark` é a segunda metade da correção: sem ela o navegador
+   desenha os controles nativos em modo claro, e a barra sai clara mesmo com o
+   fundo certo atrás.
+
+   O polegar também precisa ser redefinido aqui. Ele deriva de `--foreground`,
+   que no tema claro é quase preto — o que dá um polegar escuro sobre um fundo
+   escuro. Nesta superfície, que é escura sempre, a referência é o branco. */
+html.fluxo-auth,
+html.fluxo-auth body {
+  background-color: var(--auth-base);
+}
+html.fluxo-auth {
+  color-scheme: dark;
+  --barra-polegar: color-mix(in oklab, white 28%, transparent);
+  --barra-polegar-hover: color-mix(in oklab, white 46%, transparent);
+}
+
+html.fluxo-apresentando .fluxo-titlebar {
+  display: none;
+}
+html.fluxo-apresentando.tauri-app body {
+  padding-top: 0;
+}
+
+/* ————— Cabeçalho de boas-vindas —————
+   O gradiente era verde fixo no componente, então continuava verde em todas as
+   paletas (roxo, oceano, magenta…) e nos dois temas. Derivando das variáveis,
+   ele passa a ser sempre a cor da paleta em uso.
+
+   O degradê vai de uma versão escurecida da primária até ela mesma — assim a
+   rampa existe em qualquer paleta, sem depender de um segundo tom que cada uma
+   define de um jeito. O texto é --primary-foreground, que é justamente a cor
+   pensada para ficar em cima da primária, em vez de branco fixo. */
+.fluxo-cabecalho-primario {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--primary) 82%, black) 0%,
+    var(--primary) 100%
+  );
+  color: var(--primary-foreground);
+}
+
+/* O ::backdrop de um elemento em tela cheia é PRETO por padrão. Qualquer
+   pedaço que o conteúdo não cubra aparece como uma faixa preta no meio de um
+   app escuro-esverdeado — foi exatamente o que apareceu no rodapé. Pintando-o
+   com a cor do tema, sobra é indistinguível do fundo. */
+::backdrop {
+  background-color: var(--background);
+}
+
 /* ————— Chamar atenção (MSN-style nudge) ————— */
 @keyframes fluxo-shake {
-  0%, 100% { transform: translate(0, 0) rotate(0); }
-  10% { transform: translate(-6px, 4px) rotate(-0.4deg); }
-  20% { transform: translate(7px, -3px) rotate(0.5deg); }
-  30% { transform: translate(-8px, -2px) rotate(-0.3deg); }
-  40% { transform: translate(6px, 5px) rotate(0.4deg); }
-  50% { transform: translate(-4px, -4px) rotate(-0.2deg); }
-  60% { transform: translate(5px, 3px) rotate(0.3deg); }
-  70% { transform: translate(-3px, 2px) rotate(-0.2deg); }
-  80% { transform: translate(2px, -1px) rotate(0.1deg); }
-  90% { transform: translate(-1px, 1px) rotate(0); }
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  10% {
+    transform: translate(-6px, 4px) rotate(-0.4deg);
+  }
+  20% {
+    transform: translate(7px, -3px) rotate(0.5deg);
+  }
+  30% {
+    transform: translate(-8px, -2px) rotate(-0.3deg);
+  }
+  40% {
+    transform: translate(6px, 5px) rotate(0.4deg);
+  }
+  50% {
+    transform: translate(-4px, -4px) rotate(-0.2deg);
+  }
+  60% {
+    transform: translate(5px, 3px) rotate(0.3deg);
+  }
+  70% {
+    transform: translate(-3px, 2px) rotate(-0.2deg);
+  }
+  80% {
+    transform: translate(2px, -1px) rotate(0.1deg);
+  }
+  90% {
+    transform: translate(-1px, 1px) rotate(0);
+  }
 }
 html.fluxo-nudge-shake body {
-  animation: fluxo-shake 0.7s cubic-bezier(.36,.07,.19,.97) both;
+  animation: fluxo-shake 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 @keyframes fluxo-attn-pop {
-  0% { opacity: 0; transform: perspective(1200px) translateZ(-400px) rotateX(35deg) scale(0.5); filter: blur(8px); }
-  15% { opacity: 1; transform: perspective(1200px) translateZ(60px) rotateX(-4deg) scale(1.05); filter: blur(0); }
-  25% { opacity: 1; transform: perspective(1200px) translateZ(0) rotateX(0) scale(1); }
-  85% { opacity: 1; transform: perspective(1200px) translateZ(0) rotateX(0) scale(1); }
-  100% { opacity: 0; transform: perspective(1200px) translateZ(200px) rotateX(-12deg) scale(1.15); filter: blur(2px); }
+  0% {
+    opacity: 0;
+    transform: perspective(1200px) translateZ(-400px) rotateX(35deg) scale(0.5);
+    filter: blur(8px);
+  }
+  15% {
+    opacity: 1;
+    transform: perspective(1200px) translateZ(60px) rotateX(-4deg) scale(1.05);
+    filter: blur(0);
+  }
+  25% {
+    opacity: 1;
+    transform: perspective(1200px) translateZ(0) rotateX(0) scale(1);
+  }
+  85% {
+    opacity: 1;
+    transform: perspective(1200px) translateZ(0) rotateX(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: perspective(1200px) translateZ(200px) rotateX(-12deg) scale(1.15);
+    filter: blur(2px);
+  }
 }
-.fluxo-attn-pop { animation: fluxo-attn-pop 4.2s cubic-bezier(.2,.7,.3,1) forwards; }
+.fluxo-attn-pop {
+  animation: fluxo-attn-pop 4.2s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
 
 /* ————— Micro-interações: faíscas no clique + cursor 3D ————— */
 .fx-spark-layer {
@@ -530,23 +1296,46 @@ html.fluxo-nudge-shake body {
   opacity: 0;
 }
 @keyframes fx-spark-anim {
-  0% { transform: rotate(var(--ang, 0deg)) translateX(0) scaleX(0.3); opacity: 0; }
-  25% { opacity: 1; }
-  100% { transform: rotate(var(--ang, 0deg)) translateX(var(--dist, 40px)) scaleX(1); opacity: 0; }
+  0% {
+    transform: rotate(var(--ang, 0deg)) translateX(0) scaleX(0.3);
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--ang, 0deg)) translateX(var(--dist, 40px)) scaleX(1);
+    opacity: 0;
+  }
 }
 
-/* Cursor 3D personalizado. Hotspot na ponta (4,3). */
+/* Cursor personalizado.
+   O hotspot é dado em pixels da imagem JÁ redimensionada: a ponta fica em
+   (4, 2.5) no viewBox de 34/36 unidades, que renderizado a 25/26px cai em
+   ~(3, 2). Errar isso faz o clique acontecer alguns pixels fora de onde a
+   seta aponta — sintoma difícil de diagnosticar depois. */
 body {
-  cursor: url("/cursor-arrow.svg") 4 3, auto;
+  cursor:
+    url("/cursor-arrow.svg") 3 2,
+    auto;
 }
+/* Clicáveis: mão com o indicador apontando.
+   O hotspot é (10, 2) e não (3, 2) da seta — a ponta do dedo fica no meio da
+   imagem, não no canto. Manter o valor da seta faria o clique cair à esquerda
+   de onde o dedo aponta. */
 a,
 button,
 [role="button"],
+[role="tab"],
+[role="option"],
+[role="menuitem"],
 select,
 summary,
 label,
 .cursor-pointer {
-  cursor: url("/cursor-pointer.svg") 4 3, pointer;
+  cursor:
+    url("/cursor-pointer.svg") 10 2,
+    pointer;
 }
 input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]),
 textarea,
@@ -559,7 +1348,9 @@ textarea,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fx-spark { display: none; }
+  .fx-spark {
+    display: none;
+  }
 }
 
 /* ————— Comemorações de conclusão de tarefa ————— */
@@ -578,10 +1369,20 @@ textarea,
   animation: cel-fall var(--dur, 3s) linear var(--d, 0ms) forwards;
 }
 @keyframes cel-fall {
-  0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translate(var(--drift, 0), 106vh) rotate(var(--rot, 360deg)); opacity: 0.9; }
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--drift, 0), 106vh) rotate(var(--rot, 360deg));
+    opacity: 0.9;
+  }
 }
 /* Partícula de explosão (fogos/central/foguete) */
 .cel-burst {
@@ -594,8 +1395,14 @@ textarea,
   animation: cel-burst-anim var(--dur, 1s) cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
 }
 @keyframes cel-burst-anim {
-  0% { transform: translate(0, 0) scale(1); opacity: 1; }
-  100% { transform: translate(var(--dx, 0), calc(var(--dy, 0) + 40px)) scale(0.3); opacity: 0; }
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--dx, 0), calc(var(--dy, 0) + 40px)) scale(0.3);
+    opacity: 0;
+  }
 }
 /* Foguete */
 .cel-rocket {
@@ -607,9 +1414,17 @@ textarea,
   animation: cel-rocket-fly 1.5s cubic-bezier(0.3, 0.1, 0.5, 1) forwards;
 }
 @keyframes cel-rocket-fly {
-  0% { transform: translate(0, 0) rotate(-45deg) scale(0.8); opacity: 0; }
-  12% { opacity: 1; }
-  100% { transform: translate(var(--tx, 60vw), -115vh) rotate(-45deg) scale(1.1); opacity: 1; }
+  0% {
+    transform: translate(0, 0) rotate(-45deg) scale(0.8);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx, 60vw), -115vh) rotate(-45deg) scale(1.1);
+    opacity: 1;
+  }
 }
 /* Estrelas subindo */
 .cel-star {
@@ -619,10 +1434,20 @@ textarea,
   animation: cel-star-rise var(--dur, 3s) ease-in var(--d, 0ms) forwards;
 }
 @keyframes cel-star-rise {
-  0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
-  15% { opacity: 1; }
-  85% { opacity: 1; }
-  100% { transform: translate(var(--sway, 0), -108vh) rotate(180deg); opacity: 0; }
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sway, 0), -108vh) rotate(180deg);
+    opacity: 0;
+  }
 }
 /* Selo central */
 .cel-badge {
@@ -643,22 +1468,40 @@ textarea,
   animation: cel-badge-pop 1.7s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
 }
 @keyframes cel-badge-pop {
-  0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
-  15% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
-  30% { transform: translate(-50%, -50%) scale(1); }
-  80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-  100% { transform: translate(-50%, -60%) scale(0.9); opacity: 0; }
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  80% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -60%) scale(0.9);
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fx-celebrate-layer { display: none; }
+  .fx-celebrate-layer {
+    display: none;
+  }
 }
 
 /* ————— Trator da Larsil puxando a faixa (estilo avião de praia) ————— */
 .fluxo-tractor-layer {
   position: fixed;
   inset: 0;
-  top: 46%;
+  /* Sobe um pouco em relação ao centro porque agora cabem até três faixas
+     empilhadas para baixo, e a de baixo não pode sair da tela. */
+  top: 38%;
   z-index: 250;
   pointer-events: none;
   overflow: hidden;
@@ -676,8 +1519,12 @@ textarea,
   animation-fill-mode: forwards;
 }
 @keyframes fluxo-tractor-cross {
-  from { transform: translateX(-680px); }
-  to { transform: translateX(calc(100vw + 60px)); }
+  from {
+    transform: translateX(-680px);
+  }
+  to {
+    transform: translateX(calc(100vw + 60px));
+  }
 }
 
 /* Faixa */
@@ -748,12 +1595,21 @@ textarea,
   animation: fluxo-wheel-spin 1.1s linear infinite;
 }
 @keyframes fluxo-wheel-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 @keyframes fluxo-banner-flutter {
-  0%, 100% { transform: skewY(0deg) translateY(0); }
-  25% { transform: skewY(-1.2deg) translateY(-2px); }
-  75% { transform: skewY(1.2deg) translateY(2px); }
+  0%,
+  100% {
+    transform: skewY(0deg) translateY(0);
+  }
+  25% {
+    transform: skewY(-1.2deg) translateY(-2px);
+  }
+  75% {
+    transform: skewY(1.2deg) translateY(2px);
+  }
 }
 
 /* Fumaça do escapamento */
@@ -767,32 +1623,64 @@ textarea,
   background: oklch(0.7 0.01 150 / 0.55);
   animation: fluxo-smoke 1.4s ease-out infinite;
 }
-.fluxo-tractor-smoke-2 { animation-delay: 0.45s; }
-.fluxo-tractor-smoke-3 { animation-delay: 0.9s; }
+.fluxo-tractor-smoke-2 {
+  animation-delay: 0.45s;
+}
+.fluxo-tractor-smoke-3 {
+  animation-delay: 0.9s;
+}
 @keyframes fluxo-smoke {
-  0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
-  30% { opacity: 0.7; }
-  100% { opacity: 0; transform: translate(-14px, -34px) scale(1.6); }
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.5);
+  }
+  30% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-14px, -34px) scale(1.6);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fluxo-tractor-convoy { animation-duration: 10s !important; }
-  .fluxo-wheel, .fluxo-tractor-banner, .fluxo-tractor-smoke { animation: none !important; }
+  .fluxo-tractor-convoy {
+    animation-duration: 10s !important;
+  }
+  .fluxo-wheel,
+  .fluxo-tractor-banner,
+  .fluxo-tractor-smoke {
+    animation: none !important;
+  }
 }
 
 /* Clippy-style periodic jump for the quick actions FAB */
 @keyframes fluxo-fab-jump {
-  0%, 88%, 100% { transform: translateY(0) rotate(0); }
-  90% { transform: translateY(-10px) rotate(-6deg); }
-  92% { transform: translateY(0) rotate(0); }
-  94% { transform: translateY(-6px) rotate(4deg); }
-  96% { transform: translateY(0) rotate(0); }
+  0%,
+  88%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  90% {
+    transform: translateY(-10px) rotate(-6deg);
+  }
+  92% {
+    transform: translateY(0) rotate(0);
+  }
+  94% {
+    transform: translateY(-6px) rotate(4deg);
+  }
+  96% {
+    transform: translateY(0) rotate(0);
+  }
 }
 .fluxo-fab-jump {
   animation: fluxo-fab-jump 9s ease-in-out infinite;
   transform-origin: 50% 90%;
 }
-.fluxo-fab-jump:hover { animation-play-state: paused; }
+.fluxo-fab-jump:hover {
+  animation-play-state: paused;
+}
 
 /* ==========================================================================
    Meet-style call surface
@@ -852,4 +1740,37 @@ textarea,
   border-radius: 4px;
   left: 4px;
   bottom: 4px;
+}
+
+/* Foto da pessoa surgindo no login: cresce de dentro do quadradinho "F". */
+@keyframes fluxo-avatar-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+.fluxo-avatar-pop {
+  animation: fluxo-avatar-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-avatar-pop {
+    animation: none;
+  }
+}
+
+/* Esconde o "olho" nativo do Edge/WebView2 nos campos de senha.
+   Ele só aparece quando há texto digitado, some ao perder o foco e não aceita
+   estilo — no tema escuro fica quase invisível. Usamos o nosso próprio botão,
+   que fica sempre visível e com contraste decidido por nós. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
 }

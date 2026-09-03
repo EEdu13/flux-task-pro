@@ -5,6 +5,7 @@ import type { User } from "@/lib/fluxo-types";
 import { filesToAttachments, isImage, openAttachment } from "@/lib/attachments";
 import { useChat, useConversation } from "@/lib/chat-store";
 import { useFluxo } from "@/lib/fluxo-store";
+import { UserAvatar } from "@/components/user-avatar";
 
 const EMOJIS = [
   "😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😉", "😎", "🤩",
@@ -20,12 +21,12 @@ function initials(name: string) {
 
 export function ChatAvatar({ user, size = 40 }: { user?: User; size?: number }) {
   return (
-    <div
-      className="flex shrink-0 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground"
+    <UserAvatar
+      nome={user?.name ?? ""}
+      iniciais={user ? user.avatar || initials(user.name) : "?"}
+      className="bg-primary text-primary-foreground"
       style={{ width: size, height: size, fontSize: size * 0.38 }}
-    >
-      {user ? user.avatar || initials(user.name) : "?"}
-    </div>
+    />
   );
 }
 

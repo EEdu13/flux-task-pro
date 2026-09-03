@@ -68,7 +68,6 @@ function CallCardWindow() {
           data: {
             callId: params.callId,
             status: action === "accept" ? "accepted" : "declined",
-            userId: params.userId,
           },
         });
       } catch (e) {

@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { X, Lock, LockOpen } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { inviteToRoom, setRoomPrivacy } from "@/lib/livekit-token.functions";
+import { TravaScroll } from "@/components/trava-scroll";
 
 interface Pending {
   userId: string;
@@ -17,7 +18,9 @@ interface CallInviterContextValue {
 const Ctx = createContext<CallInviterContextValue | null>(null);
 
 export function CallInviterProvider({ children }: { children: ReactNode }) {
-  const { users, currentUser, callUserToRoom } = useFluxo();
+  // `currentUser` saiu: ele só existia para mandar o próprio id ao servidor,
+  // que agora o descobre sozinho pela sessão.
+  const { users, callUserToRoom } = useFluxo();
   const navigate = useNavigate();
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,17 +36,17 @@ export function CallInviterProvider({ children }: { children: ReactNode }) {
       if (kind === "private") {
         try {
           await setRoomPrivacy({
-            data: { roomName, isPrivate: true, userId: currentUser.id },
+            data: { roomName, isPrivate: true },
           });
           await inviteToRoom({
-            data: { roomName, targetUserId: userId, inviterUserId: currentUser.id },
+            data: { roomName, targetUserId: userId },
           });
         } catch (e) {
           console.error(e);
         }
       } else {
         try {
-          await setRoomPrivacy({ data: { roomName, isPrivate: false, userId: currentUser.id } });
+          await setRoomPrivacy({ data: { roomName, isPrivate: false } });
         } catch {
           /* ignore */
         }
@@ -65,6 +68,7 @@ export function CallInviterProvider({ children }: { children: ReactNode }) {
       {children}
       {pending && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <TravaScroll />
           <div className="w-full max-w-md rounded-xl border border-border bg-card shadow-2xl">
             <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
               <div className="text-sm font-semibold">Chamar {targetName}</div>

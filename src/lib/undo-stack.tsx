@@ -17,6 +17,21 @@ interface UndoCtx {
 
 const Ctx = createContext<UndoCtx | null>(null);
 
+const EVENTO_EMPILHAR = "fluxo:undo-push";
+
+/**
+ * Empilha um desfazer de fora da árvore do provider.
+ *
+ * O `UndoProvider` mora dentro do FluxoLayout, abaixo do FluxoProvider — então
+ * a store de tarefas não enxerga o contexto. Como é lá que toda conclusão passa,
+ * é de lá que o aviso precisa sair. O evento resolve isso sem inverter a ordem
+ * dos providers.
+ */
+export function empilharDesfazer(a: UndoAction) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<UndoAction>(EVENTO_EMPILHAR, { detail: a }));
+}
+
 export function UndoProvider({ children }: { children: ReactNode }) {
   const stackRef = useRef<UndoAction[]>([]);
 
@@ -58,6 +73,12 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     }
     return true;
   }, []);
+
+  useEffect(() => {
+    const aoEmpilhar = (e: Event) => push((e as CustomEvent<UndoAction>).detail);
+    window.addEventListener(EVENTO_EMPILHAR, aoEmpilhar);
+    return () => window.removeEventListener(EVENTO_EMPILHAR, aoEmpilhar);
+  }, [push]);
 
   // Global Ctrl/Cmd+Z
   useEffect(() => {

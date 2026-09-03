@@ -43,9 +43,11 @@ export function TitleBar() {
   const close = async () => (await currentWindow()).close();
 
   return (
+    // fluxo-titlebar: gancho estável para o CSS esconder a barra no modo
+    // apresentação (ela fica em z-9999 e cobriria a tela cheia).
     <div
       data-tauri-drag-region
-      className="fixed inset-x-0 top-0 z-[9999] flex h-[var(--titlebar-h)] items-center justify-between border-b border-sidebar-border bg-sidebar pl-3 select-none"
+      className="fluxo-titlebar fixed inset-x-0 top-0 z-[9999] flex h-[var(--titlebar-h)] items-center justify-between border-b border-sidebar-border bg-sidebar pl-3 select-none"
     >
       <div data-tauri-drag-region className="flex items-center gap-2">
         <span className="h-2.5 w-2.5 rounded-[3px] bg-primary" />

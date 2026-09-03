@@ -13,10 +13,13 @@ import {
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
+import { tituloDoAviso } from "@/lib/aviso";
 import { formatDueBucket, formatRelative } from "@/lib/use-theme";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { userScorePct, scoreTextClass } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
+import { UserAvatar } from "@/components/user-avatar";
+import { BlocoEntrada } from "@/components/stagger";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { openTaskContext } from "@/components/task-context-menu";
 
@@ -135,7 +138,7 @@ function Home() {
   return (
     <FluxoLayout title="Início">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <BlocoEntrada indice={0} className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
               Olá, {currentUser.name.split(" ")[0]}
@@ -151,9 +154,9 @@ function Home() {
           >
             Ir para minhas tarefas <ChevronRight className="h-4 w-4" />
           </Link>
-        </div>
+        </BlocoEntrada>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <BlocoEntrada indice={1} className="grid gap-4 md:grid-cols-4">
           <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`${doneToday.length === 1 ? "tarefa concluída" : "tarefas concluídas"}`} color="oklch(0.62 0.16 155)" />
           <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} em foco agora`} color="oklch(0.52 0.22 275)" />
           <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
@@ -182,9 +185,10 @@ function Home() {
             </div>
           </div>
           <Kpi icon={Flame} label="Sequência" value={`${currentUser.streak} d`} sub="dias em ritmo" color="oklch(0.6 0.2 330)" />
-        </div>
+        </BlocoEntrada>
 
         {/* Meu pack — foco especial */}
+        <BlocoEntrada indice={2}>
         <section className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-card to-card p-5 shadow-sm">
           <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl" />
           <div className="relative grid gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -299,9 +303,11 @@ function Home() {
                 )}
                 {teamPack.map(({ user, total }) => (
                   <li key={user.id} className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                      {user.avatar}
-                    </div>
+                    <UserAvatar
+                      nome={user.name}
+                      iniciais={user.avatar}
+                      className="h-7 w-7 text-[10px]"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium">{user.name}</div>
                       <div className="text-[10px] text-muted-foreground">
@@ -315,8 +321,9 @@ function Home() {
             </div>
           </div>
         </section>
+        </BlocoEntrada>
 
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <BlocoEntrada indice={3} className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -413,9 +420,9 @@ function Home() {
               {last7.reduce((s, d) => s + d.done, 0)} tarefas concluídas
             </div>
           </section>
-        </div>
+        </BlocoEntrada>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <BlocoEntrada indice={4} className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
             <div className="flex items-center gap-2">
               <Trophy className="h-4 w-4 text-primary" />
@@ -436,9 +443,11 @@ function Home() {
                     >
                       {i + 1}
                     </span>
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
-                      {u.avatar}
-                    </div>
+                    <UserAvatar
+                      nome={u.name}
+                      iniciais={u.avatar}
+                      className="h-8 w-8 text-[11px]"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{u.name}</div>
                       <div className="mt-1">
@@ -476,7 +485,9 @@ function Home() {
                   >
                     <AtSign className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{n.title}</div>
+                      <div className="truncate text-sm font-medium">
+                        {tituloDoAviso(n, users)}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">{n.desc}</div>
                       <div className="text-[10px] text-muted-foreground/70">{formatRelative(n.at)}</div>
                     </div>
@@ -485,7 +496,7 @@ function Home() {
               ))}
             </ul>
           </section>
-        </div>
+        </BlocoEntrada>
       </div>
     </FluxoLayout>
   );

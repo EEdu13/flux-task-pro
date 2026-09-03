@@ -63,7 +63,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated || !meId) return;
     let cancelled = false;
     const beat = () => {
-      void presenceHeartbeat({ data: { userId: meId } }).catch(() => {});
+      void presenceHeartbeat().catch(() => {});
     };
     beat();
     const id = window.setInterval(() => !cancelled && beat(), 20_000);
@@ -104,7 +104,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await chatThreads({ data: { userId: meId } });
+        const res = await chatThreads();
         if (cancelled) return;
         setThreads(res.threads ?? []);
       } catch {
@@ -143,16 +143,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       att?: { name: string; type: string; dataUrl: string },
     ) => {
       if (!meId) return;
-      await chatSend({
-        data: {
-          fromUserId: meId,
-          toUserId,
-          body,
-          attName: att?.name,
-          attType: att?.type,
-          attData: att?.dataUrl,
-        },
-      });
+
+      /* Duas idas, nesta ordem, e a ordem é obrigatória.
+         O anexo aponta para a mensagem — `gestor.anexos.dono_id` — então a
+         mensagem precisa existir antes. Por isso `chatSend` devolve o id: é
+         ele que o envio do arquivo usa como dono. */
+      const r = await chatSend({ data: { toUserId, body, comAnexo: !!att } });
+
+      if (att) {
+        const { enviarAnexo } = await import("@/lib/anexo.functions");
+        await enviarAnexo({
+          data: {
+            donoTipo: "mensagem",
+            donoId: r.message.id,
+            nome: att.name,
+            tipoMime: att.type,
+            // O seletor de arquivo entrega data URL; o servidor tira o
+            // cabeçalho e guarda os bytes no Blob.
+            conteudo: att.dataUrl,
+          },
+        });
+      }
+
       setPulse((p) => p + 1);
     },
     [meId],
@@ -161,7 +173,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const markRead = useCallback(
     (peerId: string) => {
       if (!meId) return;
-      void chatMarkRead({ data: { userId: meId, peerId } })
+      void chatMarkRead({ data: { peerId } })
         .then(() => setPulse((p) => p + 1))
         .catch(() => {});
     },
@@ -225,7 +237,7 @@ export function useConversation(peerId: string | null) {
     const load = async () => {
       try {
         const { chatConversation } = await import("@/lib/chat.functions");
-        const res = await chatConversation({ data: { userId: meId, peerId } });
+        const res = await chatConversation({ data: { peerId } });
         if (!cancelled) setMessages(res.messages ?? []);
       } catch {
         /* ignore */

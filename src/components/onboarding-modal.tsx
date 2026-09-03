@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Phone, Mail, Sparkles } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { mascararTelefone, telefoneParaGuardar } from "@/lib/telefone";
+import { TravaScroll } from "@/components/trava-scroll";
 
 function normalizePhone(v: string) {
   return v.replace(/[^\d+]/g, "");
@@ -37,13 +39,15 @@ export function OnboardingModal() {
       );
     updateCurrentUser({
       email: email.trim(),
-      phone: normalizePhone(phone),
+      // Com DDI, mesmo formato do restante do sistema e do que o WhatsApp exige.
+      phone: telefoneParaGuardar(phone),
       contactCompleted: true,
     });
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur">
+      <TravaScroll />
       <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         <div
           className="relative px-6 pt-6 pb-4 text-white"
@@ -85,9 +89,10 @@ export function OnboardingModal() {
               <Phone className="h-4 w-4 text-muted-foreground" />
               <input
                 type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+55 11 99999-0000"
+                value={mascararTelefone(phone)}
+                maxLength={15}
+                onChange={(e) => setPhone(mascararTelefone(e.target.value))}
+                placeholder="(00) 00000-0000"
                 className="flex-1 bg-transparent text-sm focus:outline-none"
               />
             </div>

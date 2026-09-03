@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { desktopBringToFront, desktopFlashTaskbar } from "@/lib/desktop";
-import { listNudgesFn, sendNudgeFn } from "@/lib/attention.functions";
+import { listNudgesFn, sendNudgeFn, type TipoAviso } from "@/lib/attention.functions";
+import { triggerTractor } from "@/components/tractor-banner";
 
 interface AttnEvent {
   fromName: string;
@@ -61,33 +62,47 @@ export function AttentionOverlay() {
   // Trocamos o realtime do Supabase por esta sondagem porque é a mesma
   // mecânica das chamadas — que funciona de forma confiável entre máquinas.
   const seenRef = useRef<Set<string>>(new Set());
-  const sinceRef = useRef<string>(new Date().toISOString());
+  /**
+   * A primeira sondagem só anota o que já existe, sem exibir. Sem isso, abrir a
+   * tela replicaria os avisos do último minuto — e recarregar a página faria
+   * tudo tocar de novo.
+   */
+  const primeiraRef = useRef(true);
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.id) return;
     let cancelled = false;
     seenRef.current = new Set();
-    sinceRef.current = new Date().toISOString();
+    primeiraRef.current = true;
 
     async function poll() {
       try {
-        const res = await listNudgesFn({
-          data: { userId: currentUser.id, sinceIso: sinceRef.current },
-        });
+        const res = await listNudgesFn({ data: {} });
         if (cancelled) return;
         // Do mais antigo para o mais novo, para a ordem fazer sentido.
         const list = [...(res.nudges ?? [])].reverse();
+        const apenasAnotar = primeiraRef.current;
+        primeiraRef.current = false;
+
         for (const n of list) {
           const id = String(n.id);
           if (seenRef.current.has(id)) continue;
           seenRef.current.add(id);
-          const at = new Date(n.created_at).toISOString();
-          if (at > sinceRef.current) sinceRef.current = at;
+          if (apenasAnotar) continue;
+
+          // Mesma sondagem serve aos dois avisos: o tipo decide o que aparece.
+          if (n.kind === "trator" && n.message) {
+            triggerTractor({ message: `${n.from_name}: ${n.message}` });
+            continue;
+          }
           window.dispatchEvent(
             new CustomEvent("fluxo:attention", {
               detail: { fromName: n.from_name, fromAvatar: n.from_avatar ?? undefined },
             }),
           );
         }
+
+        // A janela é de 60s e a memória cresce só com o que passou por ela.
+        if (seenRef.current.size > 200) seenRef.current = new Set();
       } catch {
         /* rede instável: tenta de novo no próximo ciclo */
       }
@@ -104,7 +119,10 @@ export function AttentionOverlay() {
 
   if (!current) return null;
   return (
-    <div className="pointer-events-none fixed inset-0 z-[200] flex items-center justify-center">
+    // z-460: a chamada de atenção só serve se for vista. É pointer-events-none
+    // (não bloqueia nada), então pode ficar acima do diálogo (420) e do foco
+    // (440) sem atrapalhar o que a pessoa está fazendo.
+    <div className="pointer-events-none fixed inset-0 z-460 flex items-center justify-center">
       <div className="fluxo-attn-pop flex flex-col items-center gap-3">
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary via-lime-400 to-amber-300 text-3xl font-black text-white shadow-[0_20px_80px_-10px_oklch(0.44_0.09_150/0.6)] ring-4 ring-white/40">
           {current.fromAvatar || current.fromName.slice(0, 1).toUpperCase()}
@@ -262,17 +280,22 @@ function fallbackNotification(fromName: string) {
 }
 
 /**
- * Envia uma cutucada para outro usuário, gravando no nosso backend (Azure SQL).
- * O destinatário recebe na próxima sondagem (até ~2s).
+ * Envia um aviso para outro usuário, gravando no nosso backend (Azure SQL).
+ * O destinatário recebe na próxima sondagem (até ~1s).
+ *
+ * Com `kind: "trator"` e uma mensagem, o trator atravessa a tela dele puxando
+ * a faixa; sem isso, é a cutucada de sempre.
  */
 export async function sendNudge(
   targetUserId: string,
   fromName: string,
   fromAvatar?: string,
   fromUserId?: string,
+  kind: TipoAviso = "cutucada",
+  message?: string,
 ) {
   if (!fromUserId) throw new Error("Remetente inválido");
   await sendNudgeFn({
-    data: { fromUserId, fromName, fromAvatar, targetUserId },
+    data: { fromName, fromAvatar, targetUserId, kind, message },
   });
 }

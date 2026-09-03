@@ -1,7 +1,6 @@
 import { createStart, createMiddleware } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
-import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
@@ -18,7 +17,10 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   }
 });
 
+/* `functionMiddleware` saiu junto com o Supabase.
+   Ele existia para anexar o token do Supabase a cada chamada de servidor. A
+   identidade do Fluxo nunca passou por ali: ela vem do cookie httpOnly da IAM,
+   que o navegador manda sozinho e que o servidor lê em `pessoaDaSessao`. */
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth],
   requestMiddleware: [errorMiddleware],
 }));

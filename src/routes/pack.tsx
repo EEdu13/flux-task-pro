@@ -2,12 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Flame, Send, Sparkles, Trash2, Users, Layers, ArrowLeftRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
+import { confirmar } from "@/components/confirm-dialog";
+import { motion } from "framer-motion";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import type { PackTemplateScope } from "@/lib/fluxo-types";
+import { TravaScroll } from "@/components/trava-scroll";
 
 export const Route = createFileRoute("/pack")({
   head: () => ({
@@ -162,14 +165,20 @@ function PackPage() {
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 transition ${
-                    active
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
+                  className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 transition ${
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <t.icon className="h-3.5 w-3.5" />
-                  {t.label}
+                  {/* Pílula única que desliza entre as abas, em vez de piscar. */}
+                  {active && (
+                    <motion.span
+                      layoutId="pack-aba-ativa"
+                      className="absolute inset-0 rounded-md bg-card shadow-sm"
+                      transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                    />
+                  )}
+                  <t.icon className="relative h-3.5 w-3.5" />
+                  <span className="relative">{t.label}</span>
                 </button>
               );
             })}
@@ -673,11 +682,16 @@ function ModelosSection({
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    if (confirm(`Excluir modelo "${tpl.name}"?`)) {
-                      deletePackTemplate(tpl.id);
-                      toast.success("Modelo excluído");
-                    }
+                  onClick={async () => {
+                    const ok = await confirmar({
+                      titulo: "Excluir este modelo?",
+                      descricao: `"${tpl.name}" deixa de aparecer ao montar o pack. Os packs já criados a partir dele continuam intactos.`,
+                      confirmar: "Excluir",
+                      perigo: true,
+                    });
+                    if (!ok) return;
+                    deletePackTemplate(tpl.id);
+                    toast.success("Modelo excluído");
                   }}
                   className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   title="Excluir modelo"
@@ -772,6 +786,7 @@ function ModelosSection({
           className="fixed inset-0 z-[200] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
           onClick={() => setApplyOpen(null)}
         >
+          <TravaScroll />
           <div
             className="w-full max-w-md rounded-xl border border-border bg-background p-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}

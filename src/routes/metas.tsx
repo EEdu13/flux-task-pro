@@ -11,12 +11,13 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, type Task, type User } from "@/lib/fluxo-types";
 import { loadAllTimeLogs, formatHM } from "@/lib/time-log";
+import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
+import { TravaScroll } from "@/components/trava-scroll";
 
 export const Route = createFileRoute("/metas")({
   head: () => ({
@@ -116,22 +117,72 @@ function MetasPage() {
   const toggleAllTeam = () =>
     setSelectedTeam(allSelected ? new Set() : new Set(visibleUsers.map((u) => u.id)));
 
-  // Presentation mode: fullscreen the panel container and enlarge type.
+  /* ————— Modo apresentação —————
+     No app nativo NÃO usamos requestFullscreen(): quem manda no tamanho é a
+     janela do Tauri, e o WebView ficava desencontrado dela — sobrava uma faixa
+     preta no rodapé (o ::backdrop do elemento em tela cheia aparecendo).
+     Pedimos tela cheia à janela e controlamos o estado por conta própria.
+     No navegador a API do navegador continua sendo a certa. */
+  const nativo = isTauri();
+
+  // Só o navegador emite fullscreenchange; no Tauri o estado é nosso.
   useEffect(() => {
+    if (nativo) return;
     const onChange = () => setPresenting(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
+  }, [nativo]);
+
+  // Esconde a barra de título e devolve os 34px que ela reserva no body.
+  useEffect(() => {
+    const raiz = document.documentElement;
+    raiz.classList.toggle("fluxo-apresentando", presenting);
+    return () => raiz.classList.remove("fluxo-apresentando");
+  }, [presenting]);
+
+  /**
+   * O modo apresentação é CSS e vale por si só; a tela cheia do sistema é um
+   * bônus. Por isso o estado é trocado ANTES e independe dela: se a tela cheia
+   * falhar (permissão do Tauri, navegador que nega o gesto), a pessoa ainda
+   * apresenta — só com a barra de tarefas à mostra. Amarrar um no outro foi o
+   * que fez o botão simplesmente não responder.
+   */
   const togglePresent = async () => {
-    const el = containerRef.current;
-    if (!el) return;
+    const alvo = !presenting;
+    setPresenting(alvo);
+    if (nativo) {
+      await desktopSetFullscreen(alvo);
+      return;
+    }
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
-      else await el.requestFullscreen();
+      else if (alvo) await containerRef.current?.requestFullscreen();
     } catch {
-      /* ignore */
+      /* segue apresentando sem tela cheia */
     }
   };
+
+  // Esc sai da apresentação. No navegador em tela cheia real o próprio
+  // navegador já trata, mas se a tela cheia não pegou ninguém trata — e sem
+  // isto a única saída seria achar o botão.
+  useEffect(() => {
+    if (!presenting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setPresenting(false);
+      if (nativo) void desktopSetFullscreen(false);
+      else if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [presenting, nativo]);
+
+  // Sair da rota com a janela em tela cheia deixaria o app preso assim.
+  useEffect(() => {
+    return () => {
+      if (isTauri()) void desktopSetFullscreen(false);
+    };
+  }, []);
 
   const range = useMemo(() => periodRange(period), [period]);
 
@@ -177,14 +228,23 @@ function MetasPage() {
 
   return (
     <FluxoLayout title="Metas & Score">
+      {/* Apresentando, o painel vira uma sobreposição que cobre a tela inteira
+          e rola por dentro. O inset vai no style, não como classe `inset-0`:
+          existe uma regra global (html.tauri-app .fixed.inset-0) que empurra
+          34px para baixo da barra de título — aqui a barra está escondida, e
+          esse empurrão abriria justamente a faixa vazia no rodapé.
+          z-410: acima do menu e dos modais da página, abaixo do diálogo de
+          tarefa (420), do foco (440) e do confirm (500). */}
       <div
         ref={containerRef}
-        className={`mx-auto space-y-5 ${
+        style={presenting ? { inset: 0 } : undefined}
+        className={`space-y-5 ${
           presenting
-            ? "max-w-none bg-background p-8 text-[1.05rem] overflow-auto min-h-screen"
-            : "max-w-6xl"
+            ? "fixed z-410 max-w-none overflow-auto bg-background p-8 text-[1.05rem]"
+            : "mx-auto max-w-6xl"
         }`}
       >
+        {presenting && <TravaScroll />}
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -547,6 +607,28 @@ function ExportMonthly({
   const [busyPdf, setBusyPdf] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(users.map((u) => u.id)));
 
+  /**
+   * Adianta o download do jsPDF assim que esta seção aparece na tela.
+   *
+   * O ponto de colocar isto AQUI, e não no topo do arquivo: este componente só
+   * é montado quando `isManager` é verdadeiro (metas.tsx:458). Quem é
+   * colaborador nunca vê o botão de exportar e continua sem baixar os 390 KB.
+   * Um import estático devolveria esse peso para todo mundo, que era
+   * exatamente o problema que a rota tinha.
+   *
+   * Nada é aguardado: a tela já está pronta, isto corre atrás em silêncio. Se
+   * a pessoa clicar antes de terminar, o `await import()` do `exportPdf`
+   * espera esta mesma requisição em vez de abrir outra — `import()` é
+   * idempotente, o módulo entra no registro do navegador e a segunda chamada
+   * resolve dali.
+   *
+   * O `.catch` vazio existe só para a falha não virar uma promessa rejeitada
+   * sem dono no console. O erro que importa é o do clique, e aquele avisa.
+   */
+  useEffect(() => {
+    void Promise.all([import("jspdf"), import("jspdf-autotable")]).catch(() => {});
+  }, []);
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -674,11 +756,26 @@ function ExportMonthly({
     setBusy(false);
   };
 
-  const exportPdf = () => {
+  const exportPdf = async () => {
     const list = selectedUsers();
     if (list.length === 0) return;
     setBusyPdf(true);
     try {
+      /**
+       * Na prática isto resolve na hora: o `useEffect` lá em cima já mandou
+       * buscar as duas quando a seção apareceu, e `import()` devolve o módulo
+       * já registrado sem ir à rede de novo.
+       *
+       * O `await` continua aqui porque é ele que cobre os dois casos em que o
+       * adiantamento não deu conta — clique rápido demais, com o download
+       * ainda em curso, ou download que falhou. Nos dois, esperar esta
+       * chamada é o comportamento certo.
+       */
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+
       const range = periodRange("mensal");
       const data = buildUserData(list);
       const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -944,6 +1041,12 @@ function ExportMonthly({
           ? `fluxo-score-${list[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${stamp}.pdf`
           : `fluxo-score-${stamp}.pdf`;
       doc.save(filename);
+    } catch (e) {
+      // Passou a existir uma ida à rede que antes não existia: sem internet, ou
+      // com o arquivo trocado por um deploy no meio da sessão, o import falha.
+      // Antes qualquer erro aqui morria calado e o botão só voltava ao normal.
+      console.error("[metas] falha ao gerar o PDF:", e);
+      toast.error("Não foi possível gerar o PDF. Verifique a conexão e tente de novo.");
     } finally {
       setBusyPdf(false);
     }
@@ -961,7 +1064,7 @@ function ExportMonthly({
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={exportPdf}
+            onClick={() => void exportPdf()}
             disabled={busyPdf || selected.size === 0}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
           >

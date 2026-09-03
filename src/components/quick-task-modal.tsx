@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { TravaScroll } from "@/components/trava-scroll";
 
 export function QuickTaskModal() {
   const { quickCreate, closeQuickCreate } = useFluxo();
@@ -23,6 +24,7 @@ export function QuickTaskModal() {
       className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/85 p-0 pt-0 backdrop-blur-sm"
       onClick={closeQuickCreate}
     >
+      <TravaScroll />
       <div
         className="w-[100vw] min-h-[100vh] rounded-none border-0 border-foreground/80 bg-background text-foreground shadow-2xl"
         onClick={(e) => e.stopPropagation()}

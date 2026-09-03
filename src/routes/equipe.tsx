@@ -14,6 +14,10 @@ import {
 } from "@/lib/fluxo-types";
 import { userScorePct, scoreTextClass } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
+import { UserAvatar } from "@/components/user-avatar";
+import { confirmar } from "@/components/confirm-dialog";
+import { CampoData } from "@/components/campo-data";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/equipe")({
   head: () => ({
@@ -181,18 +185,20 @@ function EquipePage() {
             })}
             {preset === "entre" && (
               <div className="ml-1 inline-flex items-center gap-1.5 text-[11px]">
-                <input
-                  type="date"
+                <CampoData
                   value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="rounded-md border border-border bg-background px-2 py-1 outline-none focus:border-primary"
+                  onChange={setFromDate}
+                  placeholder="Início"
+                  title="Data inicial"
+                  className="py-1"
                 />
                 <span className="text-muted-foreground">até</span>
-                <input
-                  type="date"
+                <CampoData
                   value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="rounded-md border border-border bg-background px-2 py-1 outline-none focus:border-primary"
+                  onChange={setToDate}
+                  placeholder="Fim"
+                  title="Data final"
+                  className="py-1"
                 />
               </div>
             )}
@@ -240,9 +246,11 @@ function EquipePage() {
                   >
                     <td className="py-2.5 pl-4 pr-4">
                       <div className="flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                          {u.avatar}
-                        </span>
+                        <UserAvatar
+                          nome={u.name}
+                          iniciais={u.avatar}
+                          className="h-8 w-8 text-xs"
+                        />
                         <div>
                           <div className="text-sm font-medium">{u.name}</div>
                           <div className="text-[10px] text-muted-foreground">{u.jobTitle}</div>
@@ -287,11 +295,21 @@ function EquipePage() {
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (u.id === currentUser.id) return alert("Você não pode excluir seu próprio usuário simulado.");
-                              if (confirm(`Remover ${u.name}? Tarefas dele(a) serão reatribuídas ao gerente.`)) {
-                                deleteUser(u.id);
+                            onClick={async () => {
+                              if (u.id === currentUser.id) {
+                                toast.error("Você não pode remover a si mesmo");
+                                return;
                               }
+                              const ok = await confirmar({
+                                titulo: `Remover ${u.name.split(" ")[0]} da equipe?`,
+                                descricao:
+                                  "As tarefas dessa pessoa serão reatribuídas ao gerente. Não dá para desfazer.",
+                                confirmar: "Remover",
+                                perigo: true,
+                              });
+                              if (!ok) return;
+                              deleteUser(u.id);
+                              toast.success(`${u.name.split(" ")[0]} removido da equipe`);
                             }}
                             className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           >
@@ -309,7 +327,8 @@ function EquipePage() {
 
         {!isGerente && (
           <p className="mt-3 text-xs text-muted-foreground">
-            Somente perfis Gerente podem editar a equipe. Troque para "Carla Mendes (Gerente)" no menu lateral pra testar.
+            Somente perfis Gerente podem editar a equipe. Se precisar de alguma alteração
+            aqui, fale com quem tem esse perfil.
           </p>
         )}
       </div>
@@ -372,9 +391,11 @@ function UserTasksDrawer({
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-              {user.avatar}
-            </span>
+            <UserAvatar
+              nome={user.name}
+              iniciais={user.avatar}
+              className="h-11 w-11 text-sm"
+            />
             <div>
               <div className="text-base font-semibold">{user.name}</div>
               <div className="text-[11px] text-muted-foreground">

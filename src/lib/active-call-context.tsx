@@ -22,7 +22,7 @@ interface ActiveCallContextValue {
     roomLabel?: string;
     identity: string;
     name: string;
-    userId?: string;
+    // `userId` saiu: quem entra na sala é decidido pela sessão no servidor.
     meetingTitle?: string;
     autoMinute?: boolean;
   }): Promise<void>;
@@ -41,7 +41,7 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const startCall = useCallback<ActiveCallContextValue["startCall"]>(
-    async ({ roomName, roomLabel, identity, name, userId, meetingTitle, autoMinute }) => {
+    async ({ roomName, roomLabel, identity, name, meetingTitle, autoMinute }) => {
       const prev = activeRef.current;
       if (prev && prev.roomName === roomName && prev.identity === identity) {
         setMinimized(false);
@@ -55,14 +55,13 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
       try {
-        const res = await getLiveKitToken({
-          data: { roomName, identity, name, userId: userId ?? "" } as {
-            roomName: string;
-            identity: string;
-            name: string;
-            userId?: string;
-          },
-        });
+        /* Havia aqui um `as { ...; userId?: string }`.
+           A asserção mandava o TypeScript confiar numa forma escrita à mão em
+           vez da forma real da server function — e foi por isso que ela
+           continuou compilando depois que o `userId` saiu da entrada. Nenhum
+           erro, e o cliente seguiria mandando o id no corpo da requisição.
+           Sem a asserção, a assinatura de verdade volta a valer. */
+        const res = await getLiveKitToken({ data: { roomName, identity, name } });
         const next: ActiveCall = {
           roomName,
           roomLabel: roomLabel ?? roomName,

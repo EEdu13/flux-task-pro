@@ -56,10 +56,23 @@ async function processWebhook(rawBody: string) {
 
   const { resolveWhatsAppContact, resolveUserByName, knownUsersForPrompt } =
     await import("@/lib/whatsapp-contacts");
-  const { seedUsers } = await import("@/lib/fluxo-seed");
+
+  /* Lista de pessoas conhecidas: hoje, vazia.
+     Ela vinha do `fluxo-seed`, que era dado falso — o bot resolvia "manda pra
+     Ana" para uma Ana que não existe, e a tarefa nascia atribuída a ninguém
+     real. Vazia, o `assignee_hint` simplesmente não casa e a tarefa fica sem
+     dono, que é o estado correto até a IAM expor quem é quem.
+
+     Este servidor não tem como saber a lista sozinho: as pessoas vivem no
+     `localStorage` de cada navegador. Só a IAM resolve isso de verdade. */
+  const pessoasConhecidas: import("@/lib/fluxo-types").User[] = [];
 
   const caller = resolveWhatsAppContact(telefone);
-  const parsed = await extractTaskWithAI(raw, caller?.name ?? null, knownUsersForPrompt());
+  const parsed = await extractTaskWithAI(
+    raw,
+    caller?.name ?? null,
+    knownUsersForPrompt(pessoasConhecidas),
+  );
 
   if (!parsed?.title) {
     console.warn("[whatsapp-webhook] AI could not extract title, using raw text");
@@ -68,7 +81,7 @@ async function processWebhook(rawBody: string) {
 
   // Resolve destinatário: hint da IA → usuário; senão o próprio caller.
   const assigneeUser = parsed?.assignee_hint
-    ? resolveUserByName(parsed.assignee_hint, seedUsers)
+    ? resolveUserByName(parsed.assignee_hint, pessoasConhecidas)
     : null;
   const assigneeId = assigneeUser?.id ?? caller?.userId ?? null;
   const creatorId = caller?.userId ?? null;
@@ -82,29 +95,46 @@ async function processWebhook(rawBody: string) {
     ai: parsed,
   });
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data: inserted, error } = await supabaseAdmin
-    .from("tarefas")
-    .insert({
-      titulo,
-      telefone,
-      description: parsed?.description ?? null,
-      assignee_user_id: assigneeId,
-      creator_user_id: creatorId,
-      due_date: parsed?.due_date_iso ?? null,
-      recurring: parsed?.recurring ?? false,
-      recurring_until: parsed?.recurring_until_iso ?? null,
-      require_proof: parsed?.require_proof ?? false,
-      priority: parsed?.priority ?? "media",
-    })
-    .select()
-    .single();
+  /* Os ids do sistema são texto na interface e INT no banco. A conversão fica
+     aqui, num lugar só, e devolve nulo quando não é um número — o que é o caso
+     comum hoje, porque o mapa telefone→pessoa está vazio esperando a IAM. */
+  const numero = (v: string | null): number | null => {
+    const n = Number(v);
+    return v !== null && Number.isInteger(n) && n > 0 ? n : null;
+  };
 
-  if (error) {
-    console.error("[whatsapp-webhook] insert error:", error);
+  const dataOuNulo = (iso: string | null | undefined): Date | null => {
+    if (typeof iso !== "string") return null;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  /* Grava em `gestor.entrada_whatsapp` — e, se o dono for conhecido, a tarefa
+     nasce junto, dentro do mesmo comando. Antes isto ia para uma tabela do
+     Supabase e ficava esperando o navegador da pessoa certa acordar e buscá-la. */
+  const { registrarEntradaWhatsapp } = await import("@/lib/whatsapp.functions");
+  try {
+    const { id, tarefaId } = await registrarEntradaWhatsapp({
+      titulo,
+      descricao: parsed?.description ?? null,
+      telefone: telefone || null,
+      responsavelId: numero(assigneeId),
+      criadorId: numero(creatorId),
+      prazo: dataOuNulo(parsed?.due_date_iso),
+      recorrente: parsed?.recurring ?? false,
+      recorreAte: dataOuNulo(parsed?.recurring_until_iso),
+      exigeComprovante: parsed?.require_proof ?? false,
+      prioridade: parsed?.priority ?? "media",
+    });
+    console.log(
+      tarefaId
+        ? `[whatsapp-webhook] entrada ${id} virou a tarefa ${tarefaId}`
+        : `[whatsapp-webhook] entrada ${id} pendente — telefone não reconhecido`,
+    );
+  } catch (e) {
+    console.error("[whatsapp-webhook] insert error:", e);
     return;
   }
-  console.log("[whatsapp-webhook] inserted row id:", inserted?.id);
 
   // Confirmation reply via Evolution API.
   const evoUrl = process.env.EVOLUTION_URL;
