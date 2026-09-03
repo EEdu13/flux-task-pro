@@ -6,8 +6,10 @@
   "packageManager": "npm@11.12.1",
   "scripts": {
     "dev": "vite dev",
+    "tauri:dev": "tauri dev",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "tauri:build": "tauri build",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",

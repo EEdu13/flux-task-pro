@@ -12,7 +12,8 @@
     "urls": [
       "http://localhost:5199",
       "http://NOTE-LAR-38-24:5199",
-      "http://192.168.0.*:5199"
+      "http://192.168.0.*:5199",
+      "https://gestor-larsil.up.railway.app"
     ]
   },
   "permissions": [

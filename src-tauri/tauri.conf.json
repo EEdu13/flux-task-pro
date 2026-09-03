@@ -4,17 +4,17 @@
   "version": "0.1.0",
   "identifier": "com.larsil.fluxo",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../.output/public",
     "devUrl": "http://localhost:5199",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
       {
         "label": "main",
         "title": "Fluxo - Tarefas Larsil",
-        "url": "http://localhost:5199",
+        "url": "https://gestor-larsil.up.railway.app",
         "width": 1400,
         "height": 900,
         "minWidth": 1024,
