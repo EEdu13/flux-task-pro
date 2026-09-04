@@ -326,6 +326,67 @@ function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
   return { ...s, users: [...doBanco, ...soLocais] };
 }
 
+/* ————— Gravações de tarefa que falharam —————
+ *
+ * Isto existe por causa de um prejuízo real, não por precaução: alguém marcou
+ * três tarefas como obrigação diária, viu a estrela acender, e no login
+ * seguinte o pack estava vazio. A escrita local é otimista — a tela mostra o
+ * resultado antes da confirmação — e o `catch` daqui engolia a falha num
+ * `console.warn`. Ninguém tinha como saber que o servidor recusou.
+ *
+ * Guardar a tarefa que falhou é o que permite oferecer "tentar de novo" em vez
+ * de só avisar. Guarda a ÚLTIMA versão por id: se a mesma tarefa falhar duas
+ * vezes, reenviar a mais nova é o certo.
+ *
+ * Ressalva: a nova tentativa manda a versão do momento da falha. Se a pessoa
+ * editar a tarefa entre a falha e o clique, o reenvio grava o que falhou, não
+ * o que está na tela. É pior que reler o estado, e melhor que perder — e
+ * reler exigiria acesso ao store aqui dentro, que é função de módulo.
+ */
+const gravacoesFalhadas = new Map<string, Task>();
+let toastDeFalhaAberto = false;
+
+async function tentarNovamente(): Promise<void> {
+  const pendentes = [...gravacoesFalhadas.values()];
+  gravacoesFalhadas.clear();
+  toastDeFalhaAberto = false;
+  toast.loading("Salvando de novo…", { id: "gravacao-tarefa" });
+  for (const t of pendentes) await gravarTarefa(t);
+  if (gravacoesFalhadas.size === 0) {
+    toast.success(
+      pendentes.length === 1 ? "Salvo." : `Salvo — ${pendentes.length} alterações.`,
+      { id: "gravacao-tarefa" },
+    );
+  }
+  // Se ainda houver falha, `avisarFalha` já reabriu o aviso de erro.
+}
+
+function avisarFalha(t: Task): void {
+  gravacoesFalhadas.set(t.id, t);
+  const n = gravacoesFalhadas.size;
+  toastDeFalhaAberto = true;
+  toast.error(
+    n === 1
+      ? `Não foi possível salvar "${t.title.slice(0, 40)}".`
+      : `${n} alterações não foram salvas.`,
+    {
+      id: "gravacao-tarefa",
+      // Não some sozinho: perda de trabalho não pode depender de a pessoa
+      // estar olhando para a tela no momento certo.
+      duration: Infinity,
+      /* A segunda frase é a ressalva honesta sobre o próprio botão. Ele reenvia
+         a tarefa como ela estava quando falhou — se a pessoa mexeu depois, o
+         reenvio grava a versão velha por cima. Dizer isso é melhor do que
+         deixar descobrir: quem mudou algo no meio-tempo deve refazer pela
+         tela (a estrela do pack, o campo que editou), não pelo botão. */
+      description:
+        "A alteração está só nesta tela — se sair agora, ela se perde. " +
+        "O botão reenvia como estava quando falhou; se você mexeu depois, refaça pela tela.",
+      action: { label: "Tentar novamente", onClick: () => void tentarNovamente() },
+    },
+  );
+}
+
 /**
  * Manda a tarefa inteira para o banco.
  *
@@ -376,8 +437,26 @@ async function gravarTarefa(t: Task): Promise<void> {
         recurringWeekdays: t.recurringWeekdays ?? [],
       },
     });
+    /* Deu certo. Tira esta tarefa da lista de pendências: ela pode ter sido
+       regravada por outro caminho — a pessoa mexeu de novo e dessa vez foi — e
+       continuar na lista faria o aviso de erro insistir por algo já salvo.
+
+       Confirma SEMPRE, inclusive ao marcar um item de checklist. Cheguei a
+       confirmar só depois de um erro, para não fazer ruído; o raciocínio estava
+       errado. Se o sucesso é silencioso, o silêncio não quer dizer nada — e a
+       falha, que também é silenciosa até o aviso aparecer, se confunde com o
+       funcionamento normal. Com confirmação constante, a ausência dela vira
+       sinal por si só.
+
+       O `id` compartilhado é o que evita a torre de avisos: arrastar um cartão
+       dispara várias gravações seguidas, e cada uma substitui a anterior em vez
+       de empilhar. 1,2s é o bastante para ser visto sem atrapalhar. */
+    gravacoesFalhadas.delete(t.id);
+    if (toastDeFalhaAberto && gravacoesFalhadas.size === 0) toastDeFalhaAberto = false;
+    toast.success("Salvo.", { id: "gravacao-tarefa", duration: 1200 });
   } catch (e) {
     console.warn("[fluxo] tarefa não gravou:", (e as Error)?.message);
+    avisarFalha(t);
   }
 }
 
