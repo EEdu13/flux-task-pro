@@ -73,33 +73,41 @@ export const iamLogin = createServerFn({ method: "POST" })
             supervisorNome: col.chefeDireto(dados),
             coordenadorNome: dados.coordenador || null,
           };
-
-          /* Guarda setor, papel e chefe no perfil do Fluxo.
-             É o único ponto do sistema em que esses três são escritos, e ele
-             está aqui de propósito: aqui existe a resposta da IAM e das tabelas
-             de colaborador. Depois do login essa informação some, e quem
-             precisar dela — `listarTarefas`, por exemplo — só teria o id
-             numérico da sessão.
-
-             Aceitar papel vindo do navegador refaria o buraco do item 1:
-             qualquer pessoa se declararia gerente e leria as tarefas da empresa
-             inteira. Por isso a gravação nasce daqui, e a função que grava não
-             é uma rota. */
-          try {
-            const { registrarPerfilFuncional } = await import("@/lib/perfil.functions");
-            await registrarPerfilFuncional(Number(usuario.id), {
-              setorId: perfil.setorId,
-              papel: perfil.role,
-              supervisorNome: perfil.supervisorNome,
-            });
-          } catch (e) {
-            // Mesma regra do bloco acima: não impedir o login. Sem estes
-            // campos a pessoa cai na visibilidade mais restrita, que é segura.
-            console.warn("[iam] perfil não gravou no Fluxo:", (e as Error)?.message);
-          }
         }
       } catch (e) {
         console.warn("[iam] perfil funcional indisponível:", (e as Error)?.message);
+      }
+
+      /* Guarda nome, setor, papel e chefe no perfil do Fluxo.
+         É o único ponto do sistema em que esses quatro são escritos, e ele
+         está aqui de propósito: aqui existe a resposta da IAM e das tabelas
+         de colaborador. Depois do login essa informação some, e quem
+         precisar dela — `listarTarefas`, por exemplo — só teria o id
+         numérico da sessão.
+
+         Aceitar papel vindo do navegador refaria o buraco do item 1:
+         qualquer pessoa se declararia gerente e leria as tarefas da empresa
+         inteira. Por isso a gravação nasce daqui, e a função que grava não
+         é uma rota.
+
+         Repare que isto ficou FORA do `if (dados)` acima. O nome vem da IAM,
+         não das tabelas de colaborador, e é o que permite a pessoa aparecer no
+         Contatos de todo mundo — quem não fosse encontrado em COLABORADORES
+         (um externo recém-contratado, um nome grafado diferente) simplesmente
+         não existiria para o resto da equipe. Os outros três seguem indo nulos
+         quando não há perfil, e `COALESCE` no UPDATE preserva o que já estava. */
+      try {
+        const { registrarPerfilFuncional } = await import("@/lib/perfil.functions");
+        await registrarPerfilFuncional(Number(usuario.id), {
+          nome: usuario.nome,
+          setorId: perfil?.setorId ?? null,
+          papel: perfil?.role ?? null,
+          supervisorNome: perfil?.supervisorNome ?? null,
+        });
+      } catch (e) {
+        // Mesma regra do bloco acima: não impedir o login. Sem estes
+        // campos a pessoa cai na visibilidade mais restrita, que é segura.
+        console.warn("[iam] perfil não gravou no Fluxo:", (e as Error)?.message);
       }
 
       return {

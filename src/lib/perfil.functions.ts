@@ -12,11 +12,17 @@ import {
  * identidade pela sessão, escrita idempotente, leitura em uma consulta só.
  *
  * O que é da IAM e o que é do Fluxo:
- *   nome, cargo, setor, hierarquia  ->  IAM, a cada login
- *   pontuação, sequência, avatar    ->  aqui, e sobrevive ao relogin
+ *   cargo, hierarquia            ->  IAM, a cada login
+ *   pontuação, sequência, avatar ->  aqui, e sobrevive ao relogin
+ *   nome, setor                  ->  cópia, reescrita a cada login
  *
- * Duplicar nome e setor nesta tabela seria criar uma segunda verdade que
- * envelhece: alguém muda de setor no RH e o Fluxo continua mostrando o antigo.
+ * Sobre a cópia de `nome`, que este comentário antes desaconselhava: o receio
+ * era criar uma segunda verdade que envelhece. Ele continua válido para dado
+ * que muda sem passar por aqui — mas a alternativa custava mais. Sem nome
+ * gravado, o Fluxo não tinha como montar a lista de PESSOAS: cada navegador
+ * conhecia só quem tinha logado nele, e ninguém aparecia no Contatos de
+ * ninguém. O nome vem da IAM e é reescrito em todo login, então a janela em
+ * que ele pode estar velho é o intervalo entre dois acessos da mesma pessoa.
  */
 
 /** Só o que o app grava; o resto da pessoa continua vindo da IAM. */
@@ -40,13 +46,19 @@ export type PerfilDoFluxo = {
  */
 export async function registrarPerfilFuncional(
   pessoaId: number,
-  dados: { setorId: string | null; papel: string | null; supervisorNome: string | null },
+  dados: {
+    nome: string | null;
+    setorId: string | null;
+    papel: string | null;
+    supervisorNome: string | null;
+  },
 ): Promise<void> {
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
   await pool
     .request()
     .input("pessoa", sql.Int, pessoaId)
+    .input("nome", sql.NVarChar, dados.nome)
     .input("setor", sql.NVarChar, dados.setorId)
     .input("papel", sql.NVarChar, dados.papel)
     .input("chefe", sql.NVarChar, dados.supervisorNome)
@@ -56,7 +68,8 @@ export async function registrarPerfilFuncional(
         WHERE NOT EXISTS (SELECT 1 FROM gestor.perfis WHERE pessoa_id=@pessoa);
 
        UPDATE gestor.perfis
-          SET setor           = COALESCE(@setor, setor),
+          SET nome            = COALESCE(@nome, nome),
+              setor           = COALESCE(@setor, setor),
               papel           = COALESCE(@papel, papel),
               supervisor_nome = COALESCE(@chefe, supervisor_nome),
               atualizado_em   = SYSDATETIMEOFFSET()
@@ -139,6 +152,86 @@ export const meuPerfil = createServerFn({ method: "POST" }).handler(
       sequencia: linha.sequencia,
       avatar: linha.avatar,
       contatoConfirmado: !!linha.contato_confirmado,
+    };
+  }),
+);
+
+export type PessoaDoQuadro = {
+  id: string;
+  nome: string;
+  funcao: string | null;
+  setor: string | null;
+  papel: string | null;
+  supervisorNome: string | null;
+  pontuacao: number;
+  sequencia: number;
+  avatar: string | null;
+};
+
+/**
+ * O quadro de pessoas — quem existe no Fluxo, para todo mundo.
+ *
+ * Até esta função, a lista de pessoas era estado local do navegador: cada
+ * máquina conhecia só quem tinha logado nela. O efeito era o Contatos vazio de
+ * um lado e do outro, e — pior — o seletor de responsável de uma tarefa nova
+ * mostrando só a própria pessoa, o que impedia delegar qualquer coisa.
+ *
+ * Quem entra: quem já logou pelo menos uma vez E tem nome gravado. O filtro de
+ * nome não é decorativo — as linhas criadas antes desta mudança têm `nome`
+ * nulo, e um contato sem nome não é contato, é uma linha quebrada na tela.
+ * Elas entram sozinhas no próximo login de cada uma.
+ *
+ * Não há recorte por papel aqui, de propósito. Contatos é lista telefônica: a
+ * empresa inteira se enxerga. Quem manda tarefa para quem continua decidido
+ * por `visibleUsersForAssign`, e o que cada um LÊ continua decidido no
+ * servidor, tarefa a tarefa, por `listarTarefas`.
+ *
+ * O cargo vem por fora, de `dbo.COLABORADORES` — não é copiado para `perfis`
+ * porque muda no RH sem passar por aqui. `OUTER APPLY ... TOP 1` e não JOIN:
+ * nome não é chave única naquela tabela, e um JOIN com dois homônimos
+ * duplicaria a pessoa na lista.
+ */
+export const listarPessoas = createServerFn({ method: "POST" }).handler(
+  comSessaoSemEntrada(async (): Promise<{ pessoas: PessoaDoQuadro[] }> => {
+    const { getPool } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool.request().query(
+      `SELECT p.pessoa_id, p.nome, p.setor, p.papel, p.supervisor_nome,
+              p.pontuacao, p.sequencia, p.avatar, c.funcao
+         FROM gestor.perfis p
+        OUTER APPLY (
+          SELECT TOP 1 LTRIM(RTRIM(FUNCAO)) AS funcao
+            FROM dbo.COLABORADORES
+           WHERE LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI
+                 = p.nome COLLATE Latin1_General_CI_AI
+        ) c
+        WHERE p.nome IS NOT NULL
+        ORDER BY p.nome`,
+    );
+    return {
+      pessoas: (
+        r.recordset as {
+          pessoa_id: number;
+          nome: string;
+          setor: string | null;
+          papel: string | null;
+          supervisor_nome: string | null;
+          pontuacao: number;
+          sequencia: number;
+          avatar: string | null;
+          funcao: string | null;
+        }[]
+      ).map((p) => ({
+        id: String(p.pessoa_id),
+        nome: p.nome,
+        funcao: p.funcao,
+        setor: p.setor,
+        papel: p.papel,
+        supervisorNome: p.supervisor_nome,
+        pontuacao: p.pontuacao,
+        sequencia: p.sequencia,
+        avatar: p.avatar,
+      })),
     };
   }),
 );

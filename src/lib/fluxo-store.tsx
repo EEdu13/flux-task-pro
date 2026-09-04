@@ -25,6 +25,10 @@ import type {
 import { priorityMultiplier } from "./fluxo-types";
 import { createRoomCall } from "./livekit-token.functions";
 import { iamLogout } from "@/integrations/iam/auth.functions";
+// Só a regra de iniciais, que é string pura e roda no navegador. Reescrevê-la
+// aqui para preservar a independência declarada acima faria o mesmo avatar sair
+// com iniciais diferentes dependendo da tela.
+import { iniciaisDoNome } from "@/integrations/iam/types";
 import { toast } from "sonner";
 import { empilharDesfazer } from "@/lib/undo-stack";
 import { proximaOcorrencia } from "./recorrencia";
@@ -677,6 +681,46 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                 : x,
             ),
           }));
+
+          /* O quadro de pessoas — quem mais existe no Fluxo.
+             Sem isto, `users` continha só quem tinha logado NESTE navegador, e
+             o efeito era duplo: ninguém aparecia no Contatos de ninguém, e o
+             seletor de responsável de uma tarefa nova mostrava só a própria
+             pessoa, o que tornava a delegação impossível.
+
+             Mescla, não substitui. Quem veio do banco entra completo; quem só
+             existe aqui (criado antes da migração, sem id numérico) fica onde
+             está, pelo mesmo motivo das atas: sumir da tela é perder. */
+          const { listarPessoas } = await import("@/lib/perfil.functions");
+          const { pessoas } = await listarPessoas();
+          setState((s) => {
+            const idPorNome = new Map(pessoas.map((p) => [p.nome.trim().toLowerCase(), p.id]));
+            const doBanco: User[] = pessoas.map((p) => {
+              const existente = s.users.find((u) => u.id === p.id);
+              // Mesma rede de segurança do login: chefe apontando para si
+              // trava o passeio por ancestrais em Contatos.
+              const chefe = p.supervisorNome
+                ? idPorNome.get(p.supervisorNome.trim().toLowerCase())
+                : undefined;
+              return {
+                // O que é só do navegador — email, telefone, contactCompleted —
+                // sobrevive porque o espalhamento vem primeiro.
+                ...existente,
+                id: p.id,
+                name: p.nome,
+                role: (p.papel ?? "adm") as Role,
+                jobTitle: p.funcao ?? existente?.jobTitle ?? "",
+                sector: p.setor ?? "sem-setor",
+                avatar: p.avatar ?? iniciaisDoNome(p.nome),
+                supervisorId:
+                  chefe && chefe !== p.id ? chefe : existente?.supervisorId,
+                score: p.pontuacao,
+                streak: p.sequencia,
+              };
+            });
+            const soLocais = s.users.filter((u) => !pessoas.some((p) => p.id === u.id));
+            return { ...s, users: [...doBanco, ...soLocais] };
+          });
 
           // Tema e paleta da pessoa, não da máquina.
           const { sincronizarPreferencias } = await import("@/lib/use-theme");
