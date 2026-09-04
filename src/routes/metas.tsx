@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, type Task, type User } from "@/lib/fluxo-types";
-import { loadAllTimeLogs, formatHM } from "@/lib/time-log";
+import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
 import { TravaScroll } from "@/components/trava-scroll";
 
@@ -671,12 +671,20 @@ function ExportMonthly({
     return "Crítico";
   };
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
     const list = selectedUsers();
     if (list.length === 0) return;
     setBusy(true);
     const range = periodRange("mensal");
-    const logs = loadAllTimeLogs();
+    /* O tempo trabalhado vem do banco. Antes saía do `localStorage` desta
+       máquina, então a coluna "Trabalhado" do CSV vinha zerada para todo mundo
+       menos quem exportou — e zerada é indistinguível de "não cronometrou". */
+    let logs: Record<string, { totals: Record<string, number> }> = {};
+    try {
+      logs = await carregarTempoDoServidor();
+    } catch (e) {
+      console.warn("[fluxo] tempo não carregou para o CSV:", (e as Error)?.message);
+    }
     const rows: string[] = [];
     rows.push(
       [

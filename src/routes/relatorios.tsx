@@ -20,8 +20,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusLabels, priorityLabels } from "@/lib/fluxo-types";
 import {
-  loadTimeLog,
-  loadAllTimeLogs,
+  carregarTempoDoServidor,
   formatHM,
   formatHMS,
   buildSessionsCsv,
@@ -29,6 +28,7 @@ import {
   downloadCsv,
   type CsvSessionRow,
   type CsvSummaryRow,
+  type Persisted,
 } from "@/lib/time-log";
 import { useEffect, useState } from "react";
 
@@ -66,7 +66,28 @@ function Relatorios() {
     setScope(currentUser.id);
   }, [currentUser.id]);
 
-  const allLogs = useMemo(() => loadAllTimeLogs(), [timeTick, scope]);
+  /* O tempo vem do banco, não do `localStorage` desta máquina.
+     `timeTick` dispara na primeira carga e a cada sessão encerrada — o
+     cronômetro emite o evento de novo depois que a gravação no servidor
+     responde, então a busca abaixo já encontra a sessão nova. */
+  const [allLogs, setAllLogs] = useState<Record<string, Persisted>>({});
+  const [carregandoTempo, setCarregandoTempo] = useState(true);
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      try {
+        const dados = await carregarTempoDoServidor();
+        if (vivo) setAllLogs(dados);
+      } catch (e) {
+        console.warn("[fluxo] tempo não carregou:", (e as Error)?.message);
+      } finally {
+        if (vivo) setCarregandoTempo(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [timeTick]);
 
   // Merge sessions + totals across the chosen scope.
   const timeLog = useMemo(() => {
@@ -79,7 +100,7 @@ function Relatorios() {
       }
       return { sessions, totals };
     }
-    return allLogs[scope] ?? loadTimeLog(scope);
+    return allLogs[scope] ?? { sessions: [], totals: {} };
   }, [scope, visibleUsers, allLogs]);
 
   const scopeLabel =
@@ -378,7 +399,13 @@ function Relatorios() {
         <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Tempo trabalhado — últimos 30 dias (minutos)</h2>
           <p className="text-[11px] text-muted-foreground">
-            Baseado no play/pause/stop das tarefas de <b>{scopeLabel}</b>.
+            {carregandoTempo ? (
+              "Buscando as sessões no servidor…"
+            ) : (
+              <>
+                Baseado no play/pause/stop das tarefas de <b>{scopeLabel}</b>.
+              </>
+            )}
           </p>
           <div className="mt-3 h-64">
             <ResponsiveContainer>
@@ -398,9 +425,10 @@ function Relatorios() {
 
         {timeByUser.length > 0 && (
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Tempo por colaborador (dados locais)</h2>
+            <h2 className="text-sm font-semibold">Tempo por colaborador</h2>
             <p className="text-[11px] text-muted-foreground">
-              Soma de todas as sessões cronometradas no dispositivo — útil para o gestor comparar cargas.
+              Soma das sessões cronometradas nos últimos 90 dias, de qualquer computador — útil
+              para o gestor comparar cargas.
             </p>
             <div className="mt-3 h-64">
               <ResponsiveContainer>

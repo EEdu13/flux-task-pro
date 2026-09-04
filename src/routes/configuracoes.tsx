@@ -1,7 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bell,
+  Check,
+  Laptop,
   Loader2,
   LogOut,
   Mail,
@@ -10,6 +12,7 @@ import {
   Phone,
   PowerOff,
   Save,
+  ShieldCheck,
   Sun,
   Trash2,
   User as UserIcon,
@@ -373,6 +376,8 @@ function SettingsPage() {
                 </button>
               </div>
 
+              <AcessosEDispositivos />
+
               <DesktopDiagnostics />
 
               <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6">
@@ -462,6 +467,184 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  * Diagnóstico do app desktop — permite testar as sobreposições nativas
  * numa máquina só, sem precisar de duas pontas.
  */
+/**
+ * Onde a pessoa vê o próprio histórico de entrada.
+ *
+ * As duas tabelas por trás disto passaram meses sendo criadas e nunca
+ * escritas. Agora todo login grava — e esta seção existe para que o registro
+ * não fique só acumulando sem ninguém nunca poder olhar. É leitura da própria
+ * pessoa: ver os próprios acessos não é gerência, e a consulta no servidor
+ * nem aceita pedir os de outra.
+ */
+function AcessosEDispositivos() {
+  const [acessos, setAcessos] = useState<
+    { em: string; ip: string | null; sucesso: boolean; motivo: string | null }[]
+  >([]);
+  const [dispositivos, setDispositivos] = useState<
+    {
+      id: string;
+      apelido: string | null;
+      primeiroAcesso: string;
+      ultimoAcesso: string;
+      esteAparelho: boolean;
+    }[]
+  >([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(false);
+  const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      const api = await import("@/lib/acesso.functions");
+      const [a, d] = await Promise.all([api.meusAcessos(), api.meusDispositivos()]);
+      setAcessos(a.acessos);
+      setDispositivos(d.dispositivos);
+      setErro(false);
+    } catch {
+      setErro(true);
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const salvarApelido = async () => {
+    if (!editando) return;
+    const { id, texto } = editando;
+    setEditando(null);
+    try {
+      const { renomearDispositivo } = await import("@/lib/acesso.functions");
+      await renomearDispositivo({ data: { id, apelido: texto } });
+      setDispositivos((ds) => ds.map((d) => (d.id === id ? { ...d, apelido: texto || null } : d)));
+    } catch {
+      toast.error("Não foi possível renomear");
+    }
+  };
+
+  const quando = (iso: string) =>
+    new Date(iso).toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6">
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">
+        <ShieldCheck className="h-4 w-4" /> Acessos e dispositivos
+      </h3>
+      <p className="mb-4 text-[11px] text-muted-foreground">
+        Quando e de onde sua conta entrou no Fluxo. Se aparecer algo que não foi você, troque a
+        senha e avise a TI.
+      </p>
+
+      {carregando && <p className="text-xs text-muted-foreground">Carregando…</p>}
+      {erro && !carregando && (
+        <p className="text-xs text-muted-foreground">Não foi possível carregar agora.</p>
+      )}
+
+      {!carregando && !erro && (
+        <div className="space-y-5">
+          <div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Dispositivos
+            </div>
+            {dispositivos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhum registrado ainda.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {dispositivos.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs"
+                  >
+                    <Laptop className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {editando?.id === d.id ? (
+                      <>
+                        <input
+                          autoFocus
+                          value={editando.texto}
+                          onChange={(e) => setEditando({ id: d.id, texto: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void salvarApelido();
+                            if (e.key === "Escape") setEditando(null);
+                          }}
+                          placeholder="Notebook do escritório"
+                          className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 outline-none focus:border-primary"
+                        />
+                        <button
+                          onClick={() => void salvarApelido()}
+                          className="rounded p-1 text-primary hover:bg-secondary"
+                          title="Salvar nome"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setEditando({ id: d.id, texto: d.apelido ?? "" })}
+                          className="min-w-0 truncate text-left font-medium hover:text-primary"
+                          title="Clique para dar um nome"
+                        >
+                          {d.apelido ?? "Dispositivo sem nome"}
+                        </button>
+                        {d.esteAparelho && (
+                          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                            este aparelho
+                          </span>
+                        )}
+                        <span className="ml-auto text-[11px] text-muted-foreground">
+                          último acesso {quando(d.ultimoAcesso)}
+                        </span>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Últimas entradas
+            </div>
+            {acessos.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nada registrado ainda.</p>
+            ) : (
+              <ul className="divide-y divide-border rounded-md border border-border">
+                {acessos.map((a, i) => (
+                  <li
+                    key={`${a.em}-${i}`}
+                    className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs"
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        a.sucesso ? "bg-emerald-500" : "bg-destructive"
+                      }`}
+                    />
+                    <span className="tabular-nums">{quando(a.em)}</span>
+                    <span className="text-muted-foreground">{a.ip ?? "—"}</span>
+                    {!a.sucesso && (
+                      <span className="text-destructive">
+                        falhou{a.motivo ? ` · ${a.motivo}` : ""}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DesktopDiagnostics() {
   const { currentUser } = useFluxo();
   const [result, setResult] = useState<string>("");

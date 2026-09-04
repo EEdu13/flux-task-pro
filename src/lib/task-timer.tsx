@@ -135,6 +135,14 @@ export function TaskTimerProvider({ children }: { children: ReactNode }) {
               },
             }),
           )
+          .then(() => {
+            /* O mesmo evento, de novo — agora que a linha existe no banco.
+               `appendSession` já o emitiu uma vez, mas Relatórios responde a
+               ele buscando no servidor, e naquele instante a gravação ainda
+               estava no ar: a tela recarregaria sem a sessão que acabou de
+               fechar e só a mostraria na próxima visita. */
+            window.dispatchEvent(new CustomEvent("fluxo:timer-updated"));
+          })
           .catch((e) => console.warn("[fluxo] sessão de tempo não gravou:", (e as Error)?.message));
       }
     },

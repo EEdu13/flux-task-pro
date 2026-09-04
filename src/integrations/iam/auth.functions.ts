@@ -55,7 +55,7 @@ export const iamLogin = createServerFn({ method: "POST" })
          quando entrou, de que dispositivo. É aguardado, não disparado e
          esquecido, porque marcar o dispositivo escreve um cookie, e cookie só
          se escreve enquanto a resposta ainda está sendo montada. */
-      const { registrarAcesso } = await import("@/lib/acesso.functions");
+      const { registrarAcesso } = await import("@/lib/acesso.server");
       await registrarAcesso(Number(usuario.id), true);
 
       // Cargo, setor e chefia não vêm da IAM — são das tabelas de colaboradores.
@@ -114,7 +114,7 @@ export const iamLogin = createServerFn({ method: "POST" })
       // `pessoa_id` fica nulo, e é exatamente para isso que a coluna aceita
       // nulo: "alguém tentou, não sei quem".
       const motivo = e instanceof IamError ? e.motivo : "inesperado";
-      const { registrarAcesso } = await import("@/lib/acesso.functions");
+      const { registrarAcesso } = await import("@/lib/acesso.server");
       await registrarAcesso(null, false, motivo);
 
       if (e instanceof IamError) return { ok: false, erro: e.message, motivo: e.motivo };

@@ -9,7 +9,7 @@ export interface TimerSession {
   seconds: number;
 }
 
-interface Persisted {
+export interface Persisted {
   sessions: TimerSession[];
   totals: Record<string, number>; // taskId -> total seconds all-time
 }
@@ -83,23 +83,37 @@ export function parseHM(input: string): number | null {
 
 // ---------------- Cross-user helpers ----------------
 
-const KEY_PREFIX = "fluxo.timelog.v1:";
-
 /**
- * Loads the time log for every user that has data persisted on this device.
- * Useful for managers who need to inspect subordinates' time when they've
- * shared the same browser (demo/on-prem scenarios).
+ * O tempo de todo mundo que esta pessoa pode ver, vindo do banco.
+ *
+ * Substitui a `loadAllTimeLogs` que existia aqui, e que varria o
+ * `localStorage` da máquina atrás de chaves de OUTRAS pessoas. Ela vinha
+ * documentada como "para gerentes que precisam inspecionar o tempo de
+ * subordinados quando compartilham o mesmo navegador (cenário demo/on-prem)" —
+ * ou seja, funcionava exatamente na situação que a Larsil não tem. Na prática
+ * um gerente abria Relatórios e via só o próprio tempo, sem nada indicando que
+ * o resto simplesmente não estava ali.
+ *
+ * Quem decide o que cada pessoa enxerga é o servidor, com a mesma regra de
+ * papel e setor das tarefas e das conclusões.
  */
-export function loadAllTimeLogs(): Record<string, Persisted> {
-  if (typeof window === "undefined") return {};
-  const out: Record<string, Persisted> = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (!k || !k.startsWith(KEY_PREFIX)) continue;
-    const userId = k.slice(KEY_PREFIX.length);
-    out[userId] = safeParse(localStorage.getItem(k));
+export async function carregarTempoDoServidor(): Promise<Record<string, Persisted>> {
+  const { listarSessoesDeTempo } = await import("./tempo.functions");
+  const { sessoes } = await listarSessoesDeTempo();
+
+  const porPessoa: Record<string, Persisted> = {};
+  for (const s of sessoes) {
+    const dela = (porPessoa[s.pessoaId] ??= { sessions: [], totals: {} });
+    dela.sessions.push({
+      id: s.id,
+      taskId: s.taskId,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      seconds: s.seconds,
+    });
+    dela.totals[s.taskId] = (dela.totals[s.taskId] ?? 0) + s.seconds;
   }
-  return out;
+  return porPessoa;
 }
 
 export function sessionsInRange(

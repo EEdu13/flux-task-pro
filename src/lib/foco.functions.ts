@@ -43,8 +43,13 @@ export const registrarSessaoDeFoco = createServerFn({ method: "POST" })
         .input("tarefa", sql.UniqueIdentifier, d.tarefaId)
         .input("minutos", sql.Int, d.minutos)
         .query(
-          `INSERT INTO gestor.sessoes_de_foco (pessoa_id, tarefa_id, minutos)
-           VALUES (@pessoa, @tarefa, @minutos)`,
+          /* `encerrou_em` é escrito à mão porque esta tabela, ao contrário das
+             vizinhas, não tem DEFAULT nessa coluna — e é NOT NULL, então
+             omiti-la derruba o INSERT. Vem do relógio do SERVIDOR de
+             propósito: é o carimbo que decide em que dia o pomodoro entra, e
+             deixá-lo vir do cliente permitiria empurrar sessões para ontem. */
+          `INSERT INTO gestor.sessoes_de_foco (pessoa_id, tarefa_id, minutos, encerrou_em)
+           VALUES (@pessoa, @tarefa, @minutos, SYSDATETIMEOFFSET())`,
         );
       return { ok: true };
     }),
