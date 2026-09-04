@@ -43,6 +43,15 @@ export function OnboardingModal() {
       phone: telefoneParaGuardar(phone),
       contactCompleted: true,
     });
+    /* Sem isto o modal voltava em todo login: `updateCurrentUser` só mexe no
+       estado local, e o próximo `meuPerfil()` lia `contato_confirmado` do
+       banco ainda como false — a confirmação nunca tinha sido gravada. */
+    void (async () => {
+      const { salvarMeuPerfil } = await import("@/lib/perfil.functions");
+      await salvarMeuPerfil({ data: { contatoConfirmado: true } }).catch((e) =>
+        console.warn("[fluxo] confirmação de contato não gravou:", (e as Error)?.message),
+      );
+    })();
   };
 
   return (

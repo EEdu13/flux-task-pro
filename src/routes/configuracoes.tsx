@@ -88,6 +88,7 @@ function SettingsPage() {
       setErr("Telefone inválido. Evite números repetidos como 11111111111.");
       return;
     }
+    const contactCompleted = !!(trimmedEmail && trimmedPhone);
     updateCurrentUser({
       name: name.trim(),
       email: trimmedEmail,
@@ -95,8 +96,18 @@ function SettingsPage() {
       phone: trimmedPhone ? telefoneParaGuardar(trimmedPhone) : "",
       jobTitle: jobTitle.trim(),
       sector,
-      contactCompleted: !!(trimmedEmail && trimmedPhone),
+      contactCompleted,
     });
+    /* Sem isto a confirmação nunca chegava no banco: `updateCurrentUser` só
+       mexe no estado local, e o próximo login lia `contato_confirmado` do
+       servidor ainda como false — o modal de boas-vindas voltava sempre,
+       mesmo para quem já tinha preenchido tudo aqui. */
+    void (async () => {
+      const { salvarMeuPerfil } = await import("@/lib/perfil.functions");
+      await salvarMeuPerfil({ data: { contatoConfirmado: contactCompleted } }).catch((e) =>
+        console.warn("[fluxo] confirmação de contato não gravou:", (e as Error)?.message),
+      );
+    })();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
