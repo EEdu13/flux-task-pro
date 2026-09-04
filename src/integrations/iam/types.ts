@@ -82,6 +82,18 @@ export function papeisParaRole(papeis: string[], admin: boolean): "gerente" | "s
   return "adm";
 }
 
+/**
+ * Só o primeiro nome. "REGINALDO MARCOS GONCALVES JUNIOR" vira "REGINALDO".
+ *
+ * Existe porque a IAM guarda o nome completo de registro, e há telas onde ele
+ * não cabe: a faixa do trator e o aviso de "chamou sua atenção" recebem o nome
+ * inteiro no meio de uma frase, e quatro nomes esticam a mensagem até ela
+ * atravessar a tela e perder a legibilidade.
+ */
+export function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0] ?? "";
+}
+
 /** Iniciais para o avatar, usadas como fallback quando a foto da IAM dá 404. */
 export function iniciaisDoNome(nome: string): string {
   const partes = nome.trim().split(/\s+/).filter(Boolean);

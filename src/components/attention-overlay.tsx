@@ -3,6 +3,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { desktopBringToFront, desktopFlashTaskbar } from "@/lib/desktop";
 import { listNudgesFn, sendNudgeFn, type TipoAviso } from "@/lib/attention.functions";
 import { triggerTractor } from "@/components/tractor-banner";
+import { primeiroNome } from "@/integrations/iam/types";
 
 interface AttnEvent {
   fromName: string;
@@ -25,7 +26,11 @@ export function AttentionOverlay() {
       } catch {
         /* ignore cross-origin */
       }
-      flashTitle(`🔔 ${detail.fromName} chamou sua atenção!`);
+      // Título da janela é ainda mais apertado que a faixa; o nome completo
+      // some no "..." antes de chegar no verbo. (A notificação do sistema
+      // continua com o nome inteiro — lá cabe, e identificar quem chamou é o
+      // que importa quando a pessoa está longe do app.)
+      flashTitle(`🔔 ${primeiroNome(detail.fromName)} chamou sua atenção!`);
       playNudgeSound();
       // No app desktop: puxa a janela pra frente e pisca a barra (estilo MSN).
       // Sem toast do Windows — o overlay do app já é a notificação visual.
@@ -91,7 +96,13 @@ export function AttentionOverlay() {
 
           // Mesma sondagem serve aos dois avisos: o tipo decide o que aparece.
           if (n.kind === "trator" && n.message) {
-            triggerTractor({ message: `${n.from_name}: ${n.message}` });
+            // Primeiro nome: a faixa é uma linha só, e o nome de registro
+            // inteiro empurrava a mensagem para fora dela.
+            triggerTractor({ message: `${primeiroNome(n.from_name)}: ${n.message}` });
+            /* O trator também puxa a janela para frente. Ele é um aviso que
+               veio de outra pessoa, como a chamada de atenção — e um aviso que
+               atravessa a tela atrás de outra janela não avisa ninguém. */
+            void desktopBringToFront();
             continue;
           }
           window.dispatchEvent(
@@ -122,17 +133,26 @@ export function AttentionOverlay() {
     // z-460: a chamada de atenção só serve se for vista. É pointer-events-none
     // (não bloqueia nada), então pode ficar acima do diálogo (420) e do foco
     // (440) sem atrapalhar o que a pessoa está fazendo.
-    <div className="pointer-events-none fixed inset-0 z-460 flex items-center justify-center">
-      <div className="fluxo-attn-pop flex flex-col items-center gap-3">
+    <div className="pointer-events-none fixed inset-0 z-460 flex items-center justify-center p-6">
+      <div className="fluxo-attn-pop flex max-w-[min(90vw,34rem)] flex-col items-center gap-4">
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary via-lime-400 to-amber-300 text-3xl font-black text-white shadow-[0_20px_80px_-10px_oklch(0.44_0.09_150/0.6)] ring-4 ring-white/40">
           {current.fromAvatar || current.fromName.slice(0, 1).toUpperCase()}
         </div>
+        {/* A faixa é a mensagem inteira, então ela precisa caber. O nome de
+            registro completo, em text-5xl, atravessava a tela de ponta a ponta
+            e a caixa deixava de parecer uma peça desenhada. Primeiro nome,
+            largura com teto, e a linha "chamou sua atenção" promovida: ela é a
+            informação, o nome é só quem. */}
         <div
-          className="rounded-2xl bg-gradient-to-r from-primary via-lime-500 to-amber-400 px-8 py-4 text-center text-3xl font-black uppercase tracking-tight text-white shadow-2xl md:text-5xl"
-          style={{ textShadow: "0 4px 24px oklch(0.2 0.02 260 / 0.5)" }}
+          className="rounded-2xl bg-gradient-to-r from-primary via-lime-500 to-amber-400 px-8 py-5 text-center text-white shadow-2xl"
+          // Sombra curta: a de 24px de desfoque borrava o próprio texto que
+          // deveria destacar, e em corpo grande o efeito é o de foto tremida.
+          style={{ textShadow: "0 2px 8px oklch(0.2 0.02 260 / 0.45)" }}
         >
-          {current.fromName}
-          <div className="text-sm font-semibold tracking-widest opacity-90 md:text-base">
+          <div className="text-4xl font-black uppercase leading-none tracking-tight text-balance md:text-5xl">
+            {primeiroNome(current.fromName)}
+          </div>
+          <div className="mt-2 text-sm font-bold uppercase tracking-[0.2em] opacity-95 md:text-base">
             chamou sua atenção!
           </div>
         </div>
