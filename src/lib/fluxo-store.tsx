@@ -241,7 +241,24 @@ function load(): Persisted {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<Persisted>;
-    return { ...defaults, ...parsed };
+    /* Estar logado NÃO volta do `localStorage`.
+     *
+     * O estado inteiro é serializado ali, e `isAuthenticated: true` voltava
+     * junto — então abrir o app entrava direto, sem passar pelo login. Duas
+     * coisas erradas nisso.
+     *
+     * A visível: quem fecha e abre espera a tela de login, e não a última
+     * sessão de alguém. Numa máquina compartilhada, o próximo a abrir caía
+     * dentro da conta do anterior sem digitar nada.
+     *
+     * A silenciosa, pior: quem manda de verdade é o cookie httpOnly, que dura
+     * o tempo do token da IAM (12h). Passado esse prazo, o navegador continuava
+     * dizendo "logado" e o servidor recusando tudo — a tela abria montada e
+     * vazia, com os erros só no console.
+     *
+     * O cookie NÃO é apagado aqui de propósito: a janela de chamada é outra
+     * janela do mesmo app, e limpar sessão ao abrir derrubaria a principal. */
+    return { ...defaults, ...parsed, isAuthenticated: false };
   } catch {
     return defaults;
   }

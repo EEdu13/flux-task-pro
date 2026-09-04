@@ -203,6 +203,65 @@ export function FluxoLayout({
     if (!isAuthenticated) navigate({ to: "/login" });
   }, [isAuthenticated, navigate]);
 
+  /* Sessão morta derruba para o login, como no Agendador.
+   *
+   * Não restaurar o login do `localStorage` resolveu a abertura do app, mas não
+   * o caso de ficar dentro: o token da IAM vale 12h, e uma janela deixada
+   * aberta de um dia para o outro seguia mostrando tudo montado enquanto o
+   * servidor já recusava cada chamada — os erros só no console, a tela vazia
+   * sem explicar por quê.
+   *
+   * `iamMe()` é o que responde essa pergunta sem lançar erro: devolve
+   * `autenticado: false` quando não há cookie ou quando a IAM recusa o token.
+   * O `iamResolve` guarda 60s em memória, então esta conferência quase nunca
+   * chega a sair da máquina.
+   *
+   * Quando conferir: ao voltar para a janela e a cada 5 minutos. A primeira é
+   * a que importa de verdade — o caso real é a pessoa voltando de manhã para
+   * uma janela aberta desde ontem, e ela merece ver o login, não uma tela
+   * quebrada. A segunda é a rede de segurança para quem deixa o app em foco.
+   *
+   * Falha de rede NÃO desloga: `iamMe` só devolve `false` com resposta do
+   * servidor, e qualquer erro daqui é engolido de propósito. Derrubar quem
+   * está sem internet seria trocar um problema por outro pior.
+   *
+   * Premissa registrada: a IAM está sempre ligada. Se um dia `IAM_ENABLED`
+   * voltar a 0, o app cai no modo de demonstração — onde a pessoa entra sem
+   * sessão e `iamMe()` responde `false` para todo mundo, porque não há o que
+   * resolver. Esta vigilância então precisaria olhar `iamStatus()` antes de
+   * armar, ou derrubaria a pessoa num laço de logout. */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelado = false;
+
+    async function conferirSessao() {
+      if (cancelado || document.hidden) return;
+      try {
+        const { iamMe } = await import("@/integrations/iam/auth.functions");
+        const r = await iamMe();
+        if (cancelado || r.autenticado) return;
+        toast.error("Sua sessão expirou. Entre novamente.");
+        logout();
+        navigate({ to: "/login" });
+      } catch {
+        /* sem rede: mantém a pessoa dentro e tenta de novo depois */
+      }
+    }
+
+    const aoVoltar = () => {
+      if (!document.hidden) void conferirSessao();
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", aoVoltar);
+    const id = window.setInterval(() => void conferirSessao(), 5 * 60_000);
+    return () => {
+      cancelado = true;
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("focus", aoVoltar);
+      window.clearInterval(id);
+    };
+  }, [isAuthenticated, logout, navigate]);
+
   // global keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
