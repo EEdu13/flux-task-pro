@@ -7,6 +7,19 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  /* Alvo do build: servidor Node, não Cloudflare Workers.
+   *
+   * O padrão do wrapper é `cloudflare-module`, e era ele que quebrava o deploy
+   * no Railway: o build terminava com sucesso, o container subia, e nada
+   * escutava a porta — porque a saída era um Worker (`.output/server/` saía com
+   * um `wrangler.json`), que só ganha vida dentro do runtime da Cloudflare. O
+   * log parava em "Starting Container" e o roteador respondia 502.
+   *
+   * Não é preferência de plataforma, é requisito: este app fala com o Azure SQL
+   * pelo driver `mssql`, que abre socket TCP. Workers não tem socket TCP, então
+   * o alvo Cloudflare nunca poderia ter funcionado aqui.
+   */
+  nitro: { preset: "node-server" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

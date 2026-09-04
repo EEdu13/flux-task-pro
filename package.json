@@ -8,6 +8,7 @@
     "dev": "vite dev",
     "tauri:dev": "tauri dev",
     "build": "vite build",
+    "start": "node .output/server/index.mjs",
     "build:dev": "vite build --mode development",
     "tauri:build": "tauri build",
     "preview": "vite preview",
