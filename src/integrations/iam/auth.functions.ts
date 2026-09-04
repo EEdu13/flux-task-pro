@@ -100,6 +100,14 @@ export const iamLogin = createServerFn({ method: "POST" })
         const { registrarPerfilFuncional } = await import("@/lib/perfil.functions");
         await registrarPerfilFuncional(Number(usuario.id), {
           nome: usuario.nome,
+          /* E-mail e telefone vêm da IAM junto com o login, mas só os DA
+             PRÓPRIA PESSOA — não existe rota que liste o contato dos outros
+             (a de admin exige papel TI e nem devolve telefone). Então cada um
+             deposita o seu aqui ao entrar, e é essa cópia que alimenta o
+             Contatos de todo mundo. É repasse, não segunda fonte: a IAM
+             continua sendo quem manda, e reescreve a cópia todo login. */
+          email: usuario.email,
+          telefone: usuario.telefone,
           setorId: perfil?.setorId ?? null,
           papel: perfil?.role ?? null,
           supervisorNome: perfil?.supervisorNome ?? null,

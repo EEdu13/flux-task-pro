@@ -711,6 +711,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                 role: (p.papel ?? "adm") as Role,
                 jobTitle: p.funcao ?? existente?.jobTitle ?? "",
                 sector: p.setor ?? "sem-setor",
+                /* O banco ganha quando tem valor; o que está só aqui sobrevive
+                   quando ele não tem. Sem esse `??`, quem preencheu contato na
+                   tela e ainda não passou por um login novo veria o próprio
+                   e-mail sumir assim que o quadro chegasse. */
+                email: p.email ?? existente?.email,
+                phone: p.telefone ?? existente?.phone,
                 avatar: p.avatar ?? iniciaisDoNome(p.nome),
                 supervisorId:
                   chefe && chefe !== p.id ? chefe : existente?.supervisorId,

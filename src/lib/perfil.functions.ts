@@ -48,6 +48,8 @@ export async function registrarPerfilFuncional(
   pessoaId: number,
   dados: {
     nome: string | null;
+    email: string | null;
+    telefone: string | null;
     setorId: string | null;
     papel: string | null;
     supervisorNome: string | null;
@@ -59,6 +61,8 @@ export async function registrarPerfilFuncional(
     .request()
     .input("pessoa", sql.Int, pessoaId)
     .input("nome", sql.NVarChar, dados.nome)
+    .input("email", sql.NVarChar, dados.email)
+    .input("telefone", sql.VarChar, dados.telefone)
     .input("setor", sql.NVarChar, dados.setorId)
     .input("papel", sql.NVarChar, dados.papel)
     .input("chefe", sql.NVarChar, dados.supervisorNome)
@@ -69,6 +73,8 @@ export async function registrarPerfilFuncional(
 
        UPDATE gestor.perfis
           SET nome            = COALESCE(@nome, nome),
+              email           = COALESCE(@email, email),
+              telefone        = COALESCE(@telefone, telefone),
               setor           = COALESCE(@setor, setor),
               papel           = COALESCE(@papel, papel),
               supervisor_nome = COALESCE(@chefe, supervisor_nome),
@@ -159,6 +165,8 @@ export const meuPerfil = createServerFn({ method: "POST" }).handler(
 export type PessoaDoQuadro = {
   id: string;
   nome: string;
+  email: string | null;
+  telefone: string | null;
   funcao: string | null;
   setor: string | null;
   papel: string | null;
@@ -196,8 +204,8 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
     const { getPool } = await import("@/integrations/db.server");
     const pool = await getPool();
     const r = await pool.request().query(
-      `SELECT p.pessoa_id, p.nome, p.setor, p.papel, p.supervisor_nome,
-              p.pontuacao, p.sequencia, p.avatar, c.funcao
+      `SELECT p.pessoa_id, p.nome, p.email, p.telefone, p.setor, p.papel,
+              p.supervisor_nome, p.pontuacao, p.sequencia, p.avatar, c.funcao
          FROM gestor.perfis p
         OUTER APPLY (
           SELECT TOP 1 LTRIM(RTRIM(FUNCAO)) AS funcao
@@ -213,6 +221,8 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
         r.recordset as {
           pessoa_id: number;
           nome: string;
+          email: string | null;
+          telefone: string | null;
           setor: string | null;
           papel: string | null;
           supervisor_nome: string | null;
@@ -224,6 +234,8 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
       ).map((p) => ({
         id: String(p.pessoa_id),
         nome: p.nome,
+        email: p.email,
+        telefone: p.telefone,
         funcao: p.funcao,
         setor: p.setor,
         papel: p.papel,
