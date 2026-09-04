@@ -22,7 +22,24 @@ export function getPool(): Promise<sql.ConnectionPool> {
     password,
     port: Number(process.env.DB_PORT ?? 1433),
     options: { encrypt: true, trustServerCertificate: false },
-    pool: { max: 5, min: 0, idleTimeoutMillis: 30_000 },
+    /* 20 conexões, não 5.
+     *
+     * O app inteiro fala com o banco por este pool, e ele é sondado sem parar:
+     * chamadas, presença, chat e cutucada somam ~200 requisições por minuto
+     * POR PESSOA, cada uma tomando uma conexão pelo tempo da consulta. Com 5,
+     * a capacidade era de ~16 req/s contando a latência até o Azure — o que
+     * quatro pessoas já encostam. Passando disso tudo entra em fila esperando
+     * conexão, e o sintoma não é "o banco está lento": é o app inteiro travando
+     * junto, login demorando dezenas de segundos e aba que não troca.
+     *
+     * Piora em rajada no login, que dispara `Promise.all` de três consultas —
+     * duas pessoas entrando ao mesmo tempo consumiam 6 das 5 vagas.
+     *
+     * 20 é folga para o uso atual sem chegar perto do limite de sessões do
+     * Azure SQL. Isto NÃO substitui trocar o polling por SSE; só tira o app da
+     * beira enquanto isso não acontece. `min: 0` continua: sem uso, o pool
+     * esvazia e não segura conexão à toa. */
+    pool: { max: 20, min: 0, idleTimeoutMillis: 30_000 },
   };
   const p = new sql.ConnectionPool(config)
     .connect()

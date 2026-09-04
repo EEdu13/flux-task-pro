@@ -365,8 +365,7 @@ export function FluxoLayout({
           {(!collapsed || mobileOpen) && (
             <>
               <div className="flex-1">
-                <div className="text-sm font-semibold">Fluxo</div>
-                <div className="text-[10px] text-sidebar-foreground/60">Workspace Larsil</div>
+                <div className="text-sm font-semibold">CONECTA</div>
               </div>
               <button
                 type="button"

@@ -17,7 +17,17 @@ import { createFileRoute } from "@tanstack/react-router";
 
 const LADO = 192;
 const TTL_MS = 6 * 3600 * 1000;
-const TETO_BYTES = 3 * 1024 * 1024;
+/* Teto do que aceitamos baixar da IAM antes de reduzir.
+ *
+ * Era 3 MB, e isso derrubava foto de gente real: a origem devolve o arquivo
+ * cru do celular, e 4 MB num retrato recente é rotina. Acima do teto a imagem
+ * era descartada e o 404 ficava GUARDADO por 6h — então a pessoa
+ * simplesmente não tinha rosto no sistema, sem nada indicando por quê.
+ *
+ * Subir custa pouco: o arquivo grande é transitório, existe só entre o
+ * download e o `Jimp`. O que fica no cache é sempre a miniatura de 192px,
+ * na casa dos 15 KB. */
+const TETO_BYTES = 12 * 1024 * 1024;
 const MAX_ENTRADAS = 400;
 
 type Entrada = { at: number; buf: Buffer | null; tipo: string };
@@ -41,25 +51,62 @@ function resposta(buf: Buffer, tipo: string): Response {
   });
 }
 
+/**
+ * Reduz a foto a um quadrado de 192px.
+ *
+ * Usa `sharp` (libvips, código nativo) e não mais o Jimp, por um motivo que
+ * não é velocidade — embora ele também seja ~35x mais rápido aqui.
+ *
+ * O Jimp é JavaScript puro, e o Node tem UMA thread. Medido com a foto real de
+ * 1,7 MB: 1400ms de processamento durante os quais um relógio de 10ms não
+ * bateu NENHUMA vez — ou seja, 1,4 segundo em que o servidor não atendeu mais
+ * nada. Como este app é sondado ~200 vezes por minuto POR PESSOA (chamadas,
+ * chat, presença, cutucada), abrir uma tela com vários rostos frios enfileirava
+ * segundos de silêncio para todo mundo ao mesmo tempo. Era isso que fazia o
+ * sistema "ficar lerdo de uma hora para outra": as fotos esfriam a cada 6h.
+ *
+ * O `sharp` faz o trabalho fora da thread do JavaScript: mesma medição, 40ms e
+ * o relógio batendo normalmente.
+ *
+ * O `.rotate()` sem argumento não gira nada por conta própria — ele aplica a
+ * orientação que a câmera gravou no EXIF. Sem isso, foto tirada de lado chega
+ * deitada.
+ */
 async function miniatura(bruto: Buffer): Promise<{ buf: Buffer; tipo: string } | null> {
   try {
-    const { Jimp } = await import("jimp");
-    const img = await Jimp.read(bruto);
-    // Recorte quadrado central antes de reduzir — o avatar é quadrado, e
-    // encolher o retrato inteiro deixaria a pessoa minúscula no meio.
-    const lado = Math.min(img.bitmap.width, img.bitmap.height);
-    img.crop({
-      x: Math.round((img.bitmap.width - lado) / 2),
-      y: Math.round((img.bitmap.height - lado) / 2),
-      w: lado,
-      h: lado,
-    });
-    img.resize({ w: LADO, h: LADO });
-    const buf = await img.getBuffer("image/jpeg", { quality: 82 });
-    return { buf: Buffer.from(buf), tipo: "image/jpeg" };
+    const sharp = (await import("sharp")).default;
+    const buf = await sharp(bruto)
+      .rotate()
+      // `cover` + `centre` é o mesmo enquadramento de antes: recorta o quadrado
+      // central e reduz. Encolher o retrato inteiro deixaria a pessoa minúscula.
+      .resize(LADO, LADO, { fit: "cover", position: "centre" })
+      .jpeg({ quality: 82 })
+      .toBuffer();
+    return { buf, tipo: "image/jpeg" };
   } catch {
-    // Formato inesperado: melhor a foto grande que foto nenhuma.
-    return null;
+    /* Reserva em Jimp.
+     *
+     * O `sharp` traz binário nativo, e binário nativo é a peça que falha em
+     * ambiente novo. Se ele não carregar na Railway, isto mantém os rostos
+     * aparecendo — devagar, travando a thread como antes, mas aparecendo. É
+     * preferível a uma tela de contatos sem ninguém. */
+    try {
+      const { Jimp } = await import("jimp");
+      const img = await Jimp.read(bruto);
+      const lado = Math.min(img.bitmap.width, img.bitmap.height);
+      img.crop({
+        x: Math.round((img.bitmap.width - lado) / 2),
+        y: Math.round((img.bitmap.height - lado) / 2),
+        w: lado,
+        h: lado,
+      });
+      img.resize({ w: LADO, h: LADO });
+      const buf = await img.getBuffer("image/jpeg", { quality: 82 });
+      return { buf: Buffer.from(buf), tipo: "image/jpeg" };
+    } catch {
+      // Formato inesperado: melhor a foto grande que foto nenhuma.
+      return null;
+    }
   }
 }
 
