@@ -1255,13 +1255,24 @@ html.fluxo-nudge-shake body {
     transform: perspective(1200px) translateZ(60px) rotateX(-4deg) scale(1.05);
     filter: blur(0);
   }
-  25% {
-    opacity: 1;
-    transform: perspective(1200px) translateZ(0) rotateX(0) scale(1);
-  }
+  /* Os dois quadros em que o aviso fica parado para ser lido.
+   *
+   * `filter` PRECISA estar escrito aqui. Sem estas duas linhas a propriedade
+   * só existia em 15% (blur 0) e em 100% (blur 2px), e o CSS interpolava entre
+   * elas — o desfoque crescia durante toda a permanência: ~0,8px na metade e
+   * ~1,6px perto do fim. O aviso ficava três segundos borrando na frente da
+   * pessoa, justo na janela em que ela precisa ler.
+   *
+   * `transform: none` em vez de `scale(1)` pelo mesmo motivo, um nível abaixo:
+   * qualquer transform ativa faz o elemento virar camada composta na GPU,
+   * rasterizada uma vez e depois esticada — e como a animação chega a
+   * scale(1.15), o texto saía suavizado mesmo com blur zerado. Sem transform,
+   * o navegador redesenha o texto nítido. */
+  25%,
   85% {
     opacity: 1;
-    transform: perspective(1200px) translateZ(0) rotateX(0) scale(1);
+    transform: none;
+    filter: blur(0);
   }
   100% {
     opacity: 0;
