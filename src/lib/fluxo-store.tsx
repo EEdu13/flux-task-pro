@@ -29,6 +29,7 @@ import { iamLogout } from "@/integrations/iam/auth.functions";
 // aqui para preservar a independência declarada acima faria o mesmo avatar sair
 // com iniciais diferentes dependendo da tela.
 import { iniciaisDoNome } from "@/integrations/iam/types";
+import type { PessoaDoQuadro } from "@/lib/perfil.functions";
 import { toast } from "sonner";
 import { empilharDesfazer } from "@/lib/undo-stack";
 import { proximaOcorrencia } from "./recorrencia";
@@ -126,6 +127,8 @@ interface Store {
   updateUser: (id: string, patch: Partial<User>) => void;
   deleteUser: (id: string) => void;
   updateCurrentUser: (patch: Partial<User>) => void;
+  /** Rebusca o quadro de pessoas. Ver o uso em `fluxo-layout`. */
+  recarregarPessoas: () => Promise<void>;
   // metas
   upsertMeta: (m: Omit<Meta, "id">) => void;
   removeMeta: (id: string) => void;
@@ -278,6 +281,50 @@ const rid = (prefix = "id") =>
  * um aviso no console, longe de quem clicou.
  */
 const ehGuid = (id: string) => /^[0-9a-f-]{36}$/i.test(id);
+
+/**
+ * Mescla o quadro de pessoas do banco na lista local.
+ *
+ * Mescla, não substitui. Quem veio do banco entra completo; quem só existe
+ * aqui (criado antes da migração, sem id numérico) fica onde está, pelo mesmo
+ * motivo das atas: sumir da tela é perder.
+ *
+ * Vive fora do login porque o login não é a única hora em que o quadro muda —
+ * quem entra na empresa depois que você abriu o app precisa aparecer sem você
+ * ter que sair e voltar. Ver `recarregarPessoas`.
+ */
+function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
+  const idPorNome = new Map(pessoas.map((p) => [p.nome.trim().toLowerCase(), p.id]));
+  const doBanco: User[] = pessoas.map((p) => {
+    const existente = s.users.find((u) => u.id === p.id);
+    // Mesma rede de segurança do login: chefe apontando para si trava o
+    // passeio por ancestrais em Contatos.
+    const chefe = p.supervisorNome
+      ? idPorNome.get(p.supervisorNome.trim().toLowerCase())
+      : undefined;
+    return {
+      // O que é só do navegador sobrevive porque o espalhamento vem primeiro.
+      ...existente,
+      id: p.id,
+      name: p.nome,
+      role: (p.papel ?? "adm") as Role,
+      jobTitle: p.funcao ?? existente?.jobTitle ?? "",
+      sector: p.setor ?? "sem-setor",
+      /* O banco ganha quando tem valor; o que está só aqui sobrevive quando
+         ele não tem. Sem esse `??`, quem preencheu contato na tela e ainda
+         não passou por um login novo veria o próprio e-mail sumir assim que o
+         quadro chegasse. */
+      email: p.email ?? existente?.email,
+      phone: p.telefone ?? existente?.phone,
+      avatar: p.avatar ?? iniciaisDoNome(p.nome),
+      supervisorId: chefe && chefe !== p.id ? chefe : existente?.supervisorId,
+      score: p.pontuacao,
+      streak: p.sequencia,
+    };
+  });
+  const soLocais = s.users.filter((u) => !pessoas.some((p) => p.id === u.id));
+  return { ...s, users: [...doBanco, ...soLocais] };
+}
 
 /**
  * Manda a tarefa inteira para o banco.
@@ -703,47 +750,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
              Sem isto, `users` continha só quem tinha logado NESTE navegador, e
              o efeito era duplo: ninguém aparecia no Contatos de ninguém, e o
              seletor de responsável de uma tarefa nova mostrava só a própria
-             pessoa, o que tornava a delegação impossível.
-
-             Mescla, não substitui. Quem veio do banco entra completo; quem só
-             existe aqui (criado antes da migração, sem id numérico) fica onde
-             está, pelo mesmo motivo das atas: sumir da tela é perder. */
+             pessoa, o que tornava a delegação impossível. */
           const { listarPessoas } = await import("@/lib/perfil.functions");
           const { pessoas } = await listarPessoas();
-          setState((s) => {
-            const idPorNome = new Map(pessoas.map((p) => [p.nome.trim().toLowerCase(), p.id]));
-            const doBanco: User[] = pessoas.map((p) => {
-              const existente = s.users.find((u) => u.id === p.id);
-              // Mesma rede de segurança do login: chefe apontando para si
-              // trava o passeio por ancestrais em Contatos.
-              const chefe = p.supervisorNome
-                ? idPorNome.get(p.supervisorNome.trim().toLowerCase())
-                : undefined;
-              return {
-                // O que é só do navegador — email, telefone, contactCompleted —
-                // sobrevive porque o espalhamento vem primeiro.
-                ...existente,
-                id: p.id,
-                name: p.nome,
-                role: (p.papel ?? "adm") as Role,
-                jobTitle: p.funcao ?? existente?.jobTitle ?? "",
-                sector: p.setor ?? "sem-setor",
-                /* O banco ganha quando tem valor; o que está só aqui sobrevive
-                   quando ele não tem. Sem esse `??`, quem preencheu contato na
-                   tela e ainda não passou por um login novo veria o próprio
-                   e-mail sumir assim que o quadro chegasse. */
-                email: p.email ?? existente?.email,
-                phone: p.telefone ?? existente?.phone,
-                avatar: p.avatar ?? iniciaisDoNome(p.nome),
-                supervisorId:
-                  chefe && chefe !== p.id ? chefe : existente?.supervisorId,
-                score: p.pontuacao,
-                streak: p.sequencia,
-              };
-            });
-            const soLocais = s.users.filter((u) => !pessoas.some((p) => p.id === u.id));
-            return { ...s, users: [...doBanco, ...soLocais] };
-          });
+          setState((s) => mesclarQuadro(s, pessoas));
 
           // Tema e paleta da pessoa, não da máquina.
           const { sincronizarPreferencias } = await import("@/lib/use-theme");
@@ -1237,6 +1247,16 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         ...s,
         users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, ...patch } : u)),
       }));
+    },
+
+    /* O quadro mudou desde que você entrou.
+       Buscá-lo só no login deixava quem entrou depois invisível até a próxima
+       entrada — e o caso real é pior do que parece: a pessoa nova manda uma
+       mensagem, e ela chega de um remetente que a tela não sabe nomear. */
+    recarregarPessoas: async () => {
+      const { listarPessoas } = await import("@/lib/perfil.functions");
+      const { pessoas } = await listarPessoas();
+      setState((s) => mesclarQuadro(s, pessoas));
     },
 
     deleteUser: (id) => {

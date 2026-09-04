@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TravaScroll } from "@/components/trava-scroll";
 import larsilSimbolo from "@/assets/bolabranca.png";
 import {
@@ -106,6 +106,7 @@ export function FluxoLayout({
     completions,
     isAuthenticated,
     logout,
+    recarregarPessoas,
     topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
@@ -230,6 +231,9 @@ export function FluxoLayout({
    * sessão e `iamMe()` responde `false` para todo mundo, porque não há o que
    * resolver. Esta vigilância então precisaria olhar `iamStatus()` antes de
    * armar, ou derrubaria a pessoa num laço de logout. */
+  const acoesRef = useRef({ logout, navigate, recarregarPessoas });
+  acoesRef.current = { logout, navigate, recarregarPessoas };
+
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelado = false;
@@ -239,10 +243,18 @@ export function FluxoLayout({
       try {
         const { iamMe } = await import("@/integrations/iam/auth.functions");
         const r = await iamMe();
-        if (cancelado || r.autenticado) return;
-        toast.error("Sua sessão expirou. Entre novamente.");
-        logout();
-        navigate({ to: "/login" });
+        if (cancelado) return;
+        if (!r.autenticado) {
+          toast.error("Sua sessão expirou. Entre novamente.");
+          acoesRef.current.logout();
+          acoesRef.current.navigate({ to: "/login" });
+          return;
+        }
+        /* Sessão viva: aproveita a volta para reler o quadro de pessoas.
+           Ele só era buscado no login, então quem entrasse na empresa depois
+           ficava invisível até você sair e voltar — e a mensagem dessa pessoa
+           chegava de um remetente que a tela não sabia nomear. */
+        await acoesRef.current.recarregarPessoas();
       } catch {
         /* sem rede: mantém a pessoa dentro e tenta de novo depois */
       }
@@ -260,7 +272,14 @@ export function FluxoLayout({
       window.removeEventListener("focus", aoVoltar);
       window.clearInterval(id);
     };
-  }, [isAuthenticated, logout, navigate]);
+    /* Só `isAuthenticated` nas dependências, e as ações por ref.
+       O objeto do store é um literal recriado a cada render (não há useMemo
+       nele), então `logout` e `recarregarPessoas` mudam de referência o tempo
+       todo. Listá-las aqui remontava o efeito a cada render: o setInterval era
+       limpo e recriado antes de chegar aos 5 minutos, e a conferência
+       periódica simplesmente nunca acontecia — só a de foco, que reatacha o
+       ouvinte e por isso funcionava. */
+  }, [isAuthenticated]);
 
   // global keyboard shortcuts
   useEffect(() => {
