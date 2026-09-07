@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useBlocker } from "@tanstack/react-router";
 import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
@@ -75,51 +76,225 @@ export function TaskDialog() {
   const taskAttInputRef = useRef<HTMLInputElement>(null);
   const commentAttInputRef = useRef<HTMLInputElement>(null);
 
+  /* A "impressão digital" do formulário, usada para saber se há edição pendente.
+     Uma função só, alimentada tanto pelos valores iniciais quanto pelos atuais —
+     se fossem duas, bastaria uma divergir para o aviso disparar sozinho ou
+     nunca disparar. */
+  const chaveDoFormulario = (v: {
+    title: string;
+    description: string;
+    sector: string;
+    assigneeId: string;
+    frequency: Frequency;
+    status: Status;
+    priority: Priority;
+    dueDate: string;
+    recurring: boolean;
+    recurringUntil: string;
+    recurringWeekdays: number[];
+    recurringMonthDay: number | null;
+    requireProof: boolean;
+    estimateHM: string;
+    tags: string;
+    mentions: string[];
+    rascunho: ChecklistItem[];
+  }) =>
+    JSON.stringify([
+      v.title,
+      v.description,
+      v.sector,
+      v.assigneeId,
+      v.frequency,
+      v.status,
+      v.priority,
+      v.dueDate,
+      v.recurring,
+      v.recurringUntil,
+      v.recurringWeekdays,
+      v.recurringMonthDay,
+      v.requireProof,
+      v.estimateHM,
+      v.tags,
+      v.mentions,
+      v.rascunho.map((i) => [i.text, i.done]),
+    ]);
+
+  /** O formulário como estava ao abrir. Comparar com o atual dá o "sujo". */
+  const originalRef = useRef("");
+
+  /* Só reinicializa ao ABRIR ou ao trocar de tarefa — nunca a cada mudança da
+     tarefa em si.
+
+     Antes a dependência era o objeto `editing` inteiro. Marcar um item do
+     checklist grava na store, que devolve um objeto NOVO, e o efeito rodava de
+     novo: voltava para a aba Detalhes (era o incômodo visível) e, pior,
+     restaurava todos os campos a partir da store — quem tivesse mudado o título
+     e marcasse um item perdia a alteração sem aviso nenhum. Com o id nas
+     dependências, mexer na mesma tarefa não reinicializa nada. */
+  const editingId = editing?.id ?? null;
   useEffect(() => {
     if (!open) return;
     setTab("detalhes");
     setPendingCommentAtts([]);
-    if (editing) {
-      setTitle(editing.title);
-      setDescription(editing.description ?? "");
-      setSector(editing.sector);
-      setAssigneeId(editing.assigneeId);
-      setFrequency(editing.frequency);
-      setStatus(editing.status);
-      setPriority(editing.priority);
-      setDueDate(editing.dueDate.slice(0, 10));
-      setRecurring(editing.recurring);
-      setRecurringUntil(editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "");
-      setRecurringWeekdays(editing.recurringWeekdays ?? []);
-      setRecurringMonthDay(editing.recurringMonthDay ?? null);
-      setRequireProof(!!editing.requireProof);
-      setEstimateHM(
-        editing.estimatedMinutes
-          ? `${Math.floor(editing.estimatedMinutes / 60)}:${String(editing.estimatedMinutes % 60).padStart(2, "0")}`
-          : "",
-      );
-      setTags(editing.tags.join(", "));
-      setMentions(editing.mentions);
-    } else {
-      setTitle("");
-      setDescription("");
-      setSector(currentUser.sector);
-      setAssigneeId(currentUser.id);
-      setFrequency("diaria");
-      setStatus(taskDialog.initialStatus ?? "pendente");
-      setPriority("media");
-      setDueDate(taskDialog.initialDueDate ?? new Date().toISOString().slice(0, 10));
-      setRecurring(false);
-      setRecurringUntil("");
-      setRecurringWeekdays([]);
-      setRecurringMonthDay(null);
-      setRequireProof(false);
-      setEstimateHM("");
-      setTags("");
-      setMentions([]);
-      setRascunhoChecklist([]);
+
+    const v = editing
+      ? {
+          title: editing.title,
+          description: editing.description ?? "",
+          sector: editing.sector,
+          assigneeId: editing.assigneeId,
+          frequency: editing.frequency,
+          status: editing.status,
+          priority: editing.priority,
+          dueDate: editing.dueDate.slice(0, 10),
+          recurring: editing.recurring,
+          recurringUntil: editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "",
+          recurringWeekdays: editing.recurringWeekdays ?? [],
+          recurringMonthDay: editing.recurringMonthDay ?? null,
+          requireProof: !!editing.requireProof,
+          estimateHM: editing.estimatedMinutes
+            ? `${Math.floor(editing.estimatedMinutes / 60)}:${String(editing.estimatedMinutes % 60).padStart(2, "0")}`
+            : "",
+          tags: editing.tags.join(", "),
+          mentions: editing.mentions,
+          rascunho: [] as ChecklistItem[],
+        }
+      : {
+          title: "",
+          description: "",
+          sector: currentUser.sector,
+          assigneeId: currentUser.id,
+          frequency: "diaria" as Frequency,
+          status: (taskDialog.initialStatus ?? "pendente") as Status,
+          priority: "media" as Priority,
+          dueDate: taskDialog.initialDueDate ?? new Date().toISOString().slice(0, 10),
+          recurring: false,
+          recurringUntil: "",
+          recurringWeekdays: [] as number[],
+          recurringMonthDay: null,
+          requireProof: false,
+          estimateHM: "",
+          tags: "",
+          mentions: [] as string[],
+          rascunho: [] as ChecklistItem[],
+        };
+
+    setTitle(v.title);
+    setDescription(v.description);
+    setSector(v.sector);
+    setAssigneeId(v.assigneeId);
+    setFrequency(v.frequency);
+    setStatus(v.status);
+    setPriority(v.priority);
+    setDueDate(v.dueDate);
+    setRecurring(v.recurring);
+    setRecurringUntil(v.recurringUntil);
+    setRecurringWeekdays(v.recurringWeekdays);
+    setRecurringMonthDay(v.recurringMonthDay);
+    setRequireProof(v.requireProof);
+    setEstimateHM(v.estimateHM);
+    setTags(v.tags);
+    setMentions(v.mentions);
+    if (!editing) setRascunhoChecklist([]);
+    originalRef.current = chaveDoFormulario(v);
+    // `editing` de propósito fora das dependências: ver o comentário acima.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    editingId,
+    currentUser.id,
+    currentUser.sector,
+    taskDialog.initialStatus,
+    taskDialog.initialDueDate,
+  ]);
+
+  /* Há edição pendente? Compara o formulário agora com o de quando abriu.
+     Vale só para os campos do formulário: o checklist de uma tarefa que já
+     existe grava direto na store a cada clique, então ele nunca está pendente
+     — e por isso não entra nesta conta. O rascunho de uma tarefa NOVA entra,
+     porque esse só existe aqui e some junto se a pessoa sair. */
+  const sujo =
+    open &&
+    originalRef.current !== "" &&
+    chaveDoFormulario({
+      title,
+      description,
+      sector,
+      assigneeId,
+      frequency,
+      status,
+      priority,
+      dueDate,
+      recurring,
+      recurringUntil,
+      recurringWeekdays,
+      recurringMonthDay,
+      requireProof,
+      estimateHM,
+      tags,
+      mentions,
+      rascunho: editing ? [] : rascunhoChecklist,
+    }) !== originalRef.current;
+
+  /* Fechar a aba ou a janela com edição pendente.
+     `preventDefault` é o que faz o navegador mostrar o próprio aviso dele —
+     o texto não é escolhido por nós, e faz anos que nenhum navegador aceita
+     mensagem personalizada aqui.
+
+     No app de mesa (Tauri) isto NÃO segura o X da janela: fechar é operação
+     nativa e não passa por `beforeunload`. Segurar lá exigiria `onCloseRequested`
+     do Tauri, que é outra API e mora no processo nativo. Como o app carrega o
+     site ao vivo, o F5 e o fechar da aba no navegador continuam cobertos. */
+  useEffect(() => {
+    if (!sujo) return;
+    const aoSair = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", aoSair);
+    return () => window.removeEventListener("beforeunload", aoSair);
+  }, [sujo]);
+
+  /* Trocar de rota com edição pendente.
+     Não é zelo: `TaskDialog` é renderizado dentro do `FluxoLayout`, que remonta
+     a cada navegação. O estado deste formulário morre junto — hoje, sem aviso
+     nenhum. O bloqueio do router é o que transforma essa perda silenciosa numa
+     pergunta. */
+  useBlocker({
+    shouldBlockFn: async () => {
+      if (!sujo) return false;
+      const sair = await confirmar({
+        titulo: "Deseja sair? Você tem alterações não salvas.",
+        descricao: "As alterações feitas nesta tarefa serão perdidas.",
+        confirmar: "Sair sem salvar",
+        cancelar: "Permanecer",
+        perigo: true,
+      });
+      return !sair; // true = bloqueia a navegação
+    },
+    enableBeforeUnload: false, // já tratado acima, para não pedir duas vezes
+  });
+
+  /** Fecha o diálogo, perguntando antes se houver edição pendente. */
+  const fecharComGuarda = async () => {
+    if (!sujo) {
+      closeTaskDialog();
+      return;
     }
-  }, [open, editing, currentUser.id, currentUser.sector, taskDialog.initialStatus, taskDialog.initialDueDate]);
+    const sair = await confirmar({
+      titulo: "Deseja sair? Você tem alterações não salvas.",
+      descricao: "As alterações feitas nesta tarefa serão perdidas.",
+      confirmar: "Sair sem salvar",
+      cancelar: "Permanecer",
+      perigo: true,
+    });
+    if (sair) {
+      // Zera antes de fechar: sem isto o bloqueio de rota ainda veria "sujo"
+      // no mesmo instante e perguntaria de novo.
+      originalRef.current = "";
+      closeTaskDialog();
+    }
+  };
 
   if (!open) return null;
 
@@ -238,6 +413,10 @@ export function TaskDialog() {
     };
     if (editing) updateTask(editing.id, payload);
     else createTask({ ...payload, checklist: rascunhoChecklist });
+    /* Salvou: não há mais nada pendente. Zerar aqui é o que permite fechar sem
+       o diálogo perguntar, e evita que o bloqueio de rota dispare na navegação
+       logo em seguida. */
+    originalRef.current = "";
     closeTaskDialog();
   };
 
@@ -251,6 +430,9 @@ export function TaskDialog() {
     });
     if (!ok) return;
     deleteTask(editing.id);
+    // A tarefa deixou de existir; perguntar por alterações não salvas dela
+    // seria perguntar por algo que não tem mais onde ser salvo.
+    originalRef.current = "";
     closeTaskDialog();
     toast.success("Tarefa excluída");
   };
@@ -261,14 +443,20 @@ export function TaskDialog() {
     // 400). Em z-50 ele abria atrás de quem o abriu — a tela só escurecia um
     // pouco e a tarefa ficava invisível. Tem que passar de todos os
     // lançadores, e ficar abaixo do confirm (500) e da barra de título (9999).
-    <div className="fixed inset-0 z-420 flex items-center justify-center bg-black/50 p-4" onClick={closeTaskDialog}>
+    <div
+      className="fixed inset-0 z-420 flex items-center justify-center bg-black/50 p-4"
+      onClick={() => void fecharComGuarda()}
+    >
       <div
         className="w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-base font-semibold">{editing ? "Editar tarefa" : "Nova tarefa"}</h2>
-          <button onClick={closeTaskDialog} className="rounded-md p-1 text-muted-foreground hover:bg-secondary">
+          <button
+            onClick={() => void fecharComGuarda()}
+            className="rounded-md p-1 text-muted-foreground hover:bg-secondary"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -933,7 +1121,7 @@ export function TaskDialog() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={closeTaskDialog}
+              onClick={() => void fecharComGuarda()}
               className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-secondary"
             >
               Cancelar
