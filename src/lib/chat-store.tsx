@@ -16,6 +16,8 @@ import {
   presenceHeartbeat,
   presenceList,
 } from "@/lib/chat.functions";
+import { tocarMensagemNova } from "@/lib/sons";
+import { desktopFlashTaskbar } from "@/lib/desktop";
 
 export interface ChatThread {
   peer: string;
@@ -57,6 +59,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [minimized, setMinimized] = useState<string[]>([]);
   const [pulse, setPulse] = useState(0);
   const meId = currentUser?.id;
+
+  /* `null` = ainda não sabemos quantas eram; a primeira consulta semeia.
+     Fica num ref, e não em estado, porque ninguém desenha este número — ele
+     serve só para comparar com o próximo e decidir se toca o som. Em estado,
+     causaria um render a cada 3 segundos sem nada mudar na tela. */
+  const totalNaoLidasRef = useRef<number | null>(null);
 
   // Heartbeat de presença
   useEffect(() => {
@@ -106,7 +114,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         const res = await chatThreads();
         if (cancelled) return;
-        setThreads(res.threads ?? []);
+        const lista = res.threads ?? [];
+        setThreads(lista);
+
+        /* Som só quando o total de não lidas SOBE.
+           Comparar com o total anterior é o que separa "chegou mensagem" de
+           "as mesmas mensagens continuam lá" — a cada 3 segundos esta consulta
+           devolve o mesmo número, e tocar por número maior que zero faria um
+           alarme a cada três segundos até a pessoa abrir a conversa.
+
+           O primeiro resultado só semeia a base e não toca nada: senão entrar
+           no app com mensagens antigas por ler dispararia o som no login, por
+           algo que já estava lá ontem. */
+        const total = lista.reduce((s, t) => s + (t.unread || 0), 0);
+        const anterior = totalNaoLidasRef.current;
+        totalNaoLidasRef.current = total;
+        if (anterior !== null && total > anterior) {
+          tocarMensagemNova();
+          // Só o botão da barra, não a janela: ver a nota em `desktopFlashTaskbar`.
+          void desktopFlashTaskbar("informativo");
+        }
       } catch {
         /* ignore */
       }

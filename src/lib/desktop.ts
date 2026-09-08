@@ -7,12 +7,27 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-/** Faz o botão do app piscar na barra de tarefas do Windows (pedido de atenção). */
-export async function desktopFlashTaskbar(): Promise<void> {
+/**
+ * Faz o botão do app piscar na barra de tarefas do Windows (pedido de atenção).
+ *
+ * `critico` pisca a janela E o botão; `informativo` pisca só o botão. Os dois
+ * param quando a janela recebe foco, e o Windows ignora o pedido se ela já
+ * estiver em foco — então isto nunca incomoda quem já está olhando.
+ *
+ * A distinção importa: chamada e chamar-atenção são interrupções pedindo
+ * resposta agora, e ganham `critico`. Mensagem de chat não é — piscar a janela
+ * inteira a cada "bom dia" vira ruído que se aprende a ignorar, e aí o aviso
+ * deixa de servir para as duas coisas.
+ */
+export async function desktopFlashTaskbar(
+  intensidade: "critico" | "informativo" = "critico",
+): Promise<void> {
   if (!isTauri()) return;
   try {
     const { getCurrentWindow, UserAttentionType } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().requestUserAttention(UserAttentionType.Critical);
+    await getCurrentWindow().requestUserAttention(
+      intensidade === "informativo" ? UserAttentionType.Informational : UserAttentionType.Critical,
+    );
   } catch {
     /* ignore */
   }
