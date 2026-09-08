@@ -17,6 +17,7 @@ import {
   Menu,
   Moon,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Sun,
@@ -106,6 +107,7 @@ export function FluxoLayout({
     isAuthenticated,
     logout,
     recarregarPessoas,
+    sincronizar,
     topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
@@ -113,6 +115,7 @@ export function FluxoLayout({
   const navigate = useNavigate();
   const { ask: askInvite } = useCallInviter();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [gridOpen, setGridOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -230,8 +233,48 @@ export function FluxoLayout({
    * sessão e `iamMe()` responde `false` para todo mundo, porque não há o que
    * resolver. Esta vigilância então precisaria olhar `iamStatus()` antes de
    * armar, ou derrubaria a pessoa num laço de logout. */
-  const acoesRef = useRef({ logout, navigate, recarregarPessoas });
-  acoesRef.current = { logout, navigate, recarregarPessoas };
+  const acoesRef = useRef({ logout, navigate, recarregarPessoas, sincronizar });
+  acoesRef.current = { logout, navigate, recarregarPessoas, sincronizar };
+
+  /* Tarefas e sineta chegam sozinhas.
+     Antes disto, tudo o que outra pessoa fizesse — delegar uma tarefa, mandar
+     um aviso — só aparecia no login seguinte. O relato foi exatamente esse: o
+     supervisor criou atividades e só um recarregamento forçado com relogin
+     trouxe elas.
+
+     Duas rédeas, e a de foco é a que mais resolve: quem volta para o app depois
+     de um tempo vê o estado atual imediatamente, que é justamente quando a
+     defasagem incomoda. O relógio de 60s cobre quem fica com a janela aberta.
+
+     Não confundir com os intervalos de chamada, presença e chat: aqueles estão
+     calibrados para a latência Brasil↔EUA e não se mexe. Este é novo e existe
+     para dados que antes não eram relidos nunca.
+
+     Falha em silêncio de propósito — é uma atualização de fundo, e um aviso de
+     erro a cada minuto sem rede seria pior que a defasagem. O botão de
+     sincronizar na barra é o caminho que avisa. */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelado = false;
+
+    const sincronizarSilencioso = () => {
+      if (cancelado || document.hidden) return;
+      void acoesRef.current.sincronizar().catch(() => {});
+    };
+
+    const aoFocar = () => {
+      if (!document.hidden) sincronizarSilencioso();
+    };
+    document.addEventListener("visibilitychange", aoFocar);
+    window.addEventListener("focus", aoFocar);
+    const id = window.setInterval(sincronizarSilencioso, 60_000);
+    return () => {
+      cancelado = true;
+      document.removeEventListener("visibilitychange", aoFocar);
+      window.removeEventListener("focus", aoFocar);
+      window.clearInterval(id);
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -749,6 +792,33 @@ export function FluxoLayout({
             >
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">Nova</span>
+            </button>
+            {/* Sincronizar agora.
+                A releitura automática já roda ao focar a janela e a cada minuto,
+                mas quem acabou de pedir uma tarefa por telefone não quer esperar
+                o minuto — e, principalmente, quer VER que buscou. É o único
+                caminho de sincronização que avisa quando falha; o automático
+                engole o erro de propósito. */}
+            <button
+              onClick={() => {
+                if (sincronizando) return;
+                setSincronizando(true);
+                void sincronizar()
+                  .then(() => toast.success("Atualizado.", { id: "sincronizar", duration: 1400 }))
+                  .catch(() =>
+                    toast.error("Não foi possível atualizar.", {
+                      id: "sincronizar",
+                      description: "Verifique a conexão e tente de novo.",
+                    }),
+                  )
+                  .finally(() => setSincronizando(false));
+              }}
+              disabled={sincronizando}
+              title="Sincronizar agora — busca tarefas e avisos novos"
+              aria-label="Sincronizar agora"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${sincronizando ? "animate-spin" : ""}`} />
             </button>
             <button
               onClick={toggle}

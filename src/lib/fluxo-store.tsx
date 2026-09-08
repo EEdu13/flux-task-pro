@@ -129,6 +129,8 @@ interface Store {
   updateCurrentUser: (patch: Partial<User>) => void;
   /** Rebusca o quadro de pessoas. Ver o uso em `fluxo-layout`. */
   recarregarPessoas: () => Promise<void>;
+  /** Relê do servidor o que outra pessoa pode ter mudado. Ver a implementação. */
+  sincronizar: () => Promise<void>;
   // metas
   upsertMeta: (m: Omit<Meta, "id">) => void;
   removeMeta: (id: string) => void;
@@ -1351,6 +1353,73 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       const { listarPessoas } = await import("@/lib/perfil.functions");
       const { pessoas } = await listarPessoas();
       setState((s) => mesclarQuadro(s, pessoas));
+    },
+
+    /* Tarefas, sineta e conclusões só eram lidas no login.
+       Quer dizer: um supervisor criava uma tarefa para alguém e ela não
+       aparecia — nem depois de horas — até a pessoa sair e entrar de novo. Do
+       lado de quem recebeu, o sistema simplesmente não avisava; do lado de quem
+       delegou, a tarefa estava lá, gravada, e parecia entregue.
+
+       Estas três são exatamente as que mudam pela mão de OUTRA pessoa. Projetos,
+       modelos de pack e metas também mudam, mas raramente e nunca de forma que
+       exija reação imediata — ficam no login para esta consulta não engordar.
+
+       Não é tempo real de verdade: é releitura. A diferença aparece quando duas
+       pessoas mexem na mesma coisa ao mesmo tempo, e resolvê-la exige o servidor
+       avisar em vez de o navegador perguntar (SSE). Isto aqui fecha a lacuna que
+       machuca hoje, sem depender daquilo. */
+    sincronizar: async () => {
+      const [tarefas, notif, conc] = await Promise.all([
+        import("@/lib/tarefas.functions"),
+        import("@/lib/notificacoes.functions"),
+        import("@/lib/conclusoes.functions"),
+      ]);
+      const [tf, nt, cn] = await Promise.all([
+        tarefas.listarTarefas(),
+        notif.listarNotificacoes(),
+        conc.listarConclusoes(),
+      ]);
+
+      setState((s) => {
+        const emMemoria = new Map(s.tasks.map((t) => [t.id, t]));
+        return {
+          ...s,
+          tasks: [
+            ...tf.tarefas.map((t) => {
+              const anterior = emMemoria.get(t.id);
+              /* Os satélites não vêm nesta consulta — como no login, chegariam
+                 vazios. Para uma tarefa que já foi aberta, o que está na memória
+                 é mais completo que esse vazio, e sobrescrever apagaria da tela
+                 o checklist de uma tarefa aberta neste instante. Só os campos da
+                 própria tarefa são atualizados; os satélites ficam. */
+              return anterior?.satellitesLoaded
+                ? {
+                    ...t,
+                    mentions: anterior.mentions,
+                    tags: anterior.tags,
+                    comments: anterior.comments,
+                    checklist: anterior.checklist,
+                    activity: anterior.activity,
+                    recurringWeekdays: anterior.recurringWeekdays,
+                    satellitesLoaded: true,
+                  }
+                : {
+                    ...t,
+                    mentions: [] as string[],
+                    tags: [] as string[],
+                    comments: [],
+                    checklist: [],
+                    activity: [],
+                  };
+            }),
+            // As locais que ainda não subiram continuam onde estão, como no login.
+            ...s.tasks.filter((t) => !ehGuid(t.id)),
+          ],
+          notifications: nt.notificacoes,
+          completions: cn.conclusoes,
+        };
+      });
     },
 
     deleteUser: (id) => {
