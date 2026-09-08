@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
@@ -323,47 +324,78 @@ function MetasPage() {
                 : "Score automático baseado nas suas tarefas concluídas no prazo. Peça acesso de gestor para acompanhar o time."}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
-              {(["diaria", "mensal", "personalizado"] as Period[]).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-3 py-1.5 font-medium ${period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
-                >
-                  {p === "diaria" ? "Diário" : p === "mensal" ? "Mensal" : "Personalizado"}
-                </button>
-              ))}
-            </div>
-            {period === "personalizado" && (
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-sm">
-                <input
-                  type="date"
-                  value={customDe}
-                  max={customAte}
-                  onChange={(e) => setCustomDe(e.target.value)}
-                  aria-label="Início do período"
-                  className="bg-transparent px-1 text-sm outline-none"
-                />
-                <span className="text-muted-foreground">até</span>
-                <input
-                  type="date"
-                  value={customAte}
-                  min={customDe}
-                  onChange={(e) => setCustomAte(e.target.value)}
-                  aria-label="Fim do período"
-                  className="bg-transparent px-1 text-sm outline-none"
-                />
+          {/* Abas e "Apresentar" ficam presos numa linha só.
+              Os campos de data moravam DENTRO deste flex-wrap, entre as abas e o
+              botão — então, ao escolher Personalizado, a linha não cabia mais e o
+              grupo inteiro caía para baixo do subtítulo. Trocar de aba fazia o
+              canto superior direito pular de lugar. Agora as datas descem por
+              fora, numa segunda linha própria, e o que está em cima não se mexe. */}
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
+                {(["diaria", "mensal", "personalizado"] as Period[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-3 py-1.5 font-medium ${period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
+                  >
+                    {p === "diaria" ? "Diário" : p === "mensal" ? "Mensal" : "Personalizado"}
+                  </button>
+                ))}
               </div>
-            )}
-            <button
-              onClick={togglePresent}
-              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20"
-              title={presenting ? "Sair da apresentação" : "Modo apresentação"}
-            >
-              {presenting ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              {presenting ? "Sair" : "Apresentar"}
-            </button>
+              <button
+                onClick={togglePresent}
+                className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20"
+                title={presenting ? "Sair da apresentação" : "Modo apresentação"}
+              >
+                {presenting ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                {presenting ? "Sair" : "Apresentar"}
+              </button>
+            </div>
+
+            {/* Dois movimentos com papéis diferentes: a altura abre o espaço sem
+                solavanco no que vem abaixo, e o deslocamento faz os campos
+                entrarem pela direita, de onde a aba foi clicada. O
+                `MotionConfig reducedMotion="user"` da raiz já desliga isso para
+                quem pediu menos animação no sistema. */}
+            <AnimatePresence initial={false}>
+              {period === "personalizado" && (
+                <motion.div
+                  key="filtro-datas"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="overflow-hidden"
+                >
+                  <motion.div
+                    initial={{ x: 24 }}
+                    animate={{ x: 0 }}
+                    exit={{ x: 24 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-sm"
+                  >
+                    <input
+                      type="date"
+                      value={customDe}
+                      max={customAte}
+                      onChange={(e) => setCustomDe(e.target.value)}
+                      aria-label="Início do período"
+                      className="bg-transparent px-1 text-sm outline-none"
+                    />
+                    <span className="text-muted-foreground">até</span>
+                    <input
+                      type="date"
+                      value={customAte}
+                      min={customDe}
+                      onChange={(e) => setCustomAte(e.target.value)}
+                      aria-label="Fim do período"
+                      className="bg-transparent px-1 text-sm outline-none"
+                    />
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </header>
 
@@ -539,7 +571,12 @@ function MetasPage() {
         </section>
 
         {isManager && (
-          <ExportMonthly users={filteredUsers} tasks={tasks} completions={completions} />
+          <ExportarPeriodo
+            users={filteredUsers}
+            tasks={tasks}
+            completions={completions}
+            range={range}
+          />
         )}
       </div>
     </FluxoLayout>
@@ -677,14 +714,27 @@ function KpiCard({ label, value, mono, highlight }: { label: string; value: stri
   );
 }
 
-function ExportMonthly({
+/**
+ * Exporta o período que está na tela.
+ *
+ * Chamava-se `ExportMonthly` e o nome era honesto: as três saídas — CSV, PDF e
+ * o resumo — chamavam `periodRange("mensal")` por conta própria e ignoravam a
+ * aba escolhida. Passava batido enquanto só existiam Diário e Mensal; com a aba
+ * Personalizado ficou indefensável escolher um intervalo, clicar em exportar e
+ * receber o mês inteiro. Agora o intervalo desce por `range`, o mesmo que os
+ * cartões da tela usam — uma fonte só para o que está à vista e o que sai no
+ * arquivo.
+ */
+function ExportarPeriodo({
   users,
   tasks,
   completions,
+  range,
 }: {
   users: User[];
   tasks: Task[];
   completions: { taskId: string; at: string }[];
+  range: { start: Date; end: Date; label: string };
 }) {
   const [busy, setBusy] = useState(false);
   const [busyPdf, setBusyPdf] = useState(false);
@@ -724,7 +774,6 @@ function ExportMonthly({
   const selectedUsers = () => users.filter((u) => selected.has(u.id));
 
   const buildUserData = (list: User[]) => {
-    const range = periodRange("mensal");
     return list.map((u) => {
       /* A lista de frequências saiu daqui: ela deixava a tarefa SEMANAL de fora
          do PDF sem dizer nada. Um relatório que omite uma parte do trabalho em
@@ -761,7 +810,6 @@ function ExportMonthly({
     const list = selectedUsers();
     if (list.length === 0) return;
     setBusy(true);
-    const range = periodRange("mensal");
     /* O tempo trabalhado vem do banco. Antes saía do `localStorage` desta
        máquina, então a coluna "Trabalhado" do CSV vinha zerada para todo mundo
        menos quem exportou — e zerada é indistinguível de "não cronometrou". */
@@ -870,7 +918,6 @@ function ExportMonthly({
         import("jspdf-autotable"),
       ]);
 
-      const range = periodRange("mensal");
       const data = buildUserData(list);
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth();
@@ -931,7 +978,7 @@ function ExportMonthly({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
       doc.setTextColor(...dark);
-      doc.text("Resumo executivo do mês", margin, y);
+      doc.text("Resumo executivo do período", margin, y);
       y += 8;
       doc.setDrawColor(...primary);
       doc.setLineWidth(2);
