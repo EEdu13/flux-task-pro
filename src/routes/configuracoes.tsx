@@ -25,7 +25,9 @@ import { useTheme, usePalette, paletteOptions } from "@/lib/use-theme";
 import { phoneValidator } from "@/components/onboarding-modal";
 import { purgeAllRooms } from "@/lib/livekit-token.functions";
 import {
+  desktopAutostartLigado,
   desktopBringToFront,
+  desktopDefinirAutostart,
   desktopSelfTest,
   isTauri,
   showIncomingCallWindow,
@@ -389,6 +391,7 @@ function SettingsPage() {
 
               <AcessosEDispositivos />
 
+              <DesktopAutostart />
               <DesktopDiagnostics />
 
               <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6">
@@ -651,6 +654,79 @@ function AcessosEDispositivos() {
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Abrir o app junto com o Windows.
+ *
+ * O estado é LIDO do sistema, não guardado aqui. A entrada fica no registro do
+ * Windows, no mesmo lugar que a tela de "Aplicativos de Inicialização" mostra —
+ * então a pessoa pode desligar por fora, e uma preferência guardada por nós
+ * passaria a mentir. Ler na hora custa uma chamada e nunca discorda da verdade.
+ */
+function DesktopAutostart() {
+  const nativo = isTauri();
+  const [ligado, setLigado] = useState<boolean | null>(null);
+  const [erro, setErro] = useState<string>("");
+  const { pendente, executar } = useAcaoPendente();
+
+  useEffect(() => {
+    if (!nativo) return;
+    void desktopAutostartLigado().then(setLigado);
+  }, [nativo]);
+
+  const alternar = () =>
+    executar(async () => {
+      setErro("");
+      try {
+        setLigado(await desktopDefinirAutostart(!ligado));
+      } catch (e) {
+        // Antivírus corporativo e política de grupo bloqueiam essa chave do
+        // registro. Falhar calado deixaria o botão parecendo quebrado.
+        setErro(
+          e instanceof Error
+            ? `O Windows recusou a alteração: ${e.message}`
+            : "O Windows recusou a alteração.",
+        );
+        setLigado(await desktopAutostartLigado());
+      }
+    });
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-6">
+      <h3 className="mb-1 text-sm font-semibold">Abrir junto com o computador</h3>
+      <p className="mb-3 text-[11px] text-muted-foreground">
+        {nativo
+          ? "O Fluxo abre sozinho quando você liga o computador, para não perder chamadas e mensagens."
+          : "Disponível só no aplicativo instalado — no navegador não há como iniciar junto com o sistema."}
+      </p>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={!nativo || pendente || ligado === null}
+          onClick={alternar}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {pendente && <Loader2 className="h-3 w-3 animate-spin" />}
+          {ligado ? "Desativar" : "Ativar"}
+        </button>
+        {nativo && ligado !== null && (
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              ligado ? "bg-success/15 text-success" : "bg-secondary text-muted-foreground"
+            }`}
+          >
+            {ligado ? "Ativado" : "Desativado"}
+          </span>
+        )}
+      </div>
+
+      {erro && (
+        <p className="mt-3 rounded-md bg-destructive/10 p-2 text-[11px] text-destructive">{erro}</p>
       )}
     </div>
   );

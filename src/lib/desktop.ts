@@ -57,6 +57,44 @@ export async function desktopBringToFront(topMs = 4000): Promise<void> {
   }
 }
 
+/* ---------------- Abrir junto com o Windows ---------------- */
+
+/*
+ * O plugin `tauri-plugin-autostart` já estava registrado no lado Rust e com as
+ * permissões concedidas nas capabilities — só faltava alguém chamar.
+ *
+ * No Windows ele grava uma entrada em
+ * HKCU\Software\Microsoft\Windows\CurrentVersion\Run, que é o mesmo lugar que a
+ * própria tela de Inicializar do Windows lista. Ou seja: a pessoa pode desligar
+ * por lá também, e nesse caso `desktopAutostartLigado()` passa a devolver false
+ * sozinho — por isso a tela lê o estado real em vez de guardar a preferência
+ * por conta própria.
+ */
+
+/** Se o app está configurado para abrir junto com o sistema. */
+export async function desktopAutostartLigado(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+    return await isEnabled();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Liga ou desliga a abertura automática.
+ * @returns o estado real depois da troca — que pode não ser o pedido, se o
+ *          Windows recusar a escrita no registro.
+ */
+export async function desktopDefinirAutostart(ligar: boolean): Promise<boolean> {
+  if (!isTauri()) return false;
+  const { enable, disable, isEnabled } = await import("@tauri-apps/plugin-autostart");
+  if (ligar) await enable();
+  else await disable();
+  return await isEnabled();
+}
+
 /** Notificação nativa do Windows (aparece mesmo com a janela minimizada na bandeja). */
 export async function desktopNotify(title: string, body: string): Promise<void> {
   if (!isTauri()) return;

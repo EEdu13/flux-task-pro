@@ -58,6 +58,7 @@
     "@tanstack/react-start": "^1.168.26",
     "@tanstack/router-plugin": "^1.168.18",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "ai": "^7.0.18",
     "class-variance-authority": "^0.7.1",
