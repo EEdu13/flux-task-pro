@@ -418,8 +418,8 @@ export function FluxoLayout({
           />
           {(!collapsed || mobileOpen) && (
             <>
-              <div className="flex-1">
-                <div className="text-sm font-semibold">CONECTA</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">CONECTA</div>
               </div>
               <button
                 type="button"
@@ -429,7 +429,7 @@ export function FluxoLayout({
               >
                 <X className="h-4 w-4" />
               </button>
-              <ChevronDown className="hidden h-4 w-4 opacity-60 lg:block" />
+              <ChevronDown className="hidden h-4 w-4 shrink-0 opacity-60 lg:block" />
             </>
           )}
         </div>
@@ -437,7 +437,7 @@ export function FluxoLayout({
         <button
           onClick={() => setGridOpen(true)}
           title="Criar tarefa (N)"
-          className={`mt-3 ml-3.5 inline-flex h-9 items-center gap-2 rounded-md bg-sidebar-primary pl-2.5 text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110 ${
+          className={`mt-3 ml-3.5 inline-flex h-9 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md bg-sidebar-primary pl-2.5 text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110 ${
             collapsed ? "mr-3.5 pr-0" : "mr-3 pr-3"
           }`}
         >
@@ -464,8 +464,8 @@ export function FluxoLayout({
                 key={n.to}
                 to={n.to}
                 title={collapsed ? n.label : undefined}
-                className={`relative flex items-center gap-2.5 rounded-md py-2 pl-4 text-sm transition ${
-                  collapsed ? "pr-2" : "pr-3"
+                className={`relative flex h-8 items-center overflow-hidden rounded-md text-sm transition ${
+                  collapsed ? "pr-2" : "pl-10.5 pr-3"
                 } ${
                   active
                     ? "text-sidebar-accent-foreground"
@@ -482,19 +482,29 @@ export function FluxoLayout({
                     transition={{ type: "spring", stiffness: 380, damping: 32 }}
                   />
                 )}
-                <div className="relative">
+                {/* Fora do fluxo de propósito. Enquanto o ícone era um item
+                    flex, ao EXPANDIR o rótulo entrava numa linha que ainda
+                    media 64px: o conteúdo estourava a caixa e só se acomodava
+                    conforme a barra crescia — 200ms de tudo se ajeitando.
+                    Absoluto em `left-4`, o texto não tem como alcançá-lo, e a
+                    linha ganha altura fixa porque agora não há mais nada no
+                    fluxo para dá-la quando recolhida. */}
+                <span className="absolute left-4 top-1/2 -translate-y-1/2">
                   <n.icon className="h-4 w-4" />
                   {collapsed && badge ? (
                     <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sidebar-primary px-1 text-[9px] font-bold text-sidebar-primary-foreground">
                       {badge}
                     </span>
                   ) : null}
-                </div>
+                </span>
                 {!collapsed && (
                   <>
-                    <span className="relative flex-1">{n.label}</span>
+                    {/* `truncate` + `min-w-0`: na barra estreita o rótulo
+                        encolhe a zero e vai sendo revelado, em vez de forçar a
+                        linha a ficar mais larga que a barra. */}
+                    <span className="relative min-w-0 flex-1 truncate">{n.label}</span>
                     {badge ? (
-                      <span className="relative rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
+                      <span className="relative ml-2 shrink-0 rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
                         {badge}
                       </span>
                     ) : null}
@@ -508,12 +518,12 @@ export function FluxoLayout({
             type="button"
             onClick={openNotepad}
             title={collapsed ? "Bloco de notas" : undefined}
-            className={`flex items-center gap-2.5 rounded-md py-2 pl-4 text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground ${
-              collapsed ? "pr-2" : "pr-3"
+            className={`relative flex h-8 items-center overflow-hidden rounded-md text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground ${
+              collapsed ? "pr-2" : "pl-10.5 pr-3"
             }`}
           >
-            <StickyNote className="h-4 w-4 text-amber-400" />
-            {!collapsed && <span className="flex-1 text-left">Bloco de notas</span>}
+            <StickyNote className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
+            {!collapsed && <span className="min-w-0 flex-1 truncate text-left">Bloco de notas</span>}
           </button>
 
           {/* Salas Online — with submenu */}
@@ -524,20 +534,20 @@ export function FluxoLayout({
                 <Link
                   to="/salas"
                   title="Salas Online"
-                  className={`flex items-center rounded-md py-2 pl-4 pr-2 text-sm transition ${
+                  className={`relative flex h-8 items-center overflow-hidden rounded-md pr-2 text-sm transition ${
                     salasActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                   }`}
                 >
-                  <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2">
                     <Headphones className="h-4 w-4" />
                     {totalOnline > 0 && (
                       <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
                         {totalOnline}
                       </span>
                     )}
-                  </div>
+                  </span>
                 </Link>
               );
             }
@@ -549,24 +559,24 @@ export function FluxoLayout({
                     esquerda. Passado para a direita, o fone entra na mesma
                     coluna de todo mundo e não se mexe mais. */}
                 <div
-                  className={`flex items-center gap-2.5 rounded-md py-2 pl-4 pr-3 text-sm transition ${
+                  className={`relative flex h-8 items-center overflow-hidden rounded-md pl-10.5 pr-3 text-sm transition ${
                     salasActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                   }`}
                 >
-                  <Headphones className="h-4 w-4 shrink-0" />
-                  <Link to="/salas" className="flex-1 truncate">
+                  <Headphones className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+                  <Link to="/salas" className="min-w-0 flex-1 truncate">
                     Salas Online
                   </Link>
                   {totalOnline > 0 && (
-                    <span className="shrink-0 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    <span className="ml-2 shrink-0 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
                       {totalOnline} online
                     </span>
                   )}
                   <button
                     onClick={() => setRoomsOpen((v) => !v)}
-                    className="flex h-4 w-4 shrink-0 items-center justify-center opacity-70 hover:opacity-100"
+                    className="ml-2 flex h-4 w-4 shrink-0 items-center justify-center opacity-70 hover:opacity-100"
                     aria-label={roomsOpen ? "Recolher salas" : "Expandir salas"}
                   >
                     {roomsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
