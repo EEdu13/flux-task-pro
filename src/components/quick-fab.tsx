@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { useFluxo } from "@/lib/fluxo-store";
+import { UserAvatar } from "@/components/user-avatar";
 import { toast } from "sonner";
 import type { Priority } from "@/lib/fluxo-types";
 import { loadPackDone, savePackDone } from "@/lib/pack";
@@ -495,9 +496,11 @@ export function QuickFab() {
                     onClick={() => nudgeUser(u.id)}
                     className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
                   >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                      {u.avatar || u.name.slice(0, 1)}
-                    </span>
+                    <UserAvatar
+                      nome={u.name}
+                      iniciais={u.avatar || u.name.slice(0, 1)}
+                      className="h-7 w-7 text-[10px]"
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-semibold">{u.name}</span>
                       <span className="block truncate text-[10px] text-muted-foreground">

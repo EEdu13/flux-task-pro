@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "@tanstack/react-router";
 import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { UserAvatar } from "@/components/user-avatar";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
 import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
@@ -543,9 +544,7 @@ export function TaskDialog() {
                         onClick={() => insertMention(u)}
                         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
                       >
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                          {u.avatar}
-                        </span>
+                        <UserAvatar nome={u.name} iniciais={u.avatar} className="h-6 w-6 text-[10px]" />
                         {u.name}
                         <span className="ml-auto text-[10px] text-muted-foreground">{u.jobTitle}</span>
                       </button>
@@ -1004,9 +1003,11 @@ export function TaskDialog() {
                   const u = users.find((x) => x.id === c.userId);
                   return (
                     <li key={c.id} className="flex gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
-                        {u?.avatar}
-                      </div>
+                      <UserAvatar
+                        nome={u?.name ?? ""}
+                        iniciais={u?.avatar ?? ""}
+                        className="h-8 w-8 text-[11px]"
+                      />
                       <div className="flex-1 rounded-md border border-border bg-background/60 px-3 py-2">
                         <div className="flex items-center gap-2 text-xs">
                           <span className="font-medium">{u?.name}</span>

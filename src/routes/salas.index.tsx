@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
+import { UserAvatar } from "@/components/user-avatar";
 import { sectors } from "@/lib/fluxo-types";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listSectorRooms } from "@/lib/livekit-token.functions";
@@ -328,9 +329,11 @@ function SalasPage() {
                               onClick={() => askCall(m.id, r.name, r.label)}
                               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-secondary disabled:opacity-60"
                             >
-                              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
-                                {m.avatar}
-                              </span>
+                              <UserAvatar
+                                nome={m.name}
+                                iniciais={m.avatar}
+                                className="h-6 w-6 bg-secondary text-[10px] text-secondary-foreground"
+                              />
                               <span className="min-w-0 flex-1 truncate">
                                 <span className="font-medium">{m.name}</span>
                                 <span className="ml-1 text-muted-foreground">· {m.jobTitle}</span>
@@ -362,9 +365,11 @@ function SalasPage() {
                             title={`Chamar ${m.name} para ${r.label}`}
                             className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] hover:border-primary hover:bg-primary/5 disabled:opacity-60"
                           >
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
-                              {m.avatar}
-                            </span>
+                            <UserAvatar
+                              nome={m.name}
+                              iniciais={m.avatar}
+                              className="h-4 w-4 bg-secondary text-[9px] text-secondary-foreground"
+                            />
                             <span className="max-w-[80px] truncate">{m.name.split(" ")[0]}</span>
                             <Phone className="h-2.5 w-2.5 text-primary" />
                           </button>

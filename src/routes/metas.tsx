@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
+import { UserAvatar } from "@/components/user-avatar";
 import { sectors, type Task, type User } from "@/lib/fluxo-types";
 import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
@@ -431,12 +432,12 @@ function MetasPage() {
                         : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <span
-                      className="grid h-5 w-5 place-items-center rounded-full text-[9px] font-bold text-white"
+                    <UserAvatar
+                      nome={u.name}
+                      iniciais={u.avatar}
+                      className="h-5 w-5 text-[9px] text-white"
                       style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-                    >
-                      {u.avatar}
-                    </span>
+                    />
                     {u.name}
                     {u.id === currentUser.id && (
                       <span className="rounded-full bg-primary/15 px-1 text-[9px] font-semibold uppercase text-primary">
@@ -517,12 +518,12 @@ function MetasPage() {
                     onClick={() => setOpenUserId(isOpen ? null : row.user.id)}
                     className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-secondary/40"
                   >
-                    <div
-                      className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
+                    <UserAvatar
+                      nome={row.user.name}
+                      iniciais={row.user.avatar}
+                      className="h-9 w-9 text-xs text-white"
                       style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-                    >
-                      {row.user.avatar}
-                    </div>
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-sm font-medium">
                         {row.user.name}
@@ -604,12 +605,12 @@ function HighlightCard({
       <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
       {user ? (
         <div className="mt-2 flex items-center gap-3">
-          <div
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
+          <UserAvatar
+            nome={user.name}
+            iniciais={user.avatar}
+            className="h-10 w-10 text-xs text-white"
             style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-          >
-            {user.avatar}
-          </div>
+          />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{user.name}</div>
             <div className="truncate text-[11px] text-muted-foreground">{sub}</div>
@@ -1251,12 +1252,12 @@ function ExportarPeriodo({
                     onChange={() => toggle(u.id)}
                     className="h-3.5 w-3.5 accent-primary"
                   />
-                  <div
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-semibold text-white"
+                  <UserAvatar
+                    nome={u.name}
+                    iniciais={u.avatar}
+                    className="h-7 w-7 text-[10px] text-white"
                     style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-                  >
-                    {u.avatar}
-                  </div>
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{u.name}</div>
                     <div className="truncate text-[11px] text-muted-foreground">

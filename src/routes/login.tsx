@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import larsilSimbolo from "@/assets/bolabranca.png";
 import { useFluxo } from "@/lib/fluxo-store";
+import { UserAvatar } from "@/components/user-avatar";
 import { roleLabels } from "@/lib/fluxo-types";
 import { paletteOptions, usePalette } from "@/lib/use-theme";
 import {
@@ -319,15 +320,15 @@ function FormDemo() {
                 active ? "bg-white/10 ring-1 ring-white/20" : "hover:bg-white/[0.04]"
               }`}
             >
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold"
+              <UserAvatar
+                nome={u.name}
+                iniciais={u.avatar}
+                className="h-8 w-8 text-[11px]"
                 style={{
                   background:
                     "linear-gradient(135deg, var(--auth-deep) 0%, var(--auth-glow) 100%)",
                 }}
-              >
-                {u.avatar}
-              </div>
+              />
               <div className="min-w-0 flex-1">
                 <div className="truncate">{u.name}</div>
                 <div className="truncate text-[10px] text-white/50">
