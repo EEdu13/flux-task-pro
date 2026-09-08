@@ -28,6 +28,7 @@ import { CallInviterProvider } from "@/lib/call-inviter-context";
 import { RoomPresenceProvider } from "@/lib/room-presence-context";
 import { QuickFab } from "@/components/quick-fab";
 import { FloatingNotepad } from "@/components/floating-notepad";
+import { TimerFlutuante } from "@/components/timer-flutuante";
 import { TitleBar } from "@/components/title-bar";
 import { InteractionFX } from "@/components/interaction-fx";
 import { Celebration } from "@/components/celebration";
@@ -229,6 +230,9 @@ function RootComponent() {
               <Outlet />
               <ActiveCallWidget />
               <QuickFab />
+              {/* Fora do <Outlet />: precisa sobreviver à troca de rota, que é
+                  justamente quando o crachá dentro do cartão sai de vista. */}
+              <TimerFlutuante />
               <FloatingNotepad />
               <InteractionFX />
               <Celebration />
