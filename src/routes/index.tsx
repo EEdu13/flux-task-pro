@@ -57,9 +57,26 @@ function Home() {
   const packTotal = packTasks.length;
   const packDoneCount = packTasks.filter((t) => packDone.has(t.id)).length;
   const packPct = packTotal === 0 ? 0 : Math.round((packDoneCount / packTotal) * 100);
+  /* Quem conta como "time" nesta tela.
+     O ranking e os packs listavam a empresa INTEIRA, então quem é da TI via
+     gente do financeiro na disputa — e com traço no lugar do número, porque os
+     dados dessas pessoas nem chegam ao navegador de quem não é gerente. Lista
+     global com dados restritos é o pior dos dois: mostra quem você não deveria
+     comparar e não mostra o número de ninguém.
+
+     Para a gerência, time continua sendo todo mundo — é o mesmo alcance que ela
+     já tem no servidor. Para o resto, time é o setor. */
+  const pessoasDoTime = useMemo(
+    () =>
+      currentUser.role === "gerente"
+        ? users
+        : users.filter((u) => u.sector === currentUser.sector),
+    [users, currentUser.role, currentUser.sector],
+  );
+
   // Team-wide pack overview (how everyone's pack looks in size)
   const teamPack = useMemo(() => {
-    return users
+    return pessoasDoTime
       .map((u) => {
         const items = tasks.filter((t) => t.assigneeId === u.id && t.inPack);
         return { user: u, total: items.length };
@@ -67,7 +84,7 @@ function Home() {
       .filter((x) => x.total > 0)
       .sort((a, b) => b.total - a.total)
       .slice(0, 5);
-  }, [users, tasks]);
+  }, [pessoasDoTime, tasks]);
 
   const myTasks = tasks.filter((t) => t.assigneeId === currentUser.id);
   const openTasks = myTasks.filter((t) => t.status !== "concluida");
@@ -112,15 +129,15 @@ function Home() {
   );
   const userPct = useMemo(() => {
     const m = new Map<string, { pct: number; assigned: number }>();
-    for (const u of users) {
+    for (const u of pessoasDoTime) {
       const s = userScorePct(u.id, tasks, completions);
       m.set(u.id, { pct: s.pct, assigned: s.assigned });
     }
     return m;
-  }, [users, tasks, completions]);
+  }, [pessoasDoTime, tasks, completions]);
   const ranking = useMemo(
     () =>
-      [...users].sort((a, b) => {
+      [...pessoasDoTime].sort((a, b) => {
         const sa = userPct.get(a.id) ?? { pct: 0, assigned: 0 };
         const sb = userPct.get(b.id) ?? { pct: 0, assigned: 0 };
         if (sa.assigned === 0 && sb.assigned === 0) return 0;
@@ -128,7 +145,7 @@ function Home() {
         if (sb.assigned === 0) return -1;
         return sb.pct - sa.pct;
       }).slice(0, 5),
-    [users, userPct],
+    [pessoasDoTime, userPct],
   );
 
   const recentNotifs = notifications

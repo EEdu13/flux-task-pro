@@ -78,10 +78,22 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
     /* O filtro é montado aqui, e não passado como parâmetro, porque `papel` e
        `setor` vieram do banco — não há valor de fora entrando na consulta. Os
        ids continuam parametrizados. */
+    /* O setor é de todos que estão nele, não só do supervisor.
+       Antes, colaborador recebia apenas o que era dele — e as telas que dizem
+       "do time" (ranking, últimos 7 dias, packs do time) mostravam a pessoa
+       sozinha com o rótulo de time. Duas pessoas da TI viam números diferentes
+       para a mesma coisa, e "Packs do time" dizia "ninguém montou o pack" para
+       sempre, porque as tarefas dos outros nunca chegavam.
+
+       O que isso abre, dito com todas as letras: quem é da TI passa a ver
+       título, responsável e conclusão das tarefas da TI. Decisão tomada com o
+       usuário — é o comportamento que a tela sempre prometeu.
+
+       A gerência continua vendo tudo, sem hierarquia, como era. */
     const filtro =
       papel === "gerente"
         ? "1=1"
-        : papel === "supervisor" && setor
+        : setor
           ? "(setor=@setor OR responsavel_id=@eu OR criado_por=@eu)"
           : "(responsavel_id=@eu OR criado_por=@eu)";
 

@@ -58,10 +58,13 @@ export const listarConclusoes = createServerFn({ method: "POST" }).handler(
 
     /* Os mesmos parênteses de `listarTarefas`, pelo mesmo motivo: abaixo vem um
        `AND` de data, e sem eles ele se ligaria só ao último `OR`. */
+    // Mesmo alcance de `listarTarefas`, e pelo mesmo motivo — ver a nota lá.
+    // Sem isto, o gráfico de "últimos 7 dias · time" contaria só quem está
+    // olhando, e duas pessoas do mesmo setor veriam números diferentes.
     const filtro =
       papel === "gerente"
         ? "1=1"
-        : papel === "supervisor" && setor
+        : setor
           ? "(t.setor=@setor OR c.pessoa_id=@eu OR t.criado_por=@eu)"
           : "(c.pessoa_id=@eu OR t.criado_por=@eu)";
 
