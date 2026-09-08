@@ -426,17 +426,29 @@ async function gravarTarefa(t: Task): Promise<void> {
        bloco — são listas curtas, e a tarefa inteira já sobe a cada mudança.
        Comentários e histórico ficam de fora: eles só crescem, e regravá-los
        apagaria o que outra pessoa escreveu enquanto esta tinha a tarefa
-       aberta. */
-    const sat = await import("@/lib/tarefa-satelites.functions");
-    await sat.salvarSatelites({
-      data: {
-        tarefaId: t.id,
-        checklist: t.checklist.map((c) => ({ text: c.text, done: c.done })),
-        mentions: t.mentions,
-        tags: t.tags,
-        recurringWeekdays: t.recurringWeekdays ?? [],
-      },
-    });
+       aberta.
+
+       Mas SÓ quando esta cópia da tarefa sabe o que são os satélites dela.
+       A listagem do login traz as listas vazias e as preenche depois, quando a
+       tarefa é aberta; regravar em bloco a partir de uma tarefa não hidratada
+       era mandar "apague tudo" para as quatro tabelas. E como arrastar um
+       cartão grava a coluna inteira, um arrasto limpava todas as tarefas da
+       coluna que ninguém tivesse aberto — em silêncio, com "Salvo." na tela.
+
+       O servidor também se protege (campo ausente = não mexe), o que basta
+       sozinho. Este lado evita a viagem inútil e deixa a intenção explícita. */
+    if (t.satellitesLoaded) {
+      const sat = await import("@/lib/tarefa-satelites.functions");
+      await sat.salvarSatelites({
+        data: {
+          tarefaId: t.id,
+          checklist: t.checklist.map((c) => ({ text: c.text, done: c.done })),
+          mentions: t.mentions,
+          tags: t.tags,
+          recurringWeekdays: t.recurringWeekdays ?? [],
+        },
+      });
+    }
     /* Deu certo. Tira esta tarefa da lista de pendências: ela pode ter sido
        regravada por outro caminho — a pessoa mexeu de novo e dessa vez foi — e
        continuar na lista faria o aviso de erro insistir por algo já salvo.
@@ -998,6 +1010,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           order: maxOrder,
           comments: [],
           checklist: t.checklist ?? [],
+          // Nasce completa: checklist, menções e etiquetas vieram do formulário,
+          // então estas listas são a verdade e podem ser gravadas.
+          satellitesLoaded: true,
           activity: [
             {
               id: rid("a"),
@@ -1595,6 +1610,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
               t.id === id
                 ? {
                     ...t,
+                    // Daqui em diante esta tarefa pode ser regravada por
+                    // inteiro: as listas abaixo são o que o banco tem, não o
+                    // vazio da listagem. Ver `satellitesLoaded` em Task.
+                    satellitesLoaded: true,
                     checklist: s.checklist,
                     mentions: s.mentions,
                     tags: s.tags,
@@ -1728,6 +1747,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           order: maxOrder,
           comments: [],
           checklist: [],
+          // Nasce completa aqui; sem isto a etiqueta "ata" não seria gravada.
+          satellitesLoaded: true,
           activity: [
             {
               id: rid("a"),
@@ -1954,6 +1975,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         order: i,
         comments: [],
         checklist: [],
+        // Nasce completa: sem isto as etiquetas do pack e a menção de quem
+        // recebe não seriam gravadas — e é a menção que dispara o aviso.
+        satellitesLoaded: true,
         activity: [
           {
             id: rid("a"),

@@ -96,6 +96,21 @@ export interface Task {
   activity: ActivityEntry[];
   attachments?: Attachment[];
   /**
+   * Se os satélites (checklist, menções, etiquetas, dias de recorrência) desta
+   * tarefa já vieram do banco.
+   *
+   * A listagem do login NÃO traz nada disso — seria seis consultas por tarefa
+   * para desenhar um quadro que mostra título e prazo. Os satélites chegam
+   * quando a tarefa é aberta. Até lá, as listas estão vazias por ignorância,
+   * não porque a tarefa não tenha nada.
+   *
+   * Sem esta marca as duas situações eram indistinguíveis, e `gravarTarefa`
+   * mandava as listas vazias como se fossem verdade — apagando no banco o que
+   * ela apenas não tinha carregado. Nasce `true` em tarefa criada aqui (que já
+   * nasce completa) e vira `true` quando `carregarSatelites` responde.
+   */
+  satellitesLoaded?: boolean;
+  /**
    * Marks the task as part of "Meu pack" — the user's daily non-negotiables.
    * Only meaningful for the task's assignee.
    */

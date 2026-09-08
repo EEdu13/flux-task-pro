@@ -145,33 +145,53 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         const tarefaId = guid(e?.tarefaId);
         if (!tarefaId) throw new Error("Tarefa inválida");
 
+        /* AUSENTE e VAZIO são coisas diferentes, e tratá-los como iguais
+           apagava dados.
+
+           Cada bloco abaixo é um apaga-e-regrava. Enquanto campo ausente virava
+           `[]`, quem chamasse esta função sem mandar as etiquetas estava, sem
+           saber, pedindo "apague todas as etiquetas desta tarefa". E era
+           exatamente o que acontecia: o navegador carrega a tarefa no login com
+           os satélites vazios — eles só chegam quando ela é aberta — então
+           qualquer gravação de uma tarefa que ninguém abriu mandava quatro
+           listas vazias e limpava as quatro tabelas.
+
+           Arrastar um cartão grava a coluna inteira, então um arrasto apagava os
+           satélites de todas as tarefas da coluna de uma vez, com "Salvo." na
+           tela. Confirmado no banco: sobrou uma etiqueta "gerencia" sem vínculo
+           nenhum, e tarefa aqui não é apagada de verdade (só arquivada), então
+           não havia cascata que explicasse o sumiço.
+
+           Agora `undefined` quer dizer "não mexe nisso", e só uma lista de fato
+           enviada autoriza o DELETE. Mandar `[]` continua esvaziando — é o que
+           faz remover a última etiqueta funcionar. */
         return {
           tarefaId,
-          checklist: (Array.isArray(e?.checklist) ? e.checklist : [])
-            .map((i) => ({ text: texto(i?.text, 300), done: i?.done === true }))
-            .filter((i) => i.text),
-          mentions: [
-            ...new Set(
-              (Array.isArray(e?.mentions) ? e.mentions : [])
-                .map((m) => Number(m))
-                .filter((n) => Number.isInteger(n) && n > 0),
-            ),
-          ],
-          tags: [
-            ...new Set(
-              (Array.isArray(e?.tags) ? e.tags : [])
-                .map((t) => texto(t, 40))
-                .filter(Boolean),
-            ),
-          ],
+          checklist: Array.isArray(e?.checklist)
+            ? e.checklist
+                .map((i) => ({ text: texto(i?.text, 300), done: i?.done === true }))
+                .filter((i) => i.text)
+            : undefined,
+          mentions: Array.isArray(e?.mentions)
+            ? [
+                ...new Set(
+                  e.mentions.map((m) => Number(m)).filter((n) => Number.isInteger(n) && n > 0),
+                ),
+              ]
+            : undefined,
+          tags: Array.isArray(e?.tags)
+            ? [...new Set(e.tags.map((t) => texto(t, 40)).filter(Boolean))]
+            : undefined,
           // 0 = domingo … 6 = sábado. É o que o CHECK da tabela aceita.
-          recurringWeekdays: [
-            ...new Set(
-              (Array.isArray(e?.recurringWeekdays) ? e.recurringWeekdays : [])
-                .map((d) => Number(d))
-                .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
-            ),
-          ],
+          recurringWeekdays: Array.isArray(e?.recurringWeekdays)
+            ? [
+                ...new Set(
+                  e.recurringWeekdays
+                    .map((d) => Number(d))
+                    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
+                ),
+              ]
+            : undefined,
         };
       },
     ),
@@ -182,10 +202,11 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         eu,
         d: {
           tarefaId: string;
-          checklist: { text: string; done: boolean }[];
-          mentions: number[];
-          tags: string[];
-          recurringWeekdays: number[];
+          // Ausente = não mexe nesta tabela. Ver a nota no validador.
+          checklist?: { text: string; done: boolean }[];
+          mentions?: number[];
+          tags?: string[];
+          recurringWeekdays?: number[];
         },
       ) => {
         const { getPool, sql } = await import("@/integrations/db.server");
@@ -193,16 +214,18 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         const comTarefa = () => pool.request().input("t", sql.UniqueIdentifier, d.tarefaId);
 
         // --- Checklist ---
-        await comTarefa().query(`DELETE FROM gestor.itens_de_checklist WHERE tarefa_id=@t`);
-        for (const [ordem, item] of d.checklist.entries()) {
-          await comTarefa()
-            .input("texto", sql.NVarChar, item.text)
-            .input("feito", sql.Bit, item.done)
-            .input("ordem", sql.Int, ordem)
-            .query(
-              `INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
-               VALUES (@t, @texto, @feito, @ordem)`,
-            );
+        if (d.checklist) {
+          await comTarefa().query(`DELETE FROM gestor.itens_de_checklist WHERE tarefa_id=@t`);
+          for (const [ordem, item] of d.checklist.entries()) {
+            await comTarefa()
+              .input("texto", sql.NVarChar, item.text)
+              .input("feito", sql.Bit, item.done)
+              .input("ordem", sql.Int, ordem)
+              .query(
+                `INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
+                 VALUES (@t, @texto, @feito, @ordem)`,
+              );
+          }
         }
 
         /* --- Menções ---
@@ -211,55 +234,60 @@ export const salvarSatelites = createServerFn({ method: "POST" })
            toda gravação da tarefa avisaria de novo as mesmas pessoas, e
            mencionar alguém uma vez renderia uma notificação por clique em
            salvar — que é mais ou menos a definição de sineta ignorada. */
-        const antes = await comTarefa().query(
-          `SELECT pessoa_id FROM gestor.mencoes WHERE tarefa_id=@t`,
-        );
-        const jaMencionados = new Set(
-          (antes.recordset as { pessoa_id: number }[]).map((m) => m.pessoa_id),
-        );
+        const mencoes = d.mentions;
+        if (mencoes) {
+          const antes = await comTarefa().query(
+            `SELECT pessoa_id FROM gestor.mencoes WHERE tarefa_id=@t`,
+          );
+          const jaMencionados = new Set(
+            (antes.recordset as { pessoa_id: number }[]).map((m) => m.pessoa_id),
+          );
 
-        await comTarefa().query(`DELETE FROM gestor.mencoes WHERE tarefa_id=@t`);
-        for (const p of d.mentions) {
-          await comTarefa()
-            .input("p", sql.Int, p)
-            .query(`INSERT INTO gestor.mencoes (tarefa_id, pessoa_id) VALUES (@t, @p)`);
-        }
+          await comTarefa().query(`DELETE FROM gestor.mencoes WHERE tarefa_id=@t`);
+          for (const p of mencoes) {
+            await comTarefa()
+              .input("p", sql.Int, p)
+              .query(`INSERT INTO gestor.mencoes (tarefa_id, pessoa_id) VALUES (@t, @p)`);
+          }
 
-        /* O aviso da menção nasce aqui porque é aqui que a menção existe —
-           `salvarTarefa` grava a tarefa e não enxerga esta lista. Quem se
-           menciona não recebe nada, e o texto do aviso vem do título gravado na
-           tabela, não de um campo que o navegador mandaria junto.
+          /* O aviso da menção nasce aqui porque é aqui que a menção existe —
+             `salvarTarefa` grava a tarefa e não enxerga esta lista. Quem se
+             menciona não recebe nada, e o texto do aviso vem do título gravado
+             na tabela, não de um campo que o navegador mandaria junto.
 
-           O `responsavel_id <> @p` evita o aviso em dobro. Criar uma tarefa para
-           o João e mencionar o João são a mesma intenção, e sem esta linha ele
-           receberia "Nova tarefa" e "Você foi mencionado" pela mesma coisa. É
-           também o que segura o pack: cada tarefa dele menciona o destinatário,
-           então dez tarefas virariam dez menções e a supressão por `no_pack` do
-           lado de `salvarTarefa` não teria servido para nada.
+             O `responsavel_id <> @p` evita o aviso em dobro. Criar uma tarefa
+             para o João e mencionar o João são a mesma intenção, e sem esta
+             linha ele receberia "Nova tarefa" e "Você foi mencionado" pela mesma
+             coisa. É também o que segura o pack: cada tarefa dele menciona o
+             destinatário, então dez tarefas virariam dez menções e a supressão
+             por `no_pack` do lado de `salvarTarefa` não teria servido para nada.
 
-           O preço é estreito e conhecido: mencionar alguém numa tarefa que já é
-           dela deixa de avisar. Quem é dono da tarefa já a vê no quadro. */
-        for (const p of d.mentions.filter((x) => x !== eu && !jaMencionados.has(x))) {
-          await comTarefa()
-            .input("p", sql.Int, p)
-            .input("de", sql.Int, eu)
-            .query(
-              `INSERT INTO gestor.notificacoes
-                 (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
-               SELECT @p, @de, 'mencao', N'Você foi mencionado', t.titulo, t.id
-                 FROM gestor.tarefas t
-                WHERE t.id=@t AND t.responsavel_id <> @p`,
-            );
+             O preço é estreito e conhecido: mencionar alguém numa tarefa que já
+             é dela deixa de avisar. Quem é dono da tarefa já a vê no quadro. */
+          for (const p of mencoes.filter((x) => x !== eu && !jaMencionados.has(x))) {
+            await comTarefa()
+              .input("p", sql.Int, p)
+              .input("de", sql.Int, eu)
+              .query(
+                `INSERT INTO gestor.notificacoes
+                   (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
+                 SELECT @p, @de, 'mencao', N'Você foi mencionado', t.titulo, t.id
+                   FROM gestor.tarefas t
+                  WHERE t.id=@t AND t.responsavel_id <> @p`,
+              );
+          }
         }
 
         // --- Dias de recorrência ---
-        await comTarefa().query(`DELETE FROM gestor.dias_de_recorrencia WHERE tarefa_id=@t`);
-        for (const dia of d.recurringWeekdays) {
-          await comTarefa()
-            .input("d", sql.TinyInt, dia)
-            .query(
-              `INSERT INTO gestor.dias_de_recorrencia (tarefa_id, dia_da_semana) VALUES (@t, @d)`,
-            );
+        if (d.recurringWeekdays) {
+          await comTarefa().query(`DELETE FROM gestor.dias_de_recorrencia WHERE tarefa_id=@t`);
+          for (const dia of d.recurringWeekdays) {
+            await comTarefa()
+              .input("d", sql.TinyInt, dia)
+              .query(
+                `INSERT INTO gestor.dias_de_recorrencia (tarefa_id, dia_da_semana) VALUES (@t, @d)`,
+              );
+          }
         }
 
         /* --- Etiquetas ---
@@ -268,27 +296,29 @@ export const salvarSatelites = createServerFn({ method: "POST" })
            padrão aqui é diferente — cria se não existir, e só então liga.
            Sem isso, cada tarefa criaria a sua "Urgente" e a lista de etiquetas
            viraria uma lista de repetições. */
-        await comTarefa().query(`DELETE FROM gestor.tarefa_etiquetas WHERE tarefa_id=@t`);
-        for (const nome of d.tags) {
-          const r = await pool
-            .request()
-            .input("nome", sql.NVarChar, nome)
-            .input("por", sql.Int, eu)
-            .query(
-              `INSERT INTO gestor.etiquetas (nome, criada_por)
-               SELECT @nome, @por
-                WHERE NOT EXISTS (SELECT 1 FROM gestor.etiquetas WHERE nome=@nome);
+        if (d.tags) {
+          await comTarefa().query(`DELETE FROM gestor.tarefa_etiquetas WHERE tarefa_id=@t`);
+          for (const nome of d.tags) {
+            const r = await pool
+              .request()
+              .input("nome", sql.NVarChar, nome)
+              .input("por", sql.Int, eu)
+              .query(
+                `INSERT INTO gestor.etiquetas (nome, criada_por)
+                 SELECT @nome, @por
+                  WHERE NOT EXISTS (SELECT 1 FROM gestor.etiquetas WHERE nome=@nome);
 
-               SELECT id FROM gestor.etiquetas WHERE nome=@nome;`,
-            );
-          const etiquetaId = (r.recordset[0] as { id: string } | undefined)?.id;
-          if (!etiquetaId) continue;
+                 SELECT id FROM gestor.etiquetas WHERE nome=@nome;`,
+              );
+            const etiquetaId = (r.recordset[0] as { id: string } | undefined)?.id;
+            if (!etiquetaId) continue;
 
-          await comTarefa()
-            .input("e", sql.UniqueIdentifier, etiquetaId)
-            .query(
-              `INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id) VALUES (@t, @e)`,
-            );
+            await comTarefa()
+              .input("e", sql.UniqueIdentifier, etiquetaId)
+              .query(
+                `INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id) VALUES (@t, @e)`,
+              );
+          }
         }
 
         return { ok: true };
