@@ -28,6 +28,7 @@ import { loadPackDone, savePackDone } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
 import { startFocus } from "@/components/focus-overlay";
 import { TaskTimerControls } from "@/components/task-timer-controls";
+import { UserAvatar } from "@/components/user-avatar";
 import { CampoData } from "@/components/campo-data";
 import {
   freqLabels,
@@ -617,9 +618,11 @@ function TaskList({
                       </td>
                       <td className="py-2.5 pr-4">
                         <div className="flex items-center gap-2">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                            {assignee?.avatar}
-                          </span>
+                          <UserAvatar
+                            nome={assignee?.name ?? ""}
+                            iniciais={assignee?.avatar ?? ""}
+                            className="h-6 w-6 text-[10px]"
+                          />
                           <span className="text-xs">{assignee?.name}</span>
                         </div>
                       </td>
@@ -807,13 +810,13 @@ function KanbanBoard({
                                 const u = users.find((x) => x.id === mid);
                                 if (!u) return null;
                                 return (
-                                  <span
+                                  <UserAvatar
                                     key={mid}
+                                    nome={u.name}
+                                    iniciais={u.avatar}
                                     title={u.name}
-                                    className="flex h-4 w-4 items-center justify-center rounded-full border border-card bg-accent text-[8px] font-bold text-accent-foreground"
-                                  >
-                                    {u.avatar}
-                                  </span>
+                                    className="h-4 w-4 border border-card text-[8px]"
+                                  />
                                 );
                               })}
                             </div>
@@ -828,12 +831,16 @@ function KanbanBoard({
                         {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <div
-                          className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
+                        {/* Foto, com as iniciais por trás como reserva. O
+                            cartão desenhava só as iniciais, então o quadro era
+                            uma parede de siglas — e reconhecer alguém por "LP"
+                            exige decorar, enquanto o rosto se reconhece sozinho. */}
+                        <UserAvatar
+                          nome={assignee?.name ?? ""}
+                          iniciais={assignee?.avatar ?? ""}
                           title={assignee?.name}
-                        >
-                          {assignee?.avatar}
-                        </div>
+                          className="h-6 w-6 text-[10px]"
+                        />
                       </div>
                     </div>
                     <div className="mt-2 flex items-center justify-end">
