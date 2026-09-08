@@ -29,7 +29,15 @@ export const Route = createFileRoute("/metas")({
   component: MetasPage,
 });
 
-type Period = "diaria" | "mensal";
+/* Isto é um PERÍODO, não uma frequência de tarefa.
+   Parece a mesma coisa e não é — e a confusão entre as duas deixava a aba
+   Mensal permanentemente vazia. O filtro exigia `t.frequency === period`, ou
+   seja, "tarefas cuja recorrência é mensal", e não "tarefas que vencem neste
+   mês". Como as 23 tarefas do banco são diárias, o Mensal mostrava zero para
+   todo mundo — e tarefa semanal não aparecia em aba nenhuma, porque não havia
+   aba com esse nome. Agora a aba escolhe só a janela de datas; a recorrência da
+   tarefa não entra na conta. */
+type Period = "diaria" | "mensal" | "personalizado";
 
 interface TaskScore {
   task: Task;
@@ -49,10 +57,47 @@ interface UserScore {
   breakdown: TaskScore[];
 }
 
-function periodRange(period: Period, ref = new Date()): { start: Date; end: Date; label: string } {
+/**
+ * Converte "2026-09-01" do <input type="date"> em meia-noite LOCAL.
+ *
+ * `new Date("2026-09-01")` seria meia-noite em UTC, que no Brasil é 21h do dia
+ * anterior — e o período inteiro escorregaria um dia. Montando com os números
+ * separados, a data é local desde o começo.
+ */
+function dataLocal(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(0, 0, 0, 0);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function periodRange(
+  period: Period,
+  ref = new Date(),
+  personalizado?: { de: string; ate: string },
+): { start: Date; end: Date; label: string } {
   const start = new Date(ref);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
+
+  if (period === "personalizado") {
+    const de = dataLocal(personalizado?.de ?? "");
+    const ate = dataLocal(personalizado?.ate ?? "");
+    /* Datas incompletas ou invertidas caem no mês corrente em vez de mostrar
+       uma tela vazia — quem está preenchendo o segundo campo não deveria ver o
+       painel piscar em branco no meio da digitação. */
+    if (de && ate && ate.getTime() >= de.getTime()) {
+      // O fim é EXCLUSIVO na comparação, então soma um dia para o último dia
+      // escolhido entrar inteiro no período.
+      const fim = new Date(ate);
+      fim.setDate(fim.getDate() + 1);
+      const fmt = (d: Date) => d.toLocaleDateString("pt-BR");
+      return { start: de, end: fim, label: `${fmt(de)} a ${fmt(ate)}` };
+    }
+    return periodRange("mensal", ref);
+  }
+
   if (period === "diaria") {
     end.setDate(start.getDate() + 1);
     return { start, end, label: start.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) };
@@ -75,13 +120,26 @@ function scoreTask(task: Task, completionAt: string | null): TaskScore {
   return { task, state: "pending", points: 0 };
 }
 
-function frequencyLabel(f: Period) {
-  return f === "diaria" ? "diária" : "mensal";
+/** Nome do período para os rótulos. Era `frequencyLabel`, e o nome já entregava
+ *  a confusão que existia: aqui nunca se falou de frequência de tarefa. */
+function periodoLabel(p: Period) {
+  return p === "diaria" ? "diário" : p === "mensal" ? "mensal" : "personalizado";
 }
 
 function MetasPage() {
   const { tasks, users, completions, currentUser } = useFluxo();
   const [period, setPeriod] = useState<Period>("diaria");
+  /* O personalizado nasce no mês corrente: do dia 1 até hoje. Nascer vazio
+     obrigaria a preencher dois campos antes de ver qualquer coisa, e a primeira
+     impressão da aba seria uma tela em branco. */
+  const [customDe, setCustomDe] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [customAte, setCustomAte] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [openUserId, setOpenUserId] = useState<string | null>(null);
   const isManager = currentUser.role === "gerente" || currentUser.role === "supervisor";
   const containerRef = useRef<HTMLDivElement>(null);
@@ -184,14 +242,18 @@ function MetasPage() {
     };
   }, []);
 
-  const range = useMemo(() => periodRange(period), [period]);
+  const range = useMemo(
+    () => periodRange(period, new Date(), { de: customDe, ate: customAte }),
+    [period, customDe, customAte],
+  );
 
   const scores: UserScore[] = useMemo(() => {
     return filteredUsers.map((u) => {
+      // Sem `t.frequency === period`: a aba escolhe a janela de datas, não a
+      // recorrência da tarefa. Ver a nota no tipo `Period`.
       const assigned = tasks.filter(
         (t) =>
           t.assigneeId === u.id &&
-          t.frequency === period &&
           new Date(t.dueDate).getTime() >= range.start.getTime() &&
           new Date(t.dueDate).getTime() < range.end.getTime(),
       );
@@ -263,16 +325,37 @@ function MetasPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
-              {(["diaria", "mensal"] as Period[]).map((p) => (
+              {(["diaria", "mensal", "personalizado"] as Period[]).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPeriod(p)}
                   className={`px-3 py-1.5 font-medium ${period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
                 >
-                  {p === "diaria" ? "Diário" : "Mensal"}
+                  {p === "diaria" ? "Diário" : p === "mensal" ? "Mensal" : "Personalizado"}
                 </button>
               ))}
             </div>
+            {period === "personalizado" && (
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-sm">
+                <input
+                  type="date"
+                  value={customDe}
+                  max={customAte}
+                  onChange={(e) => setCustomDe(e.target.value)}
+                  aria-label="Início do período"
+                  className="bg-transparent px-1 text-sm outline-none"
+                />
+                <span className="text-muted-foreground">até</span>
+                <input
+                  type="date"
+                  value={customAte}
+                  min={customDe}
+                  onChange={(e) => setCustomAte(e.target.value)}
+                  aria-label="Fim do período"
+                  className="bg-transparent px-1 text-sm outline-none"
+                />
+              </div>
+            )}
             <button
               onClick={togglePresent}
               className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20"
@@ -336,7 +419,7 @@ function MetasPage() {
         )}
 
         <div className="grid gap-3 md:grid-cols-4">
-          <KpiCard label={`Período (${frequencyLabel(period)})`} value={range.label} mono />
+          <KpiCard label={`Período (${periodoLabel(period)})`} value={range.label} mono />
           <KpiCard label="Tarefas do período" value={teamAssigned} />
           <KpiCard
             label="Concluídas"
@@ -388,7 +471,7 @@ function MetasPage() {
                 <Target className="mx-auto mb-2 h-6 w-6" />
                 {filteredUsers.length === 0
                   ? "Selecione ao menos um colaborador para ver o ranking."
-                  : `Nenhuma tarefa ${frequencyLabel(period)} atribuída no período.`}
+                  : "Nenhuma tarefa com prazo neste período."}
               </li>
             )}
             {ranked.map((row) => {
@@ -543,7 +626,7 @@ function UserBreakdown({
     <div className="border-t border-border bg-secondary/30 px-5 py-4">
       <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          Tarefas {frequencyLabel(period)}s de <strong>{range.label}</strong>
+          Tarefas de <strong>{range.label}</strong>
         </span>
         <span>
           {row.onTime + row.late} de {row.assigned} concluídas
@@ -643,10 +726,13 @@ function ExportMonthly({
   const buildUserData = (list: User[]) => {
     const range = periodRange("mensal");
     return list.map((u) => {
+      /* A lista de frequências saiu daqui: ela deixava a tarefa SEMANAL de fora
+         do PDF sem dizer nada. Um relatório que omite uma parte do trabalho em
+         silêncio é pior que um relatório que não existe. O que define o que
+         entra é o prazo cair no período. */
       const uTasks = tasks.filter(
         (t) =>
           t.assigneeId === u.id &&
-          (t.frequency === "diaria" || t.frequency === "mensal") &&
           new Date(t.dueDate).getTime() >= range.start.getTime() &&
           new Date(t.dueDate).getTime() < range.end.getTime(),
       );
@@ -701,10 +787,10 @@ function ExportMonthly({
       ].join(";"),
     );
     for (const u of list) {
+      // Mesma correção do PDF: semanal não pode sumir do CSV em silêncio.
       const uTasks = tasks.filter(
         (t) =>
           t.assigneeId === u.id &&
-          (t.frequency === "diaria" || t.frequency === "mensal") &&
           new Date(t.dueDate).getTime() >= range.start.getTime() &&
           new Date(t.dueDate).getTime() < range.end.getTime(),
       );
