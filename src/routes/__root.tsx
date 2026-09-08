@@ -35,6 +35,7 @@ import { TransitionVeil } from "@/components/transition-veil";
 import { ConfirmHost } from "@/components/confirm-dialog";
 import { MotionConfig } from "framer-motion";
 import { ChatProvider } from "@/lib/chat-store";
+import { isTauri } from "@/lib/desktop";
 
 function NotFoundComponent() {
   return (
@@ -163,10 +164,40 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Some com o menu do botão direito no app instalado.
+ *
+ * O WebView entrega o menu do navegador — "Voltar", "Atualizar", "Salvar como",
+ * "Imprimir" — que denuncia que aquilo é uma página e oferece ações que não
+ * fazem sentido num app: salvar a tela como arquivo, imprimir o painel.
+ *
+ * Campos de texto ficam de FORA. É por ali que se copia e cola, e num app
+ * desktop essa é a via natural; tirá-la custaria mais do que o menu incomoda.
+ *
+ * Só no Tauri. No navegador o menu de contexto é do usuário, não nosso —
+ * bloqueá-lo lá seria pegar algo que não nos pertence.
+ *
+ * As telas com menu próprio (tarefas, calendário) já chamam `preventDefault`
+ * nos seus próprios handlers; este ouvinte roda em cima e não atrapalha.
+ */
+function useBloquearMenuNativo() {
+  useEffect(() => {
+    if (!isTauri()) return;
+    const bloquear = (e: MouseEvent) => {
+      const alvo = e.target as HTMLElement | null;
+      if (alvo?.closest?.("input, textarea, [contenteditable='true']")) return;
+      e.preventDefault();
+    };
+    document.addEventListener("contextmenu", bloquear);
+    return () => document.removeEventListener("contextmenu", bloquear);
+  }, []);
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   useApplyPalette();
   useApplyTheme();
+  useBloquearMenuNativo();
   // A janela pequena de chamada (/chamada) é um card isolado: sem barra de
   // título, sem FAB, sem widgets — só o próprio card.
   const pathname = useRouterState({ select: (s) => s.location.pathname });

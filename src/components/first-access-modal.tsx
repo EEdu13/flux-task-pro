@@ -187,7 +187,13 @@ export function FirstAccessModal({
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur">
       <TravaScroll />
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+      {/* `text-foreground` não é enfeite: este modal é renderizado DENTRO da
+          página de login, que é escura sempre e por isso carrega `text-white`
+          na raiz. Sem declarar a própria cor, tudo aqui dentro herdava branco —
+          e como o cartão é `bg-card`, no tema claro isso virava texto branco
+          sobre fundo branco. Os rótulos escapavam por terem cor explícita; o
+          que a pessoa digitava, não. */}
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-2xl">
         {/* Cores em .fluxo-cabecalho-primario (styles.css): o degradê é
             derivado da paleta em uso, não mais verde cravado aqui. */}
         <div className="fluxo-cabecalho-primario px-6 pt-6 pb-4">

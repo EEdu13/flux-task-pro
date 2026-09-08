@@ -39,7 +39,6 @@ import { tituloDoAviso } from "@/lib/aviso";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
 import { QuickTaskModal } from "@/components/quick-task-modal";
-import { OnboardingModal } from "@/components/onboarding-modal";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
 import { AttentionOverlay } from "@/components/attention-overlay";
@@ -310,7 +309,6 @@ export function FluxoLayout({
     );
 
   if (!isAuthenticated) return null;
-  const needsOnboarding = !currentUser.contactCompleted || !currentUser.email || !currentUser.phone;
 
   return (
   <UndoProvider>
@@ -1064,7 +1062,14 @@ export function FluxoLayout({
 
       <TaskDialog />
       <QuickTaskModal />
-      {needsOnboarding && <OnboardingModal />}
+      {/* O "Complete seu contato" saiu daqui.
+          Quem entra com senha provisória já preenche telefone e e-mail no
+          primeiro acesso, e quem entra normalmente tem esses dados vindos da
+          IAM a cada login. Nos dois casos o modal pedia de novo o que o sistema
+          já sabia — e como ele trava o painel, virava um pedágio na entrada.
+          O componente `OnboardingModal` continua no arquivo, agora sem uso — e
+          o arquivo NÃO pode ser apagado junto: `phoneValidator` sai dele e é
+          usado pelo primeiro acesso e pelas configurações. */}
       <IncomingCall />
       <AttentionOverlay />
       <OutgoingCallWatcher />
