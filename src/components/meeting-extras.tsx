@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useRoomContext, useLocalParticipant, useParticipants } from "@livekit/components-react";
 import { RoomEvent, Track } from "livekit-client";
-import type { RemoteAudioTrack, LocalAudioTrack } from "livekit-client";
+import type { RemoteAudioTrack, LocalAudioTrack, RemoteTrack } from "livekit-client";
 import {
   Circle,
   Square,
@@ -21,6 +21,7 @@ import {
   Download,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { updateActiveSpeakers } from "@/lib/livekit-token.functions";
 import { summarizeMeeting } from "@/lib/meeting-summary.functions";
 import { transcribeSegment } from "@/lib/transcription.functions";
@@ -83,6 +84,41 @@ function useActiveSpeakerBroadcast(roomName: string) {
   }, [room, roomName]);
 }
 
+/**
+ * Entrega o arquivo gravado.
+ *
+ * É a parte que mais falha, e falhava sem deixar rastro: o clique programático
+ * num `<a download>` funciona no navegador, mas no app desktop (Tauri/WebView2)
+ * pode ser barrado em silêncio — a gravação termina, o blob existe na memória, e
+ * nada aparece em lugar nenhum. Sem aviso, isso é indistinguível de "a gravação
+ * não funciona".
+ *
+ * Por isso o aviso fica na tela com um botão: se o automático não pegou, o
+ * clique da pessoa é um gesto de usuário de verdade, que é o que as políticas de
+ * download costumam exigir. O `revoke` foi de 5s para 2min pelo mesmo motivo —
+ * com 5 segundos o botão de repetir apontaria para um endereço já morto.
+ */
+function entregarGravacao(blob: Blob, nome: string): void {
+  const url = URL.createObjectURL(blob);
+  const baixar = () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  baixar();
+  const mb = (blob.size / 1024 / 1024).toFixed(1);
+  toast.success("Gravação encerrada.", {
+    id: "gravacao-reuniao",
+    duration: 30_000,
+    description: `${nome} (${mb} MB). Se o download não começou sozinho, use o botão.`,
+    action: { label: "Baixar", onClick: baixar },
+  });
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+}
+
 /** MediaRecorder-based client-side recording. Mixes local + all remote audio + screen if any. */
 function useMeetingRecorder(roomName: string) {
   const room = useRoomContext();
@@ -101,67 +137,135 @@ function useMeetingRecorder(roomName: string) {
   const start = useCallback(async () => {
     if (recording) return;
     if (!room) return;
-    const audioCtx = new AudioContext();
-    const dest = audioCtx.createMediaStreamDestination();
 
-    const connectTrack = (mediaStreamTrack: MediaStreamTrack) => {
-      const src = audioCtx.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
-      src.connect(dest);
-    };
+    /* Tudo daqui para baixo estava sem rede de proteção: o clique chamava esta
+       função assíncrona sem `catch`, então qualquer recusa do navegador — mime
+       não suportado, contexto de áudio bloqueado — sumia como promessa
+       rejeitada e o botão simplesmente não acendia. */
+    let audioCtx: AudioContext | null = null;
+    try {
+      audioCtx = new AudioContext();
+      const ctx = audioCtx;
+      const dest = ctx.createMediaStreamDestination();
 
-    // Local mic
-    const localMic = localParticipant.getTrackPublication(Track.Source.Microphone);
-    const localMicTrack = localMic?.track as LocalAudioTrack | undefined;
-    if (localMicTrack?.mediaStreamTrack) connectTrack(localMicTrack.mediaStreamTrack);
+      let fontesConectadas = 0;
+      const connectTrack = (mediaStreamTrack: MediaStreamTrack) => {
+        const src = ctx.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
+        src.connect(dest);
+        fontesConectadas++;
+      };
 
-    // Remote audio tracks
-    room.remoteParticipants.forEach((p) => {
-      p.audioTrackPublications.forEach((pub) => {
-        const t = pub.track as RemoteAudioTrack | undefined;
-        if (t?.mediaStreamTrack) connectTrack(t.mediaStreamTrack);
+      // Local mic
+      const localMic = localParticipant.getTrackPublication(Track.Source.Microphone);
+      const localMicTrack = localMic?.track as LocalAudioTrack | undefined;
+      if (localMicTrack?.mediaStreamTrack) connectTrack(localMicTrack.mediaStreamTrack);
+
+      // Remote audio tracks
+      room.remoteParticipants.forEach((p) => {
+        p.audioTrackPublications.forEach((pub) => {
+          const t = pub.track as RemoteAudioTrack | undefined;
+          if (t?.mediaStreamTrack) connectTrack(t.mediaStreamTrack);
+        });
       });
-    });
 
-    // Optional: local screen share video
-    const screenPub = localParticipant.getTrackPublication(Track.Source.ScreenShare);
-    const videoTracks: MediaStreamTrack[] = [];
-    if (screenPub?.track?.mediaStreamTrack) videoTracks.push(screenPub.track.mediaStreamTrack);
+      // Optional: local screen share video
+      const screenPub = localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      const videoTracks: MediaStreamTrack[] = [];
+      if (screenPub?.track?.mediaStreamTrack) videoTracks.push(screenPub.track.mediaStreamTrack);
 
-    const stream = new MediaStream([...dest.stream.getAudioTracks(), ...videoTracks]);
-    streamRef.current = stream;
+      /* Sem nenhuma fonte, o destino ainda produz uma faixa — muda — e a
+         gravação sairia com um arquivo de silêncio puro. Vale avisar em vez de
+         entregar isso vinte minutos depois. */
+      if (fontesConectadas === 0 && videoTracks.length === 0) {
+        await ctx.close().catch(() => {});
+        toast.error("Não há o que gravar agora.", {
+          description:
+            "Nenhum microfone aberto e nenhuma tela sendo compartilhada. " +
+            "Abra o microfone ou comece a apresentar e grave de novo.",
+        });
+        return;
+      }
 
-    const mimeCandidates = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "audio/webm;codecs=opus",
-      "audio/webm",
-    ];
-    const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || "";
-    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    chunksRef.current = [];
-    rec.ondataavailable = (e) => {
-      if (e.data.size > 0) chunksRef.current.push(e.data);
-    };
-    rec.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: rec.mimeType || "video/webm" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${roomName}-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const stream = new MediaStream([...dest.stream.getAudioTracks(), ...videoTracks]);
+      streamRef.current = stream;
+
+      const mimeCandidates = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+      ];
+      const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      /* Quem entra DEPOIS do start também entra na mistura.
+         A montagem acima é uma fotografia do instante do clique: sem isto, quem
+         chegasse no meio da reunião ficava mudo no arquivo, e nada na tela
+         indicava a falta — só se descobre ouvindo a gravação depois. */
+      const aoAssinar = (t: RemoteTrack) => {
+        if (t.kind !== Track.Kind.Audio || !t.mediaStreamTrack) return;
+        try {
+          connectTrack(t.mediaStreamTrack);
+        } catch {
+          /* uma faixa a menos na mistura não justifica derrubar a gravação */
+        }
+      };
+      room.on(RoomEvent.TrackSubscribed, aoAssinar);
+
+      const encerrar = () => {
+        room.off(RoomEvent.TrackSubscribed, aoAssinar);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        ctx.close().catch(() => {});
+        setRecording(false);
+        setStartedAt(null);
+      };
+      rec.onerror = () => {
+        toast.error("A gravação parou por um erro do navegador.", {
+          description:
+            chunksRef.current.length > 0
+              ? "O trecho gravado até aqui será entregue."
+              : "Nada foi gravado.",
+        });
+        if (chunksRef.current.length > 0) {
+          entregarGravacao(
+            new Blob(chunksRef.current, { type: rec.mimeType || "video/webm" }),
+            `${roomName}-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`,
+          );
+        }
+        encerrar();
+      };
+      rec.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "video/webm" });
+        if (blob.size > 0) {
+          entregarGravacao(
+            blob,
+            `${roomName}-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`,
+          );
+        } else {
+          toast.error("A gravação saiu vazia.", {
+            description: "Nenhum áudio foi capturado — o arquivo não foi gerado.",
+          });
+        }
+        encerrar();
+      };
+      recorderRef.current = rec;
+      rec.start(1000);
+      setRecording(true);
+      setStartedAt(Date.now());
+    } catch (e) {
+      await audioCtx?.close().catch(() => {});
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
-      audioCtx.close().catch(() => {});
       setRecording(false);
       setStartedAt(null);
-    };
-    recorderRef.current = rec;
-    rec.start(1000);
-    setRecording(true);
-    setStartedAt(Date.now());
+      toast.error("Não foi possível iniciar a gravação.", {
+        description: e instanceof Error ? e.message : "O navegador recusou a captura de áudio.",
+      });
+    }
   }, [recording, room, localParticipant, roomName]);
 
   useEffect(
@@ -481,17 +585,30 @@ export const MeetingExtras = forwardRef<
     [hasContent, generate],
   );
 
+  /* O relógio precisa de uma batida por segundo para andar.
+     Antes isto era um `useMemo` com deps `[recording, startedAt]` — e nenhuma
+     das duas muda ENQUANTO grava. Resultado: calculava uma vez, no instante do
+     start, e mostrava "Gravando 0:00" até o fim, o que parecia gravação
+     travada mesmo quando estava tudo certo. */
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    if (!rec.recording) return;
+    setAgora(Date.now());
+    const id = window.setInterval(() => setAgora(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [rec.recording]);
+
   const recDuration = useMemo(() => {
     if (!rec.recording || !rec.startedAt) return "";
-    const s = Math.floor((Date.now() - rec.startedAt) / 1000);
+    const s = Math.max(0, Math.floor((agora - rec.startedAt) / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  }, [rec.recording, rec.startedAt]);
+  }, [rec.recording, rec.startedAt, agora]);
 
   return (
     <>
       <button
         type="button"
-        onClick={() => (rec.recording ? rec.stop() : rec.start())}
+        onClick={() => (rec.recording ? rec.stop() : void rec.start())}
         className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
           rec.recording
             ? "border-red-500/60 bg-red-500/20 text-red-200 animate-pulse"
@@ -541,8 +658,16 @@ export const MeetingExtras = forwardRef<
         )}
       </button>
 
+      {/* Ancorado ACIMA da barra, não dentro dela.
+          Este painel é irmão do botão, e o botão mora na barra de controles —
+          que tem `relative`. Ou seja, o `100%` do `h-[calc(100%-5rem)]` que
+          estava aqui era a altura da BARRA (~60px), não a da reunião: 60 menos
+          80 dá negativo, o CSS trava em zero, e o painel abria como um risco
+          fino de 380px de largura. O `top-12` ainda o empurrava para baixo.
+          `bottom-full` + altura própria é o padrão que o painel de convidado
+          já usa nesta mesma barra, alguns elementos acima. */}
       {transcriptOpen && (
-        <div className="absolute top-12 right-2 z-40 flex h-[calc(100%-5rem)] w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-white/10 bg-neutral-950/95 text-xs text-white shadow-2xl">
+        <div className="absolute bottom-full right-2 z-40 mb-2 flex h-[min(70vh,32rem)] w-[380px] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-white/10 bg-neutral-950/95 text-xs text-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
             <span className="flex items-center gap-1.5 text-sm font-semibold">
               <FileText className="h-4 w-4" /> Ata da reunião

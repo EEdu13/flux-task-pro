@@ -17,7 +17,7 @@ import {
 } from "@livekit/components-react";
 import { Track, RoomEvent } from "livekit-client";
 import type { LocalVideoTrack } from "livekit-client";
-import { BackgroundBlur, VirtualBackground } from "@livekit/track-processors";
+import { BackgroundProcessor, type BackgroundProcessorWrapper } from "@livekit/track-processors";
 import "@livekit/components-styles";
 import {
   Maximize2,
@@ -187,6 +187,52 @@ function MeetClock() {
   );
 }
 
+/* Os dois arquivos que o MediaPipe busca na PRIMEIRA vez que um efeito é
+   aplicado: o runtime WASM (~9 MB) e o modelo de segmentação. Eram baixados de
+   servidor externo no exato momento do clique — daí a demora até o fundo
+   aparecer.
+
+   Fixá-los aqui serve a dois propósitos. Primeiro, a versão deixa de ser a que a
+   biblioteca escolher sozinha e passa a ser uma que conhecemos (0.10.14 é a que
+   o @livekit/track-processors declara como dependência). Segundo, e mais
+   importante: sabendo o endereço exato, dá para baixá-los ANTES do clique. */
+const MEDIAPIPE_VERSAO = "0.10.14";
+const MEDIAPIPE_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSAO}/wasm`;
+const MEDIAPIPE_MODELO =
+  "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite";
+const ASSET_PATHS = { tasksVisionFileSet: MEDIAPIPE_WASM, modelAssetPath: MEDIAPIPE_MODELO };
+
+/**
+ * Puxa os arquivos do MediaPipe para o cache do navegador.
+ *
+ * Chamado quando a pessoa ABRE o menu de fundo — sinal de que está prestes a
+ * escolher um. Os segundos entre abrir o menu e clicar na opção passam a ser
+ * usados para baixar, em vez de a espera começar só depois do clique. Se ela
+ * fechar o menu sem escolher, o download continua e fica no cache para a
+ * próxima. É uma única vez por sessão de navegador.
+ */
+let aquecimentoIniciado = false;
+function aquecerEfeitosDeFundo(): void {
+  if (aquecimentoIniciado || typeof window === "undefined") return;
+  aquecimentoIniciado = true;
+  for (const url of [
+    `${MEDIAPIPE_WASM}/vision_wasm_internal.js`,
+    `${MEDIAPIPE_WASM}/vision_wasm_internal.wasm`,
+    MEDIAPIPE_MODELO,
+  ]) {
+    // Só interessa aquecer o cache HTTP; o conteúdo em si é descartado.
+    fetch(url, { cache: "force-cache" }).catch(() => {});
+  }
+}
+
+/* Um processador para a chamada inteira, não um por troca de efeito.
+   `BackgroundBlur()` e `VirtualBackground()` — as que estavam aqui — estão
+   depreciadas na biblioteca justamente por isso: cada chamada constrói um
+   processador novo, que reinicializa o MediaPipe do zero. Alternar
+   desfoque → escritório → desfoque pagava a inicialização três vezes.
+   `BackgroundProcessor` existe para trocar de modo no ar, sem reiniciar. */
+let processadorDeFundo: BackgroundProcessorWrapper | null = null;
+
 function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
   const [effect, setEffectState] = useState<VideoEffect>(() => {
     if (typeof window === "undefined") return "none";
@@ -199,12 +245,30 @@ function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
     let cancelled = false;
     (async () => {
       try {
-        if (effect === "blur") {
-          await cameraTrack.setProcessor(BackgroundBlur(12));
-        } else if (effect === "office") {
-          await cameraTrack.setProcessor(VirtualBackground(videoBgOffice));
-        } else {
+        if (effect === "none") {
+          // Desligar não precisa do processador nem de baixar nada.
+          if (processadorDeFundo) await processadorDeFundo.switchTo({ mode: "disabled" });
           await cameraTrack.stopProcessor();
+          return;
+        }
+
+        const modo =
+          effect === "blur"
+            ? ({ mode: "background-blur", blurRadius: 12 } as const)
+            : ({ mode: "virtual-background", imagePath: videoBgOffice } as const);
+
+        if (!processadorDeFundo) {
+          processadorDeFundo = BackgroundProcessor({ ...modo, assetPaths: ASSET_PATHS });
+        } else {
+          await processadorDeFundo.switchTo(modo);
+        }
+        if (cancelled) return;
+
+        /* Reanexar o mesmo processador reiniciaria a esteira e desfaria o ganho
+           do `switchTo`. Só anexa quando a faixa ainda não o tem — o que
+           acontece na primeira vez e depois de um `stopProcessor`. */
+        if (cameraTrack.getProcessor() !== processadorDeFundo) {
+          await cameraTrack.setProcessor(processadorDeFundo);
         }
       } catch (e) {
         if (!cancelled) console.warn("Falha ao aplicar efeito de vídeo", e);
@@ -698,7 +762,12 @@ function CallContents({
                 <ToolBtn
                   icon={Sparkles}
                   label="Fundo de vídeo"
-                  onClick={() => setEffectMenu((v) => !v)}
+                  onClick={() => {
+                    // Começa a baixar o MediaPipe agora, enquanto a pessoa lê as
+                    // opções — em vez de só depois que ela escolher uma.
+                    aquecerEfeitosDeFundo();
+                    setEffectMenu((v) => !v);
+                  }}
                   active={effect !== "none" || effectMenu}
                 />
                 {effectMenu && (
