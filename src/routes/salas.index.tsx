@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Headphones,
   Lock,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
+import { sectors } from "@/lib/fluxo-types";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listSectorRooms } from "@/lib/livekit-token.functions";
 import { useCallInviter } from "@/lib/call-inviter-context";
@@ -88,6 +89,21 @@ function SalasPage() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
+  /* A identidade no LiveKit é montada como `${id}-${nome_com_underscores}`
+     (ver `salas.$roomName.tsx`), então o pedaço antes do primeiro hífen é o id
+     da pessoa. Quem não for encontrado entrou por link de convidado externo e
+     não tem setor nenhum — daí o rótulo próprio em vez de campo vazio. */
+  const pessoasPorId = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+
+  function quemE(identity: string, nomeNaSala: string): { nome: string; setor: string } {
+    const u = pessoasPorId.get(identity.split("-")[0]);
+    if (!u) return { nome: nomeNaSala, setor: "Convidado" };
+    return {
+      nome: u.name,
+      setor: sectors.find((s) => s.id === u.sector)?.name ?? u.sector,
+    };
+  }
+
   function askCall(userId: string, roomName: string, roomLabel: string) {
     ask(userId, roomName, roomLabel);
     setOpenFor(null);
@@ -105,8 +121,18 @@ function SalasPage() {
     ];
     return fixed.map((base) => {
       const d = discovered.get(base.name);
+      /* `activeSpeakers` estava ficando para trás aqui: o objeto remontado só
+         copiava nome, privacidade e participantes, então `room.activeSpeakers`
+         chegava sempre `undefined` na tela e o destaque de "falando agora"
+         dependia inteiramente do contexto de presença como reserva. */
       return d
-        ? { name: base.name, label: base.label, isPrivate: forcePrivate || d.isPrivate, participants: d.participants }
+        ? {
+            name: base.name,
+            label: base.label,
+            isPrivate: forcePrivate || d.isPrivate,
+            participants: d.participants,
+            activeSpeakers: d.activeSpeakers,
+          }
         : base;
     });
   }
@@ -203,10 +229,43 @@ function SalasPage() {
                                #{n}
                              </span>
                              <span className="truncate font-medium">Sala {n}</span>
+                              {/* Quantas pessoas estão NESTA sala. O hover abre a
+                                  lista — nome e setor, que é o que identifica
+                                  alguém sem transformar o cartão num painel. */}
                               {inUse && (
-                               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-500">
-                                 <Users2 className="h-3 w-3" />
-                                 {room.participants.length}
+                               <span className="group/pessoas relative inline-flex">
+                                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                   <Users2 className="h-3 w-3" />
+                                   {room.participants.length}
+                                 </span>
+                                 <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 hidden w-max max-w-[240px] -translate-x-1/2 flex-col gap-1 rounded-md border border-border bg-popover p-2 shadow-lg group-hover/pessoas:flex">
+                                   <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                     Na chamada
+                                   </span>
+                                   {room.participants.map((p) => {
+                                     const quem = quemE(p.identity, p.name);
+                                     return (
+                                       <span
+                                         key={p.identity}
+                                         className="flex items-center gap-1.5 whitespace-nowrap text-[10px]"
+                                       >
+                                         <span
+                                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                             speaking.has(p.identity)
+                                               ? "animate-pulse bg-primary"
+                                               : "bg-emerald-500"
+                                           }`}
+                                         />
+                                         <span className="font-medium text-foreground">
+                                           {quem.nome}
+                                         </span>
+                                         <span className="text-muted-foreground">
+                                           · {quem.setor}
+                                         </span>
+                                       </span>
+                                     );
+                                   })}
+                                 </span>
                                </span>
                              )}
                               {(inUse || room.isPrivate) && (
@@ -233,35 +292,11 @@ function SalasPage() {
                              Entrar
                            </span>
                          </span>
-                         {room.participants.length > 0 && (
-                           <div className="flex flex-wrap gap-1 pl-1">
-                             {room.participants.slice(0, 5).map((p) => (
-                               <span
-                                 key={p.identity}
-                                 className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition ${
-                                   speaking.has(p.identity)
-                                     ? "bg-primary/20 text-primary ring-2 ring-primary/60"
-                                     : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                 }`}
-                                 title={speaking.has(p.identity) ? "Falando agora" : undefined}
-                               >
-                                 <span
-                                   className={`h-1.5 w-1.5 rounded-full ${
-                                     speaking.has(p.identity)
-                                       ? "animate-pulse bg-primary"
-                                       : "bg-emerald-500"
-                                   }`}
-                                 />
-                                 {p.name || p.identity}
-                               </span>
-                             ))}
-                             {room.participants.length > 5 && (
-                               <span className="text-[10px] text-muted-foreground">
-                                 +{room.participants.length - 5}
-                               </span>
-                             )}
-                           </div>
-                         )}
+                         {/* A lista fixa de nomes que ficava aqui saiu: era a
+                             mesma informação do hover, só que sempre aberta, e
+                             com cinco salas ocupadas o cartão virava uma parede
+                             de etiquetas. O destaque de quem está falando foi
+                             junto para dentro do hover. */}
                        </button>
                      );
                    })}
