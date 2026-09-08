@@ -368,7 +368,20 @@ export function FluxoLayout({
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${collapsed ? "lg:w-16" : "lg:w-60"}`}
       >
-        <div className={`flex h-14 items-center gap-2 border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "px-4"}`}>
+        {/* Coluna de ícones fixa.
+
+            Cada ícone da barra — a marca, o "+", os do menu — tem o centro a
+            32px da borda esquerda, NOS DOIS ESTADOS. Isso não sai de graça:
+            enquanto a largura anima de 240px para 64px, qualquer
+            `justify-center` mira um centro que está se movendo, e o ícone
+            entra deslizando junto com a barra em vez de ficar parado. Por
+            isso tudo aqui é ancorado à esquerda com padding fixo, e só o
+            texto some.
+
+            32px é o que o estado recolhido já fazia (64px de trilho, ícone no
+            meio); quem mudou de lugar foi o estado aberto, que vinha 4px mais
+            à esquerda. */}
+        <div className="flex h-14 items-center gap-2 border-b border-sidebar-border pl-3.5 pr-3">
           {/* A marca no lugar do "F".
 
               O quadrado colorido saiu junto, e isso não é liberdade: o
@@ -424,11 +437,11 @@ export function FluxoLayout({
         <button
           onClick={() => setGridOpen(true)}
           title="Criar tarefa (N)"
-          className={`mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-sidebar-primary text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110 ${
-            collapsed ? "mx-2 h-9 w-9 self-center p-0" : "mx-3 px-3 py-2"
+          className={`mt-3 ml-3.5 inline-flex h-9 items-center gap-2 rounded-md bg-sidebar-primary pl-2.5 text-sm font-medium text-sidebar-primary-foreground shadow-sm transition hover:brightness-110 ${
+            collapsed ? "mr-3.5 pr-0" : "mr-3 pr-3"
           }`}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4 shrink-0" />
           {!collapsed && (
             <>
               Criar tarefa
@@ -451,8 +464,8 @@ export function FluxoLayout({
                 key={n.to}
                 to={n.to}
                 title={collapsed ? n.label : undefined}
-                className={`relative flex items-center gap-2.5 rounded-md text-sm transition ${
-                  collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"
+                className={`relative flex items-center gap-2.5 rounded-md py-2 pl-4 text-sm transition ${
+                  collapsed ? "pr-2" : "pr-3"
                 } ${
                   active
                     ? "text-sidebar-accent-foreground"
@@ -495,8 +508,8 @@ export function FluxoLayout({
             type="button"
             onClick={openNotepad}
             title={collapsed ? "Bloco de notas" : undefined}
-            className={`flex items-center gap-2.5 rounded-md text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground ${
-              collapsed ? "justify-center px-2 py-2" : "px-3 py-1.5"
+            className={`flex items-center gap-2.5 rounded-md py-2 pl-4 text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground ${
+              collapsed ? "pr-2" : "pr-3"
             }`}
           >
             <StickyNote className="h-4 w-4 text-amber-400" />
@@ -511,7 +524,7 @@ export function FluxoLayout({
                 <Link
                   to="/salas"
                   title="Salas Online"
-                  className={`flex items-center justify-center rounded-md px-2 py-2 text-sm transition ${
+                  className={`flex items-center rounded-md py-2 pl-4 pr-2 text-sm transition ${
                     salasActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
@@ -530,29 +543,34 @@ export function FluxoLayout({
             }
             return (
               <div>
+                {/* O chevron ficava ANTES do fone e empurrava o ícone para
+                    46px da borda, sozinho fora da coluna dos outros — e ao
+                    recolher ele sumia e o fone dava um salto de 22px para a
+                    esquerda. Passado para a direita, o fone entra na mesma
+                    coluna de todo mundo e não se mexe mais. */}
                 <div
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition ${
+                  className={`flex items-center gap-2.5 rounded-md py-2 pl-4 pr-3 text-sm transition ${
                     salasActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground"
                   }`}
                 >
-                  <button
-                    onClick={() => setRoomsOpen((v) => !v)}
-                    className="flex h-4 w-4 items-center justify-center opacity-70 hover:opacity-100"
-                    aria-label={roomsOpen ? "Recolher salas" : "Expandir salas"}
-                  >
-                    {roomsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  </button>
-                  <Headphones className="h-4 w-4" />
+                  <Headphones className="h-4 w-4 shrink-0" />
                   <Link to="/salas" className="flex-1 truncate">
                     Salas Online
                   </Link>
                   {totalOnline > 0 && (
-                    <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    <span className="shrink-0 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
                       {totalOnline} online
                     </span>
                   )}
+                  <button
+                    onClick={() => setRoomsOpen((v) => !v)}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center opacity-70 hover:opacity-100"
+                    aria-label={roomsOpen ? "Recolher salas" : "Expandir salas"}
+                  >
+                    {roomsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
                 </div>
                 {roomsOpen && (
                   <ul className="mt-0.5 flex flex-col gap-0.5 pl-3">
