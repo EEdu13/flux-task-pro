@@ -74,11 +74,15 @@ export function ChatDock() {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[120] hidden lg:block">
-      {/* Janelas de conversa abertas — ancoradas no rodapé, à esquerda do
-          launcher. O afastamento é de 44 (176px) e não 24 (96px) por causa do
-          rótulo fixo "Clique — acesso rápido" do FAB: ele nasce em right-5 e
-          tem ~125px, então cobria a lateral direita das janelas. */}
-      <div className="pointer-events-none absolute bottom-0 right-44 flex flex-row-reverse items-end gap-3">
+      {/* Janelas de conversa abertas — ancoradas no rodapé, à esquerda dos
+          lançadores. O afastamento não é decorativo: o rótulo fixo "Clique —
+          acesso rápido" tem ~125px e mora embaixo do raio, então ele avança
+          para a esquerda muito além do próprio botão.
+
+          Passou de 44 (176px) para 52 (208px) quando o botão de recolher foi
+          para a borda direita: o raio deslocou ~48px para a esquerda e levou o
+          rótulo junto, que passou a alcançar ~193px e encostaria nas janelas. */}
+      <div className="pointer-events-none absolute bottom-0 right-52 flex flex-row-reverse items-end gap-3">
         <AnimatePresence initial={false}>
         {expanded.map((id) => {
           const u = userById.get(id);
@@ -131,9 +135,10 @@ export function ChatDock() {
         </AnimatePresence>
       </div>
 
-      {/* Barras minimizadas — no rodapé, à esquerda do launcher */}
+      {/* Barras minimizadas — no rodapé, à esquerda dos lançadores.
+          Mesmo afastamento das janelas acima, pelo mesmo motivo. */}
       {collapsed.length > 0 && (
-        <div className="pointer-events-none absolute bottom-0 right-44 flex flex-row-reverse items-end gap-2">
+        <div className="pointer-events-none absolute bottom-0 right-52 flex flex-row-reverse items-end gap-2">
           {/* Empurra as barras para não ficarem sob as janelas abertas.
               Animado porque a largura muda a cada janela que abre ou fecha —
               sem isso as barras dão um salto no meio da animação da janela. */}

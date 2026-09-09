@@ -624,14 +624,16 @@ export function QuickFab() {
         )}
       </AnimatePresence>
 
-      {/* A base: o botão de recolher à esquerda, o raio à direita.
-          O recolher mora AQUI dentro, e não solto na tela, para se posicionar
-          em relação ao raio sozinho — sem coordenada mágica que precise ser
-          reajustada toda vez que o canto mudar. Ele é o único que nunca some:
-          é por ele que os outros dois voltam. */}
-      <div className="hidden items-end gap-2 lg:flex">
-        <BotaoRecolher recolhido={recolhido} aoAlternar={recolher} />
+      {/* A base: o raio à esquerda, o botão de recolher na BORDA direita.
+          O recolher fica por último de propósito — é ele quem ocupa a coluna
+          da direita, alinhado sob o balão do chat, e é o único que nunca some.
+          Com ele na esquerda, sumir o raio deixava um buraco entre o botão e a
+          borda da tela.
 
+          Ele mora AQUI dentro, e não solto na tela, para se posicionar em
+          relação ao raio sozinho — sem coordenada mágica que precise ser
+          reajustada toda vez que o canto mudar. */}
+      <div className="hidden items-end gap-2 lg:flex">
         <AnimatePresence initial={false}>
           {!recolhido && (
             <motion.button
@@ -666,6 +668,8 @@ export function QuickFab() {
             </motion.button>
           )}
         </AnimatePresence>
+
+        <BotaoRecolher recolhido={recolhido} aoAlternar={recolher} />
       </div>
     </div>
   );
@@ -674,10 +678,11 @@ export function QuickFab() {
 /**
  * O terceiro círculo: recolhe e devolve os outros dois.
  *
- * Menor que os dois de propósito — ele não é uma ação do app, é o controle do
- * canto. Quando tudo está recolhido ele fica sozinho e discreto; quando estão
- * abertos, ele se apaga um pouco para não competir com o raio, e acende no
- * hover.
+ * Mesma família visual dos outros — círculo cheio, cor primária, sombra e anel
+ * —, só que 40px contra 48 do raio e 56 do balão. O tamanho é o que diz a
+ * hierarquia: ele não é uma ação do app, é o controle do canto. Um estilo
+ * diferente (cartão com borda, como estava) fazia parecer outro componente que
+ * tinha ido parar ali por acidente.
  *
  * A seta gira 180° em vez de trocar de ícone: o mesmo elemento apontando para
  * o outro lado diz "isto volta" melhor do que dois desenhos diferentes.
@@ -704,11 +709,7 @@ function BotaoRecolher({
          rótulo; com `items-end` puro, este botão encostaria no rodapé e
          apareceria na altura do texto. A margem também é o que impede o botão
          de pular de lugar quando o raio some. */
-      className={`mb-6 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors ${
-        recolhido
-          ? "text-foreground hover:bg-secondary"
-          : "text-muted-foreground/70 hover:text-foreground hover:bg-secondary"
-      }`}
+      className="mb-6 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition hover:brightness-110"
     >
       <motion.span
         animate={{ rotate: recolhido ? 180 : 0 }}
