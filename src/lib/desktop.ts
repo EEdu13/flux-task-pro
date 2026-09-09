@@ -196,7 +196,21 @@ export async function showIncomingCallWindow(p: {
     const label = `${CALL_WINDOW_LABEL}-${Date.now().toString(36)}`;
     currentCallWindowLabel = label;
     const win = new WebviewWindow(label, {
-      url: `/chamada?${params.toString()}`,
+      /* URL ABSOLUTA, na mesma origem desta janela.
+       *
+       * Era `/chamada?...`, relativa — e o Tauri resolve relativa contra o
+       * protocolo de assets do app, nunca contra a página que está aberta. Como
+       * a janela principal carrega o site no Railway e o pacote (`.output/public`)
+       * só contém assets — o TanStack Start renderiza as páginas no servidor —
+       * ele procurava um arquivo chamado `chamada` dentro do bundle e falhava
+       * com "asset not found: chamada". O card simplesmente não abria, nem no
+       * teste nem numa chamada de verdade.
+       *
+       * `window.location.origin` acerta os três ambientes sem ramificação:
+       * produção (o endereço do Railway), `tauri dev` (localhost:5199) e o
+       * navegador comum. Todos já estão na lista de origens remotas das
+       * capabilities, que é o que permite a janela nova usar a ponte do Tauri. */
+      url: new URL(`/chamada?${params.toString()}`, window.location.origin).toString(),
       width: W,
       height: H,
       x,
