@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "@tanstack/react-router";
 import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip } from "lucide-react";
-import { useFluxo } from "@/lib/fluxo-store";
+import { descartarPendencias, useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
@@ -34,9 +34,6 @@ export function TaskDialog() {
     updateTask,
     deleteTask,
     addComment,
-    addChecklistItem,
-    toggleChecklistItem,
-    removeChecklistItem,
     addTaskAttachments,
     removeTaskAttachment,
     taskDialog,
@@ -70,8 +67,16 @@ export function TaskDialog() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [newComment, setNewComment] = useState("");
   const [newChecklist, setNewChecklist] = useState("");
-  /** Itens montados antes da tarefa existir. Só usado no modo criação. */
-  const [rascunhoChecklist, setRascunhoChecklist] = useState<ChecklistItem[]>([]);
+  /* O checklist enquanto o painel está aberto — nos DOIS modos.
+     Antes só existia na criação; na tarefa já existente cada clique ia direto
+     para a store. O efeito era duplo e ruim: o quadro mostrava o item marcado
+     enquanto o banco não sabia de nada, e ao recarregar a marcação voltava
+     atrás sozinha. Como rascunho, ele acompanha o resto do formulário — sobe
+     junto no Salvar e desaparece junto se a pessoa sair sem salvar. */
+  const [checklistLocal, setChecklistLocal] = useState<ChecklistItem[]>([]);
+  /* A pessoa já mexeu no checklist nesta abertura? Decide se a lista que chega
+     do banco (os satélites vêm ~200ms depois) pode substituir a da tela. */
+  const checklistTocadoRef = useRef(false);
   const [pendingCommentAtts, setPendingCommentAtts] = useState<Attachment[]>([]);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const taskAttInputRef = useRef<HTMLInputElement>(null);
@@ -98,7 +103,7 @@ export function TaskDialog() {
     estimateHM: string;
     tags: string;
     mentions: string[];
-    rascunho: ChecklistItem[];
+    checklist: ChecklistItem[];
   }) =>
     JSON.stringify([
       v.title,
@@ -117,11 +122,21 @@ export function TaskDialog() {
       v.estimateHM,
       v.tags,
       v.mentions,
-      v.rascunho.map((i) => [i.text, i.done]),
+      // Texto e estado, não o id: um item recém-adicionado tem id local
+      // (`ck_...`) e o mesmo item vindo do banco tem GUID. Comparar ids faria
+      // toda tarefa parecer editada logo depois de salvar.
+      v.checklist.map((i) => [i.text, i.done]),
     ]);
 
   /** O formulário como estava ao abrir. Comparar com o atual dá o "sujo". */
   const originalRef = useRef("");
+  /* Os mesmos valores, ainda como objeto. Guardados porque os satélites
+     (etiquetas, menções, dias de recorrência) chegam DEPOIS que o painel abre,
+     e quando chegam a linha de base precisa ser recalculada — senão o
+     formulário nasceria "sujo" sem ninguém ter digitado nada. */
+  const valoresIniciaisRef = useRef<Parameters<typeof chaveDoFormulario>[0] | null>(null);
+  /** Em qual tarefa os satélites já foram aplicados a este formulário. */
+  const satelitesAplicadosRef = useRef<string | null>(null);
 
   /* Só reinicializa ao ABRIR ou ao trocar de tarefa — nunca a cada mudança da
      tarefa em si.
@@ -158,7 +173,7 @@ export function TaskDialog() {
             : "",
           tags: editing.tags.join(", "),
           mentions: editing.mentions,
-          rascunho: [] as ChecklistItem[],
+          checklist: editing.checklist,
         }
       : {
           title: "",
@@ -177,7 +192,7 @@ export function TaskDialog() {
           estimateHM: "",
           tags: "",
           mentions: [] as string[],
-          rascunho: [] as ChecklistItem[],
+          checklist: [] as ChecklistItem[],
         };
 
     setTitle(v.title);
@@ -196,7 +211,10 @@ export function TaskDialog() {
     setEstimateHM(v.estimateHM);
     setTags(v.tags);
     setMentions(v.mentions);
-    if (!editing) setRascunhoChecklist([]);
+    setChecklistLocal(v.checklist);
+    checklistTocadoRef.current = false;
+    valoresIniciaisRef.current = v;
+    satelitesAplicadosRef.current = null;
     originalRef.current = chaveDoFormulario(v);
     // `editing` de propósito fora das dependências: ver o comentário acima.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,11 +227,77 @@ export function TaskDialog() {
     taskDialog.initialDueDate,
   ]);
 
+  /* Os satélites chegam depois do painel abrir — e sem isto o formulário nunca
+     ficava sabendo.
+
+     `openTask` marca o diálogo como aberto na hora e só então busca etiquetas,
+     menções e dias de recorrência no banco. O efeito acima preenche o
+     formulário no primeiro instante, com as listas ainda vazias, e depende do
+     ID da tarefa — então quando os dados chegam, ele não roda de novo. Duas
+     consequências, e a segunda é a séria:
+
+     1. O campo Etiquetas aparecia VAZIO numa tarefa que tem etiquetas. Só na
+        segunda abertura ficava certo, porque aí o dado já estava em memória —
+        o que fazia o problema parecer intermitente.
+     2. Salvar essa tarefa mandava `tags: []` e `mentions: []`. Como a tarefa já
+        conta como hidratada, `salvarSatelites` rodava e APAGAVA etiquetas e
+        menções no banco. É a mesma perda de satélites de antes, entrando pelo
+        formulário em vez da store.
+
+     Só preenche campo que ainda está como nasceu: se a pessoa digitou nos
+     ~200ms entre abrir e o dado chegar, o que ela escreveu manda. A janela é
+     estreita o bastante para o caso contrário (limpar as etiquetas de
+     propósito nesse intervalo e vê-las voltarem) ser teórico. */
+  useEffect(() => {
+    if (!open || !editing?.satellitesLoaded) return;
+    if (satelitesAplicadosRef.current === editing.id) return;
+    satelitesAplicadosRef.current = editing.id;
+
+    const doBanco = {
+      tags: editing.tags.join(", "),
+      mentions: editing.mentions,
+      recurringWeekdays: editing.recurringWeekdays ?? [],
+      checklist: editing.checklist,
+    };
+
+    setTags((atual) => (atual === "" ? doBanco.tags : atual));
+    setMentions((atual) => (atual.length === 0 ? doBanco.mentions : atual));
+    setRecurringWeekdays((atual) => (atual.length === 0 ? doBanco.recurringWeekdays : atual));
+    /* O checklist usa "já mexeu?" em vez de "está vazio?". A diferença aparece
+       em quem abre a tarefa e digita um item nos ~200ms antes do banco
+       responder: a lista deixa de estar vazia, mas ela é do item novo, e
+       trocá-la pela do banco apagaria o que a pessoa acabou de escrever. */
+    if (!checklistTocadoRef.current) setChecklistLocal(doBanco.checklist);
+
+    /* A linha de base acompanha. Sem isto o formulário ficaria "sujo" no
+       instante em que os dados chegam, e fechar sem ter tocado em nada
+       perguntaria se você quer descartar alterações que você não fez. */
+    const base = valoresIniciaisRef.current;
+    if (base) {
+      const atualizada = {
+        ...base,
+        tags: base.tags === "" ? doBanco.tags : base.tags,
+        mentions: base.mentions.length === 0 ? doBanco.mentions : base.mentions,
+        recurringWeekdays:
+          base.recurringWeekdays.length === 0
+            ? doBanco.recurringWeekdays
+            : base.recurringWeekdays,
+        checklist: checklistTocadoRef.current ? base.checklist : doBanco.checklist,
+      };
+      valoresIniciaisRef.current = atualizada;
+      originalRef.current = chaveDoFormulario(atualizada);
+    }
+    // `chaveDoFormulario` é recriada a cada render e não entra nas dependências:
+    // ela é pura e só lê o argumento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing?.id, editing?.satellitesLoaded]);
+
   /* Há edição pendente? Compara o formulário agora com o de quando abriu.
-     Vale só para os campos do formulário: o checklist de uma tarefa que já
-     existe grava direto na store a cada clique, então ele nunca está pendente
-     — e por isso não entra nesta conta. O rascunho de uma tarefa NOVA entra,
-     porque esse só existe aqui e some junto se a pessoa sair. */
+     O checklist entra nesta conta, nos dois modos. Antes ficava de fora, com a
+     justificativa de que "grava direto na store a cada clique" — e essa era a
+     origem do problema, porque a store não é o banco: nem gravava nem avisava.
+     Agora ele é rascunho local como todo o resto, e um item marcado conta como
+     alteração pendente igual a um título mudado. */
   const sujo =
     open &&
     originalRef.current !== "" &&
@@ -234,7 +318,7 @@ export function TaskDialog() {
       estimateHM,
       tags,
       mentions,
-      rascunho: editing ? [] : rascunhoChecklist,
+      checklist: checklistLocal,
     }) !== originalRef.current;
 
   /* Fechar a aba ou a janela com edição pendente.
@@ -266,7 +350,7 @@ export function TaskDialog() {
       if (!sujo) return false;
       const sair = await confirmar({
         titulo: "Deseja sair? Você tem alterações não salvas.",
-        descricao: "As alterações feitas nesta tarefa serão perdidas.",
+        descricao: "As alterações feitas nesta tarefa, checklist incluído, serão perdidas.",
         confirmar: "Sair sem salvar",
         cancelar: "Permanecer",
         perigo: true,
@@ -303,33 +387,34 @@ export function TaskDialog() {
   const canEditContent = !editing || editing.createdBy === currentUser.id;
   const canDelete = !!editing && (editing.createdBy === currentUser.id || currentUser.role === "gerente");
 
-  /* Checklist nos dois modos: editando mexe direto na store, criando acumula no
-     rascunho e vai junto no createTask. A tela é a mesma; só a origem muda. */
-  const itensChecklist = editing ? editing.checklist : rascunhoChecklist;
+  /* Checklist igual nos dois modos: tudo no rascunho local, tudo sobe no
+     Salvar. Antes a tarefa existente mexia direto na store a cada clique —
+     ver a nota em `checklistLocal`. */
+  const itensChecklist = checklistLocal;
 
   const adicionarItemChecklist = () => {
     const texto = newChecklist.trim();
     if (!texto) return;
-    if (editing) addChecklistItem(editing.id, texto);
-    else
-      setRascunhoChecklist((itens) => [
-        ...itens,
-        { id: `rc-${Date.now().toString(36)}-${itens.length}`, text: texto, done: false },
-      ]);
+    checklistTocadoRef.current = true;
+    setChecklistLocal((itens) => [
+      ...itens,
+      // Id só para a chave do React e para os cliques desta sessão. O do banco
+      // nasce no INSERT — por isso a impressão digital compara texto, não id.
+      { id: `rc-${Date.now().toString(36)}-${itens.length}`, text: texto, done: false },
+    ]);
     setNewChecklist("");
   };
 
   const alternarItemChecklist = (itemId: string) => {
-    if (editing) toggleChecklistItem(editing.id, itemId);
-    else
-      setRascunhoChecklist((itens) =>
-        itens.map((c) => (c.id === itemId ? { ...c, done: !c.done } : c)),
-      );
+    checklistTocadoRef.current = true;
+    setChecklistLocal((itens) =>
+      itens.map((c) => (c.id === itemId ? { ...c, done: !c.done } : c)),
+    );
   };
 
   const removerItemChecklist = (itemId: string) => {
-    if (editing) removeChecklistItem(editing.id, itemId);
-    else setRascunhoChecklist((itens) => itens.filter((c) => c.id !== itemId));
+    checklistTocadoRef.current = true;
+    setChecklistLocal((itens) => itens.filter((c) => c.id !== itemId));
   };
 
   const handleTaskFilePick = async (files: FileList | null) => {
@@ -387,6 +472,11 @@ export function TaskDialog() {
 
   const handleSubmit = () => {
     if (!title.trim()) return;
+    /* Descarta a gravação adiada do checklist ANTES de salvar. Ela carrega a
+       tarefa como estava no clique do item; disparando depois desta gravação,
+       devolveria o título antigo. Salvar já escreve a tarefa inteira, checklist
+       incluído — o agendamento não tem mais o que acrescentar. */
+    if (editing) descartarPendencias(editing.id);
     const preserveTitle = editing && editing.createdBy !== currentUser.id;
     const isCreator = !editing || editing.createdBy === currentUser.id;
     const estMinutes = parseHM(estimateHM);
@@ -412,8 +502,11 @@ export function TaskDialog() {
       requireProof: isCreator ? requireProof : !!editing?.requireProof,
       estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
     };
-    if (editing) updateTask(editing.id, payload);
-    else createTask({ ...payload, checklist: rascunhoChecklist });
+    /* O checklist sobe junto, nos dois caminhos. Era o que faltava na tarefa
+       existente: `updateTask` recebia só os campos do formulário, e a lista
+       dependia de ter sido gravada aos poucos por outra via. */
+    if (editing) updateTask(editing.id, { ...payload, checklist: checklistLocal });
+    else createTask({ ...payload, checklist: checklistLocal });
     /* Salvou: não há mais nada pendente. Zerar aqui é o que permite fechar sem
        o diálogo perguntar, e evita que o bloqueio de rota dispare na navegação
        logo em seguida. */
@@ -471,14 +564,13 @@ export function TaskDialog() {
                 { id: "detalhes", label: "Detalhes", icon: null },
                 {
                   id: "checklist",
+                  /* Conta o rascunho, não a store: com o checklist pendente,
+                     ler de `editing` mostraria o número de antes das edições
+                     que estão na tela agora. */
                   label: `Checklist${
-                    editing
-                      ? editing.checklist.length
-                        ? ` (${editing.checklist.filter((c) => c.done).length}/${editing.checklist.length})`
-                        : ""
-                      : rascunhoChecklist.length
-                        ? ` (${rascunhoChecklist.length})`
-                        : ""
+                    checklistLocal.length
+                      ? ` (${checklistLocal.filter((c) => c.done).length}/${checklistLocal.length})`
+                      : ""
                   }`,
                   icon: ListChecks,
                 },

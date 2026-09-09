@@ -389,6 +389,80 @@ function avisarFalha(t: Task): void {
   );
 }
 
+/* ————— Gravação adiada (checklist fora do painel) —————
+ *
+ * Marcar item de checklist não gravava NADA. As três ações abaixo só chamavam
+ * `setState`, e o painel de tarefa desligava o aviso de "alterações não salvas"
+ * justamente por acreditar que elas gravavam — "grava direto na store" era
+ * verdade, mas a store não é o banco. Nem salvava nem avisava, e o item vivia
+ * só na memória do navegador até alguém recarregar.
+ *
+ * O banco contava a história: dos 11 itens gravados, 11 estavam marcados e
+ * NENHUM em aberto. Não é que nascessem prontos — é que a lista só chegava lá
+ * de carona numa gravação disparada por outra coisa, e a essa altura a pessoa
+ * já tinha trabalhado nela. Item criado e deixado em aberto não sobrevivia.
+ *
+ * Quem usa isto hoje é o MODO FOCO, e é por causa dele que a gravação
+ * automática existe: lá se marca item no meio do pomodoro e não há botão de
+ * salvar em lugar nenhum. No painel de tarefa a decisão foi a oposta — o
+ * checklist é rascunho local e sobe junto no Salvar, com tudo mais —, então o
+ * painel não passa por aqui.
+ *
+ * Adiado, e não imediato, porque `salvarSatelites` APAGA e reinsere a lista
+ * inteira a cada gravação: marcar cinco itens seguidos viraria cinco ciclos de
+ * DELETE + INSERT. Guarda a versão mais recente e grava uma vez, quando a mão
+ * parar. Falha cai em `avisarFalha`, com o aviso que não some e o botão de
+ * tentar de novo. */
+const ADIAMENTO_MS = 700;
+const gravacoesAdiadas = new Map<string, { timer: number; tarefa: Task }>();
+
+function agendarGravacao(t: Task): void {
+  if (typeof window === "undefined") return;
+  const anterior = gravacoesAdiadas.get(t.id);
+  if (anterior) window.clearTimeout(anterior.timer);
+  const timer = window.setTimeout(() => {
+    // Lê do mapa, não do fecho: o timer que sobrevive é o último agendado, e é
+    // a tarefa dele que vale.
+    const alvo = gravacoesAdiadas.get(t.id);
+    gravacoesAdiadas.delete(t.id);
+    if (alvo) void gravarTarefa(alvo.tarefa);
+  }, ADIAMENTO_MS);
+  gravacoesAdiadas.set(t.id, { timer, tarefa: t });
+}
+
+/**
+ * Grava agora o que estava adiado.
+ *
+ * Chamado ao fechar o painel de tarefa. Sem isto, marcar um item e fechar no
+ * mesmo segundo deixaria a gravação no ar — e uma navegação em seguida
+ * desmonta a árvore e leva o timer junto.
+ */
+export function gravarPendencias(): void {
+  const pendentes = [...gravacoesAdiadas.values()];
+  gravacoesAdiadas.clear();
+  for (const p of pendentes) {
+    if (typeof window !== "undefined") window.clearTimeout(p.timer);
+    void gravarTarefa(p.tarefa);
+  }
+}
+
+/**
+ * Esquece o que estava adiado para UMA tarefa, sem gravar.
+ *
+ * Serve a um caso só, e ele é uma corrida real: marcar um item de checklist
+ * agenda a gravação da tarefa como ela está AGORA; se a pessoa mudar o título
+ * e salvar dentro dos 700ms, `updateTask` grava a versão nova e o timer
+ * dispara em seguida com a versão velha — o título voltaria sozinho. Quem
+ * salva escreve a tarefa inteira, checklist incluído, então o agendamento não
+ * tem mais nada a acrescentar.
+ */
+export function descartarPendencias(taskId: string): void {
+  const p = gravacoesAdiadas.get(taskId);
+  if (!p) return;
+  if (typeof window !== "undefined") window.clearTimeout(p.timer);
+  gravacoesAdiadas.delete(taskId);
+}
+
 /**
  * Manda a tarefa inteira para o banco.
  *
@@ -1281,45 +1355,55 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       }));
     },
 
+    /* As três ações abaixo agendam a gravação além de mexer na store.
+       Antes só mexiam na store, e o item nunca chegava ao banco por conta
+       própria — ver a nota em `agendarGravacao`. O agendamento sai de dentro do
+       `setState` pelo mesmo motivo de `updateTask`: é aqui que existe a tarefa
+       JÁ com a mudança aplicada, e `gravarTarefa` precisa do objeto inteiro. */
     addChecklistItem: (taskId, text) => {
       if (!text.trim()) return;
       setState((s) => ({
         ...s,
-        tasks: s.tasks.map((t) =>
-          t.id === taskId
-            ? pushActivity(
-                {
-                  ...t,
-                  checklist: [...t.checklist, { id: rid("ck"), text: text.trim(), done: false }],
-                },
-                { kind: "checklist", userId: currentUser.id, text: `adicionou "${text.trim()}"` },
-                currentUser.id,
-              )
-            : t,
-        ),
+        tasks: s.tasks.map((t) => {
+          if (t.id !== taskId) return t;
+          const proxima = pushActivity(
+            {
+              ...t,
+              checklist: [...t.checklist, { id: rid("ck"), text: text.trim(), done: false }],
+            },
+            { kind: "checklist", userId: currentUser.id, text: `adicionou "${text.trim()}"` },
+            currentUser.id,
+          );
+          agendarGravacao(proxima);
+          return proxima;
+        }),
       }));
     },
 
     toggleChecklistItem: (taskId, itemId) => {
       setState((s) => ({
         ...s,
-        tasks: s.tasks.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                checklist: t.checklist.map((c) => (c.id === itemId ? { ...c, done: !c.done } : c)),
-              }
-            : t,
-        ),
+        tasks: s.tasks.map((t) => {
+          if (t.id !== taskId) return t;
+          const proxima = {
+            ...t,
+            checklist: t.checklist.map((c) => (c.id === itemId ? { ...c, done: !c.done } : c)),
+          };
+          agendarGravacao(proxima);
+          return proxima;
+        }),
       }));
     },
 
     removeChecklistItem: (taskId, itemId) => {
       setState((s) => ({
         ...s,
-        tasks: s.tasks.map((t) =>
-          t.id === taskId ? { ...t, checklist: t.checklist.filter((c) => c.id !== itemId) } : t,
-        ),
+        tasks: s.tasks.map((t) => {
+          if (t.id !== taskId) return t;
+          const proxima = { ...t, checklist: t.checklist.filter((c) => c.id !== itemId) };
+          agendarGravacao(proxima);
+          return proxima;
+        }),
       }));
     },
 

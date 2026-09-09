@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, X, CheckCircle2, Coffee } from "lucide-react";
-import { useFluxo } from "@/lib/fluxo-store";
+import { gravarPendencias, useFluxo } from "@/lib/fluxo-store";
 import { addFocusEntry } from "@/lib/focus-log";
 import { toast } from "sonner";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -57,6 +57,11 @@ export function FocusOverlay() {
   const finish = useCallback(
     (completed: boolean) => {
       if (!taskId) return;
+      /* Marcar item aqui agenda a gravação com 700ms de espera, para cinco
+         cliques seguidos não virarem cinco ciclos de DELETE + INSERT no
+         checklist. Encerrar o foco no mesmo segundo deixaria a última no ar —
+         o overlay desmonta e leva o timer junto. */
+      gravarPendencias();
       const totalElapsed =
         accumRef.current +
         (startedRef.current ? Math.floor((Date.now() - startedRef.current) / 1000) : 0);
