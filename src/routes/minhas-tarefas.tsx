@@ -30,6 +30,7 @@ import { startFocus } from "@/components/focus-overlay";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import { UserAvatar } from "@/components/user-avatar";
 import { CampoData } from "@/components/campo-data";
+import { FiltroPessoa } from "@/components/filtro-pessoa";
 import {
   freqLabels,
   sectors,
@@ -260,6 +261,38 @@ function MinhasTarefas() {
 
   const allTags = useMemo(() => Array.from(new Set(tasks.flatMap((t) => t.tags))), [tasks]);
 
+  /* Quem pode aparecer no filtro de pessoa.
+     Sai das tarefas que passam pelo RECORTE DE PAPEL, e só por ele. Não pode
+     sair de `visible`, que é o resultado já filtrado: escolher alguém deixaria
+     `visible` com as tarefas dessa pessoa, a lista encolheria para um nome e
+     não haveria como trocar de pessoa sem antes limpar o filtro.
+
+     Também não sai de `users`: oferecer gente para quem não existe nenhuma
+     tarefa visível daria um filtro que só sabe devolver vazio, e o menu viraria
+     um caminho para descobrir quem a tela não mostraria de outro jeito. */
+  const pessoasFiltraveis = useMemo(() => {
+    const ids = new Set<string>();
+    for (const t of tasks) {
+      if (currentUser.role === "adm") {
+        const meu =
+          t.assigneeId === currentUser.id ||
+          t.createdBy === currentUser.id ||
+          t.mentions.includes(currentUser.id);
+        if (!meu) continue;
+      } else if (currentUser.role === "supervisor") {
+        const time = users.filter((u) => u.supervisorId === currentUser.id).map((u) => u.id);
+        time.push(currentUser.id);
+        const doTime =
+          time.includes(t.assigneeId) ||
+          time.includes(t.createdBy) ||
+          t.mentions.includes(currentUser.id);
+        if (!doTime) continue;
+      }
+      ids.add(t.assigneeId);
+    }
+    return users.filter((u) => ids.has(u.id));
+  }, [tasks, users, currentUser]);
+
   return (
     <FluxoLayout title="Minhas tarefas">
       <div className="mx-auto max-w-7xl">
@@ -380,6 +413,20 @@ function MinhasTarefas() {
                 className="bg-secondary py-1 text-xs"
               />
             </div>
+          )}
+          {/* Filtro por pessoa. O estado `assignee` já existia e já era
+              aplicado logo acima — o que faltava era o controle, então
+              `setAssignee` nunca era chamado e a opção não tinha como ser
+              alcançada.
+
+              Só para quem enxerga mais de uma pessoa: para um colaborador, a
+              lista teria um nome só (o dele) e o filtro não filtraria nada. */}
+          {pessoasFiltraveis.length > 1 && (
+            <FiltroPessoa
+              pessoas={pessoasFiltraveis}
+              valor={assignee}
+              aoEscolher={setAssignee}
+            />
           )}
           <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
         </div>
