@@ -98,6 +98,14 @@ export const chatConversation = createServerFn({ method: "POST" })
     const pool = await getPool();
     // Como toda linha devolvida tem `@me` numa das duas pontas, e `@me` é
     // imposto pelo servidor, ninguém lê uma conversa da qual não participa.
+    /* Duas consultas num comando só, de propósito.
+       O "está digitando" precisa da mesma frequência das mensagens para fazer
+       sentido, e a conversa já sonda de 1,5 em 1,5 segundo. Pendurar aqui é o
+       que evita criar um segundo relógio — e mais um relógio era exatamente o
+       que não podia acontecer: os intervalos deste app estão calibrados para a
+       latência Brasil↔EUA e não se mexe neles. Como resultado, o indicador não
+       custa NENHUMA requisição a mais, só um EXISTS numa tabela de uma linha
+       por pessoa. */
     const res = await pool
       .request()
       .input("me", sql.Int, eu)
@@ -129,10 +137,24 @@ export const chatConversation = createServerFn({ method: "POST" })
            ) a
           WHERE (m.de_pessoa_id=@me AND m.para_pessoa_id=@peer)
              OR (m.de_pessoa_id=@peer AND m.para_pessoa_id=@me)
-          ORDER BY m.em DESC`,
+          ORDER BY m.em DESC;
+
+         -- Digitando: a marca vale 6 segundos. O cliente reavisa a cada 2,5s
+         -- enquanto a pessoa escreve, então a janela cobre um aviso perdido sem
+         -- deixar o indicador aceso depois que ela parou. A comparação
+         -- digitando_para = @me é o que impede alguém aparecer "digitando"
+         -- numa conversa em que está escrevendo para outra pessoa.
+         SELECT CASE WHEN EXISTS (
+                  SELECT 1 FROM gestor.presenca
+                   WHERE pessoa_id = @peer
+                     AND digitando_para = @me
+                     AND digitando_em > DATEADD(second, -6, SYSDATETIMEOFFSET())
+                ) THEN 1 ELSE 0 END AS digitando;`,
       );
     // devolve em ordem cronológica
     return {
+      peerDigitando:
+        ((res.recordsets as unknown as { digitando: number }[][])[1]?.[0]?.digitando ?? 0) === 1,
       messages: (res.recordset as LinhaMensagem[]).reverse().map((m) => ({
         ...m,
         // A interface compara com `User.id`, que é string no app inteiro.
@@ -247,6 +269,41 @@ export const presenceHeartbeat = createServerFn({ method: "POST" }).handler(asyn
     );
   return { ok: true };
 });
+
+/**
+ * "Estou escrevendo para fulano agora."
+ *
+ * `UPDATE` puro, sem o `IF EXISTS ... ELSE INSERT` do heartbeat: quem está com
+ * o chat aberto já bateu o heartbeat, então a linha existe. Se por acaso não
+ * existir, o update não afeta nada e o indicador simplesmente não acende — o
+ * lado certo de falhar, porque um indicador a menos é invisível e um a mais é
+ * uma mentira na tela de outra pessoa.
+ *
+ * Não há "parei de digitar": a marca envelhece sozinha em 6 segundos (ver a
+ * consulta em `chatConversation`). Um aviso explícito de parada seria mais uma
+ * requisição para dizer o que o relógio já diz — e ela se perderia justamente
+ * no caso que importa, o de fechar a janela no meio da frase.
+ */
+export const chatDigitando = createServerFn({ method: "POST" })
+  .inputValidator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
+  .handler(async ({ data }) => {
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    const eu = await pessoaDaSessao();
+    if (eu === data.peerId) return { ok: true };
+
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("me", sql.Int, eu)
+      .input("peer", sql.Int, data.peerId)
+      .query(
+        `UPDATE gestor.presenca
+            SET digitando_para = @peer, digitando_em = SYSDATETIMEOFFSET()
+          WHERE pessoa_id = @me`,
+      );
+    return { ok: true };
+  });
 
 export const presenceList = createServerFn({ method: "POST" }).handler(async () => {
   const { getPool } = await import("@/integrations/db.server");

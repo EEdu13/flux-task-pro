@@ -236,10 +236,31 @@ export function useChat() {
   return ctx;
 }
 
-/** Hook de conversa: busca e sonda as mensagens com um contato. */
-export function useConversation(peerId: string | null) {
+/**
+ * Hook de conversa: busca e sonda as mensagens com um contato.
+ *
+ * Devolve array por compatibilidade — dezenas de linhas fazem `messages.map` e
+ * `messages.length` direto. O "está digitando" entra como propriedade do mesmo
+ * array (`.peerDigitando`), que é o formato que não obriga a mexer em quem só
+ * quer as mensagens.
+ */
+export type Conversa = MensagemDaConversa[] & { peerDigitando: boolean };
+
+type MensagemDaConversa = {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  body: string | null;
+  att_name: string | null;
+  att_type: string | null;
+  att_data: string | null;
+  created_at: string;
+};
+
+export function useConversation(peerId: string | null): Conversa {
   const { currentUser } = useFluxo();
   const { pulse } = useChat();
+  const [digitando, setDigitando] = useState(false);
   const [messages, setMessages] = useState<
     {
       id: string;
@@ -258,6 +279,7 @@ export function useConversation(peerId: string | null) {
   useEffect(() => {
     if (!peerId || !meId) {
       setMessages([]);
+      setDigitando(false);
       return;
     }
     let cancelled = false;
@@ -265,13 +287,16 @@ export function useConversation(peerId: string | null) {
       try {
         const { chatConversation } = await import("@/lib/chat.functions");
         const res = await chatConversation({ data: { peerId } });
-        if (!cancelled) setMessages(res.messages ?? []);
+        if (cancelled) return;
+        setMessages(res.messages ?? []);
+        setDigitando(res.peerDigitando === true);
       } catch {
         /* ignore */
       }
     };
     if (seenPeer.current !== peerId) {
       setMessages([]);
+      setDigitando(false);
       seenPeer.current = peerId;
     }
     void load();
@@ -282,5 +307,14 @@ export function useConversation(peerId: string | null) {
     };
   }, [peerId, meId, pulse]);
 
-  return messages;
+  /* O array e a marca viajam juntos porque a tela precisa dos dois no mesmo
+     instante: mostrar "digitando" embaixo de uma lista de mensagens de outra
+     conversa seria pior que não mostrar nada. `useMemo` para a identidade do
+     array não mudar a cada render — `MessageList` rola até o fim quando
+     `messages.length` muda, e um array novo a cada render remontaria isso. */
+  return useMemo(() => {
+    const lista = messages.slice() as Conversa;
+    lista.peerDigitando = digitando;
+    return lista;
+  }, [messages, digitando]);
 }

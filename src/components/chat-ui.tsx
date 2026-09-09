@@ -50,9 +50,11 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
   const messages = useConversation(peerId);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Também quando o balão de "digitando" aparece: ele nasce no fim da lista e,
+  // numa conversa já rolada até embaixo, surgiria fora de vista.
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+  }, [messages.length, messages.peerDigitando]);
 
   return (
     <div className={`flex flex-1 flex-col gap-1.5 overflow-y-auto ${compact ? "p-2" : "p-4"}`}>
@@ -103,7 +105,41 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
           </div>
         );
       })}
+      {messages.peerDigitando && <BalaoDigitando />}
       <div ref={endRef} />
+    </div>
+  );
+}
+
+/**
+ * Os três pontinhos.
+ *
+ * Desenhado como um balão de mensagem recebida — mesmo canto, mesma cor, mesma
+ * borda — porque é isso que ele anuncia: a mensagem que está vindo. Um aviso em
+ * texto ("Fulano está digitando") ocuparia uma linha inteira e envelheceria mal
+ * quando a pessoa parasse no meio.
+ *
+ * `aria-live="polite"` para quem usa leitor de tela ouvir o aviso sem ter o
+ * foco roubado; os pontos em si ficam escondidos da leitura, que é o texto do
+ * `sr-only` que vale.
+ */
+function BalaoDigitando() {
+  return (
+    <div className="flex justify-start" aria-live="polite">
+      <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-secondary px-3 py-2.5 shadow-sm">
+        <span className="sr-only">Digitando…</span>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="fluxo-ponto-digitando h-1.5 w-1.5 rounded-full bg-muted-foreground"
+            // Atraso NEGATIVO: cada ponto entra já adiantado no ciclo, então a
+            // onda existe no primeiro quadro. Positivo deixaria os três parados
+            // esperando a vez na primeira volta.
+            style={{ animationDelay: `${-1.2 + i * 0.16}s` }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -117,6 +153,29 @@ export function Composer({ peerId }: { peerId: string }) {
   const [pending, setPending] = useState<{ name: string; type: string; dataUrl: string } | null>(null);
   const [sending, setSending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const campoRef = useRef<HTMLTextAreaElement>(null);
+
+  /* Pronto para digitar assim que a conversa abre.
+     Depende de `peerId` e não de `[]`: trocar de contato remonta o conteúdo mas
+     não o componente, e sem a dependência o foco ficaria na primeira conversa
+     aberta da sessão. */
+  useEffect(() => {
+    campoRef.current?.focus();
+  }, [peerId]);
+
+  /* Aviso de "estou digitando", no máximo uma vez a cada 2,5s.
+     Sem a trava seria uma requisição por TECLA. A janela que o servidor usa
+     para considerar o aviso válido é de 6 segundos — mais que o dobro deste
+     intervalo — então um aviso perdido no caminho não apaga o indicador. */
+  const ultimoAviso = useRef(0);
+  const avisarDigitando = () => {
+    const agora = Date.now();
+    if (agora - ultimoAviso.current < 2500) return;
+    ultimoAviso.current = agora;
+    void import("@/lib/chat.functions")
+      .then((m) => m.chatDigitando({ data: { peerId } }))
+      .catch(() => {});
+  };
 
   const send = async () => {
     if (sending) return;
@@ -130,6 +189,9 @@ export function Composer({ peerId }: { peerId: string }) {
       toast.error("Não foi possível enviar");
     } finally {
       setSending(false);
+      // O clique no botão de enviar tira o foco do campo; devolver é o que
+      // permite escrever a próxima sem voltar ao mouse.
+      campoRef.current?.focus();
     }
   };
 
@@ -203,8 +265,13 @@ export function Composer({ peerId }: { peerId: string }) {
           }}
         />
         <textarea
+          ref={campoRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            // Só quando há o que escrever: apagar a frase inteira não é digitar.
+            if (e.target.value.trim()) avisarDigitando();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

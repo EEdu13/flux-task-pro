@@ -1206,6 +1206,44 @@ html.fluxo-apresentando.tauri-app body {
   background-color: var(--background);
 }
 
+/* ————— "Fulano está digitando" ————— */
+/* Três pontos com a MESMA animação e atrasos negativos diferentes: começam já
+   adiantadas, cada uma num ponto do ciclo, e a onda sai pronta no primeiro
+   quadro. Com atraso positivo os três ficariam parados esperando a vez.
+   Deslocamento de 3px e opacidade parcial de propósito — é um sinal de canto de
+   tela, não um elemento que disputa atenção com a conversa. */
+@keyframes fluxo-digitando {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.fluxo-ponto-digitando {
+  animation: fluxo-digitando 1.2s infinite ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Sem salto, mas o sinal continua existindo: os pontos pulsam só em opacidade. */
+  .fluxo-ponto-digitando {
+    animation-name: fluxo-digitando-suave;
+  }
+  @keyframes fluxo-digitando-suave {
+    0%,
+    60%,
+    100% {
+      opacity: 0.45;
+    }
+    30% {
+      opacity: 1;
+    }
+  }
+}
+
 /* ————— Chamar atenção (MSN-style nudge) ————— */
 @keyframes fluxo-shake {
   0%,
