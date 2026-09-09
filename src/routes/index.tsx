@@ -74,7 +74,10 @@ function Home() {
     [users, currentUser.role, currentUser.sector],
   );
 
-  // Team-wide pack overview (how everyone's pack looks in size)
+  /* Packs do time. Sem corte, pelo mesmo motivo do ranking logo abaixo: numa
+     equipe de seis, um "top 5" some com uma pessoa real e parece que ela não é
+     do time. O `filter` continua — quem não montou pack não tem o que mostrar
+     aqui, e isso é ausência de dado, não posição na lista. */
   const teamPack = useMemo(() => {
     return pessoasDoTime
       .map((u) => {
@@ -82,8 +85,7 @@ function Home() {
         return { user: u, total: items.length };
       })
       .filter((x) => x.total > 0)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
+      .sort((a, b) => b.total - a.total);
   }, [pessoasDoTime, tasks]);
 
   const myTasks = tasks.filter((t) => t.assigneeId === currentUser.id);
@@ -135,6 +137,22 @@ function Home() {
     }
     return m;
   }, [pessoasDoTime, tasks, completions]);
+  /* O time INTEIRO, sem corte.
+   *
+   * Havia um `.slice(0, 5)` aqui, e ele produzia um efeito que não parecia um
+   * corte: quem tem ZERO tarefas atribuídas vai para o fim da ordenação (as
+   * três primeiras comparações abaixo), então a pessoa cortada era sempre a que
+   * não tinha tarefa nenhuma. Numa equipe de seis, ela simplesmente não
+   * aparecia na lista do próprio setor — e a leitura natural disso é "ela não
+   * é do meu time", não "ela ficou em sexto".
+   *
+   * A seção se chama "Ranking do time", não "Top 5". Com o setor inteiro na
+   * tela, quem não tem tarefa aparece com "—" no lugar do número, que é a
+   * informação certa: não é nota baixa, é ausência de nota.
+   *
+   * A lista rola em vez de crescer sem limite — para a gerência, "time" é a
+   * empresa toda.
+   */
   const ranking = useMemo(
     () =>
       [...pessoasDoTime].sort((a, b) => {
@@ -144,7 +162,7 @@ function Home() {
         if (sa.assigned === 0) return 1;
         if (sb.assigned === 0) return -1;
         return sb.pct - sa.pct;
-      }).slice(0, 5),
+      }),
     [pessoasDoTime, userPct],
   );
 
@@ -312,7 +330,7 @@ function Home() {
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Quem já definiu seus compromissos diários.
               </p>
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-3 max-h-96 space-y-2 overflow-y-auto">
                 {teamPack.length === 0 && (
                   <li className="py-4 text-center text-xs text-muted-foreground">
                     Ninguém montou o pack ainda.
@@ -445,7 +463,7 @@ function Home() {
               <Trophy className="h-4 w-4 text-primary" />
               <h2 className="text-sm font-semibold">Ranking do time</h2>
             </div>
-            <ul className="mt-3 divide-y divide-border">
+            <ul className="mt-3 max-h-96 divide-y divide-border overflow-y-auto">
               {ranking.map((u, i) => {
                 const s = userPct.get(u.id) ?? { pct: 0, assigned: 0 };
                 return (
