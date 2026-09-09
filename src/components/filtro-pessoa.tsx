@@ -1,23 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, Search, UserRound, X } from "lucide-react";
+import { Check, Users2 } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
-import type { User } from "@/lib/fluxo-types";
+import { sectors, type User } from "@/lib/fluxo-types";
 
 /**
- * Filtro por pessoa — compacto, com busca.
+ * Filtro por pessoa em dois níveis: setores em cima, pessoas embaixo.
  *
- * O estado `assignee` já existia na tela de tarefas e já era aplicado no
- * filtro; o que não existia era o controle, então `setAssignee` nunca era
- * chamado e a opção era inalcançável. Isto é a peça que faltava.
+ * Era um menu suspenso com busca. Virou um bloco aberto porque o caminho real
+ * é "quero ver as tarefas de alguém do financeiro" — e escolher primeiro o
+ * setor corta a lista de rostos antes de ela virar uma parede. Com a lista
+ * exposta, escolher alguém é um clique, não abrir-procurar-clicar.
  *
- * Botão estreito em vez de uma fila de avatares: a lista cresce com a empresa,
- * e uma fila fixa ou estoura a linha ou esconde justamente quem se procura. Com
- * a busca dentro, achar alguém em 6 ou em 400 custa o mesmo.
+ * Foto e não sigla: reconhecer alguém por "LP" exige decorar; o rosto se
+ * reconhece sozinho. É a mesma decisão já tomada nos cartões de tarefa.
  *
- * Fechado, mostra o rosto e o primeiro nome de quem está selecionado — quem
- * volta à tela precisa enxergar o recorte ativo sem abrir nada, senão a lista
- * curta parece dado faltando.
+ * A linha de setores só aparece quando há mais de um — para quem enxerga só o
+ * próprio setor, ela seria uma fileira de um botão só, dizendo o óbvio.
  */
 export function FiltroPessoa({
   pessoas,
@@ -29,158 +28,168 @@ export function FiltroPessoa({
   valor: string;
   aoEscolher: (valor: string) => void;
 }) {
-  const [aberto, setAberto] = useState(false);
-  const [busca, setBusca] = useState("");
-  const raizRef = useRef<HTMLDivElement>(null);
-  const buscaRef = useRef<HTMLInputElement>(null);
+  const [setor, setSetor] = useState<string>("todos");
 
-  const selecionada = pessoas.find((p) => p.id === valor);
+  /* Só os setores que têm gente nesta lista. A lista fixa tem 17 e a maioria
+     não tem ninguém aqui — botão que só sabe esvaziar a tela não é filtro. */
+  const setoresPresentes = useMemo(() => {
+    const ids = new Set(pessoas.map((p) => p.sector));
+    return sectors.filter((s) => ids.has(s.id));
+  }, [pessoas]);
 
-  useEffect(() => {
-    if (!aberto) return;
-    // Foco na busca ao abrir: quem clicou já sabe quem procura.
-    buscaRef.current?.focus();
-    const aoClicarFora = (e: MouseEvent) => {
-      if (!raizRef.current?.contains(e.target as Node)) setAberto(false);
-    };
-    const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAberto(false);
-    };
-    document.addEventListener("mousedown", aoClicarFora);
-    document.addEventListener("keydown", aoTeclar);
-    return () => {
-      document.removeEventListener("mousedown", aoClicarFora);
-      document.removeEventListener("keydown", aoTeclar);
-    };
-  }, [aberto]);
-
-  const filtradas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
+  const visiveis = useMemo(() => {
     const lista = [...pessoas].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-    return q ? lista.filter((p) => p.name.toLowerCase().includes(q)) : lista;
-  }, [pessoas, busca]);
+    return setor === "todos" ? lista : lista.filter((p) => p.sector === setor);
+  }, [pessoas, setor]);
 
-  const escolher = (v: string) => {
-    aoEscolher(v);
-    setAberto(false);
-    setBusca("");
+  /* Trocar de setor limpa a pessoa escolhida se ela não pertence ao novo
+     recorte. Sem isto, filtrar por alguém da TI e depois clicar em Financeiro
+     deixaria a tela mostrando as tarefas de uma pessoa que sumiu da lista —
+     um filtro ativo e invisível, que é o pior tipo. */
+  const escolherSetor = (novo: string) => {
+    setSetor(novo);
+    if (valor === "todos") return;
+    const escolhida = pessoas.find((p) => p.id === valor);
+    if (novo !== "todos" && escolhida && escolhida.sector !== novo) aoEscolher("todos");
   };
 
   return (
-    <div ref={raizRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setAberto((v) => !v)}
-        title="Filtrar por pessoa"
-        className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition ${
-          selecionada
-            ? "border-primary/50 bg-primary/10 text-foreground"
-            : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        {selecionada ? (
-          <>
-            <UserAvatar
-              nome={selecionada.name}
-              iniciais={selecionada.avatar}
-              className="h-5 w-5 text-[9px]"
+    <div className="rounded-lg border border-border bg-secondary/30 p-2">
+      {setoresPresentes.length > 1 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Setor
+          </span>
+          <ChipSetor
+            id="todos"
+            rotulo="Todos"
+            ativo={setor === "todos"}
+            aoClicar={() => escolherSetor("todos")}
+          />
+          {setoresPresentes.map((s) => (
+            <ChipSetor
+              key={s.id}
+              id={s.id}
+              rotulo={s.name}
+              cor={s.color}
+              ativo={setor === s.id}
+              aoClicar={() => escolherSetor(s.id)}
             />
-            <span className="max-w-28 truncate">{selecionada.name.split(" ")[0]}</span>
-            {/* Limpar sem abrir a lista. É `<span>` e não `<button>` de
-                propósito: botão dentro de botão é HTML inválido e o navegador
-                desmonta a árvore de um jeito imprevisível. */}
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label="Limpar filtro de pessoa"
-              onClick={(e) => {
-                e.stopPropagation();
-                escolher("todos");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  escolher("todos");
-                }
-              }}
-              className="rounded p-0.5 hover:bg-secondary"
+          ))}
+        </div>
+      )}
+
+      {/* `layout` em cada chip: quando o setor muda, quem fica desliza para a
+          posição nova em vez de saltar. O AnimatePresence cuida de quem entra e
+          de quem sai, e `popLayout` tira quem está saindo do fluxo na hora —
+          sem isso, os que ficam só se reorganizam depois da saída terminar, e o
+          movimento sai em duas etapas. */}
+      <motion.div layout className="flex flex-wrap items-center gap-1.5">
+        <BotaoPessoa
+          rotulo="Todas as pessoas"
+          ativo={valor === "todos"}
+          aoClicar={() => aoEscolher("todos")}
+        />
+        <AnimatePresence mode="popLayout" initial={false}>
+          {visiveis.map((p) => (
+            <motion.button
+              key={p.id}
+              layout
+              type="button"
+              onClick={() => aoEscolher(valor === p.id ? "todos" : p.id)}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.6 }}
+              title={`${p.name}${p.jobTitle ? ` · ${p.jobTitle}` : ""}`}
+              className={`flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs transition-colors ${
+                valor === p.id
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-card text-foreground hover:border-primary/50"
+              }`}
             >
-              <X className="h-3 w-3" />
-            </span>
-          </>
-        ) : (
-          <>
-            <UserRound className="h-3.5 w-3.5" />
-            Pessoa
-            <ChevronDown className="h-3 w-3 opacity-60" />
-          </>
-        )}
-      </button>
+              <UserAvatar nome={p.name} iniciais={p.avatar} className="h-6 w-6 text-[9px]" />
+              <span className="max-w-32 truncate font-medium">{p.name.split(" ")[0]}</span>
+              {valor === p.id && <Check className="h-3 w-3" />}
+            </motion.button>
+          ))}
+        </AnimatePresence>
+      </motion.div>
 
-      <AnimatePresence>
-        {aberto && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.14, ease: "easeOut" }}
-            style={{ transformOrigin: "top left" }}
-            className="absolute left-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl"
-          >
-            <div className="flex items-center gap-1.5 border-b border-border px-2.5 py-2">
-              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <input
-                ref={buscaRef}
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Buscar pessoa…"
-                className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-              />
-            </div>
-
-            <div className="max-h-64 overflow-y-auto py-1">
-              <button
-                type="button"
-                onClick={() => escolher("todos")}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-secondary"
-              >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                  <UserRound className="h-3.5 w-3.5" />
-                </span>
-                <span className="flex-1">Todas as pessoas</span>
-                {valor === "todos" && <Check className="h-3.5 w-3.5 text-primary" />}
-              </button>
-
-              {filtradas.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => escolher(p.id)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition hover:bg-secondary"
-                >
-                  <UserAvatar nome={p.name} iniciais={p.avatar} className="h-6 w-6 text-[9px]" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{p.name}</span>
-                    {p.jobTitle && (
-                      <span className="block truncate text-[10px] text-muted-foreground">
-                        {p.jobTitle}
-                      </span>
-                    )}
-                  </span>
-                  {valor === p.id && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                </button>
-              ))}
-
-              {filtradas.length === 0 && (
-                <p className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
-                  Ninguém com esse nome.
-                </p>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {visiveis.length === 0 && (
+        <p className="py-2 text-center text-[11px] text-muted-foreground">
+          Ninguém deste setor tem tarefa visível para você.
+        </p>
+      )}
     </div>
+  );
+}
+
+function ChipSetor({
+  id,
+  rotulo,
+  cor,
+  ativo,
+  aoClicar,
+}: {
+  id: string;
+  rotulo: string;
+  cor?: string;
+  ativo: boolean;
+  aoClicar: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={aoClicar}
+      className={`relative flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+        ativo ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {ativo && (
+        // Um único fundo deslizando entre os setores — mesmo recurso do item
+        // ativo da sidebar. Trocar de setor move a marca, não pisca duas.
+        <motion.span
+          layoutId="filtro-setor-ativo"
+          className="absolute inset-0 rounded-full bg-primary"
+          transition={{ type: "spring", stiffness: 400, damping: 33 }}
+        />
+      )}
+      {cor ? (
+        <span
+          className="relative h-2 w-2 shrink-0 rounded-full"
+          style={{ background: ativo ? "currentColor" : cor }}
+        />
+      ) : (
+        <Users2 className="relative h-3 w-3 shrink-0" />
+      )}
+      <span className="relative whitespace-nowrap">{rotulo}</span>
+      <span className="sr-only">{id}</span>
+    </button>
+  );
+}
+
+function BotaoPessoa({
+  rotulo,
+  ativo,
+  aoClicar,
+}: {
+  rotulo: string;
+  ativo: boolean;
+  aoClicar: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={aoClicar}
+      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+        ativo
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+      }`}
+    >
+      <Users2 className="h-3.5 w-3.5" />
+      {rotulo}
+    </button>
   );
 }

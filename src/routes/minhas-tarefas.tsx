@@ -18,6 +18,9 @@ import {
   Play,
   Timer,
   Wand2,
+  ArrowDownNarrowWide,
+  ArrowUpNarrowWide,
+  GripVertical,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -31,6 +34,7 @@ import { TaskTimerControls } from "@/components/task-timer-controls";
 import { UserAvatar } from "@/components/user-avatar";
 import { CampoData } from "@/components/campo-data";
 import { FiltroPessoa } from "@/components/filtro-pessoa";
+import { toast } from "sonner";
 import {
   freqLabels,
   sectors,
@@ -414,22 +418,28 @@ function MinhasTarefas() {
               />
             </div>
           )}
-          {/* Filtro por pessoa. O estado `assignee` já existia e já era
-              aplicado logo acima — o que faltava era o controle, então
-              `setAssignee` nunca era chamado e a opção não tinha como ser
-              alcançada.
+          <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
+        </div>
+        )}
 
-              Só para quem enxerga mais de uma pessoa: para um colaborador, a
-              lista teria um nome só (o dele) e o filtro não filtraria nada. */}
-          {pessoasFiltraveis.length > 1 && (
+        {/* Filtro por pessoa, em faixa própria.
+            O estado `assignee` já existia e já era aplicado no recorte — o que
+            faltava era o controle, então `setAssignee` nunca era chamado.
+
+            Fora da barra de cima porque agora ele tem duas linhas (setores e
+            rostos) e espremê-lo entre os atalhos de data e a busca quebraria as
+            duas coisas.
+
+            Só para quem enxerga mais de uma pessoa: para um colaborador, a
+            lista teria um nome só, o dele, e o filtro não filtraria nada. */}
+        {scope !== "pack" && pessoasFiltraveis.length > 1 && (
+          <div className="mt-2">
             <FiltroPessoa
               pessoas={pessoasFiltraveis}
               valor={assignee}
               aoEscolher={setAssignee}
             />
-          )}
-          <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
-        </div>
+          </div>
         )}
 
         <div className="mt-4">
@@ -716,6 +726,55 @@ function TaskList({
   );
 }
 
+/** Como uma coluna do quadro é ordenada. `manual` = a ordem do arraste. */
+type OrdemColuna = "manual" | "asc" | "desc";
+
+/**
+ * Ordenação de UMA coluna do quadro, por prazo.
+ *
+ * Três botões e não um que alterna: alternar obriga a passar pelas opções do
+ * meio para chegar na terceira, e num cabeçalho de coluna isso é clique demais
+ * para uma escolha que se troca o tempo todo.
+ *
+ * Escolher prazo desliga a ordem do arraste naquela coluna — os dois não podem
+ * valer ao mesmo tempo —, e é por isso que a opção de voltar é um ícone de
+ * arrastar: ela diz o que se recupera, não o que se desliga.
+ */
+function OrdemDaColuna({
+  valor,
+  aoEscolher,
+}: {
+  valor: OrdemColuna;
+  aoEscolher: (v: OrdemColuna) => void;
+}) {
+  const opcoes: { v: OrdemColuna; icone: typeof GripVertical; titulo: string }[] = [
+    { v: "manual", icone: GripVertical, titulo: "Ordem que você arrastou" },
+    { v: "asc", icone: ArrowUpNarrowWide, titulo: "Vence primeiro" },
+    { v: "desc", icone: ArrowDownNarrowWide, titulo: "Vence por último" },
+  ];
+  return (
+    <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5">
+      {opcoes.map(({ v, icone: Icone, titulo }) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => aoEscolher(v)}
+          title={titulo}
+          aria-label={titulo}
+          aria-pressed={valor === v}
+          className={`rounded p-1 transition-colors ${
+            valor === v
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Icone className="h-3 w-3" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function KanbanBoard({
   tasks,
   onEdit,
@@ -733,6 +792,14 @@ function KanbanBoard({
 }) {
   const { users } = useFluxo();
   const [dragOver, setDragOver] = useState<{ col: Status; index: number } | null>(null);
+  /* Ordenação por coluna, e não uma para o quadro inteiro: o que se quer ver
+     primeiro muda com a coluna. Em "A fazer" interessa o que vence antes; em
+     "Concluída", quase sempre o contrário — o que foi entregue por último. */
+  const [ordemPorColuna, setOrdemPorColuna] = useState<Record<Status, OrdemColuna>>({
+    pendente: "manual",
+    andamento: "manual",
+    concluida: "manual",
+  });
 
   const cols: { id: Status; title: string; color: string }[] = [
     { id: "pendente", title: statusLabels.pendente, color: statusColor.pendente },
@@ -743,7 +810,28 @@ function KanbanBoard({
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       {cols.map((col) => {
-        const items = tasks.filter((t) => t.status === col.id).sort((a, b) => a.order - b.order);
+        const ordem = ordemPorColuna[col.id];
+        const daColuna = tasks.filter((t) => t.status === col.id);
+
+        /* A PRIORIDADE de cada tarefa, que é a ordem do arraste.
+           Precisa ser calculada à parte porque o número no cartão diz
+           "Prioridade N", e ordenando por prazo a posição na tela deixa de ser
+           a prioridade. Sem este mapa, a tarefa prioridade 1 apareceria como
+           "3" só porque vence depois — e o número viraria mentira. */
+        const prioridade = new Map(
+          [...daColuna].sort((a, b) => a.order - b.order).map((t, i) => [t.id, i + 1]),
+        );
+
+        const items = [...daColuna].sort((a, b) => {
+          // Sem ordenação escolhida, vale a ordem do arraste.
+          if (ordem === "manual") return a.order - b.order;
+          const da = new Date(a.dueDate).getTime();
+          const db = new Date(b.dueDate).getTime();
+          if (da !== db) return ordem === "asc" ? da - db : db - da;
+          // Empate de prazo cai na prioridade, para a lista não embaralhar
+          // sozinha a cada render.
+          return a.order - b.order;
+        });
         const isOver = dragOver?.col === col.id;
         return (
           <div
@@ -758,8 +846,26 @@ function KanbanBoard({
             onDrop={(e) => {
               e.preventDefault();
               const id = e.dataTransfer.getData("text/plain");
-              if (id) onMove(id, col.id, dragOver?.index);
               setDragOver(null);
+              if (!id) return;
+
+              /* Arrastar define PRIORIDADE: `moveTask` regrava o campo `order`
+                 da coluna inteira, e é ele que o número no cartão mostra.
+
+                 Por isso, com a coluna ordenada por prazo, soltar DENTRO dela
+                 não pode valer: a posição onde a pessoa soltou significa data,
+                 e gravá-la como prioridade reescreveria a fila inteira a
+                 partir de um critério que não é o dela. Trocar de coluna
+                 continua funcionando — ali o que muda é a situação. */
+              const atual = tasks.find((t) => t.id === id);
+              const mesmaColuna = atual?.status === col.id;
+              if (ordem !== "manual" && mesmaColuna) {
+                toast.info("Ordenado por prazo — a prioridade não mudou.", {
+                  description: "Volte para a ordem de arraste para reposicionar.",
+                });
+                return;
+              }
+              onMove(id, col.id, ordem === "manual" ? dragOver?.index : undefined);
             }}
             className={`rounded-md border p-3 transition ${
               isOver ? "border-primary bg-primary/5" : "border-transparent bg-secondary/40"
@@ -772,6 +878,10 @@ function KanbanBoard({
                 <span className="rounded-full bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                   {items.length}
                 </span>
+                <OrdemDaColuna
+                  valor={ordem}
+                  aoEscolher={(v) => setOrdemPorColuna((o) => ({ ...o, [col.id]: v }))}
+                />
               </div>
               <button
                 onClick={() => onCreate(col.id)}
@@ -805,16 +915,23 @@ function KanbanBoard({
                       setDragOver({ col: col.id, index: before ? index : index + 1 });
                     }}
                     onClick={() => onEdit(t.id)}
+                    /* A marca de "cai aqui" só com ordem manual: ordenado por
+                       prazo, ela prometeria uma posição que a lista desfaz no
+                       quadro seguinte. */
                     className={`cursor-grab rounded-md border bg-card p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
-                      dragOver?.col === col.id && dragOver.index === index ? "border-primary" : "border-border"
+                      ordem === "manual" && dragOver?.col === col.id && dragOver.index === index
+                        ? "border-primary"
+                        : "border-border"
                     }`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {/* A prioridade real, não a posição na tela. Ordenando
+                          por prazo as duas deixam de coincidir. */}
                       <span
                         className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary"
-                        title={`Prioridade ${index + 1}`}
+                        title={`Prioridade ${prioridade.get(t.id) ?? index + 1}`}
                       >
-                        {index + 1}
+                        {prioridade.get(t.id) ?? index + 1}
                       </span>
                       <span
                         className="rounded px-1.5 py-0.5"
