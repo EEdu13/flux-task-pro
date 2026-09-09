@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Lock, LockOpen, WifiOff, X } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
+import { UserAvatar } from "@/components/user-avatar";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
@@ -343,9 +344,15 @@ function RoomPage() {
               <ul className="max-h-[60vh] divide-y divide-border overflow-auto">
                 {knocks.map((k) => (
                   <li key={k.id} className="flex items-center gap-3 px-5 py-4">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/20 text-base font-bold text-primary">
-                      {k.requester_name.slice(0, 1).toUpperCase()}
-                    </span>
+                    {/* Funciona mesmo sem cadastro: o avatar procura a foto
+                        pelo NOME e cai nas iniciais quando não acha — então
+                        quem bate à porta sendo da empresa aparece com o rosto,
+                        e um convidado de fora aparece com a letra. */}
+                    <UserAvatar
+                      nome={k.requester_name}
+                      iniciais={k.requester_name.slice(0, 1).toUpperCase()}
+                      className="h-11 w-11 text-base"
+                    />
                     <span className="min-w-0 flex-1 truncate text-base font-medium">{k.requester_name}</span>
                     <button
                       onClick={() => answerKnock(k.id, true)}

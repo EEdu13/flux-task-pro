@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TravaScroll } from "@/components/trava-scroll";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   FolderKanban,
   Plus,
@@ -660,9 +661,7 @@ function ProjectDetail({
                               on ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
                             }`}
                           >
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                              {u.avatar || u.name.slice(0, 1)}
-                            </span>
+                            <UserAvatar nome={u.name} iniciais={u.avatar} className="h-6 w-6 shrink-0 text-[10px]" />
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-medium">{u.name}</div>
                               <div className="truncate text-[10px] text-muted-foreground">{u.jobTitle}</div>
@@ -774,12 +773,12 @@ function ProjectDetail({
                     </div>
                     <div className="text-muted-foreground">
                       {assignee && (
-                        <span
-                          className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
+                        <UserAvatar
+                          nome={assignee.name}
+                          iniciais={assignee.avatar}
                           title={assignee.name}
-                        >
-                          {assignee.avatar || assignee.name.slice(0, 1)}
-                        </span>
+                          className="h-6 w-6 shrink-0 text-[10px]"
+                        />
                       )}
                     </div>
                   </div>
@@ -878,12 +877,12 @@ function ProjectDetail({
                               })}
                             </span>
                             {assignee && (
-                              <span
-                                className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground"
+                              <UserAvatar
+                                nome={assignee.name}
+                                iniciais={assignee.avatar}
                                 title={assignee.name}
-                              >
-                                {assignee.avatar || assignee.name.slice(0, 1)}
-                              </span>
+                                className="h-5 w-5 shrink-0 text-[9px]"
+                              />
                             )}
                           </div>
                         </div>
@@ -1123,9 +1122,7 @@ function CreateProjectModal({
                           key={id}
                           className="inline-flex items-center gap-1 rounded-full bg-primary/15 py-0.5 pl-1 pr-2 text-[11px] text-primary"
                         >
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
-                            {u.avatar || u.name.slice(0, 1)}
-                          </span>
+                          <UserAvatar nome={u.name} iniciais={u.avatar} className="h-4 w-4 shrink-0 text-[9px]" />
                           {u.name.split(" ")[0]}
                           <button
                             type="button"
@@ -1159,9 +1156,7 @@ function CreateProjectModal({
                         on ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
                       }`}
                     >
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                        {u.avatar || u.name.slice(0, 1)}
-                      </span>
+                      <UserAvatar nome={u.name} iniciais={u.avatar} className="h-6 w-6 shrink-0 text-[10px]" />
                       <div className="flex-1">
                         <div className="font-medium">{u.name}</div>
                         <div className="text-[10px] text-muted-foreground">{u.jobTitle}</div>
@@ -1402,9 +1397,7 @@ function ShareProjectModal({
                         onClick={() => add(u.id)}
                         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-secondary"
                       >
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                          {u.avatar || u.name.slice(0, 1)}
-                        </span>
+                        <UserAvatar nome={u.name} iniciais={u.avatar} className="h-7 w-7 shrink-0 text-[10px]" />
                         <div className="flex-1">
                           <div className="font-medium text-foreground">{u.name}</div>
                           <div className="text-[10px] text-muted-foreground">{u.jobTitle}</div>
@@ -1441,15 +1434,14 @@ function MemberRow({
 }: {
   name: string;
   job: string;
+  /** Só as iniciais. A foto o `UserAvatar` resolve pelo nome. */
   avatar: string;
   role: string;
   onRemove?: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 bg-background px-3 py-2 text-xs">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
-        {avatar}
-      </span>
+      <UserAvatar nome={name} iniciais={avatar} className="h-8 w-8 shrink-0 text-[11px]" />
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium text-foreground">{name}</div>
         <div className="truncate text-[10px] text-muted-foreground">{job}</div>

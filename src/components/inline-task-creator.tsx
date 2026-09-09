@@ -986,9 +986,11 @@ export function InlineTaskCreator({
                                     i === mention.selectedIndex ? "bg-secondary" : ""
                                   }`}
                                 >
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-semibold text-primary">
-                                    {u.avatar || u.name.slice(0, 1).toUpperCase()}
-                                  </span>
+                                  <UserAvatar
+                                    nome={u.name}
+                                    iniciais={u.avatar}
+                                    className="h-6 w-6 shrink-0 text-[10px]"
+                                  />
                                   <span className="flex-1 truncate">{u.name}</span>
                                 </button>
                               ));

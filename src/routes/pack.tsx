@@ -11,6 +11,7 @@ import { loadPackDone, savePackDone } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import type { PackTemplateScope } from "@/lib/fluxo-types";
 import { TravaScroll } from "@/components/trava-scroll";
+import { UserAvatar } from "@/components/user-avatar";
 
 export const Route = createFileRoute("/pack")({
   head: () => ({
@@ -238,9 +239,11 @@ function PackPage() {
                           active ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
                         }`}
                       >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                          {u.avatar || u.name.slice(0, 1)}
-                        </span>
+                        <UserAvatar
+                          nome={u.name}
+                          iniciais={u.avatar}
+                          className="h-7 w-7 shrink-0 text-[10px]"
+                        />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-semibold">{u.name}</span>
                           <span className="block truncate text-[10px] text-muted-foreground">
@@ -261,9 +264,11 @@ function PackPage() {
                 {targetUser && (
                   <div className="rounded-lg border border-border bg-background p-3">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
-                        {targetUser.avatar || targetUser.name.slice(0, 1)}
-                      </span>
+                      <UserAvatar
+                        nome={targetUser.name}
+                        iniciais={targetUser.avatar}
+                        className="h-8 w-8 text-[11px]"
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-xs font-semibold">
                           Pack de {targetUser.name.split(" ")[0]} hoje
@@ -341,9 +346,11 @@ function PackPage() {
                     return (
                       <li key={uid} className="rounded-lg border border-border bg-background p-3">
                         <div className="flex items-center gap-2">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                            {u.avatar || u.name.slice(0, 1)}
-                          </span>
+                          <UserAvatar
+                            nome={u.name}
+                            iniciais={u.avatar}
+                            className="h-7 w-7 text-[10px]"
+                          />
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-xs font-semibold">{u.name}</div>
                             <div className="truncate text-[10px] text-muted-foreground">

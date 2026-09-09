@@ -681,9 +681,13 @@ export function FluxoLayout({
                                           ? `${u.name} está na sala — entrar`
                                           : `Chamar ${u.name} para a sala ${r.label}`
                                       }
-                                      className="relative flex h-5 w-5 items-center justify-center rounded-full border border-sidebar bg-primary text-[9px] font-bold text-primary-foreground transition hover:scale-110 hover:z-10"
+                                      className="relative flex h-5 w-5 items-center justify-center rounded-full border border-sidebar transition hover:z-10 hover:scale-110"
                                     >
-                                      {u.avatar || u.name.slice(0, 1).toUpperCase()}
+                                      <UserAvatar
+                                        nome={u.name}
+                                        iniciais={u.avatar}
+                                        className="h-full w-full text-[9px]"
+                                      />
                                       {isOnline && (
                                         <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-400 ring-1 ring-sidebar" />
                                       )}

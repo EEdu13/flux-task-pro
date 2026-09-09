@@ -70,6 +70,7 @@ import {
 } from "@/lib/attachments";
 import type { Attachment } from "@/lib/fluxo-types";
 import videoBgOffice from "@/assets/video-bg-office.jpg";
+import { UserAvatar } from "@/components/user-avatar";
 
 export const ACTIVE_CALL_MOUNT_ID = "active-call-mount";
 
@@ -837,9 +838,11 @@ function CallContents({
                             }}
                             className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-white/10"
                           >
-                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10 text-[10px] font-bold">
-                              {u.avatar || u.name.slice(0, 1).toUpperCase()}
-                            </span>
+                            <UserAvatar
+                              nome={u.name}
+                              iniciais={u.avatar}
+                              className="h-6 w-6 shrink-0 text-[10px]"
+                            />
                             <span className="min-w-0 flex-1 truncate">{u.name}</span>
                             <UserPlus className="h-3 w-3 text-primary" />
                           </button>
