@@ -66,6 +66,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
      causaria um render a cada 3 segundos sem nada mudar na tela. */
   const totalNaoLidasRef = useRef<number | null>(null);
 
+  /* Quem está com a janela aberta e NÃO minimizada.
+     Num ref e não em estado porque quem lê é o laço de sondagem, e mudar as
+     dependências dele reiniciaria o intervalo de 3s a cada janela aberta. */
+  const janelasAVistaRef = useRef<Set<string>>(new Set());
+
   // Heartbeat de presença
   useEffect(() => {
     if (!isAuthenticated || !meId) return;
@@ -106,6 +111,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, [meId, isAuthenticated]);
 
+  useEffect(() => {
+    const min = new Set(minimized);
+    janelasAVistaRef.current = new Set(openWindows.filter((id) => !min.has(id)));
+  }, [openWindows, minimized]);
+
   // Threads (lista de conversas + não lidas)
   useEffect(() => {
     if (!isAuthenticated || !meId) return;
@@ -126,7 +136,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
            O primeiro resultado só semeia a base e não toca nada: senão entrar
            no app com mensagens antigas por ler dispararia o som no login, por
            algo que já estava lá ontem. */
-        const total = lista.reduce((s, t) => s + (t.unread || 0), 0);
+        /* Conversa aberta E à vista não entra na conta.
+           Sem isto, a mensagem que a pessoa está VENDO chegar — janela aberta
+           na frente dela — tocava o som e piscava a barra, avisando de algo que
+           já estava sendo lido. `document.hidden` é a metade que importa: se a
+           aba está em segundo plano, a janela estar aberta não significa nada e
+           o aviso volta a fazer sentido.
+
+           A leitura vem de um ref, e não das dependências deste efeito: incluir
+           `openWindows` aqui reiniciaria o intervalo a cada janela aberta ou
+           fechada, e este relógio está calibrado. */
+        const aVista =
+          typeof document !== "undefined" && !document.hidden
+            ? janelasAVistaRef.current
+            : new Set<string>();
+        const total = lista.reduce(
+          (s, t) => s + (aVista.has(t.peer) ? 0 : t.unread || 0),
+          0,
+        );
         const anterior = totalNaoLidasRef.current;
         totalNaoLidasRef.current = total;
         if (anterior !== null && total > anterior) {
