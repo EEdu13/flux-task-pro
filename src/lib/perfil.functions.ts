@@ -198,6 +198,14 @@ export type PessoaDoQuadro = {
  * porque muda no RH sem passar por aqui. `OUTER APPLY ... TOP 1` e não JOIN:
  * nome não é chave única naquela tabela, e um JOIN com dois homônimos
  * duplicaria a pessoa na lista.
+ *
+ * São DUAS tabelas, não uma. O quadro está dividido — efetivos em
+ * `COLABORADORES`, estágio e PJ em `COLABORADORES_EXTERNOS` — e olhar só a
+ * primeira deixava todo externo sem cargo em toda lista do sistema. O sintoma
+ * era enganoso: a própria pessoa via o seu cargo normalmente, porque o login
+ * consulta as duas (ver `buscarColaborador`) e o valor ficava na sessão dela;
+ * quem não via era o resto da empresa. Mesma ordem do login: efetivo manda,
+ * externo entra quando o efetivo não responde.
  */
 export const listarPessoas = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (): Promise<{ pessoas: PessoaDoQuadro[] }> => {
@@ -205,7 +213,8 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
     const pool = await getPool();
     const r = await pool.request().query(
       `SELECT p.pessoa_id, p.nome, p.email, p.telefone, p.setor, p.papel,
-              p.supervisor_nome, p.pontuacao, p.sequencia, p.avatar, c.funcao
+              p.supervisor_nome, p.pontuacao, p.sequencia, p.avatar,
+              COALESCE(c.funcao, x.funcao) AS funcao
          FROM gestor.perfis p
         OUTER APPLY (
           SELECT TOP 1 LTRIM(RTRIM(FUNCAO)) AS funcao
@@ -213,6 +222,12 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
            WHERE LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI
                  = p.nome COLLATE Latin1_General_CI_AI
         ) c
+        OUTER APPLY (
+          SELECT TOP 1 LTRIM(RTRIM(FUNCAO)) AS funcao
+            FROM dbo.COLABORADORES_EXTERNOS
+           WHERE LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI
+                 = p.nome COLLATE Latin1_General_CI_AI
+        ) x
         WHERE p.nome IS NOT NULL
         ORDER BY p.nome`,
     );
