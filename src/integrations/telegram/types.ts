@@ -69,15 +69,69 @@ export interface TelegramUpdate {
 /**
  * O que chegou, já classificado.
  *
- * A etapa 1 só classifica e registra: nenhum caso escreve nada ainda. As etapas
- * seguintes ligam o tratamento de cada um sem mexer na rota nem na segurança.
+ * A classificação não decide nada: ela só nomeia o que veio. Quem age é
+ * `conversa.server.ts`, e a separação existe para que a segurança da rota
+ * (segredo, 200 sempre, repetição) não precise ser tocada quando o bot ganha
+ * um comando novo.
  */
 export type AtualizacaoClassificada =
   | { tipo: "contato"; updateId: number; deId: number; chatId: number; contato: TelegramContato }
-  | { tipo: "comando"; updateId: number; deId: number; chatId: number; comando: string }
+  | {
+      tipo: "comando";
+      updateId: number;
+      deId: number;
+      chatId: number;
+      comando: string;
+      /** O que veio depois do comando: "/start abc" → "abc". */
+      argumento: string;
+    }
   | { tipo: "texto"; updateId: number; deId: number; chatId: number; texto: string }
-  | { tipo: "callback"; updateId: number; deId: number; callbackId: string; data: string }
+  | {
+      tipo: "callback";
+      updateId: number;
+      deId: number;
+      /* O chat vem de `callback_query.message.chat.id`, e por isso pode faltar:
+         o Telegram omite `message` em botão pendurado em mensagem velha demais
+         (mais de 48h). Sem chat não dá para responder nada — o tratamento
+         reconhece o toque e para por aí. */
+      chatId: number | null;
+      callbackId: string;
+      data: string;
+    }
   | { tipo: "ignorada"; updateId: number; motivo: string };
+
+/* ----------------------- Teclados ----------------------- */
+
+/** Botão que dispara um `callback_query` com `data` de volta para o webhook. */
+export interface BotaoCallback {
+  text: string;
+  callback_data: string;
+}
+
+/** Botão que pede o telefone. Só aparece no teclado de baixo, não no da mensagem. */
+export interface BotaoContato {
+  text: string;
+  request_contact: true;
+}
+
+export interface TecladoEmLinha {
+  inline_keyboard: BotaoCallback[][];
+}
+
+export interface TecladoDeResposta {
+  keyboard: BotaoContato[][];
+  resize_keyboard?: boolean;
+  one_time_keyboard?: boolean;
+}
+
+/**
+ * Limite do Telegram para `callback_data`: 64 BYTES, não caracteres.
+ *
+ * Passar disso não dá erro no envio — o botão simplesmente não funciona quando
+ * alguém aperta. Por isso os dados dos botões são códigos curtos (`p:alta:<id>`)
+ * e nunca texto legível.
+ */
+export const CALLBACK_DATA_MAX = 64;
 
 export class TelegramError extends Error {
   constructor(

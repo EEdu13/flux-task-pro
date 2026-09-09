@@ -3,7 +3,12 @@
 //
 // Nada aqui pode chegar ao navegador: o token do bot dá controle total sobre
 // ele, inclusive ler tudo que as pessoas mandam.
-import { ATUALIZACOES_ACEITAS, TelegramError } from "./types";
+import {
+  ATUALIZACOES_ACEITAS,
+  TelegramError,
+  type TecladoDeResposta,
+  type TecladoEmLinha,
+} from "./types";
 
 const TIMEOUT_MS = 15_000;
 
@@ -118,4 +123,107 @@ export function definirWebhook(
 
 export function removerWebhook(descartarPendentes = false): Promise<boolean> {
   return chamar<boolean>("deleteWebhook", { drop_pending_updates: descartarPendentes });
+}
+
+/* ----------------------------- Envio ----------------------------- */
+
+/**
+ * Escapa texto para o modo MarkdownV2.
+ *
+ * A lista de caracteres é a do próprio Telegram, e não é negociável: um único
+ * caractere reservado sem escape faz a API RECUSAR a mensagem inteira com
+ * "can't parse entities" — não é degradação visual, é a mensagem não chegar. E
+ * como nomes de tarefa e de pessoas vêm de texto livre, isto vale para tudo que
+ * não é literal nosso.
+ */
+export function escaparMd(texto: string): string {
+  return texto.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, (c) => `\\${c}`);
+}
+
+export interface MensagemEnviada {
+  message_id: number;
+}
+
+/**
+ * Manda uma mensagem para um chat.
+ *
+ * `disable_notification` fica por conta de quem chama: aviso que a pessoa pediu
+ * (ela apertou um botão) não precisa acordar o celular dela; aviso que o
+ * sistema empurrou, sim.
+ */
+export function enviarMensagem(
+  chatId: number,
+  texto: string,
+  opcoes: {
+    teclado?: TecladoEmLinha | TecladoDeResposta;
+    silencioso?: boolean;
+  } = {},
+): Promise<MensagemEnviada> {
+  return chamar<MensagemEnviada>("sendMessage", {
+    chat_id: chatId,
+    text: texto,
+    parse_mode: "MarkdownV2",
+    // Sem isto, mandar um link do sistema faz o Telegram colar um cartão de
+    // pré-visualização embaixo — que aqui é ruído, e às vezes vaza o título de
+    // uma página que a pessoa nem abriu ainda.
+    link_preview_options: { is_disabled: true },
+    disable_notification: opcoes.silencioso === true,
+    reply_markup: opcoes.teclado,
+  });
+}
+
+/**
+ * Reescreve uma mensagem já enviada — usado quando um botão muda o estado.
+ *
+ * Editar em vez de mandar outra é o que evita a conversa virar uma pilha de
+ * versões da mesma lista. O Telegram recusa a edição quando nada mudou
+ * ("message is not modified"), e isso é tratado como sucesso por quem chama:
+ * apertar duas vezes o mesmo botão não é erro.
+ */
+export function editarMensagem(
+  chatId: number,
+  messageId: number,
+  texto: string,
+  teclado?: TecladoEmLinha,
+): Promise<unknown> {
+  return chamar<unknown>("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: texto,
+    parse_mode: "MarkdownV2",
+    link_preview_options: { is_disabled: true },
+    reply_markup: teclado,
+  });
+}
+
+/**
+ * Responde o toque no botão.
+ *
+ * Obrigatório: enquanto o Telegram não recebe isto, o botão fica com o
+ * relógio girando na tela de quem apertou, por até 30 segundos. É o "recebi" da
+ * interface, independente de a ação ter dado certo — por isso ele carrega o
+ * texto do resultado, inclusive quando o resultado é uma recusa.
+ */
+export function responderCallback(
+  callbackId: string,
+  texto?: string,
+  alerta = false,
+): Promise<unknown> {
+  return chamar<unknown>("answerCallbackQuery", {
+    callback_query_id: callbackId,
+    // Sem parse_mode: este texto aparece num balão do próprio Telegram, que
+    // não interpreta Markdown. Escapar aqui mostraria as barras invertidas.
+    text: texto?.slice(0, 200),
+    show_alert: alerta,
+  });
+}
+
+/** Some com o teclado de baixo (o de "compartilhar contato"). */
+export function removerTeclado(chatId: number, texto: string): Promise<MensagemEnviada> {
+  return chamar<MensagemEnviada>("sendMessage", {
+    chat_id: chatId,
+    text: texto,
+    parse_mode: "MarkdownV2",
+    reply_markup: { remove_keyboard: true },
+  });
 }

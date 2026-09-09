@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 /**
- * Webhook do bot do Telegram — etapa 1: rota, segredo e 200 rápido.
+ * Webhook do bot do Telegram.
  *
- * Ainda não existe tela nenhuma. O que esta etapa prova é só isto: o Telegram
- * alcança o servidor, e quem não sabe o segredo não alcança. As etapas
- * seguintes penduram o tratamento em `classificar()` sem tocar na segurança.
+ * A segurança é desta rota; o que o bot FAZ mora em `conversa.server.ts`. A
+ * separação é o que permite o bot ganhar comandos sem ninguém precisar reabrir
+ * a autenticação — que é a parte em que um erro custa caro.
  *
  * Duas regras que vêm do desenho e não são detalhe:
  *
@@ -24,6 +24,7 @@ export const Route = createFileRoute("/api/public/telegram-webhook")({
         const { autenticarWebhook, classificar, jaProcessado, resumirParaLog } = await import(
           "@/integrations/telegram/webhook.server"
         );
+        const { tratar } = await import("@/integrations/telegram/conversa.server");
         const { ipDaRequisicao } = await import("@/lib/segredo.server");
 
         const auth = autenticarWebhook(request.headers);
@@ -50,8 +51,15 @@ export const Route = createFileRoute("/api/public/telegram-webhook")({
 
           console.log(`[telegram-webhook] ${resumirParaLog(atualizacao)}`);
 
-          // Etapa 2 em diante: aqui entra o despacho por `atualizacao.tipo`.
-          // Enquanto não entra, reconhecer e registrar já é o objetivo.
+          /* O despacho é AGUARDADO, não disparado e esquecido.
+             Em ambiente sem servidor, devolver a resposta encerra a invocação —
+             e o que estivesse pendente morreria no meio, às vezes depois de
+             gravar e antes de responder. O custo é o webhook segurar alguns
+             milissegundos a mais; o Telegram tolera até 60 segundos.
+
+             `tratar` nunca lança: o erro dele morre lá dentro, no log. O
+             try/catch de fora continua valendo para o `request.json()`. */
+          await tratar(atualizacao);
         } catch (e) {
           // Engolido de propósito: ver a regra 2 no topo. O erro precisa
           // aparecer no log, mas não pode virar um não-200.

@@ -78,7 +78,16 @@ export function classificar(bruto: unknown): AtualizacaoClassificada {
   const cb = bruto.callback_query;
   if (cb) {
     if (!cb.data) return { tipo: "ignorada", updateId, motivo: "callback sem data" };
-    return { tipo: "callback", updateId, deId: cb.from.id, callbackId: cb.id, data: cb.data };
+    return {
+      tipo: "callback",
+      updateId,
+      deId: cb.from.id,
+      // Pode faltar: o Telegram omite `message` quando o botão está pendurado
+      // numa mensagem velha demais. Ver a nota no tipo.
+      chatId: cb.message?.chat.id ?? null,
+      callbackId: cb.id,
+      data: cb.data,
+    };
   }
 
   const msg = bruto.message;
@@ -101,10 +110,12 @@ export function classificar(bruto: unknown): AtualizacaoClassificada {
   if (!texto) return { tipo: "ignorada", updateId, motivo: "mensagem sem texto nem contato" };
 
   if (texto.startsWith("/")) {
-    // "/start@FluxoBot algum_param" → "/start". O sufixo @bot aparece quando o
-    // mesmo comando é usado onde há mais de um bot.
+    // "/start@FluxoBot algum_param" → comando "/start", argumento "algum_param".
+    // O sufixo @bot aparece quando o mesmo comando é usado onde há mais de um
+    // bot; o argumento é o que o `deep link` t.me/bot?start=xxx entrega.
     const comando = texto.split(/[\s@]/, 1)[0]!.toLowerCase();
-    return { tipo: "comando", ...base, comando };
+    const argumento = texto.slice(texto.indexOf(" ") + 1 || texto.length).trim();
+    return { tipo: "comando", ...base, comando, argumento: argumento === texto ? "" : argumento };
   }
 
   return { tipo: "texto", ...base, texto };
