@@ -1,9 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, UserPlus, Plus } from "lucide-react";
+import { motion } from "framer-motion";
 import { useFluxo } from "@/lib/fluxo-store";
-import { statusLabels } from "@/lib/fluxo-types";
+import { sectors, statusLabels } from "@/lib/fluxo-types";
 import { toast } from "sonner";
 import { TravaScroll } from "@/components/trava-scroll";
+import { UserAvatar } from "@/components/user-avatar";
+
+/**
+ * Grupo de botões com um só ativo, e o fundo do ativo deslizando entre eles.
+ *
+ * `layoutId` faz o framer-motion mover UM elemento de uma opção para a outra em
+ * vez de apagar aqui e acender ali — é o mesmo recurso do item ativo da
+ * sidebar. O id carrega o título para os dois grupos não disputarem o mesmo
+ * elemento e o fundo não voar de um filtro para o outro.
+ */
+function Segmentado({
+  titulo,
+  opcoes,
+  valor,
+  aoEscolher,
+}: {
+  titulo: string;
+  opcoes: { valor: string; rotulo: string }[];
+  valor: string;
+  aoEscolher: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {titulo}
+      </span>
+      <div className="flex items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5">
+        {opcoes.map((o) => {
+          const ativo = valor === o.valor;
+          return (
+            <button
+              key={o.valor}
+              type="button"
+              onClick={() => aoEscolher(o.valor)}
+              className={`relative rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                ativo ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {ativo && (
+                <motion.span
+                  layoutId={`seg-${titulo}`}
+                  className="absolute inset-0 rounded bg-primary shadow-sm"
+                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                />
+              )}
+              <span className="relative whitespace-nowrap">{o.rotulo}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function TeamDelegatePanel() {
   const {
@@ -20,6 +74,10 @@ export function TeamDelegatePanel() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverCol, setHoverCol] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  /** Filtra QUEM aparece (colunas). */
+  const [setor, setSetor] = useState<string>("todos");
+  /** Filtra O QUE aparece dentro de cada coluna. */
+  const [status, setStatus] = useState<"todos" | "pendente" | "andamento">("todos");
 
   useEffect(() => {
     const openHandler = () => setOpen(true);
@@ -45,7 +103,7 @@ export function TeamDelegatePanel() {
     };
   }, []);
 
-  const teammates = useMemo(
+  const todos = useMemo(
     () => {
       const all = visibleUsersForAssign();
       const me = all.find((u) => u.id === currentUser.id);
@@ -56,11 +114,31 @@ export function TeamDelegatePanel() {
     [users, currentUser.id],
   );
 
+  /* Só os setores que têm gente aqui.
+     A lista fixa tem 17 e a maioria não tem ninguém neste painel — oferecer
+     todos daria uma fileira de botões que só sabem esvaziar a tela. */
+  const setoresComGente = useMemo(() => {
+    const ids = new Set(todos.map((u) => u.sector));
+    return sectors.filter((s) => ids.has(s.id));
+  }, [todos]);
+
+  const teammates = useMemo(
+    () => (setor === "todos" ? todos : todos.filter((u) => u.sector === setor)),
+    [todos, setor],
+  );
+
   if (!open) return null;
 
   const activeForUser = (uid: string) =>
     tasks
-      .filter((t) => t.assigneeId === uid && t.status !== "concluida")
+      .filter((t) => {
+        if (t.assigneeId !== uid) return false;
+        // Concluída nunca entra: o painel é sobre carga de trabalho, e tarefa
+        // pronta não é carga.
+        if (t.status === "concluida") return false;
+        if (status !== "todos" && t.status !== status) return false;
+        return true;
+      })
       .sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate));
 
   const delegate = (taskId: string, toUserId: string, insertIndex?: number) => {
@@ -96,15 +174,43 @@ export function TeamDelegatePanel() {
       <TravaScroll />
       <div className="flex items-center gap-3 border-b border-border bg-card px-3 py-2 sm:px-4 sm:py-3">
         <UserPlus className="h-5 w-5 text-primary" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 shrink-0">
           <div className="text-sm font-semibold">Delegar rápido</div>
           <div className="truncate text-[11px] text-muted-foreground">
             Arraste tarefas entre pessoas · + cria direto · Esc fecha
           </div>
         </div>
+
+        {/* Os dois filtros agem em coisas diferentes, e a ordem na barra diz
+            isso: SETOR decide quais colunas existem, STATUS decide o que
+            aparece dentro delas. */}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {setoresComGente.length > 1 && (
+            <Segmentado
+              titulo="Setor"
+              opcoes={[
+                { valor: "todos", rotulo: "Todos" },
+                ...setoresComGente.map((s) => ({ valor: s.id, rotulo: s.name })),
+              ]}
+              valor={setor}
+              aoEscolher={setSetor}
+            />
+          )}
+          <Segmentado
+            titulo="Status"
+            opcoes={[
+              { valor: "todos", rotulo: "Todas" },
+              { valor: "pendente", rotulo: statusLabels.pendente },
+              { valor: "andamento", rotulo: statusLabels.andamento },
+            ]}
+            valor={status}
+            aoEscolher={(v) => setStatus(v as typeof status)}
+          />
+        </div>
+
         <button
           onClick={() => setOpen(false)}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary"
+          className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary"
         >
           <X className="h-5 w-5" />
         </button>
@@ -158,9 +264,14 @@ export function TeamDelegatePanel() {
                   }`}
                 >
                   <div className="flex items-center gap-2 border-b border-border p-2">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${isMe ? "bg-primary text-primary-foreground ring-2 ring-primary/40" : "bg-primary text-primary-foreground"}`}>
-                      {u.avatar || u.name.slice(0, 1)}
-                    </div>
+                    {/* O anel só na própria coluna: é o que separa "minhas
+                        tarefas" das dos outros num painel de sete colunas
+                        iguais. */}
+                    <UserAvatar
+                      nome={u.name}
+                      iniciais={u.avatar}
+                      className={`h-8 w-8 shrink-0 text-xs ${isMe ? "ring-2 ring-primary/40" : ""}`}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-semibold">
