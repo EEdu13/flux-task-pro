@@ -52,7 +52,7 @@ export function TitleBar() {
       <div data-tauri-drag-region className="flex items-center gap-2">
         <span className="h-2.5 w-2.5 rounded-[3px] bg-primary" />
         <span className="text-[11px] font-semibold tracking-[0.18em] text-sidebar-foreground/70">
-          FLUXO
+          SGL - CONECTA
         </span>
       </div>
 

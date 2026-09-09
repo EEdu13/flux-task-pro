@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Fluxo Task Pro",
+  "productName": "SGL - CONECTA",
   "version": "0.1.0",
   "identifier": "com.larsil.fluxo",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Fluxo - Tarefas Larsil",
+        "title": "SGL - CONECTA",
         "url": "https://gestor-larsil.up.railway.app",
         "width": 1400,
         "height": 900,

@@ -937,7 +937,7 @@ function ExportarPeriodo({
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(22);
-        doc.text("FLUXO", margin, 42);
+        doc.text("SGL - CONECTA", margin, 42);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
         doc.text("Relatório de Produtividade", margin, 60);

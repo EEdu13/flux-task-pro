@@ -271,7 +271,7 @@ export async function desktopSelfTest(): Promise<string> {
     results.push(`piscar: ERRO ${(e as Error)?.message}`);
   }
   try {
-    await desktopNotify("Fluxo", "Teste de notificação nativa");
+    await desktopNotify("SGL - CONECTA", "Teste de notificação nativa");
     results.push("notificação: enviada");
   } catch (e) {
     results.push(`notificação: ERRO ${(e as Error)?.message}`);

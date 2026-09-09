@@ -119,13 +119,13 @@ pub fn run() {
             }
 
             // --- Ícone na bandeja (system tray) ---
-            let show = MenuItem::with_id(app, "show", "Abrir Fluxo", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "Abrir SGL - CONECTA", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Fluxo - Tarefas Larsil")
+                .tooltip("SGL - CONECTA")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {

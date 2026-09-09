@@ -219,7 +219,7 @@ export function showNudgeNotification(fromName: string) {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.getRegistration("/fluxo-nudge-sw.js").then((reg) => {
       if (!reg) return fallbackNotification(fromName);
-      reg.showNotification("Fluxo", {
+      reg.showNotification("SGL - CONECTA", {
         body: `${fromName} chamou sua atenção!`,
         tag: "fluxo-nudge",
         renotify: true,
@@ -234,7 +234,7 @@ export function showNudgeNotification(fromName: string) {
 
 function fallbackNotification(fromName: string) {
   try {
-    const n = new Notification("Fluxo", {
+    const n = new Notification("SGL - CONECTA", {
       body: `${fromName} chamou sua atenção!`,
       tag: "fluxo-nudge",
       renotify: true,
