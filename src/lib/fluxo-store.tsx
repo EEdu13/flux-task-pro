@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -586,9 +587,36 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ open: false });
   const [quickCreate, setQuickCreate] = useState<{ open: boolean; status?: Status; dueDate?: string; assigneeId?: string }>({ open: false });
 
+  /* Persistência local, agora protegida.
+   *
+   * Esta linha rodava sem `try`, a cada mudança de estado. Com anexo guardado
+   * como base64 dentro do estado, um arquivo de 3 MB virava ~4 MB de texto
+   * neste JSON — e o `localStorage` costuma ter 5 MB por origem. Estourada a
+   * cota, o `setItem` lança `QuotaExceededError` de dentro de um efeito, e a
+   * partir daí NADA mais persistia: nem tarefa, nem preferência, nem tema.
+   * Anexar um PDF quebrava a persistência do app inteiro, em silêncio e sem
+   * relação aparente.
+   *
+   * O anexo saiu do estado — hoje guardamos `/api/anexo/<id>`, não o arquivo —,
+   * então a causa principal foi embora. Isto aqui é o cinto: a falha vira um
+   * aviso uma vez, e o app continua funcionando com o servidor como fonte da
+   * verdade, que é o que ele já é.
+   */
+  const avisouCotaRef = useRef(false);
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window === "undefined") return;
+    try {
       localStorage.setItem(LS_KEY, JSON.stringify(state));
+    } catch (e) {
+      if (!avisouCotaRef.current) {
+        avisouCotaRef.current = true;
+        console.warn("[fluxo] estado local não coube no navegador:", (e as Error)?.message);
+        toast.warning("O armazenamento local do navegador encheu.", {
+          description:
+            "Seus dados continuam salvos no servidor. Se algo parecer desatualizado, recarregue a página.",
+          duration: 12_000,
+        });
+      }
     }
   }, [state]);
 
@@ -680,15 +708,26 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     [state.users, state.currentUserId],
   );
 
-  const visibleUsersForAssign = (): User[] => {
-    if (currentUser.role === "gerente") return state.users;
-    if (currentUser.role === "supervisor") {
-      return state.users.filter(
-        (u) => u.id === currentUser.id || u.supervisorId === currentUser.id,
-      );
-    }
-    return state.users.filter((u) => u.id === currentUser.id);
-  };
+  /**
+   * Quem pode ser responsável por uma tarefa: a empresa inteira.
+   *
+   * Era escalonado por papel — gerência via todos, supervisão via os seus
+   * diretos, e colaborador via só a si mesmo. Na prática isso travava o
+   * trabalho horizontal: quem precisa pedir algo para outra área não podia
+   * sequer escolher a pessoa, e a lista aparecia com um nome só (o próprio),
+   * o que parecia defeito de tela.
+   *
+   * Decisão do usuário, 09/09/2026, dita com todas as letras: qualquer pessoa
+   * pode delegar para qualquer pessoa, independente de setor. O que isso abre
+   * é real — um colaborador pode atribuir tarefa a um diretor —, e a contenção
+   * passa a ser social, não técnica: toda tarefa mostra quem a criou, e a
+   * pessoa pode devolver.
+   *
+   * O que NÃO mudou, e é o que importa para segurança: quem LÊ o quê continua
+   * decidido no servidor, tarefa a tarefa, em `listarTarefas`. Ver poder
+   * escolher alguém como responsável não dá acesso às tarefas dessa pessoa.
+   */
+  const visibleUsersForAssign = (): User[] => state.users;
 
   const canAssignTo = (targetUserId: string) =>
     visibleUsersForAssign().some((u) => u.id === targetUserId);
@@ -1110,7 +1149,32 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            `salvarSatelites`, cada um no comando que cria o fato. */
         void gravarTarefa(task);
 
-        return { ...s, tasks: [task, ...s.tasks] };
+        /* Anexo escolhido antes da tarefa existir.
+           A grade de criação em massa deixa anexar arquivo numa linha que ainda
+           não é tarefa, e o dono do anexo precisa de um id de banco — que só
+           nasce aqui em cima. Por isso o envio acontece depois, e o estado é
+           corrigido quando volta: o que fica guardado é o endereço, nunca o
+           base64.
+
+           A tarefa entra na lista com `attachments` vazio de propósito. Guardar
+           o base64 "só até subir" era o suficiente para estourar a cota do
+           localStorage, que é gravado a cada mudança de estado. */
+        const pendentes = task.attachments ?? [];
+        if (pendentes.length && ehGuid(id)) {
+          void (async () => {
+            const { subirAnexos } = await import("@/lib/anexo-upload");
+            const enviados = await subirAnexos("tarefa", id, pendentes);
+            if (!enviados.length) return;
+            setState((s2) => ({
+              ...s2,
+              tasks: s2.tasks.map((t2) =>
+                t2.id === id ? { ...t2, attachments: enviados } : t2,
+              ),
+            }));
+          })();
+        }
+
+        return { ...s, tasks: [{ ...task, attachments: [] }, ...s.tasks] };
       });
     },
 
@@ -1298,7 +1362,50 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           void (async () => {
             try {
               const api = await import("@/lib/tarefa-satelites.functions");
-              await api.comentarNaTarefa({ data: { tarefaId: taskId, texto: c.text } });
+              const gravado = await api.comentarNaTarefa({
+                data: { tarefaId: taskId, texto: c.text },
+              });
+
+              /* O anexo do comentário sobe AQUI, e só aqui é possível.
+                 Ele precisa do id de banco do comentário como dono, e esse id
+                 nasce no INSERT acima — o `crypto.randomUUID()` de cima é o da
+                 cópia em tela, e não é o que a tabela guardou. Enquanto isto
+                 não existia, o arquivo escolhido no painel virava base64 no
+                 estado e nunca saía desta máquina.
+
+                 Trocamos também o id local pelo do banco: sem isso, reabrir a
+                 tarefa traria o mesmo comentário duas vezes — o do banco e o
+                 fantasma local. */
+              const arquivos = c.attachments ?? [];
+              const enviados = arquivos.length
+                ? await (await import("@/lib/anexo-upload")).subirAnexos(
+                    "comentario",
+                    gravado.id,
+                    arquivos,
+                  )
+                : [];
+
+              setState((s2) => ({
+                ...s2,
+                tasks: s2.tasks.map((t2) =>
+                  t2.id !== taskId
+                    ? t2
+                    : {
+                        ...t2,
+                        comments: t2.comments.map((x) =>
+                          x.id === c.id
+                            ? {
+                                ...x,
+                                id: gravado.id,
+                                at: gravado.at,
+                                attachments: enviados.length ? enviados : undefined,
+                              }
+                            : x,
+                        ),
+                      },
+                ),
+              }));
+
               await api.registrarHistorico({
                 data: { tarefaId: taskId, tipo: "comentario", texto: "comentou" },
               });
@@ -1353,6 +1460,15 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             : t,
         ),
       }));
+      /* Some do banco e do Blob também. Antes saía só da lista em memória: o
+         anexo voltava no recarregamento e o arquivo ficava no contêiner para
+         sempre. `ehGuid` porque anexo antigo, do tempo em que ficava em base64
+         no navegador, tem id local (`att-...`) e não existe no banco. */
+      if (ehGuid(attId)) {
+        void import("@/lib/anexo.functions")
+          .then((api) => api.removerAnexo({ data: { id: attId } }))
+          .catch((e) => console.warn("[fluxo] anexo não removido:", (e as Error)?.message));
+      }
     },
 
     /* As três ações abaixo agendam a gravação além de mexer na store.
@@ -1771,12 +1887,16 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                     mentions: s.mentions,
                     tags: s.tags,
                     recurringWeekdays: s.recurringWeekdays,
+                    /* Os anexos vêm junto agora. Este `attachments: []` era
+                       fixo: mesmo depois de o arquivo passar a subir para o
+                       Blob, ele não reapareceria ao abrir a tarefa de novo. */
+                    attachments: s.attachments,
                     comments: s.comments.map((c) => ({
                       id: c.id,
                       userId: c.userId,
                       text: c.text,
                       at: c.at,
-                      attachments: [],
+                      attachments: c.attachments.length ? c.attachments : undefined,
                     })),
                     activity: s.activity.map((a) => ({
                       id: a.id,
@@ -2025,7 +2145,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         ),
       }));
     },
-    removeProjectAttachment: (projectId, attId) =>
+    removeProjectAttachment: (projectId, attId) => {
       setState((s) => ({
         ...s,
         projects: s.projects.map((p) =>
@@ -2033,7 +2153,14 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             ? { ...p, attachments: (p.attachments ?? []).filter((a) => a.id !== attId) }
             : p,
         ),
-      })),
+      }));
+      // Mesma regra do anexo de tarefa: sai do banco e do Blob junto.
+      if (ehGuid(attId)) {
+        void import("@/lib/anexo.functions")
+          .then((api) => api.removerAnexo({ data: { id: attId } }))
+          .catch((e) => console.warn("[fluxo] anexo não removido:", (e as Error)?.message));
+      }
+    },
     deleteProject: (id) => {
       setState((s) => ({
         ...s,

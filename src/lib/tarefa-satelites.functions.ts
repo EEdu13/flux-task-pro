@@ -35,13 +35,32 @@ const TIPOS_HISTORICO = [
   "mencao",
 ] as const;
 
+/**
+ * Anexo como a interface o consome.
+ *
+ * `dataUrl` guarda o endereço do proxy (`/api/anexo/<id>`), não o conteúdo. O
+ * nome do campo ficou por compatibilidade: uma tag `<img>` não distingue os
+ * dois, então as telas de exibição não mudaram. Ver `anexo-upload.ts`.
+ */
+export type AnexoDaTarefa = {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+  at: string;
+  userId: string;
+};
+
 export type SatelitesDaTarefa = {
   checklist: { id: string; text: string; done: boolean }[];
   mentions: string[];
   tags: string[];
   recurringWeekdays: number[];
-  comments: { id: string; userId: string; text: string; at: string }[];
+  comments: { id: string; userId: string; text: string; at: string; attachments: AnexoDaTarefa[] }[];
   activity: { id: string; userId: string; kind: string; text: string; at: string }[];
+  /** Anexos da própria tarefa. Os de comentário vão dentro de cada comentário. */
+  attachments: AnexoDaTarefa[];
 };
 
 /** Tudo que pende de uma tarefa, numa consulta por tabela. */
@@ -59,7 +78,7 @@ export const carregarSatelites = createServerFn({ method: "POST" })
       const pool = await getPool();
       const req = () => pool.request().input("t", sql.UniqueIdentifier, d.tarefaId);
 
-      const [ck, mc, tg, dr, cm, hs] = await Promise.all([
+      const [ck, mc, tg, dr, cm, hs, ax] = await Promise.all([
         req().query(
           `SELECT id, texto, feito FROM gestor.itens_de_checklist
             WHERE tarefa_id=@t ORDER BY ordem`,
@@ -82,7 +101,57 @@ export const carregarSatelites = createServerFn({ method: "POST" })
           `SELECT id, autor_id, tipo, texto, em FROM gestor.historico_da_tarefa
             WHERE tarefa_id=@t ORDER BY em`,
         ),
+        /* Anexos da tarefa E dos comentários dela, numa consulta só.
+           O UNION evita uma segunda ida ao banco por comentário — uma tarefa
+           com dez comentários daria dez consultas para montar um painel.
+           `dono` diz de quem é cada linha na hora de distribuir. */
+        req().query(
+          `SELECT a.id, a.dono_id AS dono, a.nome, a.tamanho, a.tipo_mime,
+                  a.enviado_por, a.enviado_em, 'tarefa' AS origem
+             FROM gestor.anexos a
+            WHERE a.dono_tipo='tarefa' AND a.dono_id=@t
+            UNION ALL
+           SELECT a.id, a.dono_id AS dono, a.nome, a.tamanho, a.tipo_mime,
+                  a.enviado_por, a.enviado_em, 'comentario' AS origem
+             FROM gestor.anexos a
+             JOIN gestor.comentarios c ON c.id = a.dono_id
+            WHERE a.dono_tipo='comentario' AND c.tarefa_id=@t
+            ORDER BY enviado_em`,
+        ),
       ]);
+
+      type LinhaAnexo = {
+        id: string;
+        dono: string;
+        nome: string;
+        tamanho: number;
+        tipo_mime: string;
+        enviado_por: number;
+        enviado_em: Date;
+        origem: "tarefa" | "comentario";
+      };
+      const paraAnexo = (a: LinhaAnexo): AnexoDaTarefa => ({
+        id: a.id,
+        name: a.nome,
+        size: a.tamanho,
+        type: a.tipo_mime,
+        dataUrl: `/api/anexo/${a.id}`,
+        at: a.enviado_em.toISOString(),
+        userId: String(a.enviado_por),
+      });
+      const anexos = ax.recordset as LinhaAnexo[];
+      const anexosDaTarefa = anexos.filter((a) => a.origem === "tarefa").map(paraAnexo);
+      const porComentario = new Map<string, AnexoDaTarefa[]>();
+      for (const a of anexos) {
+        if (a.origem !== "comentario") continue;
+        // `dono` vem como uniqueidentifier do SQL Server, que devolve MAIÚSCULO;
+        // o id do comentário na outra consulta vem igual, mas normalizar aqui
+        // tira a dependência disso continuar verdade.
+        const chave = a.dono.toLowerCase();
+        const lista = porComentario.get(chave);
+        if (lista) lista.push(paraAnexo(a));
+        else porComentario.set(chave, [paraAnexo(a)]);
+      }
 
       return {
         checklist: (ck.recordset as { id: string; texto: string; feito: boolean }[]).map((i) => ({
@@ -101,7 +170,9 @@ export const carregarSatelites = createServerFn({ method: "POST" })
           userId: String(c.autor_id),
           text: c.texto,
           at: c.criado_em.toISOString(),
+          attachments: porComentario.get(c.id.toLowerCase()) ?? [],
         })),
+        attachments: anexosDaTarefa,
         activity: (
           hs.recordset as {
             id: string;

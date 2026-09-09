@@ -5,6 +5,7 @@ import { descartarPendencias, useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
+import { subirAnexos } from "@/lib/anexo-upload";
 import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import { formatHM, parseHM } from "@/lib/time-log";
@@ -420,7 +421,18 @@ export function TaskDialog() {
   const handleTaskFilePick = async (files: FileList | null) => {
     if (!files || !editing) return;
     const { ok, rejected } = await filesToAttachments(files, currentUser.id);
-    if (ok.length) addTaskAttachments(editing.id, ok);
+    if (ok.length) {
+      /* Sobe para o Blob ANTES de entrar no estado. Antes o base64 ia direto
+         para a store — o arquivo ficava só nesta máquina e ninguém mais o via.
+         `subirAnexos` devolve o anexo já apontando para /api/anexo/<id>, então
+         o que entra na store é um endereço, não o arquivo. */
+      const idAviso = toast.loading(
+        ok.length === 1 ? "Enviando arquivo…" : `Enviando ${ok.length} arquivos…`,
+      );
+      const enviados = await subirAnexos("tarefa", editing.id, ok);
+      toast.dismiss(idAviso);
+      if (enviados.length) addTaskAttachments(editing.id, enviados);
+    }
     if (rejected.length)
       toast.error(rejected.length === 1 ? "Arquivo muito grande" : "Arquivos muito grandes", {
         description: `Não anexado: ${rejected.join(", ")}`,

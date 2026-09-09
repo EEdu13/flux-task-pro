@@ -25,36 +25,77 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+/**
+ * `dataUrl` carrega duas coisas hoje, e é preciso distinguir.
+ *
+ * Anexo recém-escolhido no seletor de arquivo é `data:<mime>;base64,...`.
+ * Anexo que já está no Blob é `/api/anexo/<id>` — o endereço do nosso proxy.
+ * Uma tag `<img>` não nota diferença, e é por isso que as telas de exibição não
+ * precisaram mudar; quem precisa notar é quem lê os BYTES, aqui embaixo.
+ *
+ * Sem esta distinção, `dataUrlToBlob("/api/anexo/x")` fazia `atob` numa string
+ * que não é base64 e lançava. No navegador o erro escapava; no app de mesa
+ * caía no `catch` e o clique simplesmente não fazia nada — que é o que
+ * acontecia ao tentar abrir um PDF do chat.
+ */
+function ehDataUrl(u: string): boolean {
+  return u.startsWith("data:");
+}
+
+/** Os bytes do anexo, venha ele de onde vier. */
+async function blobDoAnexo(dataUrl: string): Promise<Blob> {
+  if (ehDataUrl(dataUrl)) return dataUrlToBlob(dataUrl);
+  // Caminho relativo resolve contra a origem atual — que no app de mesa é o
+  // mesmo site que a janela principal carrega.
+  const res = await fetch(dataUrl);
+  if (!res.ok) throw new Error(`anexo indisponível (${res.status})`);
+  return res.blob();
+}
+
 // Abre o anexo. No app desktop (Tauri), grava um arquivo temporário e abre com
 // o app padrão do Windows (visualizador de imagem, PDF…). No navegador, o
 // window.open não funciona com data: URL grande, então usamos um blob URL.
 export function openAttachment(a: { dataUrl: string; name: string }) {
-  if (isTauri()) {
-    void (async () => {
-      try {
+  void (async () => {
+    try {
+      if (isTauri()) {
         const { invoke } = await import("@tauri-apps/api/core");
-        const bytes = new Uint8Array(await dataUrlToBlob(a.dataUrl).arrayBuffer());
+        const bytes = new Uint8Array(await (await blobDoAnexo(a.dataUrl)).arrayBuffer());
         await invoke("open_attachment_file", { name: a.name, data: Array.from(bytes) });
-      } catch (e) {
-        console.error("Falha ao abrir anexo no app nativo", e);
+        return;
       }
-    })();
-    return;
-  }
-  const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
-  window.open(url, "_blank", "noopener,noreferrer");
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      /* No navegador, um anexo que já está no Blob pode ser aberto pelo próprio
+         endereço: a rota responde com `content-disposition: inline`, então o
+         navegador exibe em vez de baixar. Baixar os bytes só para recriar um
+         blob URL seria trabalho a mais para o mesmo resultado. */
+      if (!ehDataUrl(a.dataUrl)) {
+        window.open(a.dataUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      console.error("Falha ao abrir anexo", e);
+    }
+  })();
 }
 
 export function downloadAttachment(a: { dataUrl: string; name: string }) {
-  const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = a.name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  void (async () => {
+    try {
+      const url = URL.createObjectURL(await blobDoAnexo(a.dataUrl));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = a.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      console.error("Falha ao baixar anexo", e);
+    }
+  })();
 }
 
 function readAsDataUrl(file: File): Promise<string> {

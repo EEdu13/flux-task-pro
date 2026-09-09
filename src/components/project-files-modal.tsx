@@ -18,6 +18,7 @@ import {
   openAttachment,
   MAX_ATT_BYTES,
 } from "@/lib/attachments";
+import { subirAnexos } from "@/lib/anexo-upload";
 import { forecastProject, riskExplanation, riskLabels, type RiskLevel } from "@/lib/project-forecast";
 import { useFluxo } from "@/lib/fluxo-store";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -74,8 +75,14 @@ export function ProjectFilesModal({
     try {
       const { ok, rejected } = await filesToAttachments(list, currentUser.id);
       if (ok.length) {
-        addProjectAttachments(project.id, ok);
-        toast.success(`${ok.length} arquivo(s) anexado(s)`, { description: project.name });
+        /* Sobe para o Blob antes de entrar no estado — antes o base64 ia direto
+           para a store e o arquivo ficava só nesta máquina, apesar do texto na
+           tela prometer que "todo mundo do projeto acompanha". */
+        const enviados = await subirAnexos("projeto", project.id, ok);
+        if (enviados.length) {
+          addProjectAttachments(project.id, enviados);
+          toast.success(`${enviados.length} arquivo(s) anexado(s)`, { description: project.name });
+        }
       }
       if (rejected.length) {
         toast.error("Alguns arquivos passaram do limite", {

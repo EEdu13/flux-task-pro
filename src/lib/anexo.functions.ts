@@ -167,6 +167,50 @@ export const enviarAnexo = createServerFn({ method: "POST" })
     ),
   );
 
+/**
+ * Apaga um anexo — a linha e o arquivo.
+ *
+ * Existia `apagarDoBlob` e não existia quem a chamasse: remover anexo pela tela
+ * só tirava da lista em memória, então ele voltava no recarregamento e o
+ * arquivo ficava no contêiner para sempre.
+ *
+ * A ordem é a inversa do envio, e de propósito. Ali a linha só entra depois do
+ * arquivo estar gravado, para a tabela nunca apontar para o vazio; aqui a linha
+ * sai primeiro, para nunca sobrar linha apontando para arquivo que já foi. O
+ * pior caso dos dois lados é um arquivo órfão no Blob, que não quebra tela
+ * nenhuma.
+ */
+export const removerAnexo = createServerFn({ method: "POST" })
+  .inputValidator(
+    semIdentidade((entrada: { id: string }) => {
+      const id = typeof entrada?.id === "string" ? entrada.id.trim() : "";
+      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Anexo inválido");
+      return { id };
+    }),
+  )
+  .handler(
+    comSessao(async (_eu, dados: { id: string }) => {
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+
+      /* `DELETE ... OUTPUT` em vez de SELECT seguido de DELETE: numa chamada
+         só, e sem a janela em que duas remoções simultâneas leem a mesma linha
+         e tentam apagar o mesmo arquivo duas vezes. Quem não apagou nada
+         recebe zero linhas e não toca no Blob. */
+      const r = await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, dados.id)
+        .query(`DELETE FROM gestor.anexos OUTPUT DELETED.url WHERE id=@id`);
+
+      const linha = r.recordset[0] as { url: string } | undefined;
+      if (!linha) return { ok: true, removido: false };
+
+      const { apagarDoBlob } = await import("@/integrations/blob.server");
+      await apagarDoBlob(linha.url);
+      return { ok: true, removido: true };
+    }),
+  );
+
 /** Anexos de uma tarefa, comentário, projeto ou mensagem. */
 export const listarAnexos = createServerFn({ method: "POST" })
   .inputValidator(
