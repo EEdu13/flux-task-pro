@@ -81,6 +81,40 @@ function mensagemSintetizada(): void {
   nota(now + 0.12, 1175);
 }
 
+/**
+ * A sineta: um "ding" curto, duas harmônicas.
+ *
+ * Sintetizado e não arquivo, ao contrário dos outros dois, porque ainda não há
+ * um mp3 escolhido para ele — trocar depois é substituir esta função por um
+ * `preparar(...)` como os de cima, sem tocar em quem chama.
+ *
+ * Precisa soar DIFERENTE do som de mensagem, que é o vizinho mais próximo: o do
+ * chat sobe (880 → 1175) e este desce, com a fundamental sustentada e a quinta
+ * acima decaindo antes. Dois avisos que soam parecidos viram um só na cabeça de
+ * quem escuta, e aí a pessoa abre o chat quando era uma tarefa.
+ */
+function notificacaoSintetizada(): void {
+  const ctx = contexto();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const parcial = (hz: number, ganho: number, duracao: number) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(hz, now);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(ganho, now + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + duracao);
+    o.connect(g).connect(ctx.destination);
+    o.start(now);
+    o.stop(now + duracao + 0.02);
+  };
+  // Fundamental longa + quinta acima curta: é o que dá o timbre de sino sem
+  // precisar de amostra. A quinta some primeiro e deixa a fundamental morrendo.
+  parcial(988, 0.2, 0.6);
+  parcial(1480, 0.09, 0.22);
+}
+
 /* Um elemento por som, reaproveitado.
    Criar um `Audio` novo a cada toque deixaria o navegador rebaixando o arquivo
    toda vez e acumularia elementos soltos. Reaproveitar exige voltar o
@@ -123,4 +157,15 @@ export function tocarNudge(): void {
 export function tocarMensagemNova(): void {
   elMensagem ??= preparar(mensagemMp3, 0.5);
   tocar(elMensagem, mensagemSintetizada);
+}
+
+/**
+ * Som da sineta (tarefa atribuída, menção, prazo, conclusão).
+ *
+ * Para trocar por um arquivo: ponha o mp3 em `src/assets`, importe no topo como
+ * os outros e chame `tocar(elNotificacao, notificacaoSintetizada)` — o
+ * sintetizado vira reserva, igual aos dois de cima.
+ */
+export function tocarNotificacao(): void {
+  notificacaoSintetizada();
 }

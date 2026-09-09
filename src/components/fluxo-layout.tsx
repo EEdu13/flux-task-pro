@@ -44,6 +44,9 @@ import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
 import { AttentionOverlay } from "@/components/attention-overlay";
 import { TaskContextMenu } from "@/components/task-context-menu";
+import { TarefasAtrasadas } from "@/components/tarefas-atrasadas";
+import { tocarNotificacao } from "@/lib/sons";
+import { desktopFlashTaskbar } from "@/lib/desktop";
 import { CommandPalette } from "@/components/command-palette";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
@@ -201,6 +204,33 @@ export function FluxoLayout({
 
   const myScore = userScorePct(currentUser.id, tasks, completions);
   const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
+
+  /* A sineta ganhou som e piscada.
+   *
+   * Até aqui ela era o único aviso do app que não avisava: chat, chamada e
+   * chamar-atenção tocam e piscam há tempos, e uma tarefa atribuída pelo
+   * supervisor mudava um número que só quem estivesse olhando veria. Era a
+   * causa direta do "precisei dar CTRL+SHIFT+R e relogar para ver as
+   * atividades".
+   *
+   * Mesma mecânica do chat, e pelos mesmos motivos: compara com o total
+   * anterior, porque só SUBIR é notícia — a lista é relida periodicamente e
+   * tocar por "maior que zero" viraria um alarme a cada volta até a pessoa
+   * abrir a sineta. E a primeira leitura apenas semeia a base, senão entrar no
+   * app com avisos de ontem por ler dispararia o som no login.
+   *
+   * `informativo` e não `critico`: pisca o botão na barra, não a janela. Uma
+   * tarefa nova não interrompe o que a pessoa está fazendo — quem faz isso é
+   * chamada e chamar-atenção, e a diferença entre os dois é o que mantém os
+   * dois significando alguma coisa. */
+  const naoLidasAnterioresRef = useRef<number | null>(null);
+  useEffect(() => {
+    const anterior = naoLidasAnterioresRef.current;
+    naoLidasAnterioresRef.current = unread;
+    if (anterior === null || unread <= anterior) return;
+    tocarNotificacao();
+    void desktopFlashTaskbar("informativo");
+  }, [unread]);
 
   useEffect(() => {
     if (!isAuthenticated) navigate({ to: "/login" });
@@ -1174,6 +1204,7 @@ export function FluxoLayout({
       <TractorBanner />
       <ChatDock />
       <TaskContextMenu />
+      <TarefasAtrasadas />
       <CommandPalette />
       <TeamDelegatePanel />
       <FocusOverlay />
