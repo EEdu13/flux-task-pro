@@ -26,6 +26,7 @@ import { updateActiveSpeakers } from "@/lib/livekit-token.functions";
 import { summarizeMeeting } from "@/lib/meeting-summary.functions";
 import { transcribeSegment } from "@/lib/transcription.functions";
 import { useFluxo } from "@/lib/fluxo-store";
+import { criarCompositor, type Compositor, type FonteDeVideo } from "@/lib/composicao-gravacao";
 import type { MinuteTopic } from "@/lib/fluxo-types";
 
 /** Parse the AI markdown to extract actionable topics (decisions, next steps, attention). */
@@ -128,6 +129,7 @@ function useMeetingRecorder(roomName: string) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const compositorRef = useRef<Compositor | null>(null);
 
   const stop = useCallback(() => {
     const rec = recorderRef.current;
@@ -168,25 +170,59 @@ function useMeetingRecorder(roomName: string) {
         });
       });
 
-      // Optional: local screen share video
-      const screenPub = localParticipant.getTrackPublication(Track.Source.ScreenShare);
-      const videoTracks: MediaStreamTrack[] = [];
-      if (screenPub?.track?.mediaStreamTrack) videoTracks.push(screenPub.track.mediaStreamTrack);
+      /* Vídeo: TODAS as câmeras, não só o compartilhamento de tela.
+         Antes só entrava a tela compartilhada — sem apresentação, o arquivo
+         saía sem imagem nenhuma apesar de todo mundo estar com a câmera
+         aberta. `MediaRecorder` aceita uma faixa de vídeo só, então as
+         câmeras são compostas num canvas. Ver `composicao-gravacao.ts`. */
+      const montarFontes = (): FonteDeVideo[] => {
+        const lista: FonteDeVideo[] = [];
+        const juntar = (
+          pub: { track?: { mediaStreamTrack?: MediaStreamTrack; attach?: () => HTMLMediaElement } },
+          nome: string,
+          tela: boolean,
+        ) => {
+          const t = pub?.track;
+          if (!t?.mediaStreamTrack || !t.attach) return;
+          const el = t.attach() as HTMLVideoElement;
+          el.muted = true; // o som já vem pela mistura de áudio; aqui duplicaria
+          void el.play?.().catch(() => {});
+          lista.push({ el, nome, tela });
+        };
+
+        const meuNome = localParticipant.name || "Eu";
+        juntar(localParticipant.getTrackPublication(Track.Source.ScreenShare) ?? {}, meuNome, true);
+        juntar(localParticipant.getTrackPublication(Track.Source.Camera) ?? {}, meuNome, false);
+        room.remoteParticipants.forEach((p) => {
+          const nome = p.name || p.identity;
+          juntar(p.getTrackPublication(Track.Source.ScreenShare) ?? {}, nome, true);
+          juntar(p.getTrackPublication(Track.Source.Camera) ?? {}, nome, false);
+        });
+        return lista;
+      };
+
+      const fontesDeVideo = montarFontes();
 
       /* Sem nenhuma fonte, o destino ainda produz uma faixa — muda — e a
          gravação sairia com um arquivo de silêncio puro. Vale avisar em vez de
          entregar isso vinte minutos depois. */
-      if (fontesConectadas === 0 && videoTracks.length === 0) {
+      if (fontesConectadas === 0 && fontesDeVideo.length === 0) {
         await ctx.close().catch(() => {});
         toast.error("Não há o que gravar agora.", {
           description:
-            "Nenhum microfone aberto e nenhuma tela sendo compartilhada. " +
-            "Abra o microfone ou comece a apresentar e grave de novo.",
+            "Nenhum microfone aberto e nenhuma câmera ou tela em transmissão. " +
+            "Abra o microfone ou a câmera e grave de novo.",
         });
         return;
       }
 
-      const stream = new MediaStream([...dest.stream.getAudioTracks(), ...videoTracks]);
+      /* O compositor existe mesmo sem câmera nenhuma: ele desenha um quadro
+         escuro dizendo "somente áudio", o que é melhor do que um .webm sem
+         faixa de vídeo — este último alguns players recusam abrir. */
+      const compositor = criarCompositor(fontesDeVideo);
+      compositorRef.current = compositor;
+
+      const stream = new MediaStream([...dest.stream.getAudioTracks(), compositor.faixa]);
       streamRef.current = stream;
 
       const mimeCandidates = [
@@ -206,17 +242,37 @@ function useMeetingRecorder(roomName: string) {
          chegasse no meio da reunião ficava mudo no arquivo, e nada na tela
          indicava a falta — só se descobre ouvindo a gravação depois. */
       const aoAssinar = (t: RemoteTrack) => {
-        if (t.kind !== Track.Kind.Audio || !t.mediaStreamTrack) return;
         try {
-          connectTrack(t.mediaStreamTrack);
+          if (t.kind === Track.Kind.Audio && t.mediaStreamTrack) {
+            connectTrack(t.mediaStreamTrack);
+            return;
+          }
+          // Câmera ou tela de quem chegou depois entra na composição sem
+          // interromper a gravação — o compositor só troca a lista de fontes.
+          if (t.kind === Track.Kind.Video) compositor.atualizar(montarFontes());
         } catch {
           /* uma faixa a menos na mistura não justifica derrubar a gravação */
         }
       };
+      /* Sair da reunião ou fechar a câmera também muda a imagem. Sem
+         `TrackUnsubscribed`, o compositor continuaria desenhando um elemento
+         parado — a última imagem de quem saiu, congelada até o fim do arquivo. */
+      const aoSair = (t: RemoteTrack) => {
+        if (t.kind !== Track.Kind.Video) return;
+        try {
+          compositor.atualizar(montarFontes());
+        } catch {
+          /* ignore */
+        }
+      };
       room.on(RoomEvent.TrackSubscribed, aoAssinar);
+      room.on(RoomEvent.TrackUnsubscribed, aoSair);
 
       const encerrar = () => {
         room.off(RoomEvent.TrackSubscribed, aoAssinar);
+        room.off(RoomEvent.TrackUnsubscribed, aoSair);
+        compositorRef.current?.parar();
+        compositorRef.current = null;
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         ctx.close().catch(() => {});

@@ -470,25 +470,31 @@ function CallContents({
     : users.filter((u) => u.id !== currentUser.id).slice(0, 6);
 
   const [chatOpen, setChatOpen] = useState(false);
-  const chatStorageKey = `fluxo:chat:${roomName}`;
+  /* O chat da sala não é mais guardado entre reuniões.
+   *
+   * Ele vivia em `localStorage`, por sala, com até 200 mensagens — e isso
+   * criava um problema pior do que resolvia. O canal de dados do LiveKit NÃO
+   * repete histórico para quem entra depois: quem chega às 11h45 nunca recebe o
+   * que foi dito às 11h41. Então o que estava guardado não era "o histórico da
+   * reunião", era o histórico PARTICULAR daquela máquina — e na reunião
+   * seguinte ele reaparecia misturado com as mensagens novas, mostrando
+   * conversa da semana passada como se fosse de agora. Duas pessoas na mesma
+   * sala viam rolagens diferentes.
+   *
+   * Agora cada um vê o que foi dito enquanto esteve presente, que é exatamente
+   * o que o transporte entrega. Sair da sala limpa. De quebra, sai um gravador
+   * de base64 no `localStorage`: a mensagem com anexo ia inteira para lá.
+   */
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (typeof window === "undefined") return [];
     try {
-      const raw = window.localStorage.getItem(chatStorageKey);
-      return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+      // Limpeza única do que ficou guardado pela versão anterior.
+      window.localStorage.removeItem(`fluxo:chat:${roomName}`);
     } catch {
-      return [];
+      /* ignore */
     }
+    return [];
   });
-  useEffect(() => {
-    try {
-      // cap to last 200 to keep storage bounded
-      const trimmed = messages.slice(-200);
-      window.localStorage.setItem(chatStorageKey, JSON.stringify(trimmed));
-    } catch {
-      /* ignore quota errors */
-    }
-  }, [messages, chatStorageKey]);
   const [raises, setRaises] = useState<RaiseToast[]>([]);
   const [unread, setUnread] = useState(0);
   const chatOpenRef = useRef(chatOpen);
