@@ -9,6 +9,7 @@ import {
   Flame,
   Sparkles,
   Check,
+  ChevronRight,
 } from "lucide-react";
 
 import { useFluxo } from "@/lib/fluxo-store";
@@ -18,6 +19,7 @@ import type { Priority } from "@/lib/fluxo-types";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { sendNudge } from "@/components/attention-overlay";
 import { AnimatePresence, motion } from "framer-motion";
+import { alternarLancadores, useLancadoresRecolhidos } from "@/lib/lancadores";
 
 type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
 type PackTab = "concluir" | "meu" | "outro";
@@ -29,7 +31,15 @@ function todayEnd() {
 }
 
 export function QuickFab() {
-  const { createTask, tasks, users, currentUser, isAuthenticated } = useFluxo();
+  const { createTask, tasks, users, currentUser, isAuthenticated, openQuickCreate } = useFluxo();
+  const recolhido = useLancadoresRecolhidos();
+  /* Recolher fecha o painel aberto junto. Sem isto, um painel de 340px ficava
+     na tela depois de o botão que o abriu ter sumido — e não haveria mais como
+     fechá-lo pelo caminho normal. */
+  const recolher = () => {
+    setOpen(false);
+    alternarLancadores();
+  };
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("menu");
   const [title, setTitle] = useState("");
@@ -273,12 +283,24 @@ export function QuickFab() {
             hint="abre o bloco flutuante"
             onClick={openNotepad}
           />
+          {/* `openQuickCreate`, não navegação.
+              Isto era `window.location.href = "/minhas-tarefas"` — uma recarga
+              COMPLETA da página. E o estado restaurado do navegador nasce com
+              `isAuthenticated: false` de propósito (ver `load()` na store), o
+              que jogava a pessoa direto para o login. Clicar em "Criação em
+              massa" deslogava.
+
+              A planilha nem precisa de outra página: `QuickTaskModal` renderiza
+              o mesmo `InlineTaskCreator` por cima de onde a pessoa estiver. O
+              texto de apoio mudou junto, porque ele prometia um destino que já
+              não existe. */}
           <FabItem
             icon={ListChecks}
             label="Criação em massa"
-            hint="abre a planilha em Minhas tarefas"
+            hint="abre a planilha de várias tarefas"
             onClick={() => {
-              window.location.href = "/minhas-tarefas";
+              setOpen(false);
+              openQuickCreate();
             }}
           />
         </div>
@@ -602,28 +624,100 @@ export function QuickFab() {
         )}
       </AnimatePresence>
 
-      <motion.button
-        onClick={() => {
-          setOpen((v) => !v);
-          setMode("menu");
-        }}
-        whileTap={{ scale: 0.9 }}
-        transition={{ type: "spring", stiffness: 500, damping: 25 }}
-        title="Ações rápidas"
-        className="group hidden flex-col items-center gap-1 lg:flex"
-      >
-        <span
-          className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition group-hover:brightness-110 ${
-            open ? "rotate-45" : "fluxo-fab-jump"
-          }`}
-        >
-          {open ? <X className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
-        </span>
-        <span className="rounded-md border border-foreground/20 bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-foreground shadow-sm">
-          Clique — acesso rápido
-        </span>
-      </motion.button>
+      {/* A base: o botão de recolher à esquerda, o raio à direita.
+          O recolher mora AQUI dentro, e não solto na tela, para se posicionar
+          em relação ao raio sozinho — sem coordenada mágica que precise ser
+          reajustada toda vez que o canto mudar. Ele é o único que nunca some:
+          é por ele que os outros dois voltam. */}
+      <div className="hidden items-end gap-2 lg:flex">
+        <BotaoRecolher recolhido={recolhido} aoAlternar={recolher} />
+
+        <AnimatePresence initial={false}>
+          {!recolhido && (
+            <motion.button
+              key="raio"
+              onClick={() => {
+                setOpen((v) => !v);
+                setMode("menu");
+              }}
+              /* Sai deslizando para a direita e encolhendo, como se entrasse
+                 atrás do botão de recolher. `initial={false}` no
+                 AnimatePresence acima evita a entrada na primeira pintura —
+                 senão o raio "chegaria" toda vez que a tela monta. */
+              initial={{ opacity: 0, x: 24, scale: 0.6 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 24, scale: 0.6 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
+              style={{ transformOrigin: "bottom right" }}
+              title="Ações rápidas"
+              className="group flex flex-col items-center gap-1"
+            >
+              <span
+                className={`flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition group-hover:brightness-110 ${
+                  open ? "rotate-45" : "fluxo-fab-jump"
+                }`}
+              >
+                {open ? <X className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
+              </span>
+              <span className="whitespace-nowrap rounded-md border border-foreground/20 bg-card px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-foreground shadow-sm">
+                Clique — acesso rápido
+              </span>
+            </motion.button>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
+  );
+}
+
+/**
+ * O terceiro círculo: recolhe e devolve os outros dois.
+ *
+ * Menor que os dois de propósito — ele não é uma ação do app, é o controle do
+ * canto. Quando tudo está recolhido ele fica sozinho e discreto; quando estão
+ * abertos, ele se apaga um pouco para não competir com o raio, e acende no
+ * hover.
+ *
+ * A seta gira 180° em vez de trocar de ícone: o mesmo elemento apontando para
+ * o outro lado diz "isto volta" melhor do que dois desenhos diferentes.
+ */
+function BotaoRecolher({
+  recolhido,
+  aoAlternar,
+}: {
+  recolhido: boolean;
+  aoAlternar: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={aoAlternar}
+      whileTap={{ scale: 0.88 }}
+      whileHover={{ scale: 1.08 }}
+      transition={{ type: "spring", stiffness: 500, damping: 26 }}
+      title={recolhido ? "Mostrar chat e ações rápidas" : "Recolher chat e ações rápidas"}
+      aria-label={recolhido ? "Mostrar chat e ações rápidas" : "Recolher chat e ações rápidas"}
+      aria-expanded={!recolhido}
+      /* `mb-6` alinha o botão com o CÍRCULO do raio, não com o rótulo abaixo
+         dele. A coluna do raio tem 48px de círculo + 4 de espaço + 16 de
+         rótulo; com `items-end` puro, este botão encostaria no rodapé e
+         apareceria na altura do texto. A margem também é o que impede o botão
+         de pular de lugar quando o raio some. */
+      className={`mb-6 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors ${
+        recolhido
+          ? "text-foreground hover:bg-secondary"
+          : "text-muted-foreground/70 hover:text-foreground hover:bg-secondary"
+      }`}
+    >
+      <motion.span
+        animate={{ rotate: recolhido ? 180 : 0 }}
+        transition={{ type: "spring", stiffness: 420, damping: 28 }}
+        className="flex"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </motion.span>
+    </motion.button>
   );
 }
 

@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MessageCircle, Minus, Search, X } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
 import { ChatAvatar, Composer, MessageList, OnlineDot } from "@/components/chat-ui";
 import { AnimatePresence, motion } from "framer-motion";
+import { useLancadoresRecolhidos } from "@/lib/lancadores";
 
 /**
  * Dock de chat. Botão no canto inferior direito (ACIMA do FAB ⚡) que expande
@@ -12,6 +13,7 @@ import { AnimatePresence, motion } from "framer-motion";
  */
 export function ChatDock() {
   const { users, currentUser, isAuthenticated } = useFluxo();
+  const recolhido = useLancadoresRecolhidos();
   const {
     openWindows,
     minimized,
@@ -49,6 +51,13 @@ export function ChatDock() {
     const query = q.trim().toLowerCase();
     return query ? list.filter((u) => u.name.toLowerCase().includes(query)) : list;
   }, [others, isOnline, unreadByPeer, q]);
+
+  /* Recolher fecha a lista de contatos junto. O painel é irmão do botão, não
+     filho: sem isto ele ficaria aberto na tela depois de o botão que o abre ter
+     sumido, sem caminho normal para fechar. */
+  useEffect(() => {
+    if (recolhido) setPanelOpen(false);
+  }, [recolhido]);
 
   if (!isAuthenticated) return null;
 
@@ -260,32 +269,46 @@ export function ChatDock() {
         )}
         </AnimatePresence>
 
-        <motion.button
-          onClick={() => setPanelOpen((v) => !v)}
-          whileTap={{ scale: 0.9 }}
-          transition={{ type: "spring", stiffness: 500, damping: 25 }}
-          className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110"
-          title="Chat"
-        >
-          {/* O ícone gira ao virar X — o botão responde, não só o painel. */}
-          <motion.span
-            key={panelOpen ? "fechar" : "abrir"}
-            initial={{ rotate: -90, opacity: 0 }}
-            animate={{ rotate: 0, opacity: 1 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className="flex"
-          >
-            {panelOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
-          </motion.span>
-          {!panelOpen && totalUnread > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
-              {totalUnread}
-            </span>
+        {/* Recolhe junto com o raio, pelo botão que mora no `QuickFab`.
+            Sai deslizando para a direita e encolhendo — o mesmo movimento do
+            raio, para os dois parecerem entrar no mesmo lugar. Um atraso
+            pequeno na saída faz o de cima sair depois do de baixo, em cascata,
+            em vez de os dois sumirem no mesmo quadro. */}
+        <AnimatePresence initial={false}>
+          {!recolhido && (
+            <motion.button
+              key="balao"
+              onClick={() => setPanelOpen((v) => !v)}
+              initial={{ opacity: 0, x: 28, scale: 0.6 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 28, scale: 0.6 }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7, delay: 0.04 }}
+              style={{ transformOrigin: "bottom right" }}
+              className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110"
+              title="Chat"
+            >
+              {/* O ícone gira ao virar X — o botão responde, não só o painel. */}
+              <motion.span
+                key={panelOpen ? "fechar" : "abrir"}
+                initial={{ rotate: -90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                className="flex"
+              >
+                {panelOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
+              </motion.span>
+              {!panelOpen && totalUnread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
+                  {totalUnread}
+                </span>
+              )}
+              {onlineCount > 0 && !panelOpen && (
+                <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-success ring-2 ring-card" />
+              )}
+            </motion.button>
           )}
-          {onlineCount > 0 && !panelOpen && (
-            <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-success ring-2 ring-card" />
-          )}
-        </motion.button>
+        </AnimatePresence>
       </div>
     </div>
   );
