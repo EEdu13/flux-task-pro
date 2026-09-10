@@ -66,10 +66,39 @@ function ehUpdate(v: unknown): v is TelegramUpdate {
 }
 
 /**
+ * O bot pode responder em grupo?
+ *
+ * Fechado por padrão, e a polaridade é a mesma do segredo: variável ausente
+ * FECHA. Um dia alguém restaura este ambiente sem a variável, e o que se perde
+ * é a liberação temporária — não a proteção.
+ *
+ * Por que é variável e não uma linha comentada no código: a liberação nasceu
+ * com prazo ("libera para eu demonstrar para uma pessoa, depois volta a ser
+ * particular"). Desligar tem que ser apagar a variável na Railway, não achar e
+ * reverter um `if` — porque o segundo é o que ninguém faz.
+ *
+ * O que muda ao ligar, e vale saber antes: a resposta vai para o CHAT, então a
+ * lista de tarefas de quem pediu fica visível para o grupo inteiro. Quem é a
+ * pessoa continua vindo do `from.id` autenticado pelo Telegram, e a permissão
+ * de cada botão continua sendo reconferida no banco — isso não afrouxa. O que
+ * afrouxa é a privacidade do conteúdo.
+ */
+export function gruposLiberados(): boolean {
+  return process.env.TELEGRAM_PERMITIR_GRUPOS === "1";
+}
+
+/**
  * Descobre o que chegou. Não age sobre nada — a etapa 1 só precisa provar que
  * o Telegram alcança o servidor e que sabemos ler o que ele manda.
+ *
+ * `permitirGrupos` entra por parâmetro, e não lendo o ambiente aqui dentro,
+ * para esta função continuar pura: ela é a que dá para conferir lendo, e o dia
+ * em que ela passar a depender do ambiente é o dia em que ela deixa de ser.
  */
-export function classificar(bruto: unknown): AtualizacaoClassificada {
+export function classificar(
+  bruto: unknown,
+  opcoes: { permitirGrupos?: boolean } = {},
+): AtualizacaoClassificada {
   if (!ehUpdate(bruto)) {
     return { tipo: "ignorada", updateId: -1, motivo: "corpo sem update_id" };
   }
@@ -93,16 +122,22 @@ export function classificar(bruto: unknown): AtualizacaoClassificada {
   const msg = bruto.message;
   if (!msg) return { tipo: "ignorada", updateId, motivo: "update sem message nem callback_query" };
 
-  // O bot é de conversa privada. Em grupo, o vínculo pessoa↔conta não vale:
-  // qualquer participante tocaria nos botões de outro.
-  if (msg.chat.type !== "private") {
+  /* O bot é de conversa privada por padrão. Em grupo, a resposta vai para o
+     chat: a lista de tarefas de quem pediu fica à vista de todos, e o botão de
+     outra pessoa fica ao alcance de qualquer participante — o toque age como
+     quem apertou, mas a lista na tela é de outro.
+
+     `TELEGRAM_PERMITIR_GRUPOS=1` abre isso de propósito e temporariamente (ver
+     `gruposLiberados`). Sem a variável, continua fechado. */
+  const privado = msg.chat.type === "private";
+  if (!privado && !opcoes.permitirGrupos) {
     return { tipo: "ignorada", updateId, motivo: `chat ${msg.chat.type} não é privado` };
   }
   if (!msg.from || msg.from.is_bot) {
     return { tipo: "ignorada", updateId, motivo: "mensagem sem remetente humano" };
   }
 
-  const base = { updateId, deId: msg.from.id, chatId: msg.chat.id };
+  const base = { updateId, deId: msg.from.id, chatId: msg.chat.id, privado };
 
   if (msg.contact) return { tipo: "contato", ...base, contato: msg.contact };
 

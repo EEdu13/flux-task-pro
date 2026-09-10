@@ -74,18 +74,40 @@ export interface TelegramUpdate {
  * (segredo, 200 sempre, repetição) não precise ser tocada quando o bot ganha
  * um comando novo.
  */
+/**
+ * `privado` acompanha toda mensagem porque nem tudo que o bot faz cabe em
+ * grupo. Identificar-se, por exemplo: o vínculo pede o telefone pelo botão de
+ * contato, e um teclado desses num grupo pede o telefone de alguém na frente
+ * dos outros. Quem trata precisa poder decidir caso a caso, e para isso precisa
+ * saber onde está.
+ */
 export type AtualizacaoClassificada =
-  | { tipo: "contato"; updateId: number; deId: number; chatId: number; contato: TelegramContato }
+  | {
+      tipo: "contato";
+      updateId: number;
+      deId: number;
+      chatId: number;
+      privado: boolean;
+      contato: TelegramContato;
+    }
   | {
       tipo: "comando";
       updateId: number;
       deId: number;
       chatId: number;
+      privado: boolean;
       comando: string;
       /** O que veio depois do comando: "/start abc" → "abc". */
       argumento: string;
     }
-  | { tipo: "texto"; updateId: number; deId: number; chatId: number; texto: string }
+  | {
+      tipo: "texto";
+      updateId: number;
+      deId: number;
+      chatId: number;
+      privado: boolean;
+      texto: string;
+    }
   | {
       tipo: "callback";
       updateId: number;

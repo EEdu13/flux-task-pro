@@ -21,9 +21,13 @@ export const Route = createFileRoute("/api/public/telegram-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const { autenticarWebhook, classificar, jaProcessado, resumirParaLog } = await import(
-          "@/integrations/telegram/webhook.server"
-        );
+        const {
+          autenticarWebhook,
+          classificar,
+          gruposLiberados,
+          jaProcessado,
+          resumirParaLog,
+        } = await import("@/integrations/telegram/webhook.server");
         const { tratar } = await import("@/integrations/telegram/conversa.server");
         const { ipDaRequisicao } = await import("@/lib/segredo.server");
 
@@ -42,7 +46,7 @@ export const Route = createFileRoute("/api/public/telegram-webhook")({
 
         try {
           const bruto: unknown = await request.json();
-          const atualizacao = classificar(bruto);
+          const atualizacao = classificar(bruto, { permitirGrupos: gruposLiberados() });
 
           if (atualizacao.updateId >= 0 && jaProcessado(atualizacao.updateId)) {
             console.log(`[telegram-webhook] repetido ${resumirParaLog(atualizacao)}`);

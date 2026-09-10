@@ -59,14 +59,40 @@ async function perfilDe(pessoaId: number) {
   return papelEsetor(pessoaId);
 }
 
-/** Minhas tarefas abertas com prazo até hoje (inclui as atrasadas). */
-async function minhasTarefas(pessoaId: number, somenteAtrasadas: boolean) {
+/**
+ * Os três recortes das minhas tarefas.
+ *
+ * `onde` é literal NOSSO, nunca texto de mensagem — por isso pode ser
+ * interpolado na consulta. Mesma regra do `filtroPorPapel` acima.
+ *
+ * `CAST(... AS date)` dos dois lados em "atrasadas": o prazo é DATETIMEOFFSET e
+ * comparar com o instante atual marcaria como atrasada uma tarefa que vence
+ * hoje às 9h, depois das 9h. O que a pessoa quer ver é o DIA, não o horário.
+ */
+type Recorte = "andamento" | "atrasadas" | "abertas";
+
+const RECORTES: Record<Recorte, { titulo: string; vazio: string; onde: string }> = {
+  andamento: {
+    titulo: "*Em andamento*",
+    vazio: "Nada em andamento agora\\.",
+    onde: "situacao='andamento'",
+  },
+  atrasadas: {
+    titulo: "*Atrasadas*",
+    vazio: "Nada atrasado\\. 👏",
+    onde: "situacao<>'concluida' AND CAST(prazo AS date) < CAST(SYSDATETIMEOFFSET() AS date)",
+  },
+  abertas: {
+    titulo: "*Em aberto*",
+    vazio: "Nenhuma tarefa em aberto\\. 👏",
+    onde: "situacao<>'concluida'",
+  },
+};
+
+/** Minhas tarefas em um dos recortes acima. */
+async function minhasTarefas(pessoaId: number, recorte: Recorte) {
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
-  /* `CAST(... AS date)` dos dois lados: o prazo é DATETIMEOFFSET e comparar com
-     o instante atual descartaria uma tarefa que vence hoje às 9h depois das 9h.
-     O que a pessoa quer ver é o DIA, não o horário. */
-  const corte = somenteAtrasadas ? "<" : "<=";
   const r = await pool
     .request()
     .input("eu", sql.Int, pessoaId)
@@ -75,8 +101,7 @@ async function minhasTarefas(pessoaId: number, somenteAtrasadas: boolean) {
          FROM gestor.tarefas
         WHERE responsavel_id=@eu
           AND arquivada_em IS NULL
-          AND situacao <> 'concluida'
-          AND CAST(prazo AS date) ${corte} CAST(SYSDATETIMEOFFSET() AS date)
+          AND ${RECORTES[recorte].onde}
         ORDER BY prazo, ordem`,
     );
   return r.recordset as TarefaResumo[];
@@ -193,12 +218,30 @@ function linhaDaTarefa(t: TarefaResumo): string {
 const MENU: TecladoEmLinha = {
   inline_keyboard: [
     [
-      { text: "📋 Minhas de hoje", callback_data: "m:hoje" },
+      { text: "▶️ Em andamento", callback_data: "m:and" },
       { text: "⚠️ Atrasadas", callback_data: "m:atras" },
     ],
-    [{ text: "👥 Equipe", callback_data: "m:equipe" }],
+    [
+      { text: "📋 Em aberto", callback_data: "m:abertas" },
+      { text: "👥 Equipe", callback_data: "m:equipe" },
+    ],
   ],
 };
+
+/**
+ * O teclado de quem JÁ escolheu: só o caminho de volta.
+ *
+ * Antes, toda resposta vinha com o MENU inteiro embaixo — inclusive as de lista
+ * vazia. O efeito na conversa é uma pilha de menus idênticos, um por toque, e
+ * some a noção de onde a pessoa está: não dá para distinguir "este menu é a
+ * resposta ao que eu apertei" de "este é o menu do começo". Um botão de voltar
+ * diz as duas coisas: acabou aqui, e o caminho é este.
+ */
+function voltarPara(destino: string, texto = "‹ Voltar"): TecladoEmLinha {
+  return { inline_keyboard: [[{ text: texto, callback_data: destino }]] };
+}
+
+const VOLTAR_AO_MENU = voltarPara("m:menu", "‹ Voltar ao menu");
 
 function textoMenu(nome: string): string {
   const primeiro = nome.split(" ")[0] ?? nome;
@@ -207,12 +250,22 @@ function textoMenu(nome: string): string {
     "",
     "O que você quer ver?",
     "",
-    `_Comandos:_ /hoje, /atrasadas, /equipe, /sair`,
+    `_Comandos:_ /andamento, /atrasadas, /abertas, /equipe, /sair`,
   ].join("\n");
 }
 
-/** Lista de tarefas com um botão por tarefa, para abrir os detalhes. */
-function listaComBotoes(tarefas: TarefaResumo[], prefixo: string): TecladoEmLinha {
+/**
+ * Lista de tarefas com um botão por tarefa, para abrir os detalhes.
+ *
+ * `destinoVoltar` existe porque voltar nem sempre é o menu: da lista de alguém
+ * da equipe, o passo atrás natural é a lista de pessoas, não o começo. Jogar
+ * tudo no menu obrigaria a refazer Equipe › pessoa a cada tarefa conferida.
+ */
+function listaComBotoes(
+  tarefas: TarefaResumo[],
+  prefixo: string,
+  destinoVoltar: string,
+): TecladoEmLinha {
   return {
     inline_keyboard: [
       ...tarefas.slice(0, 8).map((t) => [
@@ -223,7 +276,7 @@ function listaComBotoes(tarefas: TarefaResumo[], prefixo: string): TecladoEmLinh
           callback_data: `${prefixo}${t.id}`,
         },
       ]),
-      [{ text: "‹ Menu", callback_data: "m:menu" }],
+      [{ text: "‹ Voltar", callback_data: destinoVoltar }],
     ],
   };
 }
@@ -236,7 +289,10 @@ function tecladoDaTarefa(t: TarefaResumo): TecladoEmLinha {
         { text: `${t.prioridade === "media" ? "•" : ""}🟡 Média`, callback_data: `p:media:${t.id}` },
         { text: `${t.prioridade === "baixa" ? "•" : ""}⚪ Baixa`, callback_data: `p:baixa:${t.id}` },
       ],
-      [{ text: "‹ Menu", callback_data: "m:menu" }],
+      /* O detalhe não sabe de onde veio — o `callback_data` tem 64 bytes e o id
+         da tarefa já ocupa 36, então guardar a origem ali sairia caro para o
+         que economiza. Do detalhe, o menu é o destino honesto. */
+      [{ text: "‹ Voltar ao menu", callback_data: "m:menu" }],
     ],
   };
 }
@@ -269,6 +325,24 @@ const CONVITE = [
 ].join("\n");
 
 /**
+ * A recusa de identificar alguém fora do privado.
+ *
+ * O vínculo se faz com o botão "compartilhar contato", que é teclado de
+ * resposta — num grupo ele aparece para todo mundo, e quem tocar manda o
+ * próprio telefone com o grupo inteiro olhando. Não é o tipo de coisa que se
+ * resolve avisando: some o botão.
+ *
+ * Esta trava vale MESMO com `TELEGRAM_PERMITIR_GRUPOS` ligado. O que aquela
+ * variável libera é o bot responder em grupo a quem já é conhecido; ela não
+ * libera transformar um grupo em balcão de cadastro.
+ */
+const SO_NO_PRIVADO = [
+  "Não te reconheço ainda, e isso não dá para resolver aqui no grupo\\.",
+  "",
+  "Abra uma conversa comigo no privado e mande /start — a identificação pede o seu telefone, e ele não deve passar por um grupo\\.",
+].join("\n");
+
+/**
  * Ponto único de entrada. Nunca lança: quem chama devolve 200 de qualquer
  * jeito (o Telegram reenvia o que não recebe 200, e reenvio vira ação
  * duplicada), então o erro morre aqui, no log.
@@ -277,13 +351,13 @@ export async function tratar(a: AtualizacaoClassificada): Promise<void> {
   try {
     switch (a.tipo) {
       case "contato":
-        return await aoReceberContato(a.deId, a.chatId, a.contato);
+        return await aoReceberContato(a.deId, a.chatId, a.privado, a.contato);
       case "comando":
-        return await aoReceberComando(a.deId, a.chatId, a.comando);
+        return await aoReceberComando(a.deId, a.chatId, a.privado, a.comando);
       case "callback":
         return await aoReceberBotao(a.deId, a.chatId, a.callbackId, a.data);
       case "texto":
-        return await aoReceberTexto(a.deId, a.chatId);
+        return await aoReceberTexto(a.deId, a.chatId, a.privado);
       case "ignorada":
         return;
     }
@@ -295,8 +369,16 @@ export async function tratar(a: AtualizacaoClassificada): Promise<void> {
 async function aoReceberContato(
   deId: number,
   chatId: number,
+  privado: boolean,
   contato: Parameters<typeof vincularPorContato>[2],
 ) {
+  /* Contato compartilhado em grupo não vincula, mesmo com grupos liberados.
+     Além do telefone ficar à vista, o `chat_id` gravado seria o do GRUPO — e é
+     nele que `avisarPessoa` mandaria, depois, todo aviso pessoal do sistema. */
+  if (!privado) {
+    await enviarMensagem(chatId, SO_NO_PRIVADO);
+    return;
+  }
   const r = await vincularPorContato(deId, chatId, contato);
   if (!r.ok) {
     const recado =
@@ -317,7 +399,12 @@ async function aoReceberContato(
   await enviarMensagem(chatId, textoMenu(r.nome), { teclado: MENU });
 }
 
-async function aoReceberComando(deId: number, chatId: number, comando: string) {
+async function aoReceberComando(
+  deId: number,
+  chatId: number,
+  privado: boolean,
+  comando: string,
+) {
   const conta = await pessoaPorTelegram(deId);
 
   if (comando === "/sair") {
@@ -332,16 +419,21 @@ async function aoReceberComando(deId: number, chatId: number, comando: string) {
   }
 
   if (!conta) {
-    await enviarMensagem(chatId, CONVITE, { teclado: PEDIR_CONTATO });
+    await enviarMensagem(chatId, privado ? CONVITE : SO_NO_PRIVADO, {
+      // O teclado de contato só no privado — ver `SO_NO_PRIVADO`.
+      teclado: privado ? PEDIR_CONTATO : undefined,
+    });
     return;
   }
 
   switch (comando) {
-    case "/hoje":
-    case "/tarefas":
-      return await mandarMinhas(conta.pessoaId, chatId, false);
+    case "/andamento":
+      return await mandarMinhas(conta.pessoaId, chatId, "andamento");
     case "/atrasadas":
-      return await mandarMinhas(conta.pessoaId, chatId, true);
+      return await mandarMinhas(conta.pessoaId, chatId, "atrasadas");
+    case "/abertas":
+    case "/tarefas":
+      return await mandarMinhas(conta.pessoaId, chatId, "abertas");
     case "/equipe":
       return await mandarEquipe(conta.pessoaId, chatId);
     default: {
@@ -352,10 +444,12 @@ async function aoReceberComando(deId: number, chatId: number, comando: string) {
 }
 
 /** Texto solto não vira tarefa (ainda). Responder o menu é melhor que silêncio. */
-async function aoReceberTexto(deId: number, chatId: number) {
+async function aoReceberTexto(deId: number, chatId: number, privado: boolean) {
   const conta = await pessoaPorTelegram(deId);
   if (!conta) {
-    await enviarMensagem(chatId, CONVITE, { teclado: PEDIR_CONTATO });
+    await enviarMensagem(chatId, privado ? CONVITE : SO_NO_PRIVADO, {
+      teclado: privado ? PEDIR_CONTATO : undefined,
+    });
     return;
   }
   const { nome } = await nomeDe(conta.pessoaId);
@@ -372,19 +466,17 @@ async function nomeDe(pessoaId: number): Promise<{ nome: string }> {
   return { nome: (r.recordset[0] as { nome: string } | undefined)?.nome ?? "" };
 }
 
-async function mandarMinhas(pessoaId: number, chatId: number, atrasadas: boolean) {
-  const lista = await minhasTarefas(pessoaId, atrasadas);
+async function mandarMinhas(pessoaId: number, chatId: number, recorte: Recorte) {
+  const { titulo, vazio } = RECORTES[recorte];
+  const lista = await minhasTarefas(pessoaId, recorte);
   if (lista.length === 0) {
-    await enviarMensagem(
-      chatId,
-      atrasadas ? "Nada atrasado\\. 👏" : "Nada com prazo para hoje ou antes\\. 👏",
-      { teclado: MENU },
-    );
+    await enviarMensagem(chatId, vazio, { teclado: VOLTAR_AO_MENU });
     return;
   }
-  const titulo = atrasadas ? "*Atrasadas*" : "*Para hoje \\(e o que ficou para trás\\)*";
   const corpo = lista.map(linhaDaTarefa).join("\n\n");
-  await enviarMensagem(chatId, `${titulo}\n\n${corpo}`, { teclado: listaComBotoes(lista, "t:") });
+  await enviarMensagem(chatId, `${titulo}\n\n${corpo}`, {
+    teclado: listaComBotoes(lista, "t:", "m:menu"),
+  });
 }
 
 async function mandarEquipe(pessoaId: number, chatId: number) {
@@ -393,7 +485,7 @@ async function mandarEquipe(pessoaId: number, chatId: number) {
     await enviarMensagem(
       chatId,
       "Não há mais ninguém no seu setor para acompanhar por aqui\\.",
-      { teclado: MENU },
+      { teclado: VOLTAR_AO_MENU },
     );
     return;
   }
@@ -406,7 +498,7 @@ async function mandarEquipe(pessoaId: number, chatId: number) {
             callback_data: `e:${p.pessoa_id}`,
           },
         ]),
-        [{ text: "‹ Menu", callback_data: "m:menu" }],
+        [{ text: "‹ Voltar ao menu", callback_data: "m:menu" }],
       ],
     },
   });
@@ -432,9 +524,15 @@ async function aoReceberBotao(
     await enviarMensagem(chatId, textoMenu(nome), { teclado: MENU });
     return;
   }
-  if (data === "m:hoje" || data === "m:atras") {
+  const RECORTE_DO_BOTAO: Record<string, Recorte> = {
+    "m:and": "andamento",
+    "m:atras": "atrasadas",
+    "m:abertas": "abertas",
+  };
+  const recorte = RECORTE_DO_BOTAO[data];
+  if (recorte) {
     await responderCallback(callbackId);
-    await mandarMinhas(conta.pessoaId, chatId, data === "m:atras");
+    await mandarMinhas(conta.pessoaId, chatId, recorte);
     return;
   }
   if (data === "m:equipe") {
@@ -462,14 +560,16 @@ async function aoReceberBotao(
     const nome = permitidos.find((p) => p.pessoa_id === alvo)?.nome ?? "";
     if (lista.length === 0) {
       await enviarMensagem(chatId, `*${escaparMd(nome)}* não tem tarefas abertas\\.`, {
-        teclado: MENU,
+        // Volta para a lista de pessoas: quem está conferindo a equipe quer o
+        // próximo nome, não recomeçar do menu.
+        teclado: voltarPara("m:equipe", "‹ Voltar à equipe"),
       });
       return;
     }
     await enviarMensagem(
       chatId,
       `*${escaparMd(nome)}*\n\n${lista.map(linhaDaTarefa).join("\n\n")}`,
-      { teclado: listaComBotoes(lista, "t:") },
+      { teclado: listaComBotoes(lista, "t:", "m:equipe") },
     );
     return;
   }
