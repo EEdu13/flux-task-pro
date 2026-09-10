@@ -101,6 +101,7 @@ async function comandoDelete(descartarPendentes) {
    A descrição é o que aparece cinza ao lado do comando, então ela diz o que a
    pessoa VÊ, não o nome interno do recorte. */
 const COMANDOS = [
+  { command: "nova", description: "Criar uma tarefa (para mim ou para alguem)" },
   { command: "andamento", description: "Minhas tarefas em andamento" },
   { command: "atrasadas", description: "Minhas tarefas com prazo vencido" },
   { command: "abertas", description: "Todas as minhas tarefas em aberto" },

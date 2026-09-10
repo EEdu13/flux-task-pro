@@ -18,6 +18,17 @@ import {
   responderCallback,
 } from "./client.server";
 import { desvincular, pessoaPorTelegram, vincularPorContato } from "./contas.server";
+import {
+  atrasoEmDiasBr,
+  criarTarefa,
+  dataBr,
+  diaBr,
+  fimDoDiaBr,
+  HOJE_BR,
+  hojeEmBrasilia,
+  lerPrazo,
+  possiveisResponsaveis,
+} from "./tarefas.server";
 import type { AtualizacaoClassificada, TecladoEmLinha } from "./types";
 
 /** Endereço do sistema, para os links de "abrir no Fluxo". */
@@ -27,13 +38,16 @@ function urlDoApp(): string {
 
 /* --------------------------- Consultas --------------------------- */
 
+/* Campo `responsavel` removido: estava declarado, nenhum SELECT o trazia e nada
+   o lia. Tipo que promete coluna inexistente é pior que tipo faltando — ele
+   convida a usar `undefined` achando que é `null` do banco. Sem ele, o resumo
+   do dia (`LinhaDoDia`) também passa a caber aqui sem conversão. */
 interface TarefaResumo {
   id: string;
   titulo: string;
   prazo: Date;
   situacao: string;
   prioridade: string;
-  responsavel: string | null;
 }
 
 /**
@@ -65,9 +79,12 @@ async function perfilDe(pessoaId: number) {
  * `onde` é literal NOSSO, nunca texto de mensagem — por isso pode ser
  * interpolado na consulta. Mesma regra do `filtroPorPapel` acima.
  *
- * `CAST(... AS date)` dos dois lados em "atrasadas": o prazo é DATETIMEOFFSET e
- * comparar com o instante atual marcaria como atrasada uma tarefa que vence
- * hoje às 9h, depois das 9h. O que a pessoa quer ver é o DIA, não o horário.
+ * O que a pessoa quer ver é o DIA, não o horário — e o dia é o de BRASÍLIA. A
+ * comparação era `CAST(prazo AS date)` contra `CAST(SYSDATETIMEOFFSET() AS
+ * date)`, os dois em UTC, e isso errava o dia inteiro: o prazo é gravado às
+ * 23:59 de Brasília, que em UTC já é 02:59 do dia seguinte. Medido no cadastro
+ * atual, no mesmo instante, "vence hoje" dava 3 tarefas pelo UTC e 12 pelo
+ * horário de Brasília. Ver `dataBr` em `tarefas.server.ts`.
  */
 type Recorte = "andamento" | "atrasadas" | "abertas";
 
@@ -80,7 +97,7 @@ const RECORTES: Record<Recorte, { titulo: string; vazio: string; onde: string }>
   atrasadas: {
     titulo: "*Atrasadas*",
     vazio: "Nada atrasado\\. 👏",
-    onde: "situacao<>'concluida' AND CAST(prazo AS date) < CAST(SYSDATETIMEOFFSET() AS date)",
+    onde: `situacao<>'concluida' AND ${dataBr("prazo")} < ${HOJE_BR}`,
   },
   abertas: {
     titulo: "*Em aberto*",
@@ -172,7 +189,10 @@ async function podeMexer(pessoaId: number, tarefaId: string): Promise<TarefaResu
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
   const filtro = filtroPorPapel(papel, setor);
-  const req = pool.request().input("eu", sql.Int, pessoaId).input("id", sql.UniqueIdentifier, tarefaId);
+  const req = pool
+    .request()
+    .input("eu", sql.Int, pessoaId)
+    .input("id", sql.UniqueIdentifier, tarefaId);
   if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);
   const r = await req.query(
     `SELECT TOP 1 id, titulo, prazo, situacao, prioridade
@@ -197,17 +217,12 @@ async function trocarPrioridade(tarefaId: string, prioridade: string) {
 const EMOJI_PRIORIDADE: Record<string, string> = { alta: "🔴", media: "🟡", baixa: "⚪" };
 const NOME_PRIORIDADE: Record<string, string> = { alta: "Alta", media: "Média", baixa: "Baixa" };
 
-function dia(d: Date): string {
-  return new Date(d).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-}
-
-function atrasoEmDias(prazo: Date): number {
-  const p = new Date(prazo);
-  p.setHours(0, 0, 0, 0);
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  return Math.round((hoje.getTime() - p.getTime()) / 86_400_000);
-}
+/* `dia` e `atrasoEmDias` moraram aqui e liam o relógio do processo, que na
+   Railway é UTC. Como o prazo é gravado às 02:59Z do dia seguinte, os dois
+   erravam: a data saía um dia à frente e o atraso, um dia a menos. Mudaram para
+   `tarefas.server.ts`, com fuso explícito. */
+const dia = diaBr;
+const atrasoEmDias = atrasoEmDiasBr;
 
 function linhaDaTarefa(t: TarefaResumo): string {
   const atraso = atrasoEmDias(t.prazo);
@@ -225,6 +240,7 @@ const MENU: TecladoEmLinha = {
       { text: "📋 Em aberto", callback_data: "m:abertas" },
       { text: "👥 Equipe", callback_data: "m:equipe" },
     ],
+    [{ text: "➕ Nova tarefa", callback_data: "m:nova" }],
   ],
 };
 
@@ -250,7 +266,7 @@ function textoMenu(nome: string): string {
     "",
     "O que você quer ver?",
     "",
-    `_Comandos:_ /andamento, /atrasadas, /abertas, /equipe, /sair`,
+    `_Comandos:_ /nova, /andamento, /atrasadas, /abertas, /equipe, /sair`,
   ].join("\n");
 }
 
@@ -286,8 +302,14 @@ function tecladoDaTarefa(t: TarefaResumo): TecladoEmLinha {
     inline_keyboard: [
       [
         { text: `${t.prioridade === "alta" ? "•" : ""}🔴 Alta`, callback_data: `p:alta:${t.id}` },
-        { text: `${t.prioridade === "media" ? "•" : ""}🟡 Média`, callback_data: `p:media:${t.id}` },
-        { text: `${t.prioridade === "baixa" ? "•" : ""}⚪ Baixa`, callback_data: `p:baixa:${t.id}` },
+        {
+          text: `${t.prioridade === "media" ? "•" : ""}🟡 Média`,
+          callback_data: `p:media:${t.id}`,
+        },
+        {
+          text: `${t.prioridade === "baixa" ? "•" : ""}⚪ Baixa`,
+          callback_data: `p:baixa:${t.id}`,
+        },
       ],
       /* O detalhe não sabe de onde veio — o `callback_data` tem 64 bytes e o id
          da tarefa já ocupa 36, então guardar a origem ali sairia caro para o
@@ -308,6 +330,216 @@ function textoDaTarefa(t: TarefaResumo): string {
     "",
     "_Toque para mudar a prioridade:_",
   ].join("\n");
+}
+
+/* ----------------------- Nova tarefa ----------------------- */
+
+/**
+ * O rascunho de quem está criando uma tarefa, entre uma mensagem e a próxima.
+ *
+ * Vive NA MEMÓRIA do processo, e a escolha é deliberada. Um rascunho dura o
+ * minuto que a pessoa leva para responder quatro perguntas; gravá-lo criaria uma
+ * tabela cujo conteúdo é lixo dez minutos depois, e uma migração no banco de
+ * produção para guardar coisa que ninguém quer de volta.
+ *
+ * O preço: um deploy no meio do preenchimento perde o rascunho, e a pessoa
+ * recomeça. É a MESMA aposta que `jaProcessado` já faz com os update_id — este
+ * projeto roda numa instância só. O dia em que rodar em duas, os dois pontos
+ * precisam de banco juntos, e a nota fica aqui para esse dia.
+ *
+ * A chave é o id do Telegram de quem escreve, não o chat: a pessoa é a mesma no
+ * privado e no grupo, e um rascunho por pessoa é o que evita duas conversas
+ * paralelas escrevendo na mesma tarefa.
+ */
+type Etapa = "titulo" | "descricao" | "prazo" | "responsavel";
+
+interface Rascunho {
+  etapa: Etapa;
+  chatId: number;
+  titulo: string;
+  descricao: string | null;
+  prazo: Date | null;
+  em: number;
+}
+
+const rascunhos = new Map<number, Rascunho>();
+
+/** Meia hora. Rascunho esquecido não pode reaparecer no dia seguinte. */
+const VALIDADE_RASCUNHO_MS = 30 * 60 * 1000;
+
+function rascunhoDe(deId: number): Rascunho | null {
+  const r = rascunhos.get(deId);
+  if (!r) return null;
+  if (Date.now() - r.em > VALIDADE_RASCUNHO_MS) {
+    rascunhos.delete(deId);
+    return null;
+  }
+  return r;
+}
+
+/** Teclado de prazo: os dois casos que cobrem quase tudo, e o resto digitado. */
+const TECLADO_PRAZO: TecladoEmLinha = {
+  inline_keyboard: [
+    [
+      { text: "Hoje", callback_data: "np:hoje" },
+      { text: "Amanhã", callback_data: "np:amanha" },
+    ],
+    [{ text: "✕ Cancelar", callback_data: "nx" }],
+  ],
+};
+
+const CANCELAR: TecladoEmLinha = {
+  inline_keyboard: [[{ text: "✕ Cancelar", callback_data: "nx" }]],
+};
+
+async function comecarNova(deId: number, chatId: number, privado: boolean) {
+  /* Só no privado, e não por pudor: o fluxo é uma conversa de quatro
+     mensagens de TEXTO, e em grupo o Telegram não entrega texto solto ao bot
+     (modo privacidade). Metade das etapas simplesmente não chegaria, e a
+     pessoa ficaria falando sozinha achando que o bot travou. */
+  if (!privado) {
+    await enviarMensagem(
+      chatId,
+      "Criar tarefa é no privado — aqui no grupo o Telegram não me entrega as respostas de texto\\.",
+    );
+    return;
+  }
+  rascunhos.set(deId, {
+    etapa: "titulo",
+    chatId,
+    titulo: "",
+    descricao: null,
+    prazo: null,
+    em: Date.now(),
+  });
+  await enviarMensagem(chatId, "*Nova tarefa*\n\nQual é o título\\?", { teclado: CANCELAR });
+}
+
+/** Cada resposta de texto avança uma etapa. Devolve false se não havia rascunho. */
+async function avancarNova(deId: number, chatId: number, texto: string): Promise<boolean> {
+  const r = rascunhoDe(deId);
+  if (!r) return false;
+  r.em = Date.now();
+
+  if (r.etapa === "titulo") {
+    const titulo = texto.trim().slice(0, 200);
+    if (!titulo) {
+      await enviarMensagem(chatId, "O título não pode ser vazio\\. Como se chama a tarefa\\?", {
+        teclado: CANCELAR,
+      });
+      return true;
+    }
+    r.titulo = titulo;
+    r.etapa = "descricao";
+    await enviarMensagem(
+      chatId,
+      `*${escaparMd(titulo)}*\n\nAlguma descrição\\? Mande /pular se não precisar\\.`,
+      { teclado: CANCELAR },
+    );
+    return true;
+  }
+
+  if (r.etapa === "descricao") {
+    r.descricao = texto.trim().slice(0, 2000) || null;
+    r.etapa = "prazo";
+    await perguntarPrazo(chatId);
+    return true;
+  }
+
+  if (r.etapa === "prazo") {
+    const prazo = lerPrazo(texto);
+    if (!prazo) {
+      await enviarMensagem(
+        chatId,
+        "Não entendi a data\\. Tente `hoje`, `amanhã`, `20/09` ou `20/09/2026`\\.",
+        { teclado: TECLADO_PRAZO },
+      );
+      return true;
+    }
+    r.prazo = prazo;
+    r.etapa = "responsavel";
+    await perguntarResponsavel(deId, chatId, prazo);
+    return true;
+  }
+
+  // Etapa "responsavel" é só botão — texto aqui não avança nada.
+  await enviarMensagem(chatId, "Escolha o responsável nos botões acima\\.", {
+    teclado: CANCELAR,
+  });
+  return true;
+}
+
+async function perguntarPrazo(chatId: number) {
+  await enviarMensagem(
+    chatId,
+    "Para quando\\?\n\n_Aceito_ `hoje`_,_ `amanhã`_,_ `20/09` _ou_ `20/09/2026`_._",
+    { teclado: TECLADO_PRAZO },
+  );
+}
+
+async function perguntarResponsavel(deId: number, chatId: number, prazo: Date) {
+  const conta = await pessoaPorTelegram(deId);
+  if (!conta) return;
+  const pessoas = await possiveisResponsaveis(conta.pessoaId);
+  const outros = pessoas.filter((p) => p.pessoa_id !== conta.pessoaId);
+  await enviarMensagem(chatId, `Prazo: *${escaparMd(diaBr(prazo))}*\n\nPara quem é a tarefa\\?`, {
+    teclado: {
+      inline_keyboard: [
+        [{ text: "🙋 Para mim", callback_data: `nv:${conta.pessoaId}` }],
+        ...outros
+          .slice(0, 12)
+          .map((p) => [
+            { text: p.nome.split(" ").slice(0, 2).join(" "), callback_data: `nv:${p.pessoa_id}` },
+          ]),
+        [{ text: "✕ Cancelar", callback_data: "nx" }],
+      ],
+    },
+  });
+}
+
+/** Fecha o rascunho: grava a tarefa e avisa quem recebeu. */
+async function concluirNova(deId: number, chatId: number, alvoId: number): Promise<string | null> {
+  const r = rascunhoDe(deId);
+  if (!r || !r.prazo || !r.titulo) return null;
+
+  const conta = await pessoaPorTelegram(deId);
+  if (!conta) return null;
+
+  /* O alvo veio do botão, então é palpite até prova em contrário — mesma regra
+     de `e:` na equipe. Recalcula quem esta pessoa pode escolher, agora. */
+  const permitidos = await possiveisResponsaveis(conta.pessoaId);
+  const alvo = permitidos.find((p) => p.pessoa_id === alvoId);
+  if (!alvo) return null;
+
+  await criarTarefa({
+    titulo: r.titulo,
+    descricao: r.descricao,
+    prazo: r.prazo,
+    responsavelId: alvoId,
+    criadoPor: conta.pessoaId,
+  });
+  rascunhos.delete(deId);
+
+  const paraMim = alvoId === conta.pessoaId;
+  await enviarMensagem(
+    chatId,
+    [
+      "✅ *Tarefa criada*",
+      "",
+      `*${escaparMd(r.titulo)}*`,
+      `Prazo: ${escaparMd(diaBr(r.prazo))}`,
+      `Responsável: ${escaparMd(paraMim ? "você" : alvo.nome)}`,
+    ].join("\n"),
+    { teclado: VOLTAR_AO_MENU },
+  );
+
+  /* Quem recebeu fica sabendo pelo Telegram, se tiver vínculo. É o primeiro
+     uso de `avisarPessoa`, que existia sem ninguém chamar. Silencioso quando
+     não há vínculo: quem não conectou não vira erro de quem criou. */
+  if (!paraMim) {
+    void avisarPessoa(alvoId, "Nova tarefa para você", `${r.titulo}\nPrazo: ${diaBr(r.prazo)}`);
+  }
+  return alvo.nome;
 }
 
 /* --------------------------- Despacho --------------------------- */
@@ -357,7 +589,7 @@ export async function tratar(a: AtualizacaoClassificada): Promise<void> {
       case "callback":
         return await aoReceberBotao(a.deId, a.chatId, a.callbackId, a.data);
       case "texto":
-        return await aoReceberTexto(a.deId, a.chatId, a.privado);
+        return await aoReceberTexto(a.deId, a.chatId, a.privado, a.texto);
       case "ignorada":
         return;
     }
@@ -399,12 +631,7 @@ async function aoReceberContato(
   await enviarMensagem(chatId, textoMenu(r.nome), { teclado: MENU });
 }
 
-async function aoReceberComando(
-  deId: number,
-  chatId: number,
-  privado: boolean,
-  comando: string,
-) {
+async function aoReceberComando(deId: number, chatId: number, privado: boolean, comando: string) {
   const conta = await pessoaPorTelegram(deId);
 
   if (comando === "/sair") {
@@ -426,6 +653,33 @@ async function aoReceberComando(
     return;
   }
 
+  /* Os comandos do rascunho vêm ANTES do resto: `/pular` e `/cancelar` só
+     querem dizer algo no meio de uma criação, e fora dela caem no menu como
+     qualquer comando desconhecido. */
+  if (comando === "/nova" || comando === "/nova_tarefa") {
+    return await comecarNova(deId, chatId, privado);
+  }
+  if (comando === "/cancelar") {
+    const tinha = rascunhos.delete(deId);
+    await enviarMensagem(
+      chatId,
+      tinha ? "Criação cancelada\\." : "Não havia nada em andamento\\.",
+      { teclado: VOLTAR_AO_MENU },
+    );
+    return;
+  }
+  if (comando === "/pular") {
+    const r = rascunhoDe(deId);
+    if (r?.etapa === "descricao") {
+      r.descricao = null;
+      r.etapa = "prazo";
+      r.em = Date.now();
+      return await perguntarPrazo(chatId);
+    }
+    await enviarMensagem(chatId, "Não há nada para pular agora\\.", { teclado: VOLTAR_AO_MENU });
+    return;
+  }
+
   switch (comando) {
     case "/andamento":
       return await mandarMinhas(conta.pessoaId, chatId, "andamento");
@@ -443,8 +697,14 @@ async function aoReceberComando(
   }
 }
 
-/** Texto solto não vira tarefa (ainda). Responder o menu é melhor que silêncio. */
-async function aoReceberTexto(deId: number, chatId: number, privado: boolean) {
+/**
+ * Texto solto.
+ *
+ * Com uma criação em andamento, ele É a resposta da etapa — essa checagem vem
+ * primeiro, senão o título da tarefa seria respondido com o menu. Fora disso,
+ * texto ainda não vira tarefa sozinho, e o menu é melhor que silêncio.
+ */
+async function aoReceberTexto(deId: number, chatId: number, privado: boolean, texto: string) {
   const conta = await pessoaPorTelegram(deId);
   if (!conta) {
     await enviarMensagem(chatId, privado ? CONVITE : SO_NO_PRIVADO, {
@@ -452,6 +712,7 @@ async function aoReceberTexto(deId: number, chatId: number, privado: boolean) {
     });
     return;
   }
+  if (await avancarNova(deId, chatId, texto)) return;
   const { nome } = await nomeDe(conta.pessoaId);
   await enviarMensagem(chatId, textoMenu(nome), { teclado: MENU });
 }
@@ -482,11 +743,9 @@ async function mandarMinhas(pessoaId: number, chatId: number, recorte: Recorte) 
 async function mandarEquipe(pessoaId: number, chatId: number) {
   const pessoas = await pessoasDoMeuEscopo(pessoaId);
   if (pessoas.length === 0) {
-    await enviarMensagem(
-      chatId,
-      "Não há mais ninguém no seu setor para acompanhar por aqui\\.",
-      { teclado: VOLTAR_AO_MENU },
-    );
+    await enviarMensagem(chatId, "Não há mais ninguém no seu setor para acompanhar por aqui\\.", {
+      teclado: VOLTAR_AO_MENU,
+    });
     return;
   }
   await enviarMensagem(chatId, "*Equipe* — escolha quem você quer ver:", {
@@ -538,6 +797,56 @@ async function aoReceberBotao(
   if (data === "m:equipe") {
     await responderCallback(callbackId);
     await mandarEquipe(conta.pessoaId, chatId);
+    return;
+  }
+
+  /* ---- Criação de tarefa ---- */
+
+  if (data === "m:nova") {
+    await responderCallback(callbackId);
+    /* O botão só existe em mensagem que o bot mandou, e no grupo isso também
+       acontece — daí a checagem de privado continuar valendo aqui. */
+    await comecarNova(deId, chatId, true);
+    return;
+  }
+  if (data === "nx") {
+    rascunhos.delete(deId);
+    await responderCallback(callbackId, "Cancelado.");
+    await enviarMensagem(chatId, "Criação cancelada\\.", { teclado: VOLTAR_AO_MENU });
+    return;
+  }
+  if (data === "np:hoje" || data === "np:amanha") {
+    const r = rascunhoDe(deId);
+    if (!r || r.etapa !== "prazo") {
+      await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
+      return;
+    }
+    const h = hojeEmBrasilia();
+    r.prazo = fimDoDiaBr(h.ano, h.mes, h.dia + (data === "np:amanha" ? 1 : 0));
+    r.etapa = "responsavel";
+    r.em = Date.now();
+    await responderCallback(callbackId);
+    await perguntarResponsavel(deId, chatId, r.prazo);
+    return;
+  }
+  if (data.startsWith("nv:")) {
+    const alvo = Number(data.slice(3));
+    if (!Number.isInteger(alvo)) {
+      await responderCallback(callbackId, "Pedido inválido.");
+      return;
+    }
+    const nome = await concluirNova(deId, chatId, alvo);
+    if (!nome) {
+      /* Rascunho expirado, perdido num deploy, ou alvo fora do alcance de quem
+         apertou. Os três terminam igual para quem está olhando: não deu, e o
+         caminho é recomeçar. */
+      await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
+      await enviarMensagem(chatId, "A criação expirou\\. Mande /nova para recomeçar\\.", {
+        teclado: VOLTAR_AO_MENU,
+      });
+      return;
+    }
+    await responderCallback(callbackId, "Tarefa criada.");
     return;
   }
 
@@ -615,6 +924,68 @@ async function aoReceberBotao(
   }
 
   await responderCallback(callbackId);
+}
+
+/* -------------------- Resumo das 7h -------------------- */
+
+/**
+ * Manda para cada pessoa vinculada o dia dela: o que vence hoje e o que ficou
+ * para trás. Chamado pela rota `/api/public/telegram-diario`, uma vez por dia.
+ *
+ * Quem não tem nada NÃO recebe nada. Um "bom dia, você não tem tarefas" toda
+ * manhã é a forma mais rápida de ensinar as pessoas a ignorar o bot — e no dia
+ * em que houver algo, a mensagem já terá virado ruído que ninguém abre.
+ *
+ * Uma falha de envio não derruba as outras: cada pessoa é uma tentativa
+ * isolada. O contrário faria o primeiro chat bloqueado cancelar o resumo de
+ * todo mundo que vinha depois na lista.
+ */
+export async function enviarResumoDoDia(): Promise<{
+  enviados: number;
+  pulados: number;
+  falhas: number;
+}> {
+  const { pessoasComTelegram, tarefasDoDia } = await import("./tarefas.server");
+  const pessoas = await pessoasComTelegram();
+
+  let enviados = 0;
+  let pulados = 0;
+  let falhas = 0;
+
+  for (const p of pessoas) {
+    try {
+      const lista = await tarefasDoDia(p.pessoaId);
+      if (lista.length === 0) {
+        pulados += 1;
+        continue;
+      }
+
+      const atrasadas = lista.filter((t) => t.atraso > 0);
+      const deHoje = lista.filter((t) => t.atraso <= 0);
+
+      const partes = [`☀️ *Bom dia, ${escaparMd(p.nome.split(" ")[0] ?? p.nome)}*`, ""];
+      if (deHoje.length > 0) {
+        partes.push(`*Para hoje \\(${deHoje.length}\\)*`, "");
+        partes.push(deHoje.map(linhaDaTarefa).join("\n\n"));
+      }
+      if (atrasadas.length > 0) {
+        if (deHoje.length > 0) partes.push("");
+        partes.push(`*Atrasadas \\(${atrasadas.length}\\)*`, "");
+        partes.push(atrasadas.map(linhaDaTarefa).join("\n\n"));
+      }
+
+      await enviarMensagem(p.chatId, partes.join("\n"), {
+        teclado: listaComBotoes(lista, "t:", "m:menu"),
+      });
+      enviados += 1;
+    } catch (e) {
+      falhas += 1;
+      // Sem o conteúdo da mensagem no log: o resumo é a agenda da pessoa.
+      console.warn(`[telegram-diario] falhou para pessoa ${p.pessoaId}:`, (e as Error)?.message);
+    }
+  }
+
+  return { enviados, pulados, falhas };
 }
 
 /* -------------------- Aviso empurrado pelo sistema -------------------- */
