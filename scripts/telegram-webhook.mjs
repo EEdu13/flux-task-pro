@@ -93,6 +93,30 @@ async function comandoDelete(descartarPendentes) {
   console.log(`\n  Webhook removido. O bot para de receber até um novo set.\n`);
 }
 
+/* A lista que o Telegram sugere ao digitar "/" e mostra no botão Menu.
+   Ela vive NO TELEGRAM, não no código — por isso é um comando aqui e não algo
+   que o app registra sozinho no boot. Precisa ser reenviada quando os comandos
+   de `conversa.server.ts` mudarem; fora disso não some com deploy nem restart.
+
+   A descrição é o que aparece cinza ao lado do comando, então ela diz o que a
+   pessoa VÊ, não o nome interno do recorte. */
+const COMANDOS = [
+  { command: "andamento", description: "Minhas tarefas em andamento" },
+  { command: "atrasadas", description: "Minhas tarefas com prazo vencido" },
+  { command: "abertas", description: "Todas as minhas tarefas em aberto" },
+  { command: "equipe", description: "Acompanhar as tarefas da equipe" },
+  { command: "sair", description: "Desfazer o vinculo desta conta" },
+];
+
+async function comandoComandos() {
+  await chamar("setMyCommands", { commands: COMANDOS });
+  console.log(`\n  Lista de comandos registrada (${COMANDOS.length}):\n`);
+  for (const c of COMANDOS) console.log(`    /${c.command.padEnd(11)} ${c.description}`);
+  /* /start fica de fora de propósito: o Telegram já oferece o botão INICIAR em
+     conversa nova, e listá-lo sugere que ele faz algo diferente do menu. */
+  console.log(`\n  (/start nao entra na lista: o Telegram ja oferece o botao INICIAR.)\n`);
+}
+
 const [, , comando, ...resto] = process.argv;
 const descartar = resto.includes("--descartar-pendentes");
 const posicional = resto.find((a) => !a.startsWith("--"));
@@ -110,6 +134,9 @@ switch (comando) {
   case "delete":
     await comandoDelete(descartar);
     break;
+  case "comandos":
+    await comandoComandos();
+    break;
   default:
     console.log(`
   Uso: npm run telegram:webhook -- <comando>
@@ -118,6 +145,7 @@ switch (comando) {
     info                   estado atual do webhook e último erro de entrega
     set <url>              registra o webhook com o segredo do .env
     delete                 remove o registro
+    comandos               registra a lista que aparece ao digitar "/"
 
   Opção:
     --descartar-pendentes  joga fora a fila acumulada (vale em set e delete)
