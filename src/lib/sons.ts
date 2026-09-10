@@ -1,3 +1,4 @@
+import honkMp3 from "@/assets/honk.mp3";
 import nudgeMp3 from "@/assets/nudge.mp3";
 import mensagemMp3 from "@/assets/stardew-fishing.mp3";
 
@@ -130,6 +131,7 @@ function preparar(src: string, volume: number): HTMLAudioElement | null {
 
 let elNudge: HTMLAudioElement | null = null;
 let elMensagem: HTMLAudioElement | null = null;
+let elBuzina: HTMLAudioElement | null = null;
 
 function tocar(el: HTMLAudioElement | null, reserva: () => void): void {
   if (!el) {
@@ -157,6 +159,21 @@ export function tocarNudge(): void {
 export function tocarMensagemNova(): void {
   elMensagem ??= preparar(mensagemMp3, 0.5);
   tocar(elMensagem, mensagemSintetizada);
+}
+
+/**
+ * Buzina do trator — uma vez, na hora em que ele entra na tela.
+ *
+ * Único som daqui SEM reserva sintetizada, e não por esquecimento: os outros
+ * avisam coisas que só existem no áudio, então silêncio ali é indistinguível de
+ * "ninguém te chamou". A buzina acompanha um trator de 100px atravessando a
+ * tela com uma faixa — a mensagem chega inteira sem ela. Falhando o arquivo,
+ * silêncio é a degradação certa; um bipe de oscilador no lugar de uma buzina
+ * soaria como erro do sistema, não como o trator.
+ */
+export function tocarBuzina(): void {
+  elBuzina ??= preparar(honkMp3, 0.6);
+  tocar(elBuzina, () => {});
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import larsilLogo from "@/assets/larsil-logo.png";
+import { tocarBuzina } from "@/lib/sons";
 
 /**
  * Trator da Larsil atravessando a tela puxando uma faixa — no estilo do
@@ -79,6 +80,15 @@ export function TractorBanner() {
 
 /** Uma travessia. Separado para o laço não empurrar todo o SVG um nível adentro. */
 function Convoy({ run, onEnd }: { run: Travessia; onEnd: () => void }) {
+  /* A buzina toca aqui, no montar, e não em quem dispara o evento.
+     Com as três faixas ocupadas o trator novo é descartado lá em cima
+     (`faixa === -1`) — buzinar no evento tocaria uma buzina sem trator. Este
+     componente só monta para travessia que de fato vai acontecer, e monta uma
+     vez por travessia: é exatamente "quando ele inicia". */
+  useEffect(() => {
+    tocarBuzina();
+  }, []);
+
   return (
       <div
         className="fluxo-tractor-convoy"
