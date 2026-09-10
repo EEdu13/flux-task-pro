@@ -108,6 +108,40 @@ function Relatorios() {
       ? "todos os colaboradores"
       : (users.find((u) => u.id === scope)?.name ?? "colaborador");
 
+  /* O seletor do topo vale para a TELA INTEIRA, não só para o cronômetro.
+     Antes ele governava apenas as sessões: os cartões de conclusões, de tarefas
+     abertas e os gráficos de status/setor liam `tasks` e `completions` crus — e
+     esses dois chegam do servidor com o SETOR inteiro, não só com quem está
+     olhando (ver o `filtro` em `listarConclusoes` e em `listarTarefas`). A tela
+     dizia "exibindo Fulano" no subtítulo e mostrava os números do time embaixo,
+     que é pior que não filtrar nada: parece um fato sobre a pessoa. */
+  const escopoIds = useMemo(
+    () => new Set(scope === "all" ? visibleUsers.map((u) => u.id) : [scope]),
+    [scope, visibleUsers],
+  );
+
+  const conclusoesEscopo = useMemo(
+    () => completions.filter((c) => escopoIds.has(c.userId)),
+    [completions, escopoIds],
+  );
+
+  /* Os cartões dizem "(30d)" e a consulta devolve 90 dias — o rótulo mentia em
+     até dois meses de trabalho a mais. A janela é recortada aqui, e não na
+     consulta, porque `listarConclusoes` serve a tela inicial também. */
+  const conclusoes30 = useMemo(() => {
+    const corte = Date.now() - 30 * 24 * 3600e3;
+    return conclusoesEscopo.filter((c) => new Date(c.at).getTime() >= corte);
+  }, [conclusoesEscopo]);
+
+  const noPrazo30 = useMemo(() => conclusoes30.filter((c) => c.onTime).length, [conclusoes30]);
+
+  /* Tarefa pertence a quem vai fazer. Contar também as que a pessoa criou para
+     outro inflaria "tarefas abertas" com trabalho que não é dela. */
+  const tarefasEscopo = useMemo(
+    () => tasks.filter((t) => escopoIds.has(t.assigneeId)),
+    [tasks, escopoIds],
+  );
+
   const sessionToUserId = useMemo(() => {
     // For "all" mode we need to know which user each session belongs to.
     const map = new Map<string, string>();
@@ -300,7 +334,7 @@ function Relatorios() {
       d.setDate(d.getDate() - i);
       const end = new Date(d);
       end.setDate(d.getDate() + 1);
-      const items = completions.filter((c) => {
+      const items = conclusoesEscopo.filter((c) => {
         const t = new Date(c.at).getTime();
         return t >= d.getTime() && t < end.getTime();
       });
@@ -310,32 +344,43 @@ function Relatorios() {
       });
     }
     return days;
-  }, [completions]);
+  }, [conclusoesEscopo]);
 
+  /* Só as pessoas do escopo, e só quem tem conclusão — mesma regra do gráfico
+     de tempo por colaborador logo acima. Com uma pessoa só isso vira uma barra
+     repetindo o cartão de cima, então a seção some (ver o `length > 1`). */
   const byUser = useMemo(() => {
-    return users
+    return visibleUsers
+      .filter((u) => escopoIds.has(u.id))
       .map((u) => ({
         name: u.name.split(" ")[0]!,
-        concluidas: completions.filter((c) => c.userId === u.id).length,
+        concluidas: conclusoesEscopo.filter((c) => c.userId === u.id).length,
       }))
+      .filter((r) => r.concluidas > 0)
       .sort((a, b) => b.concluidas - a.concluidas)
       .slice(0, 8);
-  }, [users, completions]);
+  }, [visibleUsers, escopoIds, conclusoesEscopo]);
 
+  /* Setor da TAREFA, não o da pessoa que concluiu.
+     Antes a fatia era o setor de quem fez, o que num escopo de uma pessoa só
+     dava uma fatia de 100% — um gráfico que não informava nada. E o título
+     sempre disse "tarefas por setor"; agora é isso mesmo que ele conta. */
   const bySector = useMemo(() => {
-    return sectors.map((s) => {
-      const uids = users.filter((u) => u.sector === s.id).map((u) => u.id);
-      const total = completions.filter((c) => uids.includes(c.userId)).length;
-      return { name: s.name, value: total, color: s.color };
-    });
-  }, [users, completions]);
+    return sectors
+      .map((s) => ({
+        name: s.name,
+        value: tarefasEscopo.filter((t) => t.sector === s.id).length,
+        color: s.color,
+      }))
+      .filter((s) => s.value > 0);
+  }, [tarefasEscopo]);
 
   const statusDist = useMemo(() => {
     return (Object.keys(statusLabels) as (keyof typeof statusLabels)[]).map((k) => ({
       name: statusLabels[k],
-      value: tasks.filter((t) => t.status === k).length,
+      value: tarefasEscopo.filter((t) => t.status === k).length,
     }));
-  }, [tasks]);
+  }, [tarefasEscopo]);
 
   return (
     <FluxoLayout title="Relatórios">
@@ -384,10 +429,18 @@ function Relatorios() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-4">
-          <Kpi label="Tarefas concluídas (30d)" value={completions.length} />
-          <Kpi label="No prazo (30d)" value={completions.filter((c) => c.onTime).length} />
-          <Kpi label="No prazo" value={`${Math.round((completions.filter((c) => c.onTime).length / Math.max(1, completions.length)) * 100)}%`} />
-          <Kpi label="Tarefas abertas" value={tasks.filter((t) => t.status !== "concluida").length} />
+          <Kpi label="Tarefas concluídas (30d)" value={conclusoes30.length} />
+          <Kpi label="No prazo (30d)" value={noPrazo30} />
+          {/* Era "No prazo", logo ao lado de outro cartão "No prazo (30d)" —
+              dois rótulos iguais para um número e uma porcentagem. */}
+          <Kpi
+            label="% no prazo (30d)"
+            value={`${Math.round((noPrazo30 / Math.max(1, conclusoes30.length)) * 100)}%`}
+          />
+          <Kpi
+            label="Tarefas abertas"
+            value={tarefasEscopo.filter((t) => t.status !== "concluida").length}
+          />
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -524,6 +577,9 @@ function Relatorios() {
 
         <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Evolução — últimos 30 dias</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Tarefas concluídas por dia por <b>{scopeLabel}</b>.
+          </p>
           <div className="mt-3 h-72">
             <ResponsiveContainer>
               <LineChart data={last30} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
@@ -538,36 +594,47 @@ function Relatorios() {
           </div>
         </section>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Top pessoas (tarefas concluídas)</h2>
-            <div className="mt-3 h-72">
-              <ResponsiveContainer>
-                <BarChart data={byUser} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
-                  <Bar dataKey="concluidas" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
+        <div className={`grid gap-4 ${byUser.length > 1 ? "md:grid-cols-2" : ""}`}>
+          {byUser.length > 1 && (
+            <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
+              <h2 className="text-sm font-semibold">Top pessoas (tarefas concluídas)</h2>
+              <div className="mt-3 h-72">
+                <ResponsiveContainer>
+                  <BarChart data={byUser} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
+                    <Bar dataKey="concluidas" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
 
           <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
             <h2 className="text-sm font-semibold">Tarefas por setor</h2>
-            <div className="mt-3 h-72">
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={bySector} dataKey="value" nameKey="name" outerRadius={90} label={{ fontSize: 10 }}>
-                    {bySector.map((s, i) => (
-                      <Cell key={i} fill={s.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Tarefas em aberto e concluídas de <b>{scopeLabel}</b>, pelo setor da tarefa.
+            </p>
+            {bySector.length === 0 ? (
+              <div className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                Nenhuma tarefa no período.
+              </div>
+            ) : (
+              <div className="mt-3 h-72">
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie data={bySector} dataKey="value" nameKey="name" outerRadius={90} label={{ fontSize: 10 }}>
+                      {bySector.map((s, i) => (
+                        <Cell key={i} fill={s.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </section>
         </div>
 
@@ -620,6 +687,9 @@ function Relatorios() {
 
         <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Distribuição por status</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Situação atual das tarefas de <b>{scopeLabel}</b> (as arquivadas ficam de fora).
+          </p>
           <div className="mt-3 h-56">
             <ResponsiveContainer>
               <BarChart data={statusDist} layout="vertical" margin={{ left: 40, right: 20, top: 8, bottom: 8 }}>
