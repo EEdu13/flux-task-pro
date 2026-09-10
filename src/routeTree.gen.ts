@@ -31,6 +31,7 @@ import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
 import { Route as ApiAnexoIdRouteImport } from './routes/api/anexo.$id'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
+import { Route as ApiPublicTelegramDiarioRouteImport } from './routes/api/public/telegram-diario'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram-webhook'
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
 import { Route as ApiPublicFotoNomeRouteImport } from './routes/api/public/foto/$nome'
@@ -145,6 +146,11 @@ const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
   path: '/api/public/purge-rooms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicTelegramDiarioRoute = ApiPublicTelegramDiarioRouteImport.update({
+  id: '/api/public/telegram-diario',
+  path: '/api/public/telegram-diario',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicTelegramWebhookRoute =
   ApiPublicTelegramWebhookRouteImport.update({
     id: '/api/public/telegram-webhook',
@@ -186,6 +192,7 @@ export interface FileRoutesByFullPath {
   '/salas/': typeof SalasIndexRoute
   '/api/anexo/$id': typeof ApiAnexoIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
@@ -213,6 +220,7 @@ export interface FileRoutesByTo {
   '/salas': typeof SalasIndexRoute
   '/api/anexo/$id': typeof ApiAnexoIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
@@ -241,6 +249,7 @@ export interface FileRoutesById {
   '/salas/': typeof SalasIndexRoute
   '/api/anexo/$id': typeof ApiAnexoIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
+  '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
@@ -270,6 +279,7 @@ export interface FileRouteTypes {
     | '/salas/'
     | '/api/anexo/$id'
     | '/api/public/purge-rooms'
+    | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
     | '/api/public/foto/$nome'
@@ -297,6 +307,7 @@ export interface FileRouteTypes {
     | '/salas'
     | '/api/anexo/$id'
     | '/api/public/purge-rooms'
+    | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
     | '/api/public/foto/$nome'
@@ -324,6 +335,7 @@ export interface FileRouteTypes {
     | '/salas/'
     | '/api/anexo/$id'
     | '/api/public/purge-rooms'
+    | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
     | '/api/public/foto/$nome'
@@ -352,6 +364,7 @@ export interface RootRouteChildren {
   SalasIndexRoute: typeof SalasIndexRoute
   ApiAnexoIdRoute: typeof ApiAnexoIdRoute
   ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
+  ApiPublicTelegramDiarioRoute: typeof ApiPublicTelegramDiarioRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
   ApiPublicFotoNomeRoute: typeof ApiPublicFotoNomeRoute
@@ -513,6 +526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPurgeRoomsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/telegram-diario': {
+      id: '/api/public/telegram-diario'
+      path: '/api/public/telegram-diario'
+      fullPath: '/api/public/telegram-diario'
+      preLoaderRoute: typeof ApiPublicTelegramDiarioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/telegram-webhook': {
       id: '/api/public/telegram-webhook'
       path: '/api/public/telegram-webhook'
@@ -560,6 +580,7 @@ const rootRouteChildren: RootRouteChildren = {
   SalasIndexRoute: SalasIndexRoute,
   ApiAnexoIdRoute: ApiAnexoIdRoute,
   ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
+  ApiPublicTelegramDiarioRoute: ApiPublicTelegramDiarioRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
   ApiPublicFotoNomeRoute: ApiPublicFotoNomeRoute,

@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "telegram:webhook": "node --env-file=.env scripts/telegram-webhook.mjs"
+    "telegram:webhook": "node --env-file=.env scripts/telegram-webhook.mjs",
+    "telegram:diario": "node --env-file=.env scripts/telegram-diario.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.6",
