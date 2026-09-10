@@ -32,6 +32,32 @@ import {
 } from "@/lib/time-log";
 import { useEffect, useState } from "react";
 
+/**
+ * Estilo único dos tooltips dos gráficos.
+ *
+ * Os três precisam ser passados, e é por isso que virou constante em vez de
+ * ficar solto em cada `<Tooltip>`: o `contentStyle` NÃO desce para o rótulo nem
+ * para os itens. O Recharts pinta cada item com a cor da série e, quando não
+ * tem, com `#000` fixo; o rótulo fica sem cor nenhuma e herda. No tema escuro
+ * isso dá letra preta sobre popover escuro — o texto some, que foi o que
+ * apareceu em "Tarefas por setor".
+ *
+ * O `itemStyle` sobrepõe de propósito a cor da série. Aqui todo gráfico tem uma
+ * série só, então a cor não distingue nada — e algumas cores de setor
+ * (o amarelo, por exemplo) ficariam ilegíveis sobre o popover claro.
+ */
+const TOOLTIP = {
+  contentStyle: {
+    background: "var(--color-popover)",
+    border: "1px solid var(--color-border)",
+    borderRadius: 8,
+    color: "var(--color-popover-foreground)",
+    fontSize: 12,
+  },
+  labelStyle: { color: "var(--color-popover-foreground)", fontWeight: 600 },
+  itemStyle: { color: "var(--color-popover-foreground)" },
+} as const;
+
 export const Route = createFileRoute("/relatorios")({
   head: () => ({
     meta: [
@@ -466,10 +492,7 @@ function Relatorios() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }}
-                  formatter={(v: number) => [`${v} min`, "Trabalhado"]}
-                />
+                <Tooltip {...TOOLTIP} formatter={(v: number) => [`${v} min`, "Trabalhado"]} />
                 <Bar dataKey="minutes" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -489,10 +512,7 @@ function Relatorios() {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }}
-                    formatter={(v: number) => [`${v} min`, "Trabalhado"]}
-                  />
+                  <Tooltip {...TOOLTIP} formatter={(v: number) => [`${v} min`, "Trabalhado"]} />
                   <Bar dataKey="minutes" fill="var(--color-chart-4)" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -586,7 +606,7 @@ function Relatorios() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
+                <Tooltip {...TOOLTIP} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="concluidas" stroke="var(--color-chart-1)" strokeWidth={2} dot={false} name="Concluídas" />
               </LineChart>
@@ -604,8 +624,15 @@ function Relatorios() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
-                    <Bar dataKey="concluidas" fill="var(--color-chart-1)" radius={[6, 6, 0, 0]} />
+                    <Tooltip {...TOOLTIP} />
+                    {/* `name` para o tooltip não mostrar "concluidas", que é o
+                      nome do campo — sem acento e em minúscula. */}
+                  <Bar
+                    dataKey="concluidas"
+                    name="Concluídas"
+                    fill="var(--color-chart-1)"
+                    radius={[6, 6, 0, 0]}
+                  />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -625,12 +652,27 @@ function Relatorios() {
               <div className="mt-3 h-72">
                 <ResponsiveContainer>
                   <PieChart>
-                    <Pie data={bySector} dataKey="value" nameKey="name" outerRadius={90} label={{ fontSize: 10 }}>
+                    {/* O rótulo precisa de `fill` explícito: sem ele o Recharts
+                        usa o cinza escuro padrão dele, que no tema noturno fica
+                        preto sobre fundo preto. */}
+                    <Pie
+                      data={bySector}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={90}
+                      label={{ fontSize: 11, fill: "var(--color-foreground)" }}
+                    >
                       {bySector.map((s, i) => (
                         <Cell key={i} fill={s.color} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
+                    <Tooltip
+                      {...TOOLTIP}
+                      formatter={(v: number, nome: string) => [
+                        v === 1 ? "1 tarefa" : `${v} tarefas`,
+                        nome,
+                      ]}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -696,7 +738,12 @@ function Relatorios() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ background: "var(--color-popover)", border: "1px solid var(--color-border)", fontSize: 12 }} />
+                {/* Sem `formatter`, o Recharts cai no `dataKey` e escreve
+                    "value : 3" — nome de campo do código vazando para a tela. */}
+                <Tooltip
+                  {...TOOLTIP}
+                  formatter={(v: number) => [v === 1 ? "1 tarefa" : `${v} tarefas`, "Total"]}
+                />
                 <Bar dataKey="value" fill="var(--color-chart-3)" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
