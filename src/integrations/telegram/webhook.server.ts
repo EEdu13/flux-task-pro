@@ -3,11 +3,7 @@
 //
 // Nada aqui pode chegar ao navegador: o segredo do webhook nunca sai deste lado.
 import { conferirCabecalhoSecreto, type ResultadoSegredo } from "@/lib/segredo.server";
-import {
-  CABECALHO_SEGREDO,
-  type AtualizacaoClassificada,
-  type TelegramUpdate,
-} from "./types";
+import { CABECALHO_SEGREDO, type AtualizacaoClassificada, type TelegramUpdate } from "./types";
 
 export type ResultadoAutenticacao = ResultadoSegredo;
 
@@ -22,11 +18,7 @@ export type ResultadoAutenticacao = ResultadoSegredo;
  * em @/lib/segredo.server, compartilhadas com as rotas de manutenção.
  */
 export function autenticarWebhook(headers: Headers): ResultadoAutenticacao {
-  return conferirCabecalhoSecreto(
-    headers,
-    CABECALHO_SEGREDO,
-    process.env.TELEGRAM_WEBHOOK_SECRET,
-  );
+  return conferirCabecalhoSecreto(headers, CABECALHO_SEGREDO, process.env.TELEGRAM_WEBHOOK_SECRET);
 }
 
 /* --------------------------- Repetições --------------------------- */

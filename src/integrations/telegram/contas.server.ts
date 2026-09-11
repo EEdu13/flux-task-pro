@@ -65,9 +65,7 @@ export async function pessoaPorTelegram(telegramUserId: number): Promise<ContaVi
   const r = await pool
     .request()
     .input("tg", sql.BigInt, telegramUserId)
-    .query(
-      `SELECT pessoa_id, chat_id FROM gestor.telegram_contas WHERE telegram_user_id=@tg`,
-    );
+    .query(`SELECT pessoa_id, chat_id FROM gestor.telegram_contas WHERE telegram_user_id=@tg`);
   const l = r.recordset[0] as { pessoa_id: number; chat_id: string | number } | undefined;
   // chat_id é BIGINT e o driver devolve string quando passa do inteiro seguro
   // do JavaScript. Ids de chat do Telegram cabem, mas a conversão é explícita

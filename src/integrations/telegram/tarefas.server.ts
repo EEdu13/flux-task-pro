@@ -145,10 +145,13 @@ export function lerPrazo(bruto: string): Date | null {
 
 /* ------------------------- Criação ------------------------- */
 
+export type Prioridade = "alta" | "media" | "baixa";
+
 export interface NovaTarefa {
   titulo: string;
   descricao: string | null;
   prazo: Date;
+  prioridade: Prioridade;
   responsavelId: number;
   criadoPor: number;
 }
@@ -184,13 +187,14 @@ export async function criarTarefa(t: NovaTarefa): Promise<string> {
     .input("setor", sql.NVarChar, setor)
     .input("por", sql.Int, t.criadoPor)
     .input("responsavel", sql.Int, t.responsavelId)
+    .input("prioridade", sql.NVarChar, t.prioridade)
     .input("prazo", sql.DateTimeOffset, t.prazo).query(`
       DECLARE @nova TABLE (id UNIQUEIDENTIFIER);
 
       INSERT INTO gestor.tarefas
-        (titulo, descricao, setor, criado_por, responsavel_id, prazo, pontos, ordem)
+        (titulo, descricao, setor, criado_por, responsavel_id, prazo, prioridade, pontos, ordem)
       OUTPUT inserted.id INTO @nova
-      SELECT @titulo, @descricao, @setor, @por, @responsavel, @prazo, 10,
+      SELECT @titulo, @descricao, @setor, @por, @responsavel, @prazo, @prioridade, 10,
              ISNULL((SELECT MAX(ordem) FROM gestor.tarefas
                       WHERE responsavel_id=@responsavel AND arquivada_em IS NULL), 0) + 1;
 
@@ -209,33 +213,54 @@ export async function criarTarefa(t: NovaTarefa): Promise<string> {
 }
 
 /**
- * Quem esta pessoa pode transformar em responsável.
+ * Quem pode virar responsável: QUALQUER pessoa do sistema.
  *
- * O MESMO alcance de `pessoasDoMeuEscopo`, e de propósito: poder ver a agenda de
- * alguém e não poder lhe passar uma tarefa seria uma distinção que ninguém
- * consegue explicar. Inclui a própria pessoa, que é o caso mais comum.
+ * Antes isto era o setor de quem cria, espelhando `pessoasDoMeuEscopo`. Mudou a
+ * pedido: pedir uma coisa para outra área é justamente o caso em que passar a
+ * tarefa por escrito vale mais a pena.
+ *
+ * Abrir aqui não cria buraco de visibilidade, e é o que torna a mudança segura:
+ * `filtroPorPapel` já enxerga tarefa com `criado_por=@eu`. Quem cria para outra
+ * área continua vendo a tarefa que criou, e o setor do responsável continua
+ * vendo a dele — ninguém passa a enxergar o que não enxergava.
+ *
+ * O universo é `gestor.perfis`, ou seja, quem já entrou no sistema alguma vez. É
+ * a mesma lista de todo o resto; não dá para atribuir tarefa a quem o Fluxo
+ * ainda não conhece.
  */
-export async function possiveisResponsaveis(
-  pessoaId: number,
-): Promise<{ pessoa_id: number; nome: string }[]> {
-  const { papelEsetor } = await import("@/lib/perfil.functions");
-  const { papel, setor } = await papelEsetor(pessoaId);
-  const { getPool, sql } = await import("@/integrations/db.server");
+export async function possiveisResponsaveis(): Promise<
+  { pessoa_id: number; nome: string; setor: string | null }[]
+> {
+  const { getPool } = await import("@/integrations/db.server");
   const pool = await getPool();
+  const r = await pool
+    .request()
+    .query(`SELECT pessoa_id, nome, setor FROM gestor.perfis WHERE nome IS NOT NULL ORDER BY nome`);
+  return r.recordset as { pessoa_id: number; nome: string; setor: string | null }[];
+}
 
-  const req = pool.request().input("eu", sql.Int, pessoaId);
-  let onde = "nome IS NOT NULL";
-  if (papel !== "gerente") {
-    if (!setor) onde += " AND pessoa_id=@eu";
-    else {
-      req.input("setor", sql.NVarChar, setor);
-      onde += " AND (setor=@setor OR pessoa_id=@eu)";
-    }
-  }
-  const r = await req.query(
-    `SELECT TOP 30 pessoa_id, nome FROM gestor.perfis WHERE ${onde} ORDER BY nome`,
+/**
+ * Os setores que têm gente, para o passo que vem antes de escolher a pessoa.
+ *
+ * Com a lista aberta para a empresa inteira, jogar todo mundo numa tela de
+ * botões deixa de funcionar bem antes do que parece — são 7 pessoas hoje, mas
+ * `perfis` ganha uma linha a cada primeiro login. Setor primeiro mantém a tela
+ * curta em qualquer tamanho de empresa.
+ *
+ * A contagem vai no rótulo porque setor vazio não deve aparecer, e setor com uma
+ * pessoa só avisa que ali não tem escolha a fazer.
+ */
+export async function setoresComPessoas(): Promise<{ setor: string; pessoas: number }[]> {
+  const { getPool } = await import("@/integrations/db.server");
+  const pool = await getPool();
+  const r = await pool.request().query(
+    `SELECT ISNULL(NULLIF(LTRIM(RTRIM(setor)),''),'sem-setor') AS setor, COUNT(*) AS pessoas
+       FROM gestor.perfis
+      WHERE nome IS NOT NULL
+      GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(setor)),''),'sem-setor')
+      ORDER BY setor`,
   );
-  return r.recordset as { pessoa_id: number; nome: string }[];
+  return r.recordset as { setor: string; pessoas: number }[];
 }
 
 /* --------------------- Resumo do dia --------------------- */

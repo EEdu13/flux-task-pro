@@ -24,6 +24,8 @@ import {
   HOJE_BR,
   lerPrazo,
   possiveisResponsaveis,
+  setoresComPessoas,
+  type Prioridade,
 } from "./tarefas.server";
 import type { AtualizacaoClassificada, TecladoDeResposta, TecladoEmLinha } from "./types";
 
@@ -355,17 +357,18 @@ function textoDaTarefa(t: TarefaResumo): string {
  * mesmo ("ver o retorno do fornecedor") raramente é o que se escreve para
  * outro. Decidido o dono, o resto sai no tom certo da primeira vez.
  */
-type Etapa = "responsavel" | "titulo" | "descricao" | "prazo";
+type Etapa = "setor" | "responsavel" | "titulo" | "descricao" | "prazo" | "prioridade";
 
 interface Rascunho {
   etapa: Etapa;
   chatId: number;
-  /** Escolhido na primeira etapa; as seguintes já sabem de quem é a tarefa. */
+  /** Escolhido nas duas primeiras etapas; as seguintes já sabem de quem é. */
   responsavelId: number;
   responsavelNome: string;
   paraMim: boolean;
   titulo: string;
   descricao: string | null;
+  prazo: Date | null;
   em: number;
 }
 
@@ -403,6 +406,29 @@ function rascunhoDe(deId: number): Rascunho | null {
 const CANCELAR_TEXTO = "✕ Cancelar";
 const PULAR_TEXTO = "Pular";
 
+/** Os dois botões que fecham a criação, oferecidos junto com a confirmação. */
+const CRIAR_OUTRA_TEXTO = "➕ Criar nova";
+const INICIO_TEXTO = "🏠 Início";
+
+const PRIORIDADES: { rotulo: string; valor: Prioridade }[] = [
+  { rotulo: "🔴 Alta", valor: "alta" },
+  { rotulo: "🟡 Média", valor: "media" },
+  { rotulo: "⚪ Baixa", valor: "baixa" },
+];
+
+/** Lê a prioridade do rótulo tocado ou do que a pessoa digitou. */
+function lerPrioridade(texto: string): Prioridade | null {
+  const t = texto
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (t.includes("alta")) return "alta";
+  if (t.includes("media")) return "media";
+  if (t.includes("baixa")) return "baixa";
+  return null;
+}
+
 function tecladoDeEtapa(dica: string, atalhos: string[] = []): TecladoDeResposta {
   return {
     keyboard: [
@@ -415,42 +441,88 @@ function tecladoDeEtapa(dica: string, atalhos: string[] = []): TecladoDeResposta
 }
 
 async function comecarNova(deId: number, chatId: number, privado: boolean) {
-  /* Só no privado, e não por pudor: o fluxo é uma conversa de quatro
-     mensagens de TEXTO, e em grupo o Telegram não entrega texto solto ao bot
-     (modo privacidade). Metade das etapas simplesmente não chegaria, e a
-     pessoa ficaria falando sozinha achando que o bot travou. */
-  if (!privado) {
-    await enviarMensagem(
-      chatId,
-      "Criar tarefa é no privado — aqui no grupo o Telegram não me entrega as respostas de texto\\.",
-    );
-    return;
-  }
   const conta = await pessoaPorTelegram(deId);
   if (!conta) return;
 
   rascunhos.set(deId, {
-    etapa: "responsavel",
+    etapa: "setor",
     chatId,
     responsavelId: conta.pessoaId,
     responsavelNome: "",
     paraMim: true,
     titulo: "",
     descricao: null,
+    prazo: null,
     em: Date.now(),
   });
 
-  const pessoas = await possiveisResponsaveis(conta.pessoaId);
-  const outros = pessoas.filter((p) => p.pessoa_id !== conta.pessoaId);
+  /* Em grupo funciona, mas com uma pegadinha do Telegram que vale avisar: com o
+     modo privacidade ligado (o padrão), o bot só recebe comandos e RESPOSTAS às
+     mensagens dele. Texto solto não chega — foi o que fez a primeira tentativa
+     do teste em grupo cair no vazio. Tocar nos botões já manda como resposta;
+     digitar exige usar o Responder. */
+  if (!privado) {
+    await enviarMensagem(
+      chatId,
+      "Aqui no grupo, *responda* às minhas mensagens \\(toque em Responder\\) — senão o Telegram não me entrega o que você digitar\\.",
+    );
+  }
+
+  await perguntarSetor(chatId, conta.pessoaId);
+}
+
+/** Nome bonito do setor. O id é o slug de `setorParaId`; o rótulo vem daqui. */
+async function nomeDoSetor(id: string): Promise<string> {
+  const { sectors } = await import("@/lib/fluxo-types");
+  return sectors.find((s) => s.id === id)?.name ?? id;
+}
+
+/**
+ * Primeira etapa: o setor de quem vai receber.
+ *
+ * "Para mim" fica em cima e pula o setor inteiro, porque é de longe o caso mais
+ * comum — obrigar quem cria para si mesmo a achar o próprio setor primeiro seria
+ * cobrar dois toques do caminho mais usado para melhorar o mais raro.
+ */
+async function perguntarSetor(chatId: number, eu: number) {
+  const setores = await setoresComPessoas();
+  const linhas = await Promise.all(
+    setores.map(async (s) => [
+      { text: `${await nomeDoSetor(s.setor)} (${s.pessoas})`, callback_data: `ns:${s.setor}` },
+    ]),
+  );
   await enviarMensagem(chatId, "*Nova tarefa*\n\nPara quem é\\?", {
     teclado: {
       inline_keyboard: [
-        [{ text: "🙋 Para mim", callback_data: `nv:${conta.pessoaId}` }],
-        ...outros
-          .slice(0, 12)
+        [{ text: "🙋 Para mim", callback_data: `nv:${eu}` }],
+        ...linhas,
+        [{ text: CANCELAR_TEXTO, callback_data: "nx" }],
+      ],
+    },
+  });
+}
+
+/**
+ * Segunda etapa: a pessoa, dentro do setor escolhido.
+ *
+ * O "‹ Outro setor" no fim existe para o toque errado, que num teclado de
+ * celular acontece o tempo todo. Sem ele a saída seria cancelar e recomeçar — e
+ * quem tocou no setor errado ainda não escreveu nada, então não há o que
+ * preservar, mas há a irritação de refazer.
+ */
+async function perguntarPessoaDoSetor(chatId: number, setor: string) {
+  const pessoas = (await possiveisResponsaveis()).filter(
+    (p) => (p.setor?.trim() || "sem-setor") === setor,
+  );
+  await enviarMensagem(chatId, `Setor: *${escaparMd(await nomeDoSetor(setor))}*\n\nQuem\\?`, {
+    teclado: {
+      inline_keyboard: [
+        ...pessoas
+          .slice(0, 20)
           .map((p) => [
-            { text: p.nome.split(" ").slice(0, 2).join(" "), callback_data: `nv:${p.pessoa_id}` },
+            { text: p.nome.split(" ").slice(0, 3).join(" "), callback_data: `nv:${p.pessoa_id}` },
           ]),
+        [{ text: "‹ Outro setor", callback_data: "ns:volta" }],
         [{ text: CANCELAR_TEXTO, callback_data: "nx" }],
       ],
     },
@@ -468,11 +540,12 @@ async function comecarNova(deId: number, chatId: number, privado: boolean) {
  */
 async function escolherResponsavel(deId: number, chatId: number, alvoId: number): Promise<boolean> {
   const r = rascunhoDe(deId);
-  if (!r || r.etapa !== "responsavel") return false;
+  // "setor" também aceita, porque o "Para mim" pula a escolha de setor.
+  if (!r || (r.etapa !== "setor" && r.etapa !== "responsavel")) return false;
 
   const conta = await pessoaPorTelegram(deId);
   if (!conta) return false;
-  const alvo = (await possiveisResponsaveis(conta.pessoaId)).find((p) => p.pessoa_id === alvoId);
+  const alvo = (await possiveisResponsaveis()).find((p) => p.pessoa_id === alvoId);
   if (!alvo) return false;
 
   r.responsavelId = alvoId;
@@ -507,8 +580,8 @@ async function avancarNova(deId: number, chatId: number, texto: string): Promise
     return true;
   }
 
-  if (r.etapa === "responsavel") {
-    // Primeira etapa é só botão em linha — texto aqui não avança nada.
+  if (r.etapa === "setor" || r.etapa === "responsavel") {
+    // As duas primeiras etapas são só botão em linha — texto não avança nada.
     await enviarMensagem(chatId, "Escolha nos botões acima para quem é a tarefa\\.");
     return true;
   }
@@ -539,17 +612,39 @@ async function avancarNova(deId: number, chatId: number, texto: string): Promise
     return true;
   }
 
-  // Prazo é a última etapa: entendida a data, a tarefa nasce.
-  const prazo = lerPrazo(texto);
-  if (!prazo) {
-    await enviarMensagem(
-      chatId,
-      "Não entendi a data\\. Tente `hoje`, `amanhã`, `20/09` ou `20/09/2026`\\.",
-      { teclado: tecladoDeEtapa("hoje, amanhã ou 20/09", ["Hoje", "Amanhã"]) },
-    );
+  if (r.etapa === "prazo") {
+    const prazo = lerPrazo(texto);
+    if (!prazo) {
+      await enviarMensagem(
+        chatId,
+        "Não entendi a data\\. Tente `hoje`, `amanhã`, `20/09` ou `20/09/2026`\\.",
+        { teclado: tecladoDeEtapa("hoje, amanhã ou 20/09", ["Hoje", "Amanhã"]) },
+      );
+      return true;
+    }
+    r.prazo = prazo;
+    r.etapa = "prioridade";
+    await enviarMensagem(chatId, `Prazo: *${escaparMd(diaBr(prazo))}*\n\nQual a prioridade\\?`, {
+      teclado: tecladoDeEtapa(
+        "toque na prioridade",
+        PRIORIDADES.map((p) => p.rotulo),
+      ),
+    });
     return true;
   }
-  await concluirNova(deId, chatId, prazo);
+
+  // Prioridade é a última etapa: entendida, a tarefa nasce.
+  const prioridade = lerPrioridade(texto);
+  if (!prioridade) {
+    await enviarMensagem(chatId, "Toque em Alta, Média ou Baixa\\.", {
+      teclado: tecladoDeEtapa(
+        "toque na prioridade",
+        PRIORIDADES.map((p) => p.rotulo),
+      ),
+    });
+    return true;
+  }
+  await concluirNova(deId, chatId, prioridade);
   return true;
 }
 
@@ -571,24 +666,23 @@ async function perguntarPrazo(chatId: number) {
 }
 
 /** Última etapa: grava a tarefa e avisa quem recebeu. */
-async function concluirNova(deId: number, chatId: number, prazo: Date): Promise<void> {
+async function concluirNova(deId: number, chatId: number, prioridade: Prioridade): Promise<void> {
   const r = rascunhoDe(deId);
-  if (!r || !r.titulo) return;
+  if (!r || !r.titulo || !r.prazo) return;
+  const prazo = r.prazo;
 
   const conta = await pessoaPorTelegram(deId);
   if (!conta) return;
 
-  /* A permissão é reconferida AGORA, e não só quando o nome foi escolhido.
-     Entre um momento e outro a pessoa escreveu título, descrição e prazo — e
-     nesse meio o alvo pode ter mudado de setor e saído do alcance dela. */
-  const alvo = (await possiveisResponsaveis(conta.pessoaId)).find(
-    (p) => p.pessoa_id === r.responsavelId,
-  );
+  /* A pessoa é reconferida AGORA, e não só quando o nome foi escolhido. Entre
+     um momento e outro ela escreveu título, descrição, prazo e prioridade — e
+     nesse meio o alvo pode ter saído do sistema. */
+  const alvo = (await possiveisResponsaveis()).find((p) => p.pessoa_id === r.responsavelId);
   if (!alvo) {
     rascunhos.delete(deId);
     await removerTeclado(
       chatId,
-      "Você não pode mais criar tarefa para essa pessoa\\. Mande /nova para recomeçar\\.",
+      "Essa pessoa não está mais disponível\\. Mande /nova para recomeçar\\.",
     );
     return;
   }
@@ -597,26 +691,36 @@ async function concluirNova(deId: number, chatId: number, prazo: Date): Promise<
     titulo: r.titulo,
     descricao: r.descricao,
     prazo,
+    prioridade,
     responsavelId: r.responsavelId,
     criadoPor: conta.pessoaId,
   });
   const { titulo, paraMim, responsavelId } = r;
   rascunhos.delete(deId);
 
-  /* `removerTeclado` e não `enviarMensagem`: as etapas de texto deixaram um
-     teclado de baixo ocupando a tela, e ele não sai sozinho. Some junto com a
-     confirmação, que é o momento certo — a criação acabou. */
-  await removerTeclado(
+  /* Os dois botões do fim vêm no teclado de baixo, e não em linha, por um
+     motivo que só aparece na prática: as etapas de texto deixaram um teclado
+     aberto ocupando a tela, e ele não sai sozinho. Uma mensagem carrega um
+     `reply_markup` só — então ou eu removo o teclado e fico sem botões, ou
+     SUBSTITUO o teclado por estes dois. Substituir resolve as duas coisas numa
+     mensagem só. Eles chegam como texto, tratados em `aoReceberTexto`. */
+  await enviarMensagem(
     chatId,
     [
       "✅ *Tarefa criada*",
       "",
       `*${escaparMd(titulo)}*`,
       `Prazo: ${escaparMd(diaBr(prazo))}`,
+      `Prioridade: ${escaparMd(PRIORIDADES.find((p) => p.valor === prioridade)?.rotulo ?? prioridade)}`,
       `Responsável: ${escaparMd(paraMim ? "você" : alvo.nome)}`,
-      "",
-      "Mande /nova para criar outra\\.",
     ].join("\n"),
+    {
+      teclado: {
+        keyboard: [[{ text: CRIAR_OUTRA_TEXTO }], [{ text: INICIO_TEXTO }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      },
+    },
   );
 
   /* Quem recebeu fica sabendo pelo Telegram, se tiver vínculo. É o primeiro
@@ -818,6 +922,17 @@ async function aoReceberTexto(deId: number, chatId: number, privado: boolean, te
     });
     return;
   }
+  /* Os dois botões oferecidos junto com a confirmação. Vêm ANTES do rascunho
+     porque naquele momento não existe rascunho nenhum — a tarefa já nasceu. */
+  const t = texto.trim();
+  if (t === CRIAR_OUTRA_TEXTO) return await comecarNova(deId, chatId, privado);
+  if (t === INICIO_TEXTO) {
+    const { nome } = await nomeDe(conta.pessoaId);
+    await removerTeclado(chatId, textoMenu(nome));
+    await enviarMensagem(chatId, "O que você quer ver\\?", { teclado: MENU });
+    return;
+  }
+
   if (await avancarNova(deId, chatId, texto)) return;
   const { nome } = await nomeDe(conta.pessoaId);
   await enviarMensagem(chatId, textoMenu(nome), { teclado: MENU });
@@ -931,7 +1046,29 @@ async function aoReceberBotao(
     return;
   }
 
-  // nv:<pessoaId> — escolha do responsável, agora a PRIMEIRA etapa.
+  /* ns:<setor> — escolha do setor; ns:volta — recomeça a escolha.
+     O "volta" existe porque num teclado de celular o toque errado é rotina, e
+     sem ele a saída seria cancelar e refazer. */
+  if (data.startsWith("ns:")) {
+    const r = rascunhoDe(deId);
+    if (!r || (r.etapa !== "setor" && r.etapa !== "responsavel")) {
+      await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
+      return;
+    }
+    const alvo = data.slice(3);
+    r.em = Date.now();
+    await responderCallback(callbackId);
+    if (alvo === "volta") {
+      r.etapa = "setor";
+      await perguntarSetor(chatId, conta.pessoaId);
+      return;
+    }
+    r.etapa = "responsavel";
+    await perguntarPessoaDoSetor(chatId, alvo);
+    return;
+  }
+
+  // nv:<pessoaId> — a pessoa escolhida, direto ("Para mim") ou via setor.
   if (data.startsWith("nv:")) {
     const alvo = Number(data.slice(3));
     if (!Number.isInteger(alvo)) {
