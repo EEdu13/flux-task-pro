@@ -28,11 +28,45 @@ export interface ChatThread {
   unread: number;
 }
 
+/**
+ * A pessoa está olhando para o app agora?
+ *
+ * É a pergunta por trás de três coisas: marcar mensagem como lida, calar o som
+ * de mensagem nova e — por consequência — o "visualizado" que a outra pessoa
+ * vê. As três precisam da mesma resposta, senão uma desmente a outra.
+ *
+ * `document.hidden` sozinho não basta. No teste de 11/09, com a conversa aberta
+ * e o app de desktop minimizado, o som de mensagem nova não tocou — e a única
+ * forma de o código chegar lá é o documento continuar se declarando visível
+ * com a janela minimizada. Ou seja, o WebView não avisa o minimizar. Com o
+ * visto, o mesmo buraco faria a outra pessoa ver ✓✓ numa mensagem que ninguém
+ * leu.
+ *
+ * `hasFocus()` fecha isso: janela minimizada, ou outro programa na frente, não
+ * tem o foco. O custo é que conversa aberta num segundo monitor, com o foco em
+ * outro programa, também não conta como lida até a pessoa voltar ao app — que
+ * é o lado certo de errar, porque um "visualizado" falso é uma mentira na tela
+ * de outra pessoa e um atrasado não é.
+ */
+export function pessoaOlhando(): boolean {
+  return typeof document !== "undefined" && !document.hidden && document.hasFocus();
+}
+
 interface ChatCtx {
   presence: Record<string, number>; // userId -> last_seen ms
   isOnline: (userId: string) => boolean;
   threads: ChatThread[];
-  totalUnread: number;
+  /**
+   * Não lidas fora das conversas que estão desenhadas na tela agora — o
+   * número de TODO badge de chat. Substituiu o `totalUnread`, que contava
+   * também a conversa aberta e fazia o badge piscar por ela.
+   */
+  naoLidasFora: number;
+  /**
+   * Anuncia que a conversa com `peerId` está desenhada na tela; devolve a
+   * função que desfaz o anúncio. Quem chama é a lista de mensagens, ao montar.
+   */
+  registrarNaTela: (peerId: string) => () => void;
   openWindows: string[];
   minimized: string[];
   openChat: (userId: string) => void;
@@ -66,10 +100,33 @@ export function ChatProvider({ children }: { children: ReactNode }) {
      causaria um render a cada 3 segundos sem nada mudar na tela. */
   const totalNaoLidasRef = useRef<number | null>(null);
 
-  /* Quem está com a janela aberta e NÃO minimizada.
-     Num ref e não em estado porque quem lê é o laço de sondagem, e mudar as
-     dependências dele reiniciaria o intervalo de 3s a cada janela aberta. */
-  const janelasAVistaRef = useRef<Set<string>>(new Set());
+  /* Conversas desenhadas na tela agora, com contagem.
+     Vale para as duas portas do chat — a janela do dock e a página /chat. Antes
+     só as janelas do dock contavam (vinham de `openWindows`), então na página
+     /chat a mensagem de quem você estava lendo tocava o som e acendia o número
+     como se estivesse em outro lugar.
+
+     Contagem e não conjunto porque a mesma conversa pode estar nas duas portas
+     ao mesmo tempo; fechar uma não pode tirar a outra da tela.
+
+     O mapa vive num ref porque quem o lê é o laço de sondagem, e ele não pode
+     entrar nas dependências do laço: reiniciaria o intervalo de 3s a cada
+     conversa aberta, e esse relógio está calibrado. O estado ao lado é só para
+     o número do badge redesenhar. */
+  const contagemNaTelaRef = useRef<Map<string, number>>(new Map());
+  const [naTela, setNaTela] = useState<ReadonlySet<string>>(() => new Set());
+
+  const registrarNaTela = useCallback((peerId: string) => {
+    const m = contagemNaTelaRef.current;
+    m.set(peerId, (m.get(peerId) ?? 0) + 1);
+    setNaTela(new Set(m.keys()));
+    return () => {
+      const n = (m.get(peerId) ?? 1) - 1;
+      if (n <= 0) m.delete(peerId);
+      else m.set(peerId, n);
+      setNaTela(new Set(m.keys()));
+    };
+  }, []);
 
   // Heartbeat de presença
   useEffect(() => {
@@ -111,11 +168,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, [meId, isAuthenticated]);
 
-  useEffect(() => {
-    const min = new Set(minimized);
-    janelasAVistaRef.current = new Set(openWindows.filter((id) => !min.has(id)));
-  }, [openWindows, minimized]);
-
   // Threads (lista de conversas + não lidas)
   useEffect(() => {
     if (!isAuthenticated || !meId) return;
@@ -136,20 +188,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
            O primeiro resultado só semeia a base e não toca nada: senão entrar
            no app com mensagens antigas por ler dispararia o som no login, por
            algo que já estava lá ontem. */
-        /* Conversa aberta E à vista não entra na conta.
-           Sem isto, a mensagem que a pessoa está VENDO chegar — janela aberta
-           na frente dela — tocava o som e piscava a barra, avisando de algo que
-           já estava sendo lido. `document.hidden` é a metade que importa: se a
-           aba está em segundo plano, a janela estar aberta não significa nada e
-           o aviso volta a fazer sentido.
+        /* Conversa na tela E pessoa olhando não entra na conta.
+           Sem isto, a mensagem que a pessoa está VENDO chegar tocava o som e
+           piscava a barra, avisando de algo que já estava sendo lido. A metade
+           "pessoa olhando" é a que importa: app minimizado ou em segundo plano
+           faz a conversa estar aberta não significar nada, e o aviso volta a
+           fazer sentido. Ver `pessoaOlhando` — era aqui que o app minimizado
+           ficava mudo.
 
-           A leitura vem de um ref, e não das dependências deste efeito: incluir
-           `openWindows` aqui reiniciaria o intervalo a cada janela aberta ou
-           fechada, e este relógio está calibrado. */
-        const aVista =
-          typeof document !== "undefined" && !document.hidden
-            ? janelasAVistaRef.current
-            : new Set<string>();
+           A leitura vem de um ref, e não das dependências deste efeito: ver a
+           nota em `contagemNaTelaRef`. */
+        const aVista = pessoaOlhando() ? contagemNaTelaRef.current : new Map<string, number>();
         const total = lista.reduce(
           (s, t) => s + (aVista.has(t.peer) ? 0 : t.unread || 0),
           0,
@@ -234,16 +283,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [meId],
   );
 
-  const totalUnread = useMemo(
-    () => threads.reduce((sum, t) => sum + (t.unread || 0), 0),
-    [threads],
+  /* O número que os badges mostram.
+     Desconta a conversa que está na tela porque a marcação de lida vai ao
+     servidor e só volta na próxima sondagem — sem descontar, o badge piscaria
+     o número de uma mensagem que a pessoa acabou de ler na frente dela. */
+  const naoLidasFora = useMemo(
+    () => threads.reduce((sum, t) => sum + (naTela.has(t.peer) ? 0 : t.unread || 0), 0),
+    [threads, naTela],
   );
 
   const value: ChatCtx = {
     presence,
     isOnline,
     threads,
-    totalUnread,
+    naoLidasFora,
+    registrarNaTela,
     openWindows,
     minimized,
     openChat,
@@ -273,7 +327,7 @@ export function useChat() {
  */
 export type Conversa = MensagemDaConversa[] & { peerDigitando: boolean };
 
-type MensagemDaConversa = {
+export type MensagemDaConversa = {
   id: string;
   from_user_id: string;
   to_user_id: string;
@@ -282,24 +336,15 @@ type MensagemDaConversa = {
   att_type: string | null;
   att_data: string | null;
   created_at: string;
+  /** Quando o destinatário leu. `null` = ainda não leu. É o que acende o ✓✓. */
+  read_at: string | null;
 };
 
 export function useConversation(peerId: string | null): Conversa {
   const { currentUser } = useFluxo();
   const { pulse } = useChat();
   const [digitando, setDigitando] = useState(false);
-  const [messages, setMessages] = useState<
-    {
-      id: string;
-      from_user_id: string;
-      to_user_id: string;
-      body: string | null;
-      att_name: string | null;
-      att_type: string | null;
-      att_data: string | null;
-      created_at: string;
-    }[]
-  >([]);
+  const [messages, setMessages] = useState<MensagemDaConversa[]>([]);
   const meId = currentUser?.id;
   const seenPeer = useRef<string | null>(null);
 

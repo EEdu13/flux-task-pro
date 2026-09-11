@@ -35,6 +35,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { useChat } from "@/lib/chat-store";
 import { roleLabels } from "@/lib/fluxo-types";
 import { tituloDoAviso } from "@/lib/aviso";
 import { formatRelative, useTheme } from "@/lib/use-theme";
@@ -114,6 +115,7 @@ export function FluxoLayout({
     topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
+  const { naoLidasFora: chatNaoLidas } = useChat();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const navigate = useNavigate();
   const { ask: askInvite } = useCallInviter();
@@ -483,11 +485,16 @@ export function FluxoLayout({
         <nav className="mt-4 flex flex-col gap-0.5 px-2">
           {nav.map((n) => {
             const active = pathname === n.to;
+            /* No chat, o mesmo número do balão do dock: descontado da conversa
+               que está aberta na tela, para não acender por uma mensagem que a
+               pessoa está lendo naquele instante. */
             const badge =
               n.to === "/minhas-tarefas"
                 ? tasks.filter((t) => t.assigneeId === currentUser.id && t.status !== "concluida").length
                 : n.to === "/inbox"
                 ? unread
+                : n.to === "/chat"
+                ? chatNaoLidas
                 : undefined;
             return (
               <Link

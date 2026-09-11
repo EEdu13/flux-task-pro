@@ -23,7 +23,7 @@ export function ChatDock() {
     isOnline,
     threads,
     markRead,
-    totalUnread,
+    naoLidasFora,
   } = useChat();
   const [panelOpen, setPanelOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -59,8 +59,6 @@ export function ChatDock() {
     if (recolhido) setPanelOpen(false);
   }, [recolhido]);
 
-  /* Subiu para cima do `return null` porque o efeito logo abaixo depende
-     destas listas, e hook não pode ficar depois de uma saída condicional. */
   const { expanded, collapsed } = useMemo(() => {
     const min = new Set(minimized);
     return {
@@ -69,42 +67,14 @@ export function ChatDock() {
     };
   }, [openWindows, minimized]);
 
-  /** Não lidas que estão numa janela aberta na tela — ou seja, à vista. */
-  const naoLidasAbertas = expanded.reduce((s, id) => s + (unreadByPeer.get(id) ?? 0), 0);
-  const chaveAbertas = expanded.join(",");
-
-  /* Conversa aberta e à vista = mensagem lida.
-   *
-   * `markRead` só era chamado ao ABRIR a conversa. Quem escrevia DEPOIS, com a
-   * janela já aberta na tela, continuava contando como não lido: o balão do
-   * chat mostrava "1" para uma mensagem que a pessoa estava lendo naquele
-   * instante, e o número só sumia fechando e reabrindo.
-   *
-   * `document.hidden` não é zelo: janela aberta numa aba que ficou em segundo
-   * plano não é mensagem vista. Sem essa condição, uma conversa esquecida
-   * aberta o dia inteiro marcaria tudo como lido e mataria o aviso justamente
-   * para quem não estava olhando. Por isso também o `visibilitychange`: ao
-   * voltar para a aba, o que chegou enquanto ela estava escondida é marcado.
-   */
-  useEffect(() => {
-    if (!chaveAbertas || naoLidasAbertas === 0) return;
-    const marcarVistas = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      // Todas as abertas, e não só as que têm número: janela aberta e visível
-      // significa que o que está nela foi visto. `markRead` no servidor é um
-      // UPDATE com `lida_em IS NULL`, então quem já estava lido não muda.
-      for (const id of chaveAbertas.split(",")) markRead(id);
-    };
-    marcarVistas();
-    document.addEventListener("visibilitychange", marcarVistas);
-    return () => document.removeEventListener("visibilitychange", marcarVistas);
-  }, [chaveAbertas, naoLidasAbertas, markRead]);
+  /* Marcar como lida o que chega com a janela aberta mudou-se para a lista de
+     mensagens (`MessageList`, em chat-ui). Morava aqui e só valia para o dock:
+     na página /chat, mensagem que chegava com a conversa aberta ficava como não
+     lida até clicar de novo no contato. Lá ela vale para as duas portas. */
 
   if (!isAuthenticated) return null;
 
   const onlineCount = others.filter((u) => isOnline(u.id)).length;
-  /** O que ainda pede atenção: o total menos o que está aberto na tela. */
-  const naoLidasFora = Math.max(0, totalUnread - naoLidasAbertas);
 
   const open = (id: string) => {
     openChat(id);
@@ -343,11 +313,9 @@ export function ChatDock() {
               >
                 {panelOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
               </motion.span>
-              {/* Desconta o que está numa janela aberta na tela.
-                  A marcação de lida vai ao servidor e só volta na próxima
-                  sondagem — até 3 segundos. Sem descontar aqui, o balão
-                  piscaria o número de uma mensagem que a pessoa acabou de ler
-                  na frente dela. */}
+              {/* Já desconta o que está numa conversa na tela — ver
+                  `naoLidasFora` no chat-store, que é o mesmo número da
+                  barra lateral. */}
               {!panelOpen && naoLidasFora > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground ring-2 ring-card">
                   {naoLidasFora}

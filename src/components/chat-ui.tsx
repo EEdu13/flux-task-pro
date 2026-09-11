@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from "react";
-import { Paperclip, Send, Smile, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, CheckCheck, Paperclip, Send, Smile, X } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "@/lib/fluxo-types";
 import { filesToAttachments, isImage, openAttachment } from "@/lib/attachments";
-import { useChat, useConversation } from "@/lib/chat-store";
+import {
+  pessoaOlhando,
+  useChat,
+  useConversation,
+  type MensagemDaConversa,
+} from "@/lib/chat-store";
 import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -44,9 +49,52 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Meia-noite local do dia de `d`, em ms — a chave que junta mensagens do mesmo dia. */
+function inicioDoDia(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * O rótulo do separador: "Hoje", "Ontem" ou a data por extenso.
+ *
+ * O dia da semana vem junto com a data ("Quarta-feira, 10 de setembro") porque
+ * é assim que se lembra de uma conversa recente — "aquilo que falamos na
+ * segunda". O ano só aparece quando não é o corrente; repetir "2026" em todo
+ * separador é ruído.
+ *
+ * Arredonda em vez de truncar a diferença de dias: um dia com mudança de
+ * horário tem 23 ou 25 horas, e truncar erraria o "Ontem" nesses dias.
+ */
+function rotuloDoDia(dia: Date, agora: Date): string {
+  const dias = Math.round((inicioDoDia(agora) - inicioDoDia(dia)) / 86_400_000);
+  if (dias === 0) return "Hoje";
+  if (dias === 1) return "Ontem";
+  const texto =
+    dia.getFullYear() === agora.getFullYear()
+      ? dia.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })
+      : dia.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+type DiaDaConversa = { chave: number; dia: Date; mensagens: MensagemDaConversa[] };
+
+/** Fatia a conversa (já em ordem cronológica) em dias consecutivos. */
+function agruparPorDia(mensagens: readonly MensagemDaConversa[]): DiaDaConversa[] {
+  const dias: DiaDaConversa[] = [];
+  for (const m of mensagens) {
+    const d = new Date(m.created_at);
+    const chave = inicioDoDia(d);
+    const ultimo = dias[dias.length - 1];
+    if (ultimo && ultimo.chave === chave) ultimo.mensagens.push(m);
+    else dias.push({ chave, dia: d, mensagens: [m] });
+  }
+  return dias;
+}
+
 /** Lista de mensagens de uma conversa. */
 export function MessageList({ peerId, compact = false }: { peerId: string; compact?: boolean }) {
   const { currentUser } = useFluxo();
+  const { markRead, registrarNaTela } = useChat();
   const messages = useConversation(peerId);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +104,54 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, messages.peerDigitando]);
 
+  // Esta conversa está na tela enquanto este componente existir — é o que o
+  // som e os badges consultam para não avisar do que já está sendo lido.
+  useEffect(() => registrarNaTela(peerId), [peerId, registrarNaTela]);
+
+  /* A mais recente do outro lado ainda sem leitura.
+     O id, e não um booleano, porque é ele que dispara a marcação de novo quando
+     chega outra mensagem — um booleano que já era `true` não mudaria, e a nova
+     ficaria sem marcar. */
+  const ultimaNaoLida = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.from_user_id === peerId && !m.read_at) return m.id;
+    }
+    return null;
+  }, [messages, peerId]);
+
+  /* Conversa na tela + pessoa olhando = lida.
+
+     Mora aqui, na lista, e não em quem abre a conversa: este componente só
+     existe onde a conversa está de fato desenhada (janela do dock aberta ou a
+     página /chat), então "montado" já responde metade da pergunta. A outra
+     metade é `pessoaOlhando` — ver a nota lá sobre o app minimizado.
+
+     E agora isso tem plateia: `lida_em` é o que acende o ✓✓ na tela de quem
+     mandou. Marcar cedo demais seria dizer a alguém que foi lido o que não foi.
+
+     O `focus` cobre a volta ao app: o que chegou com a janela minimizada fica
+     não lido até a pessoa voltar, e aí é marcado de uma vez. */
+  useEffect(() => {
+    if (!ultimaNaoLida) return;
+    const marcar = () => {
+      if (pessoaOlhando()) markRead(peerId);
+    };
+    marcar();
+    document.addEventListener("visibilitychange", marcar);
+    window.addEventListener("focus", marcar);
+    return () => {
+      document.removeEventListener("visibilitychange", marcar);
+      window.removeEventListener("focus", marcar);
+    };
+  }, [ultimaNaoLida, peerId, markRead]);
+
+  const dias = useMemo(() => agruparPorDia(messages), [messages]);
+  // Fora do memo de propósito: a conversa que fica aberta de um dia para o
+  // outro precisa que o "Hoje" vire "Ontem", e isso depende da hora, não das
+  // mensagens. A sondagem redesenha a cada 1,5s, o que basta.
+  const agora = new Date();
+
   return (
     <div className={`flex flex-1 flex-col gap-1.5 overflow-y-auto ${compact ? "p-2" : "p-4"}`}>
       {messages.length === 0 && (
@@ -63,51 +159,136 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
           Nenhuma mensagem ainda. Diga oi 👋
         </div>
       )}
-      {messages.map((m) => {
-        const mine = m.from_user_id === currentUser.id;
-        const hasImg = m.att_data && m.att_type && isImage(m.att_type);
-        return (
-          <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
-                mine
-                  ? "rounded-br-sm bg-primary text-primary-foreground"
-                  : "rounded-bl-sm bg-secondary text-foreground"
-              }`}
-            >
-              {hasImg && (
-                <button
-                  type="button"
-                  onClick={() => openAttachment({ dataUrl: m.att_data!, name: m.att_name || "imagem" })}
-                  className="mb-1 block"
-                >
-                  <img
-                    src={m.att_data!}
-                    alt={m.att_name || "imagem"}
-                    className="max-h-52 rounded-lg object-cover"
-                  />
-                </button>
-              )}
-              {m.att_data && !hasImg && (
-                <button
-                  type="button"
-                  onClick={() => openAttachment({ dataUrl: m.att_data!, name: m.att_name || "arquivo" })}
-                  className="mb-1 flex items-center gap-1.5 rounded-md bg-black/10 px-2 py-1 text-xs underline"
-                >
-                  <Paperclip className="h-3 w-3" /> {m.att_name || "arquivo"}
-                </button>
-              )}
-              {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
-              <div className={`mt-0.5 text-right text-[9px] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                {fmtTime(m.created_at)}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+      {/* Um bloco por dia, e não um separador solto entre mensagens: o
+          separador é `sticky`, e o bloco é o que o limita. Solto, todos
+          grudariam no topo ao mesmo tempo, empilhados — e o "Quarta-feira, 10
+          de setembro", mais largo, apareceria por trás do "Hoje". Dentro do
+          bloco, cada um sai de cena quando o dia dele acaba. */}
+      {dias.map((d) => (
+        <section key={d.chave} className="flex flex-col gap-1.5">
+          <SeparadorDeDia rotulo={rotuloDoDia(d.dia, agora)} />
+          {d.mensagens.map((m) => (
+            <Balao key={m.id} m={m} mine={m.from_user_id === currentUser.id} />
+          ))}
+        </section>
+      ))}
       {messages.peerDigitando && <BalaoDigitando />}
       <div ref={endRef} />
     </div>
+  );
+}
+
+/**
+ * O dia no meio da conversa, como no WhatsApp.
+ *
+ * Gruda no topo enquanto se rola pelas mensagens daquele dia: numa conversa
+ * longa, é o que diz de quando é o trecho na tela sem precisar voltar até o
+ * separador. O fundo é opaco pelo mesmo motivo — ele passa por cima dos balões.
+ */
+function SeparadorDeDia({ rotulo }: { rotulo: string }) {
+  return (
+    <div role="separator" aria-label={rotulo} className="sticky top-0 z-10 flex justify-center py-1">
+      <span className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
+        {rotulo}
+      </span>
+    </div>
+  );
+}
+
+function Balao({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
+  const hasImg = m.att_data && m.att_type && isImage(m.att_type);
+  return (
+    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+          mine
+            ? "rounded-br-sm bg-primary text-primary-foreground"
+            : "rounded-bl-sm bg-secondary text-foreground"
+        }`}
+      >
+        {hasImg && (
+          <button
+            type="button"
+            onClick={() => openAttachment({ dataUrl: m.att_data!, name: m.att_name || "imagem" })}
+            className="mb-1 block"
+          >
+            <img
+              src={m.att_data!}
+              alt={m.att_name || "imagem"}
+              className="max-h-52 rounded-lg object-cover"
+            />
+          </button>
+        )}
+        {m.att_data && !hasImg && (
+          <button
+            type="button"
+            onClick={() => openAttachment({ dataUrl: m.att_data!, name: m.att_name || "arquivo" })}
+            className="mb-1 flex items-center gap-1.5 rounded-md bg-black/10 px-2 py-1 text-xs underline"
+          >
+            <Paperclip className="h-3 w-3" /> {m.att_name || "arquivo"}
+          </button>
+        )}
+        {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
+        <div
+          className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${
+            mine ? "text-primary-foreground/70" : "text-muted-foreground"
+          }`}
+        >
+          {fmtTime(m.created_at)}
+          {/* Só nas minhas: o visto responde "a pessoa leu o que EU mandei".
+              Nas dela a pergunta não existe — se está na minha tela, eu li. */}
+          {mine && <Visto lidaEm={m.read_at} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Azul do ✓✓ lido, puxado para a cor do texto do balão.
+ *
+ * Um azul fixo não serve: o balão é `bg-primary`, que muda com a paleta e com
+ * o tema — escuro com texto claro no modo claro, claro com texto escuro no
+ * noturno. Misturar 35% da cor do texto leva o azul para o lado que contrasta
+ * com o balão, qualquer que seja ele, sem perder o tom. Em `oklab` porque a
+ * mistura em `oklch` giraria o matiz em direção ao da paleta.
+ *
+ * A cor é reforço, não o sinal: ✓ e ✓✓ já se distinguem pela forma, então
+ * quem não distingue cor não perde a informação.
+ */
+const COR_LIDA = "color-mix(in oklab, var(--primary-foreground) 35%, oklch(0.62 0.19 250))";
+
+/** "às 14:59" se foi hoje, "em 10/09 às 14:59" se foi outro dia. */
+function quandoLida(iso: string): string {
+  const d = new Date(iso);
+  const hora = `às ${fmtTime(iso)}`;
+  if (inicioDoDia(d) === inicioDoDia(new Date())) return hora;
+  return `em ${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hora}`;
+}
+
+/**
+ * ✓ enviada, ✓✓ visualizada.
+ *
+ * Dois estados e não os três do WhatsApp (enviada / entregue / lida). O
+ * "entregue" dele significa "chegou ao celular da pessoa", e aqui não existe
+ * um aparelho que confirme recebimento — o mais perto seria "a pessoa estava
+ * online", que é um palpite. Desenhar ✓✓ cinza com base em palpite ensinaria a
+ * desconfiar do ✓✓ azul também.
+ */
+function Visto({ lidaEm }: { lidaEm: string | null }) {
+  if (!lidaEm) {
+    return (
+      <span title="Enviada — ainda não visualizada" className="inline-flex">
+        <Check className="h-3 w-3" aria-hidden="true" />
+        <span className="sr-only">Não visualizada</span>
+      </span>
+    );
+  }
+  return (
+    <span title={`Visualizada ${quandoLida(lidaEm)}`} className="inline-flex" style={{ color: COR_LIDA }}>
+      <CheckCheck className="h-3 w-3" aria-hidden="true" />
+      <span className="sr-only">Visualizada</span>
+    </span>
   );
 }
 
