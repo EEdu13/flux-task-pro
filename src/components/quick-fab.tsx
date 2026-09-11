@@ -10,6 +10,7 @@ import {
   Sparkles,
   Check,
   ChevronRight,
+  AudioLines,
 } from "lucide-react";
 
 import { useFluxo } from "@/lib/fluxo-store";
@@ -20,6 +21,7 @@ import { loadPackDone, savePackDone } from "@/lib/pack";
 import { sendNudge } from "@/components/attention-overlay";
 import { AnimatePresence, motion } from "framer-motion";
 import { alternarLancadores, useLancadoresRecolhidos } from "@/lib/lancadores";
+import { TarefaPorVoz } from "@/components/tarefa-por-voz";
 
 type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
 type PackTab = "concluir" | "meu" | "outro";
@@ -52,6 +54,10 @@ export function QuickFab() {
   /** Texto da faixa do trator. Vazio = cutucada comum. */
   const [faixa, setFaixa] = useState("");
   const [packTarget, setPackTarget] = useState<string>("");
+  /* Fora do `mode` de propósito: os modos são painéis que moram DENTRO do
+     menu do raio, e a voz abre uma tela inteira por cima do app. Fechar o menu
+     não pode fechar ela junto. */
+  const [vozAberta, setVozAberta] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -246,6 +252,17 @@ export function QuickFab() {
           >
       {mode === "menu" && (
         <div className="flex flex-col items-stretch gap-1.5 rounded-xl border border-border bg-card p-1.5 shadow-2xl">
+          <FabItem
+            icon={AudioLines}
+            label="Tarefa por voz"
+            hint="dite tarefas para o time"
+            selo="Prévia"
+            onClick={() => {
+              setOpen(false);
+              setMode("menu");
+              setVozAberta(true);
+            }}
+          />
           <FabItem
             icon={Zap}
             label="Tarefa rápida"
@@ -671,6 +688,8 @@ export function QuickFab() {
 
         <BotaoRecolher recolhido={recolhido} aoAlternar={recolher} />
       </div>
+
+      <TarefaPorVoz aberto={vozAberta} aoFechar={() => setVozAberta(false)} />
     </div>
   );
 }
@@ -726,11 +745,14 @@ function FabItem({
   icon: Icon,
   label,
   hint,
+  selo,
   onClick,
 }: {
   icon: typeof Plus;
   label: string;
   hint: string;
+  /** Etiqueta ao lado do nome — para dizer que algo ainda não é o definitivo. */
+  selo?: string;
   onClick: () => void;
 }) {
   return (
@@ -742,7 +764,14 @@ function FabItem({
         <Icon className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0">
-        <div className="text-xs font-semibold">{label}</div>
+        <div className="flex items-center gap-1.5 text-xs font-semibold">
+          {label}
+          {selo && (
+            <span className="rounded-full border border-primary/40 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+              {selo}
+            </span>
+          )}
+        </div>
         <div className="text-[10px] text-muted-foreground">{hint}</div>
       </div>
     </button>
