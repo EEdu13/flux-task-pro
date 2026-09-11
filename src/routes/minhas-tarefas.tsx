@@ -541,17 +541,28 @@ function TaskList({
     { key: "hoje", label: "Hoje", items: [] },
     { key: "semana", label: "Esta semana", items: [] },
     { key: "depois", label: "Depois", items: [] },
+    { key: "concluida", label: "Concluídas", items: [] },
   ];
+  /* Concluída sai da régua do prazo antes de tudo.
+     Os grupos de cima respondem "o que falta fazer, e para quando" — e uma
+     tarefa entregue não falta. Pelo prazo, a concluída de ontem caía em
+     Atrasadas: vermelho, no topo da lista, para algo que já estava resolvido. */
   for (const t of tasks) {
-    const b = formatDueBucket(t.dueDate);
+    const b = t.status === "concluida" ? "concluida" : formatDueBucket(t.dueDate);
     groups.find((g) => g.key === b)!.items.push(t);
   }
   groups.forEach((g) =>
-    g.items.sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate)),
+    g.key === "concluida"
+      ? // A ordem do arraste é prioridade de trabalho, que não existe mais
+        // aqui. Prazo mais recente primeiro: o que acabou de sair é o que se
+        // procura.
+        g.items.sort((a, b) => b.dueDate.localeCompare(a.dueDate))
+      : g.items.sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate)),
   );
 
   const handleDrop = (groupKey: string, insertIndex: number) => {
-    if (!dragId) return;
+    // Soltar entre as concluídas reordenaria uma fila que não existe mais.
+    if (!dragId || groupKey === "concluida") return;
     const g = groups.find((x) => x.key === groupKey);
     if (!g) return;
     const filtered = g.items.filter((t) => t.id !== dragId);
@@ -568,16 +579,21 @@ function TaskList({
 
   return (
     <div className="space-y-6">
-      {groups.map((g) => g.items.length > 0 && (
+      {groups.map((g) => {
+        if (g.items.length === 0) return null;
+        const priorizavel = g.key !== "concluida";
+        return (
         <div key={g.key}>
           <div className="mb-1 flex items-center gap-2">
-            <h3 className={`text-xs font-semibold uppercase tracking-wider ${g.key === "atrasada" ? "text-destructive" : g.key === "hoje" ? "text-warning" : "text-muted-foreground"}`}>
+            <h3 className={`text-xs font-semibold uppercase tracking-wider ${g.key === "atrasada" ? "text-destructive" : g.key === "hoje" ? "text-warning" : g.key === "concluida" ? "text-success" : "text-muted-foreground"}`}>
               {g.label}
             </h3>
             <span className="text-[10px] text-muted-foreground">({g.items.length})</span>
-            <span className="text-[10px] text-muted-foreground/70">
-              · arraste ⋮⋮ para priorizar
-            </span>
+            {priorizavel && (
+              <span className="text-[10px] text-muted-foreground/70">
+                · arraste ⋮⋮ para priorizar
+              </span>
+            )}
           </div>
           <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
             <table className="w-full min-w-[860px] text-left">
@@ -602,7 +618,7 @@ function TaskList({
                   return (
                     <tr
                       key={t.id}
-                      draggable
+                      draggable={priorizavel}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", t.id);
                         e.dataTransfer.effectAllowed = "move";
@@ -613,6 +629,10 @@ function TaskList({
                         setDropTarget(null);
                       }}
                       onDragOver={(e) => {
+                        // Sem `preventDefault` o navegador recusa o soltar
+                        // aqui e mostra o cursor de proibido — que é a
+                        // resposta certa para as concluídas.
+                        if (!priorizavel) return;
                         e.preventDefault();
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                         const before = e.clientY < rect.top + rect.height / 2;
@@ -630,9 +650,9 @@ function TaskList({
                           }),
                         );
                       }}
-                      className={`group cursor-grab border-b border-border last:border-0 hover:bg-secondary/40 active:cursor-grabbing ${
-                        showBefore ? "border-t-2 border-t-primary" : ""
-                      }`}
+                      className={`group border-b border-border last:border-0 hover:bg-secondary/40 ${
+                        priorizavel ? "cursor-grab active:cursor-grabbing" : ""
+                      } ${showBefore ? "border-t-2 border-t-primary" : ""}`}
                     >
                       <td className="py-2.5 pl-4 pr-2">
                         {t.status !== "concluida" && (
@@ -644,9 +664,14 @@ function TaskList({
                         )}
                       </td>
                       <td className="py-2.5 pr-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                          {index + 1}
-                        </span>
+                        {/* O número é a posição na fila de trabalho — numa
+                            tarefa entregue ele afirmaria uma prioridade que
+                            não existe mais. */}
+                        {priorizavel && (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                            {index + 1}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 pr-4">
                         <button onClick={() => onEdit(t.id)} className="flex items-start gap-2 text-left">
@@ -721,7 +746,8 @@ function TaskList({
             </table>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
