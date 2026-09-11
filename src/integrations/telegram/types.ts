@@ -136,14 +136,39 @@ export interface BotaoContato {
   request_contact: true;
 }
 
+/**
+ * Botão comum do teclado de baixo: tocar nele MANDA o rótulo como mensagem.
+ *
+ * É a diferença que decide onde cada teclado serve. O botão em linha
+ * (`BotaoCallback`) devolve um código escondido e não escreve nada no chat; este
+ * aqui vira texto de verdade, então o mesmo tratamento que lê "hoje" digitado lê
+ * o toque no botão Hoje, sem código novo.
+ */
+export interface BotaoTexto {
+  text: string;
+}
+
 export interface TecladoEmLinha {
   inline_keyboard: BotaoCallback[][];
 }
 
+/**
+ * O teclado de baixo, que ocupa o lugar do teclado do sistema.
+ *
+ * `input_field_placeholder` é o que faz aparecer a dica DENTRO do campo de
+ * digitação ("Título da tarefa"). Sem ela, uma pergunta do bot com botões
+ * embaixo não deixa claro que a resposta é digitada — a pessoa procura o botão
+ * que responde e não acha.
+ *
+ * Uma mensagem tem UM `reply_markup` só: ou este teclado, ou o de botões em
+ * linha. Não dá para ter os dois, e é por isso que as etapas de texto do /nova
+ * carregam o "Cancelar" aqui dentro em vez de um botão em linha.
+ */
 export interface TecladoDeResposta {
-  keyboard: BotaoContato[][];
+  keyboard: (BotaoContato | BotaoTexto)[][];
   resize_keyboard?: boolean;
   one_time_keyboard?: boolean;
+  input_field_placeholder?: string;
 }
 
 /**

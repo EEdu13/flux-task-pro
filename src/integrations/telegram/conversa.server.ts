@@ -10,26 +10,22 @@
 // equipe). Aí a permissão é conferida de novo, no banco, a cada toque: ver
 // `podeMexer`.
 
-import {
-  editarMensagem,
-  enviarMensagem,
-  escaparMd,
-  removerTeclado,
-  responderCallback,
-} from "./client.server";
+// `editarMensagem` saiu daqui: estava importado e nunca usado.
+import { enviarMensagem, escaparMd, removerTeclado, responderCallback } from "./client.server";
 import { desvincular, pessoaPorTelegram, vincularPorContato } from "./contas.server";
+/* `hojeEmBrasilia` e `fimDoDiaBr` saíram: eram do prazo por botão em linha, que
+   virou etapa de texto. Quem monta a data agora é o `lerPrazo`, que já entende
+   "hoje" e "amanhã" — os dois atalhos que restaram, como botões de texto. */
 import {
   atrasoEmDiasBr,
   criarTarefa,
   dataBr,
   diaBr,
-  fimDoDiaBr,
   HOJE_BR,
-  hojeEmBrasilia,
   lerPrazo,
   possiveisResponsaveis,
 } from "./tarefas.server";
-import type { AtualizacaoClassificada, TecladoEmLinha } from "./types";
+import type { AtualizacaoClassificada, TecladoDeResposta, TecladoEmLinha } from "./types";
 
 /** Endereço do sistema, para os links de "abrir no Fluxo". */
 function urlDoApp(): string {
@@ -351,14 +347,25 @@ function textoDaTarefa(t: TarefaResumo): string {
  * privado e no grupo, e um rascunho por pessoa é o que evita duas conversas
  * paralelas escrevendo na mesma tarefa.
  */
-type Etapa = "titulo" | "descricao" | "prazo" | "responsavel";
+/**
+ * A ordem é RESPONSÁVEL primeiro, e isso é escolha, não acaso.
+ *
+ * Perguntar para quem só no fim obriga a pessoa a escrever título, descrição e
+ * prazo sem saber de quem ela está falando — e um título que faz sentido para si
+ * mesmo ("ver o retorno do fornecedor") raramente é o que se escreve para
+ * outro. Decidido o dono, o resto sai no tom certo da primeira vez.
+ */
+type Etapa = "responsavel" | "titulo" | "descricao" | "prazo";
 
 interface Rascunho {
   etapa: Etapa;
   chatId: number;
+  /** Escolhido na primeira etapa; as seguintes já sabem de quem é a tarefa. */
+  responsavelId: number;
+  responsavelNome: string;
+  paraMim: boolean;
   titulo: string;
   descricao: string | null;
-  prazo: Date | null;
   em: number;
 }
 
@@ -377,20 +384,35 @@ function rascunhoDe(deId: number): Rascunho | null {
   return r;
 }
 
-/** Teclado de prazo: os dois casos que cobrem quase tudo, e o resto digitado. */
-const TECLADO_PRAZO: TecladoEmLinha = {
-  inline_keyboard: [
-    [
-      { text: "Hoje", callback_data: "np:hoje" },
-      { text: "Amanhã", callback_data: "np:amanha" },
-    ],
-    [{ text: "✕ Cancelar", callback_data: "nx" }],
-  ],
-};
+/**
+ * Os teclados das etapas de TEXTO do /nova.
+ *
+ * São teclados de baixo (`TecladoDeResposta`), não botões em linha, e a troca
+ * resolve a queixa de quem testou: com botão em linha, a pergunta do bot aparece
+ * com um "Cancelar" embaixo e NADA indicando que a resposta é digitada — a
+ * pessoa procura o botão que responde e não acha.
+ *
+ * O `input_field_placeholder` põe a dica dentro do campo de digitação, que é o
+ * campo que estava faltando. E o "Cancelar" vem para cá porque uma mensagem tem
+ * um `reply_markup` só: ou este teclado, ou o de linha.
+ *
+ * Os atalhos (Hoje, Amanhã, Pular) são botões de TEXTO: tocar manda o rótulo
+ * como mensagem comum, então quem já lê "hoje" digitado lê o toque sem nenhum
+ * tratamento novo. Foi o que permitiu apagar os callbacks `np:`.
+ */
+const CANCELAR_TEXTO = "✕ Cancelar";
+const PULAR_TEXTO = "Pular";
 
-const CANCELAR: TecladoEmLinha = {
-  inline_keyboard: [[{ text: "✕ Cancelar", callback_data: "nx" }]],
-};
+function tecladoDeEtapa(dica: string, atalhos: string[] = []): TecladoDeResposta {
+  return {
+    keyboard: [
+      ...(atalhos.length > 0 ? [atalhos.map((text) => ({ text }))] : []),
+      [{ text: CANCELAR_TEXTO }],
+    ],
+    resize_keyboard: true,
+    input_field_placeholder: dica,
+  };
+}
 
 async function comecarNova(deId: number, chatId: number, privado: boolean) {
   /* Só no privado, e não por pudor: o fluxo é uma conversa de quatro
@@ -404,85 +426,23 @@ async function comecarNova(deId: number, chatId: number, privado: boolean) {
     );
     return;
   }
-  rascunhos.set(deId, {
-    etapa: "titulo",
-    chatId,
-    titulo: "",
-    descricao: null,
-    prazo: null,
-    em: Date.now(),
-  });
-  await enviarMensagem(chatId, "*Nova tarefa*\n\nQual é o título\\?", { teclado: CANCELAR });
-}
-
-/** Cada resposta de texto avança uma etapa. Devolve false se não havia rascunho. */
-async function avancarNova(deId: number, chatId: number, texto: string): Promise<boolean> {
-  const r = rascunhoDe(deId);
-  if (!r) return false;
-  r.em = Date.now();
-
-  if (r.etapa === "titulo") {
-    const titulo = texto.trim().slice(0, 200);
-    if (!titulo) {
-      await enviarMensagem(chatId, "O título não pode ser vazio\\. Como se chama a tarefa\\?", {
-        teclado: CANCELAR,
-      });
-      return true;
-    }
-    r.titulo = titulo;
-    r.etapa = "descricao";
-    await enviarMensagem(
-      chatId,
-      `*${escaparMd(titulo)}*\n\nAlguma descrição\\? Mande /pular se não precisar\\.`,
-      { teclado: CANCELAR },
-    );
-    return true;
-  }
-
-  if (r.etapa === "descricao") {
-    r.descricao = texto.trim().slice(0, 2000) || null;
-    r.etapa = "prazo";
-    await perguntarPrazo(chatId);
-    return true;
-  }
-
-  if (r.etapa === "prazo") {
-    const prazo = lerPrazo(texto);
-    if (!prazo) {
-      await enviarMensagem(
-        chatId,
-        "Não entendi a data\\. Tente `hoje`, `amanhã`, `20/09` ou `20/09/2026`\\.",
-        { teclado: TECLADO_PRAZO },
-      );
-      return true;
-    }
-    r.prazo = prazo;
-    r.etapa = "responsavel";
-    await perguntarResponsavel(deId, chatId, prazo);
-    return true;
-  }
-
-  // Etapa "responsavel" é só botão — texto aqui não avança nada.
-  await enviarMensagem(chatId, "Escolha o responsável nos botões acima\\.", {
-    teclado: CANCELAR,
-  });
-  return true;
-}
-
-async function perguntarPrazo(chatId: number) {
-  await enviarMensagem(
-    chatId,
-    "Para quando\\?\n\n_Aceito_ `hoje`_,_ `amanhã`_,_ `20/09` _ou_ `20/09/2026`_._",
-    { teclado: TECLADO_PRAZO },
-  );
-}
-
-async function perguntarResponsavel(deId: number, chatId: number, prazo: Date) {
   const conta = await pessoaPorTelegram(deId);
   if (!conta) return;
+
+  rascunhos.set(deId, {
+    etapa: "responsavel",
+    chatId,
+    responsavelId: conta.pessoaId,
+    responsavelNome: "",
+    paraMim: true,
+    titulo: "",
+    descricao: null,
+    em: Date.now(),
+  });
+
   const pessoas = await possiveisResponsaveis(conta.pessoaId);
   const outros = pessoas.filter((p) => p.pessoa_id !== conta.pessoaId);
-  await enviarMensagem(chatId, `Prazo: *${escaparMd(diaBr(prazo))}*\n\nPara quem é a tarefa\\?`, {
+  await enviarMensagem(chatId, "*Nova tarefa*\n\nPara quem é\\?", {
     teclado: {
       inline_keyboard: [
         [{ text: "🙋 Para mim", callback_data: `nv:${conta.pessoaId}` }],
@@ -491,55 +451,180 @@ async function perguntarResponsavel(deId: number, chatId: number, prazo: Date) {
           .map((p) => [
             { text: p.nome.split(" ").slice(0, 2).join(" "), callback_data: `nv:${p.pessoa_id}` },
           ]),
-        [{ text: "✕ Cancelar", callback_data: "nx" }],
+        [{ text: CANCELAR_TEXTO, callback_data: "nx" }],
       ],
     },
   });
 }
 
-/** Fecha o rascunho: grava a tarefa e avisa quem recebeu. */
-async function concluirNova(deId: number, chatId: number, alvoId: number): Promise<string | null> {
+/**
+ * Fecha a escolha do responsável e abre a etapa do título.
+ *
+ * O alvo veio de um botão, que viaja pelo aparelho de quem apertou — então é
+ * palpite até prova em contrário. A lista de quem esta pessoa pode escolher é
+ * recalculada AQUI, e recalculada DE NOVO na hora de gravar: entre escolher o
+ * nome e terminar de escrever podem passar minutos, e nesse meio a pessoa pode
+ * ter mudado de setor.
+ */
+async function escolherResponsavel(deId: number, chatId: number, alvoId: number): Promise<boolean> {
   const r = rascunhoDe(deId);
-  if (!r || !r.prazo || !r.titulo) return null;
+  if (!r || r.etapa !== "responsavel") return false;
 
   const conta = await pessoaPorTelegram(deId);
-  if (!conta) return null;
+  if (!conta) return false;
+  const alvo = (await possiveisResponsaveis(conta.pessoaId)).find((p) => p.pessoa_id === alvoId);
+  if (!alvo) return false;
 
-  /* O alvo veio do botão, então é palpite até prova em contrário — mesma regra
-     de `e:` na equipe. Recalcula quem esta pessoa pode escolher, agora. */
-  const permitidos = await possiveisResponsaveis(conta.pessoaId);
-  const alvo = permitidos.find((p) => p.pessoa_id === alvoId);
-  if (!alvo) return null;
+  r.responsavelId = alvoId;
+  r.responsavelNome = alvo.nome;
+  r.paraMim = alvoId === conta.pessoaId;
+  r.etapa = "titulo";
+  r.em = Date.now();
+
+  await enviarMensagem(chatId, `${cabecalhoDe(r)}\n\nQual é o título\\?`, {
+    teclado: tecladoDeEtapa("Título da tarefa"),
+  });
+  return true;
+}
+
+/** O "Para: Fulano" que encabeça as etapas seguintes, lembrando de quem é. */
+function cabecalhoDe(r: Rascunho): string {
+  return `Para: *${escaparMd(r.paraMim ? "você" : r.responsavelNome)}*`;
+}
+
+/** Cada resposta de texto avança uma etapa. Devolve false se não havia rascunho. */
+async function avancarNova(deId: number, chatId: number, texto: string): Promise<boolean> {
+  const r = rascunhoDe(deId);
+  if (!r) return false;
+  r.em = Date.now();
+
+  /* Os atalhos chegam como texto comum, porque é isso que um botão do teclado
+     de baixo manda. Reconhecê-los aqui é o que dispensa um callback para cada
+     um — e faz o botão Cancelar valer em qualquer etapa, sem repetição. */
+  if (texto.trim() === CANCELAR_TEXTO) {
+    rascunhos.delete(deId);
+    await removerTeclado(chatId, "Criação cancelada\\.");
+    return true;
+  }
+
+  if (r.etapa === "responsavel") {
+    // Primeira etapa é só botão em linha — texto aqui não avança nada.
+    await enviarMensagem(chatId, "Escolha nos botões acima para quem é a tarefa\\.");
+    return true;
+  }
+
+  if (r.etapa === "titulo") {
+    const titulo = texto.trim().slice(0, 200);
+    if (!titulo) {
+      await enviarMensagem(chatId, "O título não pode ser vazio\\. Como se chama a tarefa\\?", {
+        teclado: tecladoDeEtapa("Título da tarefa"),
+      });
+      return true;
+    }
+    r.titulo = titulo;
+    r.etapa = "descricao";
+    await enviarMensagem(
+      chatId,
+      `${cabecalhoDe(r)}\n*${escaparMd(titulo)}*\n\nAlguma descrição\\?`,
+      { teclado: tecladoDeEtapa("Descrição (opcional)", [PULAR_TEXTO]) },
+    );
+    return true;
+  }
+
+  if (r.etapa === "descricao") {
+    const t = texto.trim();
+    r.descricao = t === PULAR_TEXTO ? null : t.slice(0, 2000) || null;
+    r.etapa = "prazo";
+    await perguntarPrazo(chatId);
+    return true;
+  }
+
+  // Prazo é a última etapa: entendida a data, a tarefa nasce.
+  const prazo = lerPrazo(texto);
+  if (!prazo) {
+    await enviarMensagem(
+      chatId,
+      "Não entendi a data\\. Tente `hoje`, `amanhã`, `20/09` ou `20/09/2026`\\.",
+      { teclado: tecladoDeEtapa("hoje, amanhã ou 20/09", ["Hoje", "Amanhã"]) },
+    );
+    return true;
+  }
+  await concluirNova(deId, chatId, prazo);
+  return true;
+}
+
+/* Esta mensagem era `_Aceito_ \`hoje\`_,_ ... _._` e derrubava o fluxo inteiro:
+   o ponto dentro do último `_._` é reservado no MarkdownV2 e estava sem escape,
+   então o Telegram RECUSAVA a mensagem. Como o erro morria no `try` do `tratar`,
+   o que a pessoa via era o bot emudecer no meio da criação.
+
+   Reescrita sem itálico picotado. Formatação que só enfeita não vale um ponto de
+   falha — e a lista de exemplos já estava em `code`, que é o que ajuda a ler. */
+async function perguntarPrazo(chatId: number) {
+  await enviarMensagem(
+    chatId,
+    "Para quando\\?\n\nAceito `hoje`, `amanhã`, `20/09` ou `20/09/2026`",
+    {
+      teclado: tecladoDeEtapa("hoje, amanhã ou 20/09", ["Hoje", "Amanhã"]),
+    },
+  );
+}
+
+/** Última etapa: grava a tarefa e avisa quem recebeu. */
+async function concluirNova(deId: number, chatId: number, prazo: Date): Promise<void> {
+  const r = rascunhoDe(deId);
+  if (!r || !r.titulo) return;
+
+  const conta = await pessoaPorTelegram(deId);
+  if (!conta) return;
+
+  /* A permissão é reconferida AGORA, e não só quando o nome foi escolhido.
+     Entre um momento e outro a pessoa escreveu título, descrição e prazo — e
+     nesse meio o alvo pode ter mudado de setor e saído do alcance dela. */
+  const alvo = (await possiveisResponsaveis(conta.pessoaId)).find(
+    (p) => p.pessoa_id === r.responsavelId,
+  );
+  if (!alvo) {
+    rascunhos.delete(deId);
+    await removerTeclado(
+      chatId,
+      "Você não pode mais criar tarefa para essa pessoa\\. Mande /nova para recomeçar\\.",
+    );
+    return;
+  }
 
   await criarTarefa({
     titulo: r.titulo,
     descricao: r.descricao,
-    prazo: r.prazo,
-    responsavelId: alvoId,
+    prazo,
+    responsavelId: r.responsavelId,
     criadoPor: conta.pessoaId,
   });
+  const { titulo, paraMim, responsavelId } = r;
   rascunhos.delete(deId);
 
-  const paraMim = alvoId === conta.pessoaId;
-  await enviarMensagem(
+  /* `removerTeclado` e não `enviarMensagem`: as etapas de texto deixaram um
+     teclado de baixo ocupando a tela, e ele não sai sozinho. Some junto com a
+     confirmação, que é o momento certo — a criação acabou. */
+  await removerTeclado(
     chatId,
     [
       "✅ *Tarefa criada*",
       "",
-      `*${escaparMd(r.titulo)}*`,
-      `Prazo: ${escaparMd(diaBr(r.prazo))}`,
+      `*${escaparMd(titulo)}*`,
+      `Prazo: ${escaparMd(diaBr(prazo))}`,
       `Responsável: ${escaparMd(paraMim ? "você" : alvo.nome)}`,
+      "",
+      "Mande /nova para criar outra\\.",
     ].join("\n"),
-    { teclado: VOLTAR_AO_MENU },
   );
 
   /* Quem recebeu fica sabendo pelo Telegram, se tiver vínculo. É o primeiro
      uso de `avisarPessoa`, que existia sem ninguém chamar. Silencioso quando
      não há vínculo: quem não conectou não vira erro de quem criou. */
   if (!paraMim) {
-    void avisarPessoa(alvoId, "Nova tarefa para você", `${r.titulo}\nPrazo: ${diaBr(r.prazo)}`);
+    void avisarPessoa(responsavelId, "Nova tarefa para você", `${titulo}\nPrazo: ${diaBr(prazo)}`);
   }
-  return alvo.nome;
 }
 
 /* --------------------------- Despacho --------------------------- */
@@ -595,6 +680,27 @@ export async function tratar(a: AtualizacaoClassificada): Promise<void> {
     }
   } catch (e) {
     console.error("[telegram] falha ao tratar:", (e as Error)?.message);
+    /* O erro não pode virar SILÊNCIO, e essa lição custou caro: um ponto sem
+       escape na pergunta do prazo fazia o Telegram recusar a mensagem, o erro
+       morria nesta linha e o bot simplesmente parava de responder no meio da
+       criação. Quem estava do outro lado não tinha como distinguir isso de "o
+       bot ignorou o que eu escrevi".
+
+       A mensagem de socorro não leva NADA variável: se o que quebrou foi a
+       formatação de um texto nosso, repetir o mesmo tipo de texto quebraria de
+       novo. E ela própria pode falhar (chat bloqueado, Telegram fora) — daí o
+       `catch` vazio, que aqui é o fim da linha de verdade. */
+    const chatId = "chatId" in a ? a.chatId : null;
+    if (chatId !== null) {
+      try {
+        await enviarMensagem(
+          chatId,
+          "Algo falhou aqui do meu lado\\. Mande /start para recomeçar\\.",
+        );
+      } catch {
+        /* sem mais o que fazer */
+      }
+    }
   }
 }
 
@@ -815,38 +921,34 @@ async function aoReceberBotao(
     await enviarMensagem(chatId, "Criação cancelada\\.", { teclado: VOLTAR_AO_MENU });
     return;
   }
+  /* `np:` era o prazo por botão em linha, antes de o prazo virar etapa de texto
+     com teclado de baixo. Não é mais produzido, e o tratamento fica só porque
+     botão em linha NÃO EXPIRA: as mensagens já enviadas seguem no histórico da
+     pessoa para sempre, e um toque sem tratamento deixa o relógio girando meio
+     minuto na tela dela. Responder "não está mais aberta" é o fim honesto. */
   if (data === "np:hoje" || data === "np:amanha") {
-    const r = rascunhoDe(deId);
-    if (!r || r.etapa !== "prazo") {
-      await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
-      return;
-    }
-    const h = hojeEmBrasilia();
-    r.prazo = fimDoDiaBr(h.ano, h.mes, h.dia + (data === "np:amanha" ? 1 : 0));
-    r.etapa = "responsavel";
-    r.em = Date.now();
-    await responderCallback(callbackId);
-    await perguntarResponsavel(deId, chatId, r.prazo);
+    await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
     return;
   }
+
+  // nv:<pessoaId> — escolha do responsável, agora a PRIMEIRA etapa.
   if (data.startsWith("nv:")) {
     const alvo = Number(data.slice(3));
     if (!Number.isInteger(alvo)) {
       await responderCallback(callbackId, "Pedido inválido.");
       return;
     }
-    const nome = await concluirNova(deId, chatId, alvo);
-    if (!nome) {
-      /* Rascunho expirado, perdido num deploy, ou alvo fora do alcance de quem
-         apertou. Os três terminam igual para quem está olhando: não deu, e o
-         caminho é recomeçar. */
-      await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
-      await enviarMensagem(chatId, "A criação expirou\\. Mande /nova para recomeçar\\.", {
-        teclado: VOLTAR_AO_MENU,
-      });
+    if (await escolherResponsavel(deId, chatId, alvo)) {
+      await responderCallback(callbackId);
       return;
     }
-    await responderCallback(callbackId, "Tarefa criada.");
+    /* Rascunho expirado, perdido num deploy, ou alvo fora do alcance de quem
+       apertou. Os três terminam igual para quem está olhando: não deu, e o
+       caminho é recomeçar. */
+    await responderCallback(callbackId, "Esta criação não está mais aberta.", true);
+    await enviarMensagem(chatId, "A criação expirou\\. Mande /nova para recomeçar\\.", {
+      teclado: VOLTAR_AO_MENU,
+    });
     return;
   }
 
