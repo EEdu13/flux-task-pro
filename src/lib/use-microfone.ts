@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Microfone só para MEDIR a voz — volume e espectro, quadro a quadro.
+ * O microfone da Tarefa por voz: mede a voz quadro a quadro e entrega o fluxo.
  *
- * Nada aqui grava, guarda ou envia áudio. O sinal entra num `AnalyserNode` e
- * morre ali: o analisador não é ligado a lugar nenhum, nem aos alto-falantes
- * (o que também evita a microfonia de ouvir a própria voz de volta).
- *
- * Existe para o orbe da Tarefa por voz reagir à voz de verdade. Quando a IA
- * chegar, o mesmo fluxo de áudio é o que será transcrito — mas isso é outra
- * etapa, e vai precisar de um aviso explícito para a pessoa.
+ * Este hook não grava nada. O sinal entra num `AnalyserNode`, que não é ligado
+ * a lugar nenhum, nem aos alto-falantes (o que também evita a microfonia de
+ * ouvir a própria voz de volta). Quem grava os trechos que vão para a
+ * transcrição é `useDitado`, a partir do `fluxo` exposto aqui.
  */
 
 export type EstadoMicrofone = "desligado" | "pedindo" | "ativo" | "negado" | "indisponivel";
 
 export interface LeituraDoMicrofone {
+  fluxo: MediaStream | null;
   analisador: AnalyserNode | null;
   /** Energia por faixa de frequência, 0–255. Vazio sem microfone. */
   espectro: Uint8Array<ArrayBuffer>;
@@ -23,6 +21,7 @@ export interface LeituraDoMicrofone {
 }
 
 const VAZIA = (): LeituraDoMicrofone => ({
+  fluxo: null,
   analisador: null,
   espectro: new Uint8Array(0),
   onda: new Uint8Array(0),
@@ -77,6 +76,7 @@ export function useMicrofone(ligado: boolean) {
         analisador.smoothingTimeConstant = 0.78;
         contexto.createMediaStreamSource(s).connect(analisador);
         leituraRef.current = {
+          fluxo: s,
           analisador,
           espectro: new Uint8Array(analisador.frequencyBinCount),
           onda: new Uint8Array(analisador.fftSize),

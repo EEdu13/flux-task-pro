@@ -256,7 +256,6 @@ export function QuickFab() {
             icon={AudioLines}
             label="Tarefa por voz"
             hint="dite tarefas para o time"
-            selo="Prévia"
             onClick={() => {
               setOpen(false);
               setMode("menu");
@@ -745,14 +744,11 @@ function FabItem({
   icon: Icon,
   label,
   hint,
-  selo,
   onClick,
 }: {
   icon: typeof Plus;
   label: string;
   hint: string;
-  /** Etiqueta ao lado do nome — para dizer que algo ainda não é o definitivo. */
-  selo?: string;
   onClick: () => void;
 }) {
   return (
@@ -764,14 +760,7 @@ function FabItem({
         <Icon className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0">
-        <div className="flex items-center gap-1.5 text-xs font-semibold">
-          {label}
-          {selo && (
-            <span className="rounded-full border border-primary/40 px-1.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
-              {selo}
-            </span>
-          )}
-        </div>
+        <div className="text-xs font-semibold">{label}</div>
         <div className="text-[10px] text-muted-foreground">{hint}</div>
       </div>
     </button>

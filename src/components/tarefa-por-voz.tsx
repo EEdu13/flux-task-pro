@@ -1,54 +1,51 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { AudioLines, CalendarDays, Check, Mic, MicOff, RotateCcw, X } from "lucide-react";
+import {
+  AlertCircle,
+  AudioLines,
+  CalendarDays,
+  Check,
+  Mic,
+  MicOff,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { User } from "@/lib/fluxo-types";
 import { useMicrofone, type EstadoMicrofone } from "@/lib/use-microfone";
+import { useDitado } from "@/lib/use-ditado";
+import {
+  interpretarVoz,
+  transcreverVoz,
+  type Prioridade,
+  type TarefaDitada,
+  type TarefaInterpretada,
+} from "@/lib/voz.functions";
+import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { ALTURA_DA_FAIXA, FaixaDeVoz } from "@/components/faixa-de-voz";
 import { UserAvatar } from "@/components/user-avatar";
 import { TravaScroll } from "@/components/trava-scroll";
+import { confirmar } from "@/components/confirm-dialog";
 
 /**
- * Tarefa por voz — PRÉVIA VISUAL.
+ * Tarefa por voz.
  *
- * A pessoa dita, a IA organiza, e as tarefas vão aparecendo prontas: título,
- * para quem e prazo. Várias em sequência, sem parar de falar.
+ * A pessoa dita, e as tarefas vão aparecendo prontas enquanto ela fala:
+ *   1. `useDitado` corta a fala nas pausas e entrega cada frase como áudio;
+ *   2. a OpenAI transcreve a frase (`transcreverVoz`);
+ *   3. o Claude Haiku atualiza a lista de tarefas com o que foi dito
+ *      (`interpretarVoz`) — inclusive correções: "não, essa é para a Milena".
  *
- * Hoje a IA ainda não está ligada. O que é real: a faixa de voz reage ao
- * microfone. O que é demonstração: a transcrição, os passos de organização e as
- * tarefas — um roteiro fixo que mostra como vai ficar. Por isso o botão de criar
- * NÃO cria nada: gravar no banco tarefas que ninguém ditou seria inventar
- * trabalho na fila de pessoas reais.
+ * As transcrições correm em paralelo, mas a interpretação vai uma de cada vez,
+ * na ordem em que as frases foram ditas: "a segunda é para amanhã" não pode
+ * ser lida antes da frase que criou a segunda. Frases que ficam prontas
+ * enquanto uma interpretação está no ar vão juntas na próxima — uma chamada a
+ * menos.
  *
- * Quando a IA chegar, o roteiro sai e entra o que ela devolver — a tela já
- * está desenhada para receber a mesma coisa: trechos de fala, passos e tarefas.
+ * Nada é gravado no banco até a pessoa clicar em Criar.
  */
-
-type Prioridade = "alta" | "media" | "baixa";
-
-interface TarefaGerada {
-  id: number;
-  titulo: string;
-  descricao: string;
-  /** `curto` é nome e sobrenome — no cartão grande o primeiro nome sozinho
-      confunde quando há duas pessoas com ele. */
-  pessoa: { nome: string; primeiro: string; curto: string; iniciais: string };
-  prazo: string;
-  prioridade: Prioridade;
-}
-
-interface Passo {
-  texto: string;
-  resultado?: string;
-}
-
-interface Trecho {
-  fala: string;
-  passos: Passo[];
-  tarefa: Omit<TarefaGerada, "id">;
-}
 
 interface LinhaDoLog {
   id: number;
@@ -56,20 +53,35 @@ interface LinhaDoLog {
   resultado?: string;
   feito: boolean;
   destaque?: boolean;
+  erro?: boolean;
 }
 
-/* ------------------------------------------------------------------ */
-/* Roteiro de demonstração                                             */
-/* ------------------------------------------------------------------ */
+/** O estado da conversa com a IA. Trocado inteiro ao recomeçar. */
+interface Pipeline {
+  /** Número da próxima frase gravada. */
+  seq: number;
+  /** Próxima frase a interpretar, na ordem em que foi dita. */
+  proximo: number;
+  /** Frases já transcritas esperando a vez. Texto vazio = não havia fala. */
+  prontos: Map<number, string>;
+  interpretando: boolean;
+  /** Tudo o que já foi interpretado — contexto para "essa", "a última". */
+  fala: string;
+  refSeq: number;
+}
+
+const novaPipeline = (): Pipeline => ({
+  seq: 0,
+  proximo: 0,
+  prontos: new Map(),
+  interpretando: false,
+  fala: "",
+  refSeq: 0,
+});
 
 const capitalizar = (p: string) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 
-/** "LUCAS GABRIEL BARRETO" → "Lucas". O cadastro vem em maiúsculas da IAM. */
-function primeiroNome(nome: string): string {
-  return capitalizar(nome.trim().split(/\s+/)[0] ?? "");
-}
-
-/** "LUCAS GABRIEL BARRETO" → "Lucas Barreto". */
+/** "LUCAS GABRIEL BARRETO" → "Lucas Barreto". O cadastro vem em maiúsculas da IAM. */
 function nomeCurto(nome: string): string {
   const partes = nome.trim().split(/\s+/);
   const primeiro = partes[0] ?? "";
@@ -77,106 +89,28 @@ function nomeCurto(nome: string): string {
   return [primeiro, ultimo].filter(Boolean).map(capitalizar).join(" ");
 }
 
-function daquiA(dias: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + dias);
-  return d;
-}
-
-/** A próxima sexta — se hoje é sexta, a da semana que vem. */
-function proximaSexta(): Date {
-  const hoje = new Date().getDay();
-  return daquiA((5 - hoje + 7) % 7 || 7);
-}
-
-/** "sex, 12/09" */
+/** "sex, 18/09" */
 const rotuloDia = (d: Date) =>
   d
     .toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })
     .replace(".", "");
 
-/**
- * Três pedidos ditados em sequência, com as pessoas do cadastro de verdade.
- *
- * Pessoas reais e não "Fulano": a prévia é para mostrar como vai ficar no uso,
- * e o nome de um colega no cartão é o que faz isso ser entendido de primeira.
- * Nada disto é gravado — ver o comentário no topo do arquivo.
- *
- * "para Lucas" e não "para o Lucas": o artigo exigiria saber o gênero de cada
- * pessoa do cadastro, e errar num nome de colega fica feio justamente na demo.
- */
-function montarRoteiro(pessoas: User[], meuId: string): Trecho[] {
-  const outras = pessoas
-    .filter((u) => u.id !== meuId && u.name)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const escolher = (i: number): User | undefined =>
-    outras.length > 0 ? outras[i % outras.length] : pessoas.find((u) => u.id === meuId);
+function rotuloPrazo(t: TarefaDitada): string {
+  const dia = isoParaData(t.prazo);
+  if (!dia) return "Hoje";
+  return `${rotuloDia(dia)}${t.hora ? ` · ${t.hora}` : ""}`;
+}
 
-  const pessoa = (u: User | undefined) => ({
-    nome: u?.name ?? "Você",
-    primeiro: u ? primeiroNome(u.name) : "Você",
-    curto: u ? nomeCurto(u.name) : "Você",
-    iniciais: u?.avatar || (u?.name ?? "V").slice(0, 1),
+const paraBase64 = (b: Blob) =>
+  new Promise<string>((resolver, rejeitar) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolver(String(leitor.result).split(",")[1] ?? "");
+    leitor.onerror = () => rejeitar(leitor.error);
+    leitor.readAsDataURL(b);
   });
 
-  const [a, b, c] = [pessoa(escolher(0)), pessoa(escolher(1)), pessoa(escolher(2))];
-  const sexta = rotuloDia(proximaSexta());
-  const amanha = daquiA(1);
-  const emSeis = daquiA(6);
-
-  return [
-    {
-      fala: `Cria uma tarefa para ${a.primeiro}: revisar o relatório de fretes de setembro, conferindo os valores por rota. Precisa ficar pronto até sexta, é prioridade alta.`,
-      passos: [
-        { texto: "Organizando orientações" },
-        { texto: "Identificando responsável", resultado: a.primeiro },
-        { texto: "Interpretando prazo", resultado: sexta },
-        { texto: "Definindo prioridade", resultado: "Alta" },
-        { texto: "Organizando estrutura" },
-      ],
-      tarefa: {
-        titulo: "Revisar relatório de fretes de setembro",
-        descricao: "Conferir os valores por rota e apontar divergências antes do fechamento.",
-        pessoa: a,
-        prazo: sexta,
-        prioridade: "alta",
-      },
-    },
-    {
-      fala: `Outra para ${b.primeiro}: agendar a manutenção preventiva da frota para amanhã, começando pelos veículos com revisão vencida.`,
-      passos: [
-        { texto: "Organizando orientações" },
-        { texto: "Identificando responsável", resultado: b.primeiro },
-        { texto: "Interpretando prazo", resultado: `amanhã, ${rotuloDia(amanha).split(", ")[1]}` },
-        { texto: "Organizando estrutura" },
-      ],
-      tarefa: {
-        titulo: "Agendar manutenção preventiva da frota",
-        descricao:
-          "Começar pelos veículos com revisão vencida e confirmar o horário com a oficina.",
-        pessoa: b,
-        prazo: rotuloDia(amanha),
-        prioridade: "media",
-      },
-    },
-    {
-      fala: `E uma para ${c.primeiro} atualizar a planilha de EPIs do almoxarifado até dia ${emSeis.getDate()}, sinalizando o que estiver abaixo do mínimo.`,
-      passos: [
-        { texto: "Organizando orientações" },
-        { texto: "Identificando responsável", resultado: c.primeiro },
-        { texto: "Interpretando prazo", resultado: rotuloDia(emSeis) },
-        { texto: "Organizando estrutura" },
-      ],
-      tarefa: {
-        titulo: "Atualizar planilha de EPIs do almoxarifado",
-        descricao: "Incluir as entregas da semana e sinalizar os itens abaixo do estoque mínimo.",
-        pessoa: c,
-        prazo: rotuloDia(emSeis),
-        prioridade: "baixa",
-      },
-    },
-  ];
-}
+const mensagemDe = (e: unknown) =>
+  (e instanceof Error && e.message) || "Algo deu errado. Tente de novo.";
 
 /* ------------------------------------------------------------------ */
 /* Casca: portal + animação de entrada e saída                          */
@@ -199,20 +133,39 @@ export function TarefaPorVoz({ aberto, aoFechar }: { aberto: boolean; aoFechar: 
 
 /**
  * Montado só enquanto aberto: fechar desmonta, e desmontar é o que solta o
- * microfone e cancela o roteiro. Abrir de novo começa do zero.
+ * microfone e faz respostas atrasadas da IA serem ignoradas.
  */
 function VozAberta({ aoFechar }: { aoFechar: () => void }) {
-  const { users, currentUser } = useFluxo();
+  const { users, currentUser, createTask } = useFluxo();
   const [pausado, setPausado] = useState(false);
   const { estado: estadoMic, leituraRef } = useMicrofone(!pausado);
 
   const [rodada, setRodada] = useState(0);
-  const [fase, setFase] = useState<"ouvindo" | "processando">("ouvindo");
-  const [falando, setFalando] = useState(false);
-  const [fala, setFala] = useState({ firmes: "", provisorias: "" });
+  const [trechos, setTrechos] = useState<string[]>([]);
+  const [transcrevendo, setTranscrevendo] = useState(0);
+  const [interpretando, setInterpretando] = useState(false);
   const [log, setLog] = useState<LinhaDoLog[]>([]);
-  const [tarefas, setTarefas] = useState<TarefaGerada[]>([]);
-  const [terminou, setTerminou] = useState(false);
+  const [tarefas, setTarefas] = useState<TarefaDitada[]>([]);
+
+  /* Quem as funções assíncronas leem. Uma resposta da IA chega segundos
+     depois, e o que vale é a lista de AGORA — a pessoa pode ter descartado um
+     cartão enquanto esperava. */
+  const pipelineRef = useRef<Pipeline>(novaPipeline());
+  const tarefasRef = useRef<TarefaDitada[]>([]);
+  const usersRef = useRef(users);
+  const eu = useRef(currentUser);
+  useEffect(() => {
+    usersRef.current = users;
+    eu.current = currentUser;
+  }, [users, currentUser]);
+
+  const montadoRef = useRef(true);
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
 
   /* Tela baixa (notebook de 768 de altura, com barra de tarefas e título da
      janela sobrando ~700): a faixa de voz e a caixa de fala encolhem, e o
@@ -227,6 +180,192 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
   }, []);
   const alturaDaFaixa = compacto ? 150 : ALTURA_DA_FAIXA;
 
+  /* ---------------- Registro do "Organizando" ---------------- */
+
+  const logSeq = useRef(0);
+  const anotar = (linha: Omit<LinhaDoLog, "id">) => {
+    const id = ++logSeq.current;
+    setLog((l) => [...l.slice(-40), { ...linha, id }]);
+    return id;
+  };
+  const atualizarLinha = (id: number, mudanca: Partial<LinhaDoLog>) =>
+    setLog((l) => l.map((x) => (x.id === id ? { ...x, ...mudanca } : x)));
+
+  /* O mesmo erro em cada frase (sem crédito, chave recusada) vira um aviso só. */
+  const ultimoAviso = useRef({ msg: "", em: 0 });
+  const avisar = (msg: string) => {
+    if (msg === ultimoAviso.current.msg && Date.now() - ultimoAviso.current.em < 15_000) return;
+    ultimoAviso.current = { msg, em: Date.now() };
+    toast.error(msg);
+  };
+
+  /* ---------------- Entender ---------------- */
+
+  const aplicar = (interpretadas: TarefaInterpretada[]) => {
+    const p = pipelineRef.current;
+    const atuais = tarefasRef.current;
+    const porRef = new Map(atuais.map((t) => [t.ref, t]));
+    const nova: TarefaDitada[] = [];
+
+    for (const t of interpretadas) {
+      // Ref que não está mais na lista foi descartado durante a espera.
+      if (t.ref && !porRef.has(t.ref)) continue;
+      const tarefa: TarefaDitada = { ...t, ref: t.ref ?? `t${++p.refSeq}` };
+      nova.push(tarefa);
+
+      const antes = t.ref ? porRef.get(t.ref) : undefined;
+      if (!antes) {
+        const pessoa = usersRef.current.find((u) => u.id === tarefa.responsavelId);
+        anotar({
+          texto: "Identificando responsável",
+          resultado: pessoa ? nomeCurto(pessoa.name) : "não reconheci o nome",
+          feito: true,
+        });
+        anotar({
+          texto: "Interpretando prazo",
+          resultado: tarefa.prazo ? rotuloPrazo(tarefa) : "não dito — fica para hoje",
+          feito: true,
+        });
+        anotar({ texto: "Tarefa pronta", resultado: tarefa.titulo, feito: true, destaque: true });
+      } else if (
+        antes.titulo !== tarefa.titulo ||
+        antes.descricao !== tarefa.descricao ||
+        antes.responsavelId !== tarefa.responsavelId ||
+        antes.prazo !== tarefa.prazo ||
+        antes.hora !== tarefa.hora ||
+        antes.prioridade !== tarefa.prioridade
+      ) {
+        anotar({ texto: "Tarefa ajustada", resultado: tarefa.titulo, feito: true, destaque: true });
+      }
+    }
+
+    const ficaram = new Set(nova.map((t) => t.ref));
+    for (const t of atuais) {
+      if (!ficaram.has(t.ref))
+        anotar({ texto: "Tarefa removida", resultado: t.titulo, feito: true });
+    }
+
+    tarefasRef.current = nova;
+    setTarefas(nova);
+  };
+
+  const bombear = async () => {
+    const p = pipelineRef.current;
+    if (p.interpretando || !montadoRef.current) return;
+
+    const novos: string[] = [];
+    while (p.prontos.has(p.proximo)) {
+      const texto = p.prontos.get(p.proximo)!;
+      p.prontos.delete(p.proximo);
+      p.proximo++;
+      if (texto) novos.push(texto);
+    }
+    if (novos.length === 0) return;
+
+    const trechoNovo = novos.join(" ");
+    const falaAnterior = p.fala;
+    p.fala = `${p.fala} ${trechoNovo}`.trim();
+    setTrechos((ts) => [...ts, trechoNovo]);
+
+    p.interpretando = true;
+    setInterpretando(true);
+    const linha = anotar({ texto: "Organizando orientações", feito: false });
+    const vale = () => pipelineRef.current === p && montadoRef.current;
+
+    try {
+      const r = await interpretarVoz({
+        data: {
+          trechoNovo,
+          falaAnterior,
+          tarefas: tarefasRef.current,
+          pessoas: usersRef.current.map((u) => ({
+            id: u.id,
+            nome: u.name,
+            setor: u.sector,
+            cargo: u.jobTitle,
+          })),
+          quemDita: eu.current.id,
+          hoje: dataParaIso(new Date()),
+        },
+      });
+      if (!vale()) return;
+      atualizarLinha(linha, { feito: true });
+      aplicar(r.tarefas);
+    } catch (e) {
+      if (!vale()) return;
+      const msg = mensagemDe(e);
+      atualizarLinha(linha, { feito: true, erro: true, resultado: msg });
+      avisar(msg);
+    } finally {
+      if (vale()) {
+        p.interpretando = false;
+        setInterpretando(false);
+        void bombear();
+      }
+    }
+  };
+
+  /* ---------------- Ouvir ---------------- */
+
+  const aoTrecho = async (audio: Blob) => {
+    if (!montadoRef.current) return;
+    const p = pipelineRef.current;
+    const seq = p.seq++;
+    const vale = () => pipelineRef.current === p && montadoRef.current;
+
+    setTranscrevendo((n) => n + 1);
+    const linha = anotar({ texto: "Transcrevendo fala", feito: false });
+    let texto = "";
+    try {
+      const r = await transcreverVoz({
+        data: {
+          audio: await paraBase64(audio),
+          mime: audio.type,
+          nomes: usersRef.current.slice(0, 80).map((u) => nomeCurto(u.name)),
+        },
+      });
+      texto = r.texto;
+      if (!vale()) return;
+      if (texto) atualizarLinha(linha, { feito: true, texto: "Fala transcrita" });
+      // Trecho sem palavra nenhuma (tosse, bater na mesa) não deixa rastro.
+      else setLog((l) => l.filter((x) => x.id !== linha));
+    } catch (e) {
+      if (!vale()) return;
+      const msg = mensagemDe(e);
+      atualizarLinha(linha, { feito: true, erro: true, resultado: msg });
+      avisar(msg);
+    } finally {
+      if (vale()) {
+        setTranscrevendo((n) => Math.max(0, n - 1));
+        p.prontos.set(seq, texto);
+        void bombear();
+      }
+    }
+  };
+
+  const escutando = estadoMic === "ativo" && !pausado;
+  const { falandoAgora, semSuporte } = useDitado({
+    ativo: escutando,
+    leituraRef,
+    aoTrecho: (audio) => void aoTrecho(audio),
+  });
+
+  /* Dois minutos sem fala soltam o microfone. Esquecer o painel aberto não
+     pode deixar o microfone da pessoa aceso a tarde inteira. */
+  useEffect(() => {
+    if (!escutando || falandoAgora) return;
+    const id = window.setTimeout(() => {
+      setPausado(true);
+      toast.info("Pausei o microfone depois de 2 minutos sem fala.");
+    }, 120_000);
+    return () => window.clearTimeout(id);
+  }, [escutando, falandoAgora]);
+
+  /* ---------------- Tela ---------------- */
+
+  const ocupado = transcrevendo > 0 || interpretando;
+  const semMicrofone = estadoMic === "negado" || estadoMic === "indisponivel" || semSuporte;
+
   /* A fala rola sozinha até o fim quando passa da caixa. */
   const falaRef = useRef<HTMLDivElement>(null);
   const [falaTransbordou, setFalaTransbordou] = useState(false);
@@ -236,108 +375,7 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
     const transborda = caixa.scrollHeight > caixa.clientHeight + 1;
     caixa.scrollTop = transborda ? caixa.scrollHeight : 0;
     setFalaTransbordou(transborda);
-  }, [fala, compacto]);
-
-  useEffect(() => {
-    const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.preventDefault();
-      aoFechar();
-    };
-    window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
-  }, [aoFechar]);
-
-  /* Pausa e pessoas entram no roteiro por ref: o roteiro é um laço assíncrono
-     que precisa do valor ATUAL a cada espera, e recriá-lo a cada mudança
-     recomeçaria a demonstração do zero. */
-  const pausadoRef = useRef(pausado);
-  useEffect(() => {
-    pausadoRef.current = pausado;
-  }, [pausado]);
-  const pessoasRef = useRef(users);
-  useEffect(() => {
-    pessoasRef.current = users;
-  }, [users]);
-
-  useEffect(() => {
-    const roteiro = montarRoteiro(pessoasRef.current, currentUser.id);
-    let cancelado = false;
-    const CANCELADO = Symbol("cancelado");
-
-    /** Espera que para o relógio durante a pausa, e aborta ao fechar. */
-    const espera = async (ms: number) => {
-      let falta = ms;
-      while (falta > 0) {
-        if (cancelado) throw CANCELADO;
-        const passo = Math.min(falta, 50);
-        await new Promise((r) => setTimeout(r, passo));
-        if (!pausadoRef.current) falta -= passo;
-      }
-      if (cancelado) throw CANCELADO;
-    };
-
-    let seq = 0;
-    void (async () => {
-      try {
-        await espera(900);
-        for (const trecho of roteiro) {
-          setFase("ouvindo");
-          setFalando(true);
-          /* Palavra por palavra, como uma transcrição ao vivo: as duas últimas
-             ficam "provisórias" (mais apagadas) até a seguinte chegar — é assim
-             que o reconhecimento de voz de verdade se comporta, corrigindo o
-             fim da frase enquanto a pessoa ainda fala. */
-          const palavras = trecho.fala.split(" ");
-          for (let i = 1; i <= palavras.length; i++) {
-            const corte = Math.max(0, i - 2);
-            setFala({
-              firmes: palavras.slice(0, corte).join(" "),
-              provisorias: palavras.slice(corte, i).join(" "),
-            });
-            const pausaDePontuacao = /[,.:]$/.test(palavras[i - 1] ?? "") ? 280 : 0;
-            await espera(140 + Math.random() * 160 + pausaDePontuacao);
-          }
-          setFala({ firmes: trecho.fala, provisorias: "" });
-          setFalando(false);
-          await espera(450);
-
-          setFase("processando");
-          for (const passo of trecho.passos) {
-            const id = ++seq;
-            setLog((l) => [...l, { id, texto: passo.texto, feito: false }]);
-            await espera(480 + Math.random() * 380);
-            setLog((l) =>
-              l.map((x) => (x.id === id ? { ...x, feito: true, resultado: passo.resultado } : x)),
-            );
-          }
-          const idTarefa = ++seq;
-          setTarefas((ts) => [...ts, { ...trecho.tarefa, id: idTarefa }]);
-          setLog((l) => [
-            ...l,
-            {
-              id: ++seq,
-              texto: "Tarefa pronta",
-              resultado: trecho.tarefa.titulo,
-              feito: true,
-              destaque: true,
-            },
-          ]);
-          await espera(1100);
-          setFala({ firmes: "", provisorias: "" });
-          setFase("ouvindo");
-          await espera(600);
-        }
-        setTerminou(true);
-      } catch (e) {
-        if (e !== CANCELADO) throw e;
-      }
-    })();
-
-    return () => {
-      cancelado = true;
-    };
-  }, [rodada, currentUser.id]);
+  }, [trechos, falandoAgora, transcrevendo, compacto]);
 
   /* A tarefa que acabou de sair é a que importa naquele instante. A partir da
      terceira ela nasce abaixo da dobra, e sem rolar até ela o contador subia
@@ -347,33 +385,114 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
   useEffect(() => {
     const lista = listaDeTarefasRef.current;
     if (!lista || qtdTarefas === 0) return;
-    // Espera o cartão entrar no layout antes de medir a altura.
     const id = window.setTimeout(() => {
       lista.scrollTo({ top: lista.scrollHeight, behavior: "smooth" });
     }, 60);
     return () => window.clearTimeout(id);
   }, [qtdTarefas]);
 
-  const recomecar = useCallback(() => {
-    setFala({ firmes: "", provisorias: "" });
+  const descartar = (ref: string) => {
+    tarefasRef.current = tarefasRef.current.filter((t) => t.ref !== ref);
+    setTarefas(tarefasRef.current);
+  };
+
+  const recomecar = () => {
+    // Uma pipeline nova faz as respostas que ainda estão no ar serem ignoradas.
+    pipelineRef.current = novaPipeline();
+    tarefasRef.current = [];
+    setTrechos([]);
     setLog([]);
     setTarefas([]);
-    setTerminou(false);
-    setFalando(false);
-    setFase("ouvindo");
+    setTranscrevendo(0);
+    setInterpretando(false);
     setPausado(false);
     setRodada((r) => r + 1);
+  };
+
+  /* Fechar com tarefas na tela pergunta antes: ditar cinco pedidos e perdê-los
+     num clique fora do painel é o erro mais caro desta tela. */
+  const confirmandoRef = useRef(false);
+  const fechar = async () => {
+    if (confirmandoRef.current) return;
+    const n = tarefasRef.current.length;
+    if (n > 0) {
+      confirmandoRef.current = true;
+      const ok = await confirmar({
+        titulo: "Descartar as tarefas ditadas?",
+        descricao:
+          n === 1
+            ? "Uma tarefa ainda não foi criada e vai se perder."
+            : `${n} tarefas ainda não foram criadas e vão se perder.`,
+        confirmar: "Descartar",
+        perigo: true,
+      });
+      confirmandoRef.current = false;
+      if (!ok) return;
+    }
+    aoFechar();
+  };
+  const fecharRef = useRef(fechar);
+  useEffect(() => {
+    fecharRef.current = fechar;
+  });
+
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      void fecharRef.current();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
   }, []);
 
   const criar = () => {
-    toast.info("Prévia: a IA ainda não está conectada", {
-      description:
-        "Nenhuma tarefa foi criada. Quando a IA entrar, este botão cria as tarefas da lista.",
-    });
+    const lista = tarefasRef.current;
+    if (lista.length === 0) return;
+    const quem = eu.current;
+    for (const t of lista) {
+      // Sem responsável reconhecido, a tarefa fica com quem ditou — o cartão avisa.
+      const pessoa = usersRef.current.find((u) => u.id === t.responsavelId) ?? quem;
+      const prazo = isoParaData(t.prazo) ?? new Date();
+      const [h, m] = t.hora ? t.hora.split(":").map(Number) : [23, 59];
+      prazo.setHours(h ?? 23, m ?? 59, 0, 0);
+      createTask({
+        title: t.titulo,
+        description: t.descricao || undefined,
+        sector: pessoa.sector,
+        createdBy: quem.id,
+        assigneeId: pessoa.id,
+        mentions: pessoa.id !== quem.id ? [pessoa.id] : [],
+        frequency: "diaria",
+        status: "pendente",
+        score: 20,
+        dueDate: prazo.toISOString(),
+        recurring: false,
+        priority: t.prioridade,
+        tags: ["voz"],
+      });
+    }
+    toast.success(lista.length === 1 ? "Tarefa criada" : `${lista.length} tarefas criadas`);
+    tarefasRef.current = [];
+    aoFechar();
   };
 
-  const faseDaVoz = pausado ? "pausado" : fase;
-  const vazio = !fala.firmes && !fala.provisorias;
+  const faseDaVoz = pausado ? "pausado" : ocupado && !falandoAgora ? "processando" : "ouvindo";
+  const rotuloEstado = pausado
+    ? "Pausado"
+    : semMicrofone
+      ? "Sem microfone"
+      : estadoMic === "pedindo"
+        ? "Aguardando microfone"
+        : faseDaVoz === "processando"
+          ? "Organizando"
+          : "Ouvindo";
+
+  const placeholder = semMicrofone
+    ? "Sem acesso ao microfone. Libere o microfone nas permissões para ditar."
+    : estadoMic === "pedindo"
+      ? "Aguardando a permissão do microfone…"
+      : "Fale naturalmente. Ex.: “uma tarefa para a Ana conferir as notas até sexta”.";
 
   return (
     <motion.div
@@ -391,7 +510,7 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
       {/* Fundo: escurece e desfoca o app, com uma lavagem da cor de destaque
           embaixo, atrás da faixa de voz, e uma grade de pontos que some nas
           bordas — o "HUD". */}
-      <div className="fixed inset-0 bg-black/75 backdrop-blur-md" onClick={aoFechar} />
+      <div className="fixed inset-0 bg-black/75 backdrop-blur-md" onClick={() => void fechar()} />
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0"
@@ -414,9 +533,9 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
       />
 
       {/* A caixa em cima e a faixa de voz embaixo, as duas na MESMA largura.
-          Era o orbe ao lado da caixa; com vários pedidos ditados juntos, os
-          cartões das tarefas é que precisam de espaço, então a caixa ocupa a
-          largura e a altura da tela e a voz acompanha por baixo. */}
+          Com vários pedidos ditados juntos, os cartões das tarefas é que
+          precisam de espaço, então a caixa ocupa a largura e a altura da tela
+          e a voz acompanha por baixo. */}
       <div className="pointer-events-none relative flex min-h-full flex-col items-center justify-center gap-3 px-6 py-8">
         {/* ------------ Em cima: a caixa ------------ */}
         <motion.section
@@ -446,23 +565,18 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
               <AudioLines className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <h2
-                id="voz-titulo"
-                className="flex items-center gap-2 text-base font-semibold tracking-tight"
-              >
+              <h2 id="voz-titulo" className="text-base font-semibold tracking-tight">
                 Tarefa por voz
-                <span className="rounded-full border border-sidebar-primary/40 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-sidebar-primary">
-                  Prévia
-                </span>
               </h2>
               <p className="truncate text-[12px] text-sidebar-foreground/55">
-                Dite quantos pedidos quiser: para quem é, o que fazer e até quando.
+                Dite quantos pedidos quiser: para quem é, o que fazer e até quando. Para corrigir, é
+                só falar.
               </p>
             </div>
-            <Estado pausado={pausado} fase={fase} rodada={rodada} />
+            <Estado rotulo={rotuloEstado} aceso={escutando} rodada={rodada} />
             <button
               type="button"
-              onClick={aoFechar}
+              onClick={() => void fechar()}
               aria-label="Fechar"
               className="rounded-full p-1.5 text-sidebar-foreground/60 transition hover:bg-white/10 hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-sidebar-primary"
             >
@@ -471,10 +585,10 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
           </header>
 
           {/* A coluna estreita conta o que está acontecendo; a larga mostra o
-                resultado — as tarefas são o que se vem aqui revisar.
-                `minmax(0, …)` e não `1fr` puro: `1fr` não encolhe abaixo do
-                conteúdo, e as colunas mudavam de largura conforme a frase
-                ditada crescia — a caixa inteira "respirava" de lado. */}
+              resultado — as tarefas são o que se vem aqui revisar.
+              `minmax(0, …)` e não `1fr` puro: `1fr` não encolhe abaixo do
+              conteúdo, e as colunas mudavam de largura conforme a frase
+              ditada crescia — a caixa inteira "respirava" de lado. */}
           <div className="grid min-h-0 flex-1 gap-6 px-6 pb-4 lg:grid-cols-[minmax(280px,0.78fr)_minmax(0,2fr)]">
             {/* Coluna 1: o que está sendo dito + o que a IA está fazendo */}
             <div className="flex min-h-0 flex-col gap-4">
@@ -482,10 +596,8 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
                 <Rotulo>Você está dizendo</Rotulo>
                 {/* Altura FIXA, como legenda ao vivo: crescendo com o texto, a
                     caixa empurrava a lista de baixo para dentro do rodapé.
-                    O texto começa no topo e só rola quando passa da caixa —
-                    ancorado embaixo, uma frase curta ficava lá no pé com um
-                    vazio em cima. O esmaecido do topo também só aparece
-                    quando rolou: é para a frase que está saindo. */}
+                    O texto começa no topo e só rola quando passa da caixa; o
+                    esmaecido do topo só aparece quando rolou. */}
                 <div
                   ref={falaRef}
                   className={`mt-2 overflow-hidden ${compacto ? "h-24" : "h-36"}`}
@@ -499,19 +611,24 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
                   }
                 >
                   <p className="text-[15px] leading-6" aria-live="off">
-                    {vazio ? (
-                      <span className="text-sidebar-foreground/35">
-                        {terminou
-                          ? "Pode continuar ditando — ou revise as tarefas ao lado."
-                          : "Fale naturalmente. Ex.: “uma tarefa para a Ana conferir as notas até sexta”."}
-                      </span>
+                    {trechos.length === 0 && !falandoAgora && transcrevendo === 0 ? (
+                      <span className="text-sidebar-foreground/35">{placeholder}</span>
                     ) : (
                       <>
-                        <span className="text-sidebar-foreground/90">{fala.firmes}</span>{" "}
-                        <span className="text-sidebar-foreground/45">{fala.provisorias}</span>
-                        {falando && !pausado && (
-                          <span className="ml-0.5 inline-block h-4 w-0.5 translate-y-0.5 animate-pulse rounded-full bg-sidebar-primary" />
-                        )}
+                        {/* A frase mais nova em destaque; as anteriores recuam. */}
+                        {trechos.map((t, i) => (
+                          <span
+                            key={i}
+                            className={
+                              i === trechos.length - 1
+                                ? "text-sidebar-foreground/90"
+                                : "text-sidebar-foreground/50"
+                            }
+                          >
+                            {t}{" "}
+                          </span>
+                        ))}
+                        {(falandoAgora || transcrevendo > 0) && <Reticencias />}
                       </>
                     )}
                   </p>
@@ -521,9 +638,8 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
               <div className="flex min-h-0 flex-1 flex-col">
                 <Rotulo>Organizando</Rotulo>
                 {/* Só as últimas linhas, e as mais velhas se apagando por cima:
-                      é um registro do que está acontecendo AGORA, não um
-                      histórico para ler. No celular a caixa não tem altura
-                      fixa, então a lista ganha a dela. */}
+                    é um registro do que está acontecendo AGORA, não um
+                    histórico para ler. */}
                 <ul
                   className="mt-2 flex h-32 flex-col justify-end gap-2 overflow-hidden lg:h-auto lg:min-h-0 lg:flex-1"
                   aria-live="polite"
@@ -543,7 +659,9 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
                         transition={{ type: "spring", stiffness: 380, damping: 32 }}
                         className="flex min-w-0 items-center gap-2 text-[13px]"
                       >
-                        {l.feito ? (
+                        {l.erro ? (
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-300" />
+                        ) : l.feito ? (
                           <Check
                             className={`h-3.5 w-3.5 shrink-0 ${l.destaque ? "text-sidebar-primary" : "text-sidebar-primary/70"}`}
                           />
@@ -557,7 +675,10 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
                           {!l.feito && "…"}
                         </span>
                         {l.resultado && (
-                          <span className="min-w-0 truncate text-sidebar-primary">
+                          <span
+                            className={`min-w-0 truncate ${l.erro ? "text-red-300" : "text-sidebar-primary"}`}
+                            title={l.resultado}
+                          >
                             → {l.resultado}
                           </span>
                         )}
@@ -577,8 +698,8 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
                 </span>
               </div>
               {/* Contêiner de consulta: a grade decide as colunas pela largura
-                    DESTA área, não da janela — duas colunas só quando cada
-                    cartão ainda cabe grande. */}
+                  DESTA área, não da janela — duas colunas só quando cada
+                  cartão ainda cabe grande. */}
               <div
                 ref={listaDeTarefasRef}
                 className="@container mt-3 max-h-96 min-h-40 flex-1 overflow-y-auto pr-1 lg:max-h-none lg:min-h-0"
@@ -592,10 +713,12 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
                     <AnimatePresence initial={false}>
                       {tarefas.map((t, i) => (
                         <CartaoDeTarefa
-                          key={t.id}
+                          key={t.ref}
                           numero={i + 1}
                           tarefa={t}
-                          aoDescartar={() => setTarefas((ts) => ts.filter((x) => x.id !== t.id))}
+                          pessoa={users.find((u) => u.id === t.responsavelId)}
+                          meuId={currentUser.id}
+                          aoDescartar={() => descartar(t.ref)}
                         />
                       ))}
                     </AnimatePresence>
@@ -624,7 +747,7 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
               {pausado ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </button>
             <p className="min-w-0 flex-1 text-[11px] leading-snug text-sidebar-foreground/55">
-              {legendaDoMicrofone(estadoMic, pausado)}
+              {legendaDoMicrofone(estadoMic, pausado, semSuporte)}
             </p>
             <button
               type="button"
@@ -633,15 +756,19 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
             >
               <RotateCcw className="h-3.5 w-3.5" /> Recomeçar
             </button>
+            {/* Travado enquanto ainda há frase sendo organizada: criar ali
+                deixaria de fora justamente a última coisa que a pessoa disse. */}
             <button
               type="button"
               onClick={criar}
-              disabled={tarefas.length === 0}
+              disabled={tarefas.length === 0 || ocupado}
               className="rounded-full bg-sidebar-primary px-4 py-2 text-xs font-semibold text-sidebar-primary-foreground shadow-[0_0_24px_-6px_var(--sidebar-primary)] transition hover:brightness-110 disabled:opacity-35 disabled:shadow-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-primary"
             >
-              {tarefas.length === 0
-                ? "Criar tarefas"
-                : `Criar ${tarefas.length} ${tarefas.length === 1 ? "tarefa" : "tarefas"}`}
+              {ocupado && tarefas.length > 0
+                ? "Organizando…"
+                : tarefas.length === 0
+                  ? "Criar tarefas"
+                  : `Criar ${tarefas.length} ${tarefas.length === 1 ? "tarefa" : "tarefas"}`}
             </button>
           </footer>
         </motion.section>
@@ -659,12 +786,12 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
         >
           <FaixaDeVoz
             fase={faseDaVoz}
-            falando={falando && !pausado}
+            falando={false}
             leituraRef={leituraRef}
             altura={alturaDaFaixa}
           />
           <span className="-mt-2 text-[11px] font-medium uppercase tracking-[0.32em] text-sidebar-foreground/55">
-            {pausado ? "em pausa" : fase === "processando" ? "organizando" : "ouvindo"}
+            {rotuloEstado}
           </span>
         </motion.div>
       </div>
@@ -684,53 +811,59 @@ function Rotulo({ children }: { children: ReactNode }) {
   );
 }
 
+/** Três pontos respirando: há fala sendo ouvida ou transcrita. */
+function Reticencias() {
+  return (
+    <span className="inline-flex translate-y-[-2px] gap-1 align-middle" aria-hidden="true">
+      {[0, 150, 300].map((atraso) => (
+        <span
+          key={atraso}
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-sidebar-primary"
+          style={{ animationDelay: `${atraso}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
 /**
  * O que o microfone está fazendo, dito para a pessoa.
  *
- * Honestidade primeiro: é uma prévia, então a legenda diz que nada é gravado —
- * o microfone aceso sem explicação num app de trabalho é a primeira coisa que
- * gera desconfiança.
+ * A legenda diz para onde a voz vai: microfone aceso num app de trabalho, sem
+ * explicação, é a primeira coisa que gera desconfiança.
  */
-function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean): string {
-  if (pausado) return "Microfone pausado.";
+function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean, semSuporte: boolean) {
+  if (pausado) return "Microfone pausado. O que já foi ditado continua na lista.";
+  if (semSuporte) return "Este navegador não consegue gravar áudio.";
   switch (estado) {
     case "pedindo":
       return "Pedindo acesso ao microfone…";
     case "ativo":
-      return "O microfone só anima a faixa de voz — nada é gravado nem enviado.";
+      return "Cada frase é enviada para transcrição (OpenAI). O app não guarda o áudio.";
     case "negado":
-      return "Sem permissão para o microfone — a faixa de voz está em modo simulado.";
+      return "Sem permissão para o microfone. Libere nas configurações do navegador ou do app.";
     case "indisponivel":
-      return "Nenhum microfone encontrado — a faixa de voz está em modo simulado.";
+      return "Nenhum microfone encontrado.";
     default:
       return "";
   }
 }
 
-/** "● Ouvindo 00:14" — a fase e há quanto tempo a escuta está aberta. */
-function Estado({
-  pausado,
-  fase,
-  rodada,
-}: {
-  pausado: boolean;
-  fase: "ouvindo" | "processando";
-  rodada: number;
-}) {
-  const rotulo = pausado ? "Pausado" : fase === "processando" ? "Organizando" : "Ouvindo";
+/** "● Ouvindo 00:14" — o estado e há quanto tempo a escuta está aberta. */
+function Estado({ rotulo, aceso, rodada }: { rotulo: string; aceso: boolean; rodada: number }) {
   return (
     <span className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium sm:inline-flex">
       <span className="relative flex h-2 w-2">
-        {!pausado && (
+        {aceso && (
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sidebar-primary opacity-60" />
         )}
         <span
-          className={`relative inline-flex h-2 w-2 rounded-full ${pausado ? "bg-sidebar-foreground/40" : "bg-sidebar-primary"}`}
+          className={`relative inline-flex h-2 w-2 rounded-full ${aceso ? "bg-sidebar-primary" : "bg-sidebar-foreground/40"}`}
         />
       </span>
       {rotulo}
       {/* A chave zera o cronômetro ao recomeçar. */}
-      <Cronometro key={rodada} pausado={pausado} />
+      <Cronometro key={rodada} pausado={!aceso} />
     </span>
   );
 }
@@ -759,23 +892,25 @@ const PRIORIDADE: Record<Prioridade, { rotulo: string; classe: string }> = {
  * Grande de propósito: vários pedidos saem de uma vez e a pessoa revisa todos
  * antes de criar, então cada cartão precisa ser lido de relance. Por isso os
  * três dados que decidem a tarefa — para quem, até quando, com que urgência —
- * ficam numa linha própria, cada um com o seu rótulo, e não misturados em
- * etiquetas.
+ * ficam numa linha própria, cada um com o seu rótulo.
  *
- * O número é a ordem em que foi ditada: é como a pessoa se refere a ela
+ * O número é a ordem na lista: é como a pessoa se refere a ela ao corrigir
  * ("a terceira está com o prazo errado").
  *
  * Ele "materializa": entra desfocado e uma faixa de luz passa por cima uma vez.
- * É o momento em que a fala virou tarefa, e é o que a tela existe para mostrar
- * — vale um efeito, e só um.
+ * É o momento em que a fala virou tarefa — vale um efeito, e só um.
  */
 function CartaoDeTarefa({
   tarefa: t,
   numero,
+  pessoa,
+  meuId,
   aoDescartar,
 }: {
-  tarefa: TarefaGerada;
+  tarefa: TarefaDitada;
   numero: number;
+  pessoa: User | undefined;
+  meuId: string;
   aoDescartar: () => void;
 }) {
   const p = PRIORIDADE[t.prioridade];
@@ -803,9 +938,11 @@ function CartaoDeTarefa({
           <h3 className="text-base font-semibold leading-snug text-sidebar-foreground">
             {t.titulo}
           </h3>
-          <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-sidebar-foreground/60">
-            {t.descricao}
-          </p>
+          {t.descricao && (
+            <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-sidebar-foreground/60">
+              {t.descricao}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -821,18 +958,46 @@ function CartaoDeTarefa({
           têm a altura do maior, e os dados ficam alinhados embaixo nos dois. O
           `pt-4` é o respiro mínimo quando o cartão já é o mais alto. */}
       <div className="mt-auto pt-4">
-        <dl className="grid grid-cols-[1.4fr_1fr_1fr] gap-3 border-t border-white/[0.07] pt-3">
+        {/* O detalhe de cada campo (você, a hora, "não dito") vai numa segunda
+            linha menor: na mesma linha, "Reginaldo Junior (você)" e
+            "seg, 14/09 · 15:00" eram cortados no meio. */}
+        <dl className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] gap-3 border-t border-white/[0.07] pt-3">
           <Campo rotulo="Para">
-            <UserAvatar
-              nome={t.pessoa.nome}
-              iniciais={t.pessoa.iniciais}
-              className="h-7 w-7 text-[10px]"
-            />
-            <span className="truncate">{t.pessoa.curto}</span>
+            {pessoa ? (
+              <>
+                <UserAvatar
+                  nome={pessoa.name}
+                  iniciais={pessoa.avatar || pessoa.name.slice(0, 1)}
+                  className="h-7 w-7 text-[10px]"
+                />
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate">{nomeCurto(pessoa.name)}</span>
+                  {pessoa.id === meuId && (
+                    <span className="text-[11px] text-sidebar-foreground/45">você</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              // Sem nome reconhecido a tarefa fica com quem ditou, e isso tem
+              // que estar escrito — senão "Você" parece um acerto da IA.
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate">Você</span>
+                <span className="truncate text-[11px] text-amber-300/90">nome não reconhecido</span>
+              </span>
+            )}
           </Campo>
           <Campo rotulo="Prazo">
             <CalendarDays className="h-4 w-4 shrink-0 text-sidebar-primary/80" />
-            <span className="truncate">{t.prazo}</span>
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="truncate">
+                {isoParaData(t.prazo) ? rotuloDia(isoParaData(t.prazo)!) : "Hoje"}
+              </span>
+              {(t.hora || !t.prazo) && (
+                <span className="truncate text-[11px] text-sidebar-foreground/45">
+                  {t.hora ? `às ${t.hora}` : "prazo não dito"}
+                </span>
+              )}
+            </span>
           </Campo>
           <Campo rotulo="Prioridade">
             <span
