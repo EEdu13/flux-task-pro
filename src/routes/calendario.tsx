@@ -5,6 +5,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { openTaskContext } from "@/components/task-context-menu";
+import { dataParaIso } from "@/lib/data-iso";
 
 export const Route = createFileRoute("/calendario")({
   head: () => ({
@@ -171,7 +172,7 @@ function CalendarioPage() {
             filtered={filtered}
             users={users}
             onTaskClick={openTask}
-            onNew={() => openNewTask({ dueDate: cursor.toISOString().slice(0, 10) })}
+            onNew={() => openNewTask({ dueDate: dataParaIso(cursor) })}
             onReorder={reorderTasks}
           />
         )}
@@ -329,7 +330,7 @@ function MonthGrid({
       ))}
       {cells.map((cell, i) => {
         const today = cell.date.toDateString() === new Date().toDateString();
-        const iso = cell.date.toISOString().slice(0, 10);
+        const iso = dataParaIso(cell.date);
         return (
           <button
             type="button"
@@ -412,7 +413,7 @@ function WeekGrid({
     <div className="mt-4 grid grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
       {days.map((day, i) => {
         const today = day.date.toDateString() === new Date().toDateString();
-        const iso = day.date.toISOString().slice(0, 10);
+        const iso = dataParaIso(day.date);
         return (
           <div key={i} className="flex min-h-[26rem] flex-col bg-card">
             <button
@@ -618,7 +619,8 @@ function ListView({
       );
     const map = new Map<string, any[]>();
     list.forEach((t) => {
-      const key = new Date(t.dueDate).toISOString().slice(0, 10);
+      // Dia local: pelo UTC, o prazo de hoje às 23:59 ia para o grupo de amanhã.
+      const key = dataParaIso(new Date(t.dueDate));
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     });

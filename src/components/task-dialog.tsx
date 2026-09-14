@@ -12,6 +12,7 @@ import { formatHM, parseHM } from "@/lib/time-log";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
+import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { DIAS_SEMANA, ULTIMO_DIA_DO_MES, descreverRecorrencia } from "@/lib/recorrencia";
 import { toast } from "sonner";
 import {
@@ -56,7 +57,7 @@ export function TaskDialog() {
   const [frequency, setFrequency] = useState<Frequency>("diaria");
   const [status, setStatus] = useState<Status>("pendente");
   const [priority, setPriority] = useState<Priority>("media");
-  const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState(() => dataParaIso(new Date()));
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
   const [recurringWeekdays, setRecurringWeekdays] = useState<number[]>([]);
@@ -163,9 +164,15 @@ export function TaskDialog() {
           frequency: editing.frequency,
           status: editing.status,
           priority: editing.priority,
-          dueDate: editing.dueDate.slice(0, 10),
+          /* O dia no fuso de quem vê, nunca recortado do ISO. O ISO é UTC:
+             "hoje às 23:59" no Brasil é 02:59Z de amanhã, e `slice(0, 10)`
+             abria o campo em amanhã — salvar qualquer outra coisa (a
+             prioridade, por exemplo) empurrava o prazo um dia. */
+          dueDate: dataParaIso(new Date(editing.dueDate)),
           recurring: editing.recurring,
-          recurringUntil: editing.recurringUntil ? editing.recurringUntil.slice(0, 10) : "",
+          recurringUntil: editing.recurringUntil
+            ? dataParaIso(new Date(editing.recurringUntil))
+            : "",
           recurringWeekdays: editing.recurringWeekdays ?? [],
           recurringMonthDay: editing.recurringMonthDay ?? null,
           requireProof: !!editing.requireProof,
@@ -184,7 +191,7 @@ export function TaskDialog() {
           frequency: "diaria" as Frequency,
           status: (taskDialog.initialStatus ?? "pendente") as Status,
           priority: "media" as Priority,
-          dueDate: taskDialog.initialDueDate ?? new Date().toISOString().slice(0, 10),
+          dueDate: taskDialog.initialDueDate ?? dataParaIso(new Date()),
           recurring: false,
           recurringUntil: "",
           recurringWeekdays: [] as number[],
@@ -492,6 +499,20 @@ export function TaskDialog() {
     const preserveTitle = editing && editing.createdBy !== currentUser.id;
     const isCreator = !editing || editing.createdBy === currentUser.id;
     const estMinutes = parseHM(estimateHM);
+    /* Data que a pessoa não mexeu fica EXATAMENTE como estava, com a hora
+       junto. Remontar a partir do dia trocava o "23:59" de quem criou pelo
+       atalho por 17:00 — e concluir às 18h passava a contar como atraso. */
+    const mesmoDia = (iso: string | null | undefined, dia: string) =>
+      !!iso && dataParaIso(new Date(iso)) === dia;
+    const prazoIso =
+      editing && mesmoDia(editing.dueDate, dueDate)
+        ? editing.dueDate
+        : new Date(dueDate + "T17:00:00").toISOString();
+    const recorreAteIso = !(recurring && recurringUntil)
+      ? null
+      : editing && mesmoDia(editing.recurringUntil, recurringUntil)
+        ? editing.recurringUntil!
+        : new Date(recurringUntil + "T23:59:59").toISOString();
     const payload = {
       title: preserveTitle ? editing!.title : title.trim(),
       description: preserveTitle ? (editing!.description ?? "") : description.trim(),
@@ -502,9 +523,9 @@ export function TaskDialog() {
       frequency,
       status,
       score: editing?.score ?? 20,
-      dueDate: new Date(dueDate + "T17:00:00").toISOString(),
+      dueDate: prazoIso,
       recurring,
-      recurringUntil: recurring && recurringUntil ? new Date(recurringUntil + "T23:59:59").toISOString() : null,
+      recurringUntil: recorreAteIso,
       // Guardar só o que vale para a frequência escolhida: trocar de semanal
       // para mensal não pode deixar dias da semana órfãos decidindo a série.
       recurringWeekdays: recurring && frequency === "semanal" ? recurringWeekdays : null,
@@ -778,13 +799,15 @@ export function TaskDialog() {
                           setFrequency(p.freq);
                           const end = new Date();
                           end.setDate(end.getDate() + p.days);
-                          setRecurringUntil(end.toISOString().slice(0, 10));
+                          setRecurringUntil(dataParaIso(end));
                           if (p.weekdays) {
-                            const d = new Date(dueDate);
+                            // `new Date("2026-09-13")` é meia-noite UTC — sábado
+                            // às 21h no Brasil, e o domingo não era pulado.
+                            const d = isoParaData(dueDate) ?? new Date();
                             const dow = d.getDay();
                             if (dow === 0) d.setDate(d.getDate() + 1);
                             if (dow === 6) d.setDate(d.getDate() + 2);
-                            setDueDate(d.toISOString().slice(0, 10));
+                            setDueDate(dataParaIso(d));
                           }
                         }}
                         className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
