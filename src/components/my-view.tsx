@@ -21,6 +21,7 @@ import { statusColor, statusLabels, type Task } from "@/lib/fluxo-types";
 import { COLOR_PALETTE, useMyView, type ColumnType } from "@/lib/my-view-store";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
+import { SeloDoProjeto } from "@/components/selo-do-projeto";
 
 function fmtDue(iso: string) {
   const d = new Date(iso);
@@ -392,6 +393,7 @@ export function MyView({
                         isDone ? "text-muted-foreground line-through" : ""
                       }`}
                     >
+                      <SeloDoProjeto projectId={t.projectId} />
                       {t.title}
                     </button>
                   </td>

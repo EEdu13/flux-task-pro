@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   Calendar,
+  CalendarClock,
   Search,
   Sparkles,
   ChevronRight,
@@ -32,7 +33,13 @@ import { ProjectPortfolio } from "@/components/project-portfolio";
 import { CampoData } from "@/components/campo-data";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { CompletionEntry, ProjectStatus, Status } from "@/lib/fluxo-types";
-import { forecastProject, riskLabels, type RiskLevel } from "@/lib/project-forecast";
+import {
+  forecastProject,
+  prazoDoProjeto,
+  riskLabels,
+  type RiskLevel,
+} from "@/lib/project-forecast";
+import { dataParaIso, isoParaData } from "@/lib/data-iso";
 
 type ProjectView = "lista" | "board" | "acompanhamento";
 
@@ -66,6 +73,11 @@ const statusStyles: Record<ProjectStatus, { label: string; className: string }> 
   concluido: { label: "Concluído", className: "bg-primary/15 text-primary border-primary/30" },
 };
 
+/* As oito primeiras são as originais, na mesma ordem — projetos já criados
+   continuam com a cor deles e a primeira segue sendo a padrão. As novas
+   preenchem os buracos do círculo (lima, céu, violeta, rosa) e somam tons
+   fechados e neutros, para dois projetos do mesmo setor não precisarem
+   dividir a cor. */
 const projectColorPalette = [
   "oklch(0.62 0.16 155)",
   "oklch(0.62 0.16 230)",
@@ -75,7 +87,35 @@ const projectColorPalette = [
   "oklch(0.58 0.22 25)",
   "oklch(0.7 0.15 190)",
   "oklch(0.65 0.2 45)",
+  "oklch(0.74 0.19 130)",
+  "oklch(0.7 0.13 245)",
+  "oklch(0.6 0.2 300)",
+  "oklch(0.68 0.2 0)",
+  "oklch(0.84 0.16 95)",
+  "oklch(0.5 0.13 160)",
+  "oklch(0.45 0.13 260)",
+  "oklch(0.55 0.1 55)",
+  "oklch(0.5 0.17 10)",
+  "oklch(0.6 0.03 260)",
 ];
+
+/**
+ * Quem participa do projeto: o dono e os membros, eu primeiro.
+ *
+ * É a lista de quem pode receber subtarefa. Antes o seletor mostrava a empresa
+ * inteira, e dava para jogar tarefa do projeto em quem nem estava nele.
+ */
+function participantesDoProjeto(
+  projeto: { ownerId: string; memberIds: string[] },
+  users: ReturnType<typeof useFluxo>["users"],
+  primeiroId?: string,
+) {
+  const ids = new Set([projeto.ownerId, ...projeto.memberIds]);
+  const lista = users.filter((u) => ids.has(u.id));
+  return primeiroId
+    ? [...lista.filter((u) => u.id === primeiroId), ...lista.filter((u) => u.id !== primeiroId)]
+    : lista;
+}
 
 const statusColumns: { id: Status; label: string; tone: string }[] = [
   { id: "pendente", label: "A fazer", tone: "border-t-muted-foreground/40" },
@@ -139,8 +179,14 @@ function ProjetosPage() {
       quickInputRef.current?.focus();
       return;
     }
-    const assignee = users.find((u) => u.id === quickAssignee) ?? currentUser;
-    const due = quickDate ? new Date(quickDate) : new Date(Date.now() + 3 * 24 * 3600e3);
+    // Só quem participa do projeto recebe subtarefa; um valor que ficou de outro
+    // projeto (a lista muda ao trocar) cai no dono.
+    const participante = participantesDoProjeto(selected, users).find((u) => u.id === quickAssignee);
+    const assignee =
+      participante ?? users.find((u) => u.id === selected.ownerId) ?? currentUser;
+    // isoParaData e não new Date("yyyy-MM-dd"): esse é meia-noite UTC, que no
+    // Brasil ainda é o dia anterior — e o setHours abaixo fixava o prazo nele.
+    const due = isoParaData(quickDate) ?? new Date(Date.now() + 3 * 24 * 3600e3);
     due.setHours(23, 59, 0, 0);
     const mentionSet = new Set<string>(quickMentions);
     if (assignee.id !== currentUser.id) mentionSet.add(assignee.id);
@@ -466,6 +512,18 @@ function ProjectDetail({
   quickInputRef,
 }: ProjectDetailProps) {
   const isOwner = selected.ownerId === currentUserId;
+  const participantes = useMemo(
+    () => participantesDoProjeto(selected, users, currentUserId),
+    [selected, users, currentUserId],
+  );
+  /* O responsável escolhido precisa estar no projeto aberto. Ele é guardado
+     fora deste componente e sobrevive à troca de projeto: sem isto, o select
+     mostraria a primeira opção enquanto a subtarefa iria para outra pessoa. */
+  useEffect(() => {
+    if (participantes.length > 0 && !participantes.some((u) => u.id === quickAssignee)) {
+      setQuickAssignee(participantes[0]!.id);
+    }
+  }, [participantes, quickAssignee, setQuickAssignee]);
   const [shareOpen, setShareOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -533,14 +591,17 @@ function ProjectDetail({
                 icon={<CheckCircle2 className="h-3 w-3" />}
                 label={`${doneCount}/${subtasks.length} tarefas`}
               />
+              {/* Conta o conjunto dono + membros. Era `membros + 1`, e o banco
+                  já devolve o dono entre os membros: recarregado, o projeto de
+                  três pessoas dizia quatro. */}
               <Metric
                 icon={<Users className="h-3 w-3" />}
-                label={`${selected.memberIds.length + 1} pessoa${selected.memberIds.length ? "s" : ""}`}
+                label={`${participantes.length} pessoa${participantes.length === 1 ? "" : "s"}`}
               />
-              {selected.dueDate && (
+              {prazoDoProjeto(selected.dueDate) && (
                 <Metric
                   icon={<Calendar className="h-3 w-3" />}
-                  label={`Prazo ${new Date(selected.dueDate).toLocaleDateString("pt-BR")}`}
+                  label={`Prazo ${prazoDoProjeto(selected.dueDate)!.toLocaleDateString("pt-BR")}`}
                 />
               )}
             </div>
@@ -679,9 +740,9 @@ function ProjectDetail({
             value={quickAssignee}
             onChange={(e) => setQuickAssignee(e.target.value)}
             className="rounded-md border border-border bg-background px-2 py-1 text-[11px] outline-none focus:border-primary"
-            title="Responsável"
+            title="Responsável (só quem participa do projeto)"
           >
-            {assignees.map((u) => (
+            {participantes.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name}
               </option>
@@ -762,7 +823,13 @@ function ProjectDetail({
                       onChange={(e) => updateTask(t.id, { assigneeId: e.target.value })}
                       className="rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[11px] outline-none hover:border-border focus:border-primary"
                     >
-                      {assignees.map((u) => (
+                      {/* Os participantes, mais o responsável atual se ele
+                          tiver saído do projeto — senão o select mostraria
+                          outra pessoa no lugar de quem de fato tem a tarefa. */}
+                      {(participantes.some((u) => u.id === t.assigneeId) || !assignee
+                        ? participantes
+                        : [...participantes, assignee]
+                      ).map((u) => (
                         <option key={u.id} value={u.id}>
                           {u.name.split(" ")[0]}
                         </option>
@@ -999,7 +1066,9 @@ function CreateProjectModal({
       name: name.trim(),
       description: description.trim() || undefined,
       memberIds,
-      dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+      // Fim do dia LOCAL. `new Date("yyyy-MM-dd")` é meia-noite UTC — no Brasil,
+      // o dia anterior — e o projeto aparecia com prazo um dia antes.
+      dueDate: dueDate ? fimDoDia(dueDate)?.toISOString() : undefined,
       color,
     });
   };
@@ -1010,12 +1079,16 @@ function CreateProjectModal({
       onClick={onClose}
     >
       <TravaScroll />
+      {/* Teto de altura com o miolo rolando: com o bloco de prazo maior, o modal
+          passa da altura de uma tela de notebook, e o rodapé com "Criar projeto"
+          ficaria fora de alcance. */}
       <div
-        className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        style={{ maxHeight: "calc(100vh - var(--titlebar-h, 0px) - 2rem)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — color strip + solid card for legible inputs */}
-        <div className="relative border-b border-border">
+        <div className="relative shrink-0 border-b border-border">
           <div className="h-2 w-full" style={{ background: color }} />
           <div className="flex items-start justify-between gap-3 px-6 py-5">
             <div className="min-w-0 flex-1 space-y-3">
@@ -1064,10 +1137,12 @@ function CreateProjectModal({
         </div>
 
         {/* Body */}
-        <div className="grid gap-5 px-6 py-5">
+        <div className="grid min-h-0 gap-5 overflow-y-auto px-6 py-5">
           {/* Color */}
           <Field label="Cor do projeto" hint="Ajuda a identificar rapidamente na lista.">
-            <div className="flex flex-wrap gap-2">
+            {/* Duas fileiras de nove: as 18 cores em flex-wrap deixavam uma
+                sozinha na segunda linha. */}
+            <div className="grid w-fit grid-cols-9 gap-2">
               {projectColorPalette.map((c) => (
                 <button
                   key={c}
@@ -1083,17 +1158,7 @@ function CreateProjectModal({
             </div>
           </Field>
 
-          <div className="grid gap-4">
-            <Field label="Prazo previsto" icon={<Calendar className="h-3 w-3" />}>
-              <CampoData
-                value={dueDate}
-                onChange={setDueDate}
-                formato="longo"
-                placeholder="Sem prazo definido"
-                className="w-full px-3 py-2 text-sm"
-              />
-            </Field>
-          </div>
+          <PrazoPrevisto value={dueDate} onChange={setDueDate} color={color} />
 
           {/* Members */}
           <Field
@@ -1175,7 +1240,7 @@ function CreateProjectModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-6 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border bg-secondary/40 px-6 py-3">
           <span className="text-[11px] text-muted-foreground">
             <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[10px]">⌘</kbd>{" "}
             <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[10px]">Enter</kbd>{" "}
@@ -1198,6 +1263,134 @@ function CreateProjectModal({
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** "yyyy-MM-dd" → fim desse dia no fuso local. */
+function fimDoDia(iso: string): Date | undefined {
+  const d = isoParaData(iso);
+  d?.setHours(23, 59, 59, 0);
+  return d;
+}
+
+/**
+ * O prazo do projeto, em destaque.
+ *
+ * Era um campo de data do tamanho de um input comum, no meio do formulário, e
+ * as pessoas criavam o projeto sem ver que ele existia — sem prazo, o
+ * acompanhamento não tem com o que comparar o ritmo e o projeto nasce "Sem
+ * prazo". Aqui ele vira um bloco com a data por extenso, quanto falta, e
+ * atalhos para os prazos mais comuns. Sem prazo, o bloco fica tracejado e
+ * pede a data com um aviso.
+ */
+function PrazoPrevisto({
+  value,
+  onChange,
+  color,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  color: string;
+}) {
+  const data = isoParaData(value);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const dias = data ? Math.round((data.getTime() - hoje.getTime()) / 86_400_000) : null;
+  const falta =
+    dias === null
+      ? ""
+      : dias < 0
+        ? `Já passou há ${-dias} dia${dias === -1 ? "" : "s"}`
+        : dias === 0
+          ? "A entrega é hoje"
+          : dias === 1
+            ? "A entrega é amanhã"
+            : `Faltam ${dias} dias para a entrega`;
+  // Só a primeira letra: `capitalize` do CSS subiria todas ("15 De Outubro De").
+  const porExtenso = data
+    ? (() => {
+        const s = data.toLocaleDateString("pt-BR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+        return s.charAt(0).toUpperCase() + s.slice(1);
+      })()
+    : "";
+
+  const somar = (fn: (d: Date) => void) => {
+    const d = new Date(hoje);
+    fn(d);
+    onChange(dataParaIso(d));
+  };
+  const atalhos: { rotulo: string; aplicar: () => void }[] = [
+    { rotulo: "+1 semana", aplicar: () => somar((d) => d.setDate(d.getDate() + 7)) },
+    { rotulo: "+15 dias", aplicar: () => somar((d) => d.setDate(d.getDate() + 15)) },
+    { rotulo: "+1 mês", aplicar: () => somar((d) => d.setMonth(d.getMonth() + 1)) },
+    { rotulo: "+3 meses", aplicar: () => somar((d) => d.setMonth(d.getMonth() + 3)) },
+    { rotulo: "Fim do mês", aplicar: () => somar((d) => d.setMonth(d.getMonth() + 1, 0)) },
+  ];
+
+  return (
+    <div
+      className={`rounded-xl border-2 p-4 transition ${data ? "border-solid" : "border-dashed"}`}
+      style={{
+        borderColor: `color-mix(in oklab, ${color} ${data ? 55 : 40}%, transparent)`,
+        background: `color-mix(in oklab, ${color} 7%, transparent)`,
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-4">
+        <span
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+          style={{ background: `color-mix(in oklab, ${color} 20%, transparent)`, color }}
+        >
+          <CalendarClock className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Prazo previsto
+          </div>
+          {data ? (
+            <>
+              <div className="text-lg font-semibold leading-tight text-foreground">{porExtenso}</div>
+              <div className={`text-xs ${dias !== null && dias < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                {falta}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-lg font-semibold leading-tight text-foreground">
+                Sem prazo definido
+              </div>
+              <div className="text-xs text-warning">
+                Sem prazo, o acompanhamento não consegue dizer se o projeto vai atrasar.
+              </div>
+            </>
+          )}
+        </div>
+        <CampoData
+          value={value}
+          onChange={onChange}
+          formato="longo"
+          placeholder="Escolher data"
+          title="Escolher o prazo no calendário"
+          className="h-10 shrink-0 rounded-lg px-3 text-sm font-semibold"
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {atalhos.map((a) => (
+          <button
+            key={a.rotulo}
+            type="button"
+            onClick={a.aplicar}
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-foreground transition hover:border-primary hover:text-primary"
+          >
+            {a.rotulo}
+          </button>
+        ))}
       </div>
     </div>
   );

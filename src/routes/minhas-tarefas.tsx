@@ -45,6 +45,7 @@ import {
   type Status,
   type Task,
 } from "@/lib/fluxo-types";
+import { SeloDoProjeto } from "@/components/selo-do-projeto";
 
 export const Route = createFileRoute("/minhas-tarefas")({
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
@@ -683,7 +684,10 @@ function TaskList({
                         <button onClick={() => onEdit(t.id)} className="flex items-start gap-2 text-left">
                           <CheckSquare className="mt-0.5 h-4 w-4 text-muted-foreground" />
                           <div>
-                            <div className="text-sm font-medium">{t.title}</div>
+                            <div className="text-sm font-medium">
+                              <SeloDoProjeto projectId={t.projectId} />
+                              {t.title}
+                            </div>
                             <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                               {t.recurring && (
                                 <span className="inline-flex items-center gap-1">
@@ -990,7 +994,10 @@ function KanbanBoard({
                         <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
                       </button>
                     </div>
-                    <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
+                    <div className="mt-1.5 text-sm font-medium leading-snug">
+                      <SeloDoProjeto projectId={t.projectId} />
+                      {t.title}
+                    </div>
                     {(t.mentions.length > 0 || t.checklist.length > 0) && (
                       <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
                         {t.checklist.length > 0 && (
@@ -1321,7 +1328,10 @@ function ExternalRow({
       />
       <button onClick={() => onEdit(task.id)} className="flex-1 text-left">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{task.title}</span>
+          <span className="text-sm font-medium">
+            <SeloDoProjeto projectId={task.projectId} />
+            {task.title}
+          </span>
           <span
             className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
               isMention
@@ -1406,7 +1416,10 @@ function PackRow({
         onClick={() => onEdit(task.id)}
         className="flex-1 text-left"
       >
-        <div className={`text-sm font-medium ${isDone ? "line-through" : ""}`}>{task.title}</div>
+        <div className={`text-sm font-medium ${isDone ? "line-through" : ""}`}>
+          <SeloDoProjeto projectId={task.projectId} />
+          {task.title}
+        </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>
             Prazo{" "}
@@ -1484,6 +1497,7 @@ function PackKanbanCard({
           {doneToday && <CheckCircle2 className="h-3 w-3" />}
         </button>
         <div className={`flex-1 text-sm font-medium leading-snug ${done ? "line-through" : ""}`}>
+          <SeloDoProjeto projectId={task.projectId} />
           {task.title}
         </div>
         <button

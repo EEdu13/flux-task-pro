@@ -70,6 +70,26 @@ export interface ProjectForecast {
   risk: RiskLevel;
 }
 
+/**
+ * O prazo do projeto como data local, no fim do dia.
+ *
+ * O projeto era gravado com `new Date("2026-09-16").toISOString()`, que é
+ * meia-noite em UTC — no Brasil, 21h do dia 15. Toda tela que fazia
+ * `new Date(prazo)` mostrava o dia anterior ao escolhido, e a linha do tempo
+ * terminava um dia antes. Os prazos novos já saem no fim do dia local; os
+ * antigos, gravados exatamente à meia-noite UTC, são lidos pela data do
+ * calendário que a pessoa escolheu.
+ */
+export function prazoDoProjeto(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  if (/T00:00:00(\.0+)?(Z|\+00:00)$/.test(iso)) {
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59);
+  }
+  return d;
+}
+
 /** Janela usada para medir ritmo. Curta demais oscila, longa demais mascara. */
 const VELOCITY_WINDOW_DAYS = 21;
 
@@ -104,7 +124,7 @@ export function forecastProject(
     (t) => t.status !== "concluida" && new Date(t.dueDate).getTime() < now.getTime(),
   ).length;
 
-  const dueDate = project.dueDate ? new Date(project.dueDate) : null;
+  const dueDate = prazoDoProjeto(project.dueDate);
 
   // Ritmo: conclusões dentro da janela, divididas pelos dias efetivamente decorridos.
   const dates = completionDates(tasks, completions);

@@ -22,6 +22,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { BlocoEntrada } from "@/components/stagger";
 import { loadPackDone, savePackDone } from "@/lib/pack";
 import { openTaskContext } from "@/components/task-context-menu";
+import { SeloDoProjeto } from "@/components/selo-do-projeto";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -300,6 +301,7 @@ function Home() {
                         onClick={() => openTask(t.id)}
                         className={`flex-1 truncate text-left text-sm ${done ? "text-muted-foreground line-through" : "font-medium"}`}
                       >
+                        <SeloDoProjeto projectId={t.projectId} />
                         {t.title}
                       </button>
                       <span
@@ -392,7 +394,10 @@ function Home() {
                     >
                       <Clock className="h-4 w-4 text-muted-foreground" />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{t.title}</div>
+                        <div className="truncate text-sm font-medium">
+                          <SeloDoProjeto projectId={t.projectId} />
+                          {t.title}
+                        </div>
                         <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                           <span
                             className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5"
