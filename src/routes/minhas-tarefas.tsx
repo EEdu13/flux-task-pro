@@ -46,6 +46,7 @@ import {
   type Task,
 } from "@/lib/fluxo-types";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
+import { estiloDoCartaoDoProjeto, useProjetoDaTarefa } from "@/lib/projeto-da-tarefa";
 
 export const Route = createFileRoute("/minhas-tarefas")({
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
@@ -930,9 +931,13 @@ function KanbanBoard({
               {items.map((t, index) => {
                 const assignee = users.find((u) => u.id === t.assigneeId);
                 const sec = sectors.find((s) => s.id === t.sector);
+                const alvoDoArraste =
+                  ordem === "manual" && dragOver?.col === col.id && dragOver.index === index;
                 return (
-                  <div
+                  <CartaoNaCorDoProjeto
                     key={t.id}
+                    projectId={t.projectId}
+                    destacado={alvoDoArraste}
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData("text/plain", t.id)}
                     onContextMenu={(e) => {
@@ -955,9 +960,7 @@ function KanbanBoard({
                        prazo, ela prometeria uma posição que a lista desfaz no
                        quadro seguinte. */
                     className={`@container cursor-grab rounded-md border bg-card p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
-                      ordem === "manual" && dragOver?.col === col.id && dragOver.index === index
-                        ? "border-primary"
-                        : "border-border"
+                      alvoDoArraste ? "border-primary" : "border-border"
                     }`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -978,7 +981,11 @@ function KanbanBoard({
                       >
                         {sec?.name}
                       </span>
-                      {t.recurring && <Repeat className="h-2.5 w-2.5" />}
+                      {/* Ao lado do setor, e não na frente do título: é
+                          informação de contexto como o setor, e o título fica
+                          inteiro para ler. */}
+                      <SeloDoProjeto projectId={t.projectId} className="min-w-0" />
+                      {t.recurring && <Repeat className="h-2.5 w-2.5 shrink-0" />}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -994,10 +1001,7 @@ function KanbanBoard({
                         <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
                       </button>
                     </div>
-                    <div className="mt-1.5 text-sm font-medium leading-snug">
-                      <SeloDoProjeto projectId={t.projectId} />
-                      {t.title}
-                    </div>
+                    <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
                     {(t.mentions.length > 0 || t.checklist.length > 0) && (
                       <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
                         {t.checklist.length > 0 && (
@@ -1074,7 +1078,7 @@ function KanbanBoard({
                         />
                       </div>
                     </div>
-                  </div>
+                  </CartaoNaCorDoProjeto>
                 );
               })}
               {items.length === 0 && (
@@ -1087,6 +1091,30 @@ function KanbanBoard({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * O `div` do cartão, pintado na cor do projeto quando a tarefa tem um.
+ *
+ * Existe como componente só porque a cor vem de um hook (`useProjetoDaTarefa`),
+ * e hook não pode ser chamado dentro do `map` do quadro. O resto passa direto.
+ * Com o cartão marcado como destino do arraste, a borda volta a ser a do tema:
+ * a cor do projeto não pode esconder onde a tarefa vai cair.
+ */
+function CartaoNaCorDoProjeto({
+  projectId,
+  destacado,
+  style,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & { projectId?: string; destacado?: boolean }) {
+  const projeto = useProjetoDaTarefa(projectId);
+  const cor = estiloDoCartaoDoProjeto(projeto);
+  return (
+    <div
+      {...props}
+      style={{ ...style, ...cor, ...(destacado && cor ? { borderColor: undefined } : null) }}
+    />
   );
 }
 
@@ -1309,8 +1337,10 @@ function ExternalRow({
   startOfToday.setHours(0, 0, 0, 0);
   const isLate = dueMs < startOfToday.getTime();
   const origin = isMention ? "Mencionaram você" : isMine ? "Atribuída a você" : "Criada por você";
+  const projeto = useProjetoDaTarefa(task.projectId);
   return (
     <div
+      style={estiloDoCartaoDoProjeto(projeto)}
       onContextMenu={(e) => {
         e.preventDefault();
         window.dispatchEvent(

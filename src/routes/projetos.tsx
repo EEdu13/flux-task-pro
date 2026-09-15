@@ -14,6 +14,8 @@ import {
   List as ListIcon,
   Calendar,
   CalendarClock,
+  Camera,
+  ImagePlus,
   Search,
   Sparkles,
   ChevronRight,
@@ -40,6 +42,8 @@ import {
   type RiskLevel,
 } from "@/lib/project-forecast";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
+import { reduzirFoto } from "@/lib/foto-reduzida";
+import { SeletorDeCor } from "@/components/seletor-de-cor";
 
 type ProjectView = "lista" | "board" | "acompanhamento";
 
@@ -129,6 +133,7 @@ function ProjetosPage() {
     projectTasks,
     createProject,
     updateProject,
+    setProjectPhoto,
     deleteProject,
     createTask,
     updateTask,
@@ -442,12 +447,14 @@ function ProjetosPage() {
           onClose={() => setCreateOpen(false)}
           assignees={assignees}
           currentUserId={currentUser.id}
-          onCreate={(payload) => {
+          onCreate={({ photo, ...payload }) => {
             const id = createProject({
               ...payload,
               status: "ativo",
               ownerId: currentUser.id,
             });
+            // Depois de criar: a foto é um anexo do projeto e precisa do id dele.
+            if (photo) setProjectPhoto(id, photo);
             setSelectedId(id);
             setCreateOpen(false);
             toast.success("Projeto criado", { description: payload.name });
@@ -512,6 +519,7 @@ function ProjectDetail({
   quickInputRef,
 }: ProjectDetailProps) {
   const isOwner = selected.ownerId === currentUserId;
+  const { setProjectPhoto } = useFluxo();
   const participantes = useMemo(
     () => participantesDoProjeto(selected, users, currentUserId),
     [selected, users, currentUserId],
@@ -552,12 +560,14 @@ function ProjectDetail({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-white"
-                style={{ background: selected.color ?? "var(--primary)" }}
-              >
-                <FolderKanban className="h-4 w-4" />
-              </span>
+              <EscolherFoto
+                url={selected.photoUrl}
+                cor={selected.color}
+                tamanho={44}
+                podeEditar={isOwner}
+                aoEscolher={(foto) => setProjectPhoto(selected.id, foto)}
+                aoRemover={() => setProjectPhoto(selected.id, null)}
+              />
               <input
                 value={selected.name}
                 onChange={(e) => updateProject(selected.id, { name: e.target.value })}
@@ -1021,6 +1031,7 @@ interface CreateProjectPayload {
   sector?: string;
   dueDate?: string;
   color?: string;
+  photo?: { name: string; type: string; dataUrl: string };
 }
 
 function CreateProjectModal({
@@ -1037,7 +1048,8 @@ function CreateProjectModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [color, setColor] = useState(projectColorPalette[0]);
+  const [color, setColor] = useState(projectColorPalette[0]!);
+  const [photo, setPhoto] = useState<CreateProjectPayload["photo"]>();
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [memberQuery, setMemberQuery] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
@@ -1070,6 +1082,7 @@ function CreateProjectModal({
       // o dia anterior — e o projeto aparecia com prazo um dia antes.
       dueDate: dueDate ? fimDoDia(dueDate)?.toISOString() : undefined,
       color,
+      photo,
     });
   };
 
@@ -1090,7 +1103,20 @@ function CreateProjectModal({
         {/* Header — color strip + solid card for legible inputs */}
         <div className="relative shrink-0 border-b border-border">
           <div className="h-2 w-full" style={{ background: color }} />
-          <div className="flex items-start justify-between gap-3 px-6 py-5">
+          <div className="flex items-start justify-between gap-4 px-6 py-5">
+            {/* A "cara" do projeto, ao lado do nome — é o que identifica o
+                projeto nos cartões das subtarefas. */}
+            <div className="mt-6">
+              <EscolherFoto
+                url={photo?.dataUrl}
+                cor={color}
+                tamanho={96}
+                podeEditar
+                rotulo="Foto do projeto"
+                aoEscolher={setPhoto}
+                aoRemover={() => setPhoto(undefined)}
+              />
+            </div>
             <div className="min-w-0 flex-1 space-y-3">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 <span
@@ -1141,7 +1167,9 @@ function CreateProjectModal({
           {/* Color */}
           <Field label="Cor do projeto" hint="Ajuda a identificar rapidamente na lista.">
             {/* Duas fileiras de nove: as 18 cores em flex-wrap deixavam uma
-                sozinha na segunda linha. */}
+                sozinha na segunda linha. A personalizada fica à parte, depois
+                de um divisor — é outro jeito de escolher, não mais uma cor. */}
+            <div className="flex items-center gap-3">
             <div className="grid w-fit grid-cols-9 gap-2">
               {projectColorPalette.map((c) => (
                 <button
@@ -1155,6 +1183,16 @@ function CreateProjectModal({
                   aria-label="Cor"
                 />
               ))}
+            </div>
+            <span className="h-14 w-px shrink-0 bg-border" aria-hidden />
+            <div className="flex flex-col items-center gap-1">
+              <SeletorDeCor
+                valor={color}
+                aoMudar={setColor}
+                personalizada={!projectColorPalette.includes(color)}
+              />
+              <span className="text-[10px] text-muted-foreground">Personalizar</span>
+            </div>
             </div>
           </Field>
 
@@ -1264,6 +1302,111 @@ function CreateProjectModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A foto do projeto — a "cara" dele — com o botão de trocar.
+ *
+ * Sem foto, mostra o ícone de pasta na cor do projeto, como era; quem pode
+ * editar vê a câmera ao passar o mouse. A imagem é reduzida antes de subir
+ * (ver `reduzirFoto`): ela vira miniatura nos cartões de todo mundo.
+ */
+function EscolherFoto({
+  url,
+  cor,
+  tamanho,
+  podeEditar,
+  aoEscolher,
+  aoRemover,
+  rotulo,
+}: {
+  url?: string;
+  cor?: string;
+  tamanho: number;
+  podeEditar: boolean;
+  aoEscolher: (foto: { name: string; type: string; dataUrl: string }) => void;
+  aoRemover: () => void;
+  /** Texto embaixo do ícone quando ainda não há foto (usado no modal). */
+  rotulo?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [lendo, setLendo] = useState(false);
+  const fundo = cor ?? "var(--primary)";
+
+  const escolher = async (arquivo: File | undefined) => {
+    if (!arquivo) return;
+    setLendo(true);
+    try {
+      aoEscolher(await reduzirFoto(arquivo));
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLendo(false);
+    }
+  };
+
+  return (
+    <div className="group relative shrink-0" style={{ width: tamanho, height: tamanho }}>
+      <button
+        type="button"
+        disabled={!podeEditar || lendo}
+        onClick={() => inputRef.current?.click()}
+        title={podeEditar ? (url ? "Trocar a foto do projeto" : "Adicionar uma foto ao projeto") : undefined}
+        aria-label={url ? "Trocar a foto do projeto" : "Adicionar uma foto ao projeto"}
+        className={`flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden rounded-xl text-white transition disabled:cursor-default ${
+          !url && rotulo ? "border-2 border-dashed" : ""
+        }`}
+        style={
+          url
+            ? undefined
+            : rotulo
+              ? {
+                  borderColor: `color-mix(in oklab, ${fundo} 55%, transparent)`,
+                  background: `color-mix(in oklab, ${fundo} 12%, transparent)`,
+                  color: fundo,
+                }
+              : { background: fundo }
+        }
+      >
+        {url ? (
+          <img src={url} alt="Foto do projeto" className="h-full w-full object-cover" />
+        ) : rotulo ? (
+          <>
+            <ImagePlus className="h-6 w-6" />
+            <span className="px-1 text-center text-[10px] font-semibold leading-tight">{rotulo}</span>
+          </>
+        ) : (
+          <FolderKanban className="h-5 w-5" />
+        )}
+        {podeEditar && (
+          <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/55 opacity-0 transition group-hover:opacity-100">
+            <Camera className="h-5 w-5 text-white" />
+          </span>
+        )}
+      </button>
+      {podeEditar && url && (
+        <button
+          type="button"
+          onClick={aoRemover}
+          title="Tirar a foto"
+          aria-label="Tirar a foto do projeto"
+          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow transition hover:text-destructive group-hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          void escolher(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }

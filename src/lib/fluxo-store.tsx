@@ -158,6 +158,11 @@ interface Store {
   // projects
   createProject: (p: Omit<Project, "id" | "createdAt" | "createdBy">) => string;
   updateProject: (id: string, patch: Partial<Project>) => void;
+  /**
+   * Troca a foto do projeto (ou tira, com `null`). A imagem aparece na hora e
+   * sobe em seguida; a antiga sai do Blob depois que a nova estiver gravada.
+   */
+  setProjectPhoto: (id: string, foto: { name: string; type: string; dataUrl: string } | null) => void;
   deleteProject: (id: string) => void;
   addProjectAttachments: (projectId: string, atts: Attachment[]) => void;
   removeProjectAttachment: (projectId: string, attId: string) => void;
@@ -346,6 +351,28 @@ function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
  * o que está na tela. É pior que reler o estado, e melhor que perder — e
  * reler exigiria acesso ao store aqui dentro, que é função de módulo.
  */
+/* ————— Gravações de projeto em fila —————
+ *
+ * Cada gravação de projeto manda o projeto inteiro, e a primeira decide entre
+ * INSERT e UPDATE conferindo se ele já existe. Disparadas soltas, duas
+ * gravações seguidas (criar e logo pôr a foto, ou digitar o nome letra a letra)
+ * podiam sair juntas, as duas ver "não existe" e a segunda bater na chave
+ * primária — ou chegar fora de ordem e gravar o nome velho por cima do novo.
+ * Em fila, por projeto, cada uma espera a anterior terminar.
+ */
+const filasDeProjeto = new Map<string, Promise<unknown>>();
+
+function naFilaDoProjeto(id: string, gravar: () => Promise<unknown>): void {
+  const anterior = filasDeProjeto.get(id) ?? Promise.resolve();
+  const proxima = anterior
+    .then(gravar)
+    .catch((e) => console.warn("[fluxo] projeto não gravou:", (e as Error)?.message));
+  filasDeProjeto.set(id, proxima);
+  void proxima.finally(() => {
+    if (filasDeProjeto.get(id) === proxima) filasDeProjeto.delete(id);
+  });
+}
+
 const gravacoesFalhadas = new Map<string, Task>();
 let toastDeFalhaAberto = false;
 
@@ -1047,6 +1074,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
               createdAt: p.createdAt,
               createdBy: p.createdBy,
               color: p.color,
+              photoUrl: p.photoUrl,
               // Anexos vêm por `listarAnexos` quando o projeto é aberto — a
               // lista não carrega arquivo de todos os projetos de uma vez.
               attachments: [],
@@ -2081,8 +2109,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         ],
       }));
 
-      void import("@/lib/projetos.functions")
-        .then((api) =>
+      naFilaDoProjeto(id, () =>
+        import("@/lib/projetos.functions").then((api) =>
           api.salvarProjeto({
             data: {
               id,
@@ -2094,12 +2122,59 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
               sector: p.sector,
               dueDate: p.dueDate,
               color: p.color,
+              photoUrl: p.photoUrl,
             },
           }),
-        )
-        .catch((e) => console.warn("[fluxo] projeto não gravou:", (e as Error)?.message));
+        ),
+      );
 
       return id;
+    },
+    setProjectPhoto: (id, foto) => {
+      const antes = state.projects.find((p) => p.id === id)?.photoUrl;
+      const antigaId = antes && /^\/api\/anexo\/([0-9a-f-]{36})$/i.exec(antes)?.[1];
+      const apagarAntiga = () => {
+        if (!antigaId) return;
+        void import("@/lib/anexo.functions")
+          .then((m) => m.removerAnexo({ data: { id: antigaId } }))
+          .catch(() => {});
+      };
+
+      if (!foto) {
+        store.updateProject(id, { photoUrl: undefined });
+        apagarAntiga();
+        return;
+      }
+
+      // Aparece já, com o próprio arquivo; o endereço do servidor entra quando subir.
+      setState((s) => ({
+        ...s,
+        projects: s.projects.map((p) => (p.id === id ? { ...p, photoUrl: foto.dataUrl } : p)),
+      }));
+      void (async () => {
+        try {
+          const { enviarAnexo } = await import("@/lib/anexo.functions");
+          const g = await enviarAnexo({
+            data: {
+              donoTipo: "projeto",
+              donoId: id,
+              nome: foto.name,
+              tipoMime: foto.type,
+              conteudo: foto.dataUrl,
+            },
+          });
+          store.updateProject(id, { photoUrl: g.url });
+          apagarAntiga();
+        } catch (e) {
+          setState((s) => ({
+            ...s,
+            projects: s.projects.map((p) => (p.id === id ? { ...p, photoUrl: antes } : p)),
+          }));
+          toast.error("Não foi possível salvar a foto do projeto", {
+            description: (e as Error)?.message,
+          });
+        }
+      })();
     },
     updateProject: (id, patch) => {
       setState((s) => {
@@ -2112,8 +2187,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            pegar a versão anterior à mudança. */
         const p = atualizado.find((x) => x.id === id);
         if (p && /^[0-9a-f-]{36}$/i.test(id)) {
-          void import("@/lib/projetos.functions")
-            .then((api) =>
+          naFilaDoProjeto(id, () =>
+            import("@/lib/projetos.functions").then((api) =>
               api.salvarProjeto({
                 data: {
                   id: p.id,
@@ -2125,10 +2200,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                   sector: p.sector,
                   dueDate: p.dueDate,
                   color: p.color,
+                  // Um `data:` ainda subindo não vai: o servidor só aceita o
+                  // endereço de anexo, e gravaria a foto como vazia.
+                  photoUrl: p.photoUrl?.startsWith("data:") ? undefined : p.photoUrl,
                 },
               }),
-            )
-            .catch((e) => console.warn("[fluxo] projeto não gravou:", (e as Error)?.message));
+            ),
+          );
         }
 
         return { ...s, projects: atualizado };

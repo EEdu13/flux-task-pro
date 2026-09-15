@@ -209,7 +209,9 @@ export function ProjectTracking({
 
         <div className="h-[280px] w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: -18 }}>
+            {/* `top: 24` abre espaço para o rótulo "Prazo", que fica ACIMA da
+                área do gráfico: com 8px ele saía cortado pela metade. */}
+            <LineChart data={data} margin={{ top: 24, right: 16, bottom: 4, left: -18 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis
                 dataKey="label"
@@ -241,10 +243,11 @@ export function ProjectTracking({
                   stroke="var(--color-destructive)"
                   strokeDasharray="4 4"
                   label={{
-                    value: "prazo",
+                    value: "Prazo",
                     position: "top",
                     fill: "var(--color-destructive)",
-                    fontSize: 10,
+                    fontSize: 11,
+                    fontWeight: 600,
                   }}
                 />
               )}

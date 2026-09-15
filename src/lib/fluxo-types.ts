@@ -145,7 +145,12 @@ export interface Project {
   dueDate?: string;     // ISO
   createdAt: string;
   createdBy: string;
-  color?: string;       // ex.: oklch(...)
+  color?: string;       // ex.: oklch(...) ou #rrggbb (cor personalizada)
+  /**
+   * A "cara" do projeto: a foto que aparece no cabeçalho e nos cartões das
+   * subtarefas. `/api/anexo/<id>` depois de gravada; um `data:` só enquanto sobe.
+   */
+  photoUrl?: string;
   /**
    * Fotos e arquivos de acompanhamento do projeto — telas, comprovantes,
    * evidências. Visíveis a todos que enxergam o projeto.

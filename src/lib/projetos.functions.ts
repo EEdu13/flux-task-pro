@@ -24,6 +24,13 @@ export type ProjetoDoBanco = {
   createdAt: string;
   createdBy: string;
   color?: string;
+  photoUrl?: string;
+};
+
+/** `/api/anexo/<id>` → id; qualquer outra coisa (um `data:` ainda subindo) → null. */
+const idDaFoto = (v: unknown): string | null => {
+  const m = typeof v === "string" ? /^\/api\/anexo\/([0-9a-f-]{36})$/i.exec(v) : null;
+  return m ? m[1]! : null;
 };
 
 const SITUACOES = ["ativo", "pausado", "concluido"] as const;
@@ -53,7 +60,7 @@ export const listarProjetos = createServerFn({ method: "POST" }).handler(
     const [p, m] = await Promise.all([
       pool.request().query(
         `SELECT id, id_legado, nome, descricao, situacao, dono_id, setor,
-                prazo, cor, criado_por, criado_em
+                prazo, cor, foto_anexo_id, criado_por, criado_em
            FROM gestor.projetos ORDER BY criado_em DESC`,
       ),
       pool
@@ -80,6 +87,7 @@ export const listarProjetos = createServerFn({ method: "POST" }).handler(
           setor: string | null;
           prazo: Date | null;
           cor: string | null;
+          foto_anexo_id: string | null;
           criado_por: number;
           criado_em: Date;
         }[]
@@ -99,6 +107,7 @@ export const listarProjetos = createServerFn({ method: "POST" }).handler(
         createdAt: x.criado_em.toISOString(),
         createdBy: String(x.criado_por),
         color: x.cor ?? undefined,
+        photoUrl: x.foto_anexo_id ? `/api/anexo/${x.foto_anexo_id}` : undefined,
       })),
     };
   }),
@@ -127,6 +136,7 @@ export const salvarProjeto = createServerFn({ method: "POST" })
         sector?: string;
         dueDate?: string;
         color?: string;
+        photoUrl?: string;
       }) => {
         const nome = texto(e?.name, 120);
         if (!nome) throw new Error("O projeto precisa de um nome");
@@ -153,6 +163,7 @@ export const salvarProjeto = createServerFn({ method: "POST" })
           setor: texto(e?.sector, 40) || null,
           prazo,
           cor: texto(e?.color, 40) || null,
+          fotoId: idDaFoto(e?.photoUrl),
         };
       },
     ),
@@ -172,6 +183,7 @@ export const salvarProjeto = createServerFn({ method: "POST" })
           setor: string | null;
           prazo: Date | null;
           cor: string | null;
+          fotoId: string | null;
         },
       ): Promise<{ id: string }> => {
         const { getPool, sql } = await import("@/integrations/db.server");
@@ -189,6 +201,7 @@ export const salvarProjeto = createServerFn({ method: "POST" })
           .input("setor", sql.NVarChar, d.setor)
           .input("prazo", sql.DateTimeOffset, d.prazo)
           .input("cor", sql.NVarChar, d.cor)
+          .input("foto", sql.UniqueIdentifier, d.fotoId)
           .input("por", sql.Int, eu);
 
         /* O INSERT grava COM o id que veio do cliente.
@@ -206,16 +219,18 @@ export const salvarProjeto = createServerFn({ method: "POST" })
              BEGIN
                UPDATE gestor.projetos
                   SET nome=@nome, descricao=@descricao, situacao=@situacao,
-                      dono_id=@dono, setor=@setor, prazo=@prazo, cor=@cor
+                      dono_id=@dono, setor=@setor, prazo=@prazo, cor=@cor,
+                      foto_anexo_id=@foto
                 WHERE id=@id;
                SELECT @id AS id;
              END
            ELSE
              INSERT INTO gestor.projetos
-               (id, id_legado, nome, descricao, situacao, dono_id, setor, prazo, cor, criado_por)
+               (id, id_legado, nome, descricao, situacao, dono_id, setor, prazo, cor,
+                foto_anexo_id, criado_por)
              OUTPUT INSERTED.id
              VALUES (COALESCE(@id, NEWID()), @id_legado, @nome, @descricao, @situacao, @dono,
-                     @setor, @prazo, @cor, @por);`,
+                     @setor, @prazo, @cor, @foto, @por);`,
         );
         const id = (r.recordset[0] as { id: string }).id;
 
