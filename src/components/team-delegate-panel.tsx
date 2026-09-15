@@ -226,9 +226,6 @@ export function TeamDelegatePanel() {
           ) : (
             teammates.map((u) => {
               const list = activeForUser(u.id);
-              const soon = list.filter(
-                (t) => new Date(t.dueDate).getTime() - Date.now() < 3 * 24 * 3600e3,
-              ).length;
               const isHover = hoverCol === u.id;
               const isMe = u.id === currentUser.id;
               return (
@@ -298,21 +295,6 @@ export function TeamDelegatePanel() {
                       <div className="text-xs font-bold">{list.length}</div>
                       <div className="text-[9px] uppercase text-muted-foreground">ativas</div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 border-b border-border bg-secondary/40 px-2 py-1 text-[10px] text-muted-foreground">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        list.length > 8 ? "bg-red-500" : list.length > 4 ? "bg-amber-500" : "bg-emerald-500"
-                      }`}
-                    />
-                    <span>
-                      {list.length > 8
-                        ? "Sobrecarregado"
-                        : list.length > 4
-                          ? "Carga alta"
-                          : "Disponível"}
-                    </span>
-                    <span className="ml-auto">{soon} vencendo em 3d</span>
                   </div>
                   <div className="flex-1 space-y-1.5 overflow-y-auto p-2">
                     {list.length === 0 ? (
