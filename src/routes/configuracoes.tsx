@@ -770,11 +770,10 @@ function DesktopDiagnostics() {
         <button
           onClick={() =>
             void showIncomingCallWindow({
-              callId: "teste",
+              callIds: [],
               caller: "Chamada de teste",
               roomLabel: "Sala de teste",
               userId: currentUser.id,
-              remote: false,
             })
           }
           className="rounded-md border border-border px-3 py-1.5 text-xs hover:bg-secondary"

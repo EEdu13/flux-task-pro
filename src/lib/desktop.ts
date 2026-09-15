@@ -130,7 +130,22 @@ export const CALL_WINDOW_LABEL = "chamada";
  * label fixo causava dois problemas: erro "label already exists" e, pior, o
  * card mostrar os dados da chamada anterior.
  */
-let currentCallWindowLabel: string | null = null;
+
+/**
+ * Fila das operações com o card: abrir e fechar, uma de cada vez.
+ *
+ * Abrir leva vários `await` (fechar o anterior, medir o monitor) antes de a
+ * janela existir. Dois pedidos próximos — um convite novo chegando, a tela
+ * remontando ao trocar de página — rodavam intercalados: os dois fechavam
+ * "o anterior" quando ainda não havia nenhum, e os dois criavam a sua janela.
+ * O resultado eram cards empilhados no mesmo canto, e o primeiro ficava órfão.
+ */
+let filaDoCard: Promise<unknown> = Promise.resolve();
+function naFilaDoCard<T>(fazer: () => Promise<T>): Promise<T> {
+  const vez = filaDoCard.then(fazer, fazer);
+  filaDoCard = vez.catch(() => {});
+  return vez;
+}
 
 /** Label da janela Tauri atual (null no navegador). */
 export function tauriWindowLabel(): string | null {
@@ -150,23 +165,34 @@ export function tauriWindowLabel(): string | null {
 /**
  * Abre um card pequeno, sempre-no-topo, no canto inferior direito — aparece
  * mesmo com a janela principal escondida na bandeja.
+ *
+ * @returns true se o card nativo abriu; false no navegador ou se falhou — aí
+ *          quem chamou mostra o card de dentro do app.
  */
-export async function showIncomingCallWindow(p: {
-  callId: string;
+export function showIncomingCallWindow(p: {
+  /** Todos os convites da ligação — o card responde todos de uma vez. */
+  callIds: string[];
   caller: string;
   roomLabel: string;
   /** Quem está recebendo — o card grava a resposta direto no servidor. */
   userId: string;
-  /** Só para chamadas vindas do servidor (têm id UUID). */
-  remote: boolean;
-}): Promise<void> {
-  if (!isTauri()) return;
+}): Promise<boolean> {
+  if (!isTauri()) return Promise.resolve(false);
+  return naFilaDoCard(() => abrirCardDeChamada(p));
+}
+
+async function abrirCardDeChamada(p: {
+  callIds: string[];
+  caller: string;
+  roomLabel: string;
+  userId: string;
+}): Promise<boolean> {
   try {
     const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
 
     // Fecha o card anterior (se houver). Nunca reaproveitamos a janela: ela
     // carregaria os dados da chamada antiga.
-    await closeIncomingCallWindow();
+    await fecharCardsDeChamada();
 
     const W = 380;
     const H = 190;
@@ -187,14 +213,12 @@ export async function showIncomingCallWindow(p: {
     }
 
     const params = new URLSearchParams({
-      callId: p.callId,
+      callIds: p.callIds.join(","),
       caller: p.caller,
       room: p.roomLabel,
       userId: p.userId,
-      remote: p.remote ? "1" : "0",
     });
     const label = `${CALL_WINDOW_LABEL}-${Date.now().toString(36)}`;
-    currentCallWindowLabel = label;
     const win = new WebviewWindow(label, {
       /* URL ABSOLUTA, na mesma origem desta janela.
        *
@@ -222,14 +246,20 @@ export async function showIncomingCallWindow(p: {
       focus: true,
       title: "Chamada recebida",
     });
-    // Erros de criação chegam por evento, não por exceção.
-    void win.once("tauri://error", (e) => {
-      console.error("[fluxo] erro ao criar janela de chamada", e);
-      void reportDesktopError(`Card de chamada falhou: ${JSON.stringify(e.payload)}`);
+    // Erros de criação chegam por evento, não por exceção. Esperar o primeiro
+    // dos dois diz se o card existe — sem card nativo, o app mostra o dele.
+    return await new Promise<boolean>((resolver) => {
+      void win.once("tauri://created", () => resolver(true));
+      void win.once("tauri://error", (e) => {
+        console.error("[fluxo] erro ao criar janela de chamada", e);
+        void reportDesktopError(`Card de chamada falhou: ${JSON.stringify(e.payload)}`);
+        resolver(false);
+      });
     });
   } catch (e) {
     console.error("[fluxo] falha ao abrir janela de chamada", e);
     void reportDesktopError(`Card de chamada falhou: ${(e as Error)?.message ?? e}`);
+    return false;
   }
 }
 
@@ -294,24 +324,28 @@ export async function desktopSelfTest(): Promise<string> {
 }
 
 /** Fecha o card de chamada, se estiver aberto. */
-export async function closeIncomingCallWindow(): Promise<void> {
-  if (!isTauri()) return;
+export function closeIncomingCallWindow(): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return naFilaDoCard(fecharCardsDeChamada);
+}
+
+/**
+ * Fecha TODO card de chamada aberto, e não só o último que esta tela abriu.
+ *
+ * Guardar "o label do card atual" numa variável deixava escapar os órfãos: um
+ * card aberto antes de a página recarregar, ou por uma corrida entre dois
+ * pedidos, nunca mais era encontrado e ficava para sempre no canto da tela.
+ * Perguntar ao Tauri quais janelas existem não depende de memória nenhuma.
+ */
+async function fecharCardsDeChamada(): Promise<void> {
   try {
-    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-    const labels = [currentCallWindowLabel, CALL_WINDOW_LABEL].filter(
-      (l): l is string => !!l,
+    const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+    const janelas = await getAllWebviewWindows();
+    await Promise.all(
+      janelas
+        .filter((w) => w.label === CALL_WINDOW_LABEL || w.label.startsWith(`${CALL_WINDOW_LABEL}-`))
+        .map((w) => w.close().catch(() => {})),
     );
-    for (const label of labels) {
-      const w = await WebviewWindow.getByLabel(label);
-      if (w) {
-        try {
-          await w.close();
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    currentCallWindowLabel = null;
   } catch {
     /* ignore */
   }

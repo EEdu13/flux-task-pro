@@ -17,10 +17,10 @@ function CallCardWindow() {
   const [params, setParams] = useState<{
     caller: string;
     room: string;
-    callId: string;
+    /** Todos os convites da ligação: quem chamou duas vezes gera dois. */
+    callIds: string[];
     userId: string;
-    remote: boolean;
-  }>({ caller: "Alguém", room: "", callId: "", userId: "", remote: false });
+  }>({ caller: "Alguém", room: "", callIds: [], userId: "" });
   const [busy, setBusy] = useState(false);
   const [closeErr, setCloseErr] = useState<string | null>(null);
 
@@ -29,9 +29,11 @@ function CallCardWindow() {
     setParams({
       caller: q.get("caller") || "Alguém",
       room: q.get("room") || "",
-      callId: q.get("callId") || "",
+      // Só ids de verdade vão ao servidor; o card de teste das configurações não tem.
+      callIds: (q.get("callIds") || "")
+        .split(",")
+        .filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)),
       userId: q.get("userId") || "",
-      remote: q.get("remote") === "1",
     });
   }, []);
 
@@ -40,9 +42,13 @@ function CallCardWindow() {
     if (err) setCloseErr(err);
   }, []);
 
-  // Fecha sozinho se ninguém atender (a chamada expira em ~45s no servidor).
+  /* Quem fecha o card quando a ligação acaba é a janela principal, que vê a
+     chamada expirar. Este prazo é só a rede de segurança para o caso de ela
+     não estar mais lá — e é longo de propósito: com 45 s, quem chamava de novo
+     antes de expirar ficava sem card nenhum, porque o card da ligação some e a
+     ligação continua a mesma. */
   useEffect(() => {
-    const t = window.setTimeout(() => void dismiss(), 45_000);
+    const t = window.setTimeout(() => void dismiss(), 120_000);
     return () => window.clearTimeout(t);
   }, [dismiss]);
 
@@ -62,22 +68,17 @@ function CallCardWindow() {
     // O card grava a resposta DIRETO no servidor. Antes isso dependia de um
     // evento chegar na janela principal — se o evento falhasse, quem ligou
     // nunca sabia que foi recusado (a chamada só expirava como "não atendeu").
-    if (params.remote && params.callId && params.userId) {
-      try {
-        await updateRoomCallStatus({
-          data: {
-            callId: params.callId,
-            status: action === "accept" ? "accepted" : "declined",
-          },
-        });
-      } catch (e) {
-        console.error("[fluxo] falha ao atualizar status da chamada", e);
-      }
-    }
+    await Promise.all(
+      params.callIds.map((callId) =>
+        updateRoomCallStatus({
+          data: { callId, status: action === "accept" ? "accepted" : "declined" },
+        }).catch((e) => console.error("[fluxo] falha ao atualizar status da chamada", e)),
+      ),
+    );
 
     // O evento serve para a janela principal navegar até a sala ao atender.
     try {
-      await emitCallAction(action, params.callId);
+      await emitCallAction(action, params.callIds[0] ?? "");
     } catch (e) {
       console.error("[fluxo] falha ao emitir ação da chamada", e);
     }
