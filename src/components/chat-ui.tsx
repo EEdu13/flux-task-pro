@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, CheckCheck, ChevronDown, Paperclip, Send, Smile, X } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, Clock3, Paperclip, Send, Smile, X } from "lucide-react";
 import { ESTADOS, INFO_DO_ESTADO, type SituacaoNoChat } from "@/lib/estado-do-chat";
 import { toast } from "sonner";
 import type { User } from "@/lib/fluxo-types";
@@ -355,7 +355,7 @@ function Balao({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
           {fmtTime(m.created_at)}
           {/* Só nas minhas: o visto responde "a pessoa leu o que EU mandei".
               Nas dela a pergunta não existe — se está na minha tela, eu li. */}
-          {mine && <Visto lidaEm={m.read_at} />}
+          {mine && (m.enviando ? <Enviando /> : <Visto lidaEm={m.read_at} />)}
         </div>
       </div>
     </div>
@@ -393,6 +393,16 @@ function quandoLida(iso: string): string {
  * online", que é um palpite. Desenhar ✓✓ cinza com base em palpite ensinaria a
  * desconfiar do ✓✓ azul também.
  */
+/** O relógio de "a caminho": a mensagem já está na conversa, mas o servidor ainda não confirmou. */
+function Enviando() {
+  return (
+    <span title="Enviando…" className="inline-flex">
+      <Clock3 className="h-3 w-3" aria-hidden="true" />
+      <span className="sr-only">Enviando</span>
+    </span>
+  );
+}
+
 function Visto({ lidaEm }: { lidaEm: string | null }) {
   if (!lidaEm) {
     return (
@@ -448,9 +458,14 @@ export function Composer({ peerId }: { peerId: string }) {
   const { sendMessage } = useChat();
   const { currentUser } = useFluxo();
   const [text, setText] = useState("");
+  const textoRef = useRef(text);
+  textoRef.current = text;
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [pending, setPending] = useState<{ name: string; type: string; dataUrl: string } | null>(null);
-  const [sending, setSending] = useState(false);
+  /* Envios em fila, um depois do outro. Com o campo liberado na hora, dá para
+     mandar "oi" e "tudo bem?" antes de o primeiro chegar — e sem a fila os dois
+     disputariam o servidor e poderiam chegar invertidos. */
+  const filaRef = useRef<Promise<void>>(Promise.resolve());
   const fileRef = useRef<HTMLInputElement>(null);
   const campoRef = useRef<HTMLTextAreaElement>(null);
 
@@ -476,22 +491,38 @@ export function Composer({ peerId }: { peerId: string }) {
       .catch(() => {});
   };
 
-  const send = async () => {
-    if (sending) return;
-    if (!text.trim() && !pending) return;
-    setSending(true);
-    try {
-      await sendMessage(peerId, text.trim(), pending ?? undefined);
-      setText("");
-      setPending(null);
-    } catch {
-      toast.error("Não foi possível enviar");
-    } finally {
-      setSending(false);
-      // O clique no botão de enviar tira o foco do campo; devolver é o que
-      // permite escrever a próxima sem voltar ao mouse.
-      campoRef.current?.focus();
-    }
+  /* O campo limpa NO ENTER, não quando o servidor responde.
+     Limpava depois do `await`: o que a pessoa já estava digitando nesse meio
+     tempo entrava no campo junto do "oi" e era apagado quando a resposta
+     chegava — as primeiras letras da frase seguinte sumiam. A mensagem aparece
+     na conversa na hora (ver `enviando` no chat-store), então nada se perde de
+     vista. */
+  const send = () => {
+    const corpo = text.trim();
+    const anexo = pending;
+    if (!corpo && !anexo) return;
+    setText("");
+    setPending(null);
+    // O clique no botão de enviar tira o foco do campo; devolver é o que
+    // permite escrever a próxima sem voltar ao mouse.
+    campoRef.current?.focus();
+
+    filaRef.current = filaRef.current
+      .then(() => sendMessage(peerId, corpo, anexo ?? undefined))
+      .catch(() => {
+        // Devolve ao campo só se ele estiver vazio — nunca por cima do que a
+        // pessoa já começou a escrever depois.
+        // Lê pelo ref: o `text` desta função é o do momento do Enter, e o
+        // campo pode ter mudado até a falha chegar.
+        const devolvido = !textoRef.current.trim();
+        if (devolvido) setText(corpo);
+        if (anexo) setPending((p) => p ?? anexo);
+        toast.error(
+          devolvido || !corpo
+            ? "Não foi possível enviar. A mensagem voltou para o campo."
+            : `Não foi possível enviar: "${corpo.length > 60 ? corpo.slice(0, 60) + "…" : corpo}"`,
+        );
+      });
   };
 
   const attach = async (files: FileList | null) => {
@@ -574,7 +605,7 @@ export function Composer({ peerId }: { peerId: string }) {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              void send();
+              send();
             }
           }}
           rows={1}
@@ -582,8 +613,8 @@ export function Composer({ peerId }: { peerId: string }) {
           className="max-h-28 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
         />
         <button
-          onClick={() => void send()}
-          disabled={sending || (!text.trim() && !pending)}
+          onClick={send}
+          disabled={!text.trim() && !pending}
           className="rounded-full bg-primary p-2.5 text-primary-foreground transition hover:brightness-110 disabled:opacity-40"
           title="Enviar"
         >

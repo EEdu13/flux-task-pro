@@ -87,7 +87,28 @@ interface ChatCtx {
   markRead: (peerId: string) => void;
   /** Incrementa a cada mensagem enviada/recebida — usado para forçar refetch. */
   pulse: number;
+  /** Minhas mensagens a caminho do servidor, para aparecerem na conversa na hora. */
+  enviando: EnvioPendente[];
+  /** Tira da lista de pendentes as que a conversa já trouxe do servidor. */
+  descartarEnvios: (idsNoServidor: ReadonlySet<string>) => void;
 }
+
+/**
+ * Mensagem que eu mandei e o servidor ainda não devolveu na conversa.
+ *
+ * Existe porque a conversa só se atualiza depois da ida e volta ao servidor
+ * (Railway nos EUA, banco no Azure): a mensagem sumia do campo e demorava a
+ * aparecer na lista, e parecia que o Enter não tinha ido.
+ */
+export type EnvioPendente = {
+  idLocal: string;
+  /** O id que o servidor deu, quando já respondeu. */
+  idNoServidor: string | null;
+  /** Anexo já enviado (ou não havia). Antes disso a versão do servidor chega sem ele. */
+  concluido: boolean;
+  peer: string;
+  mensagem: MensagemDaConversa;
+};
 
 const Ctx = createContext<ChatCtx | null>(null);
 const ONLINE_WINDOW_MS = 45_000;
@@ -109,6 +130,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [openWindows, setOpenWindows] = useState<string[]>([]);
   const [minimized, setMinimized] = useState<string[]>([]);
   const [pulse, setPulse] = useState(0);
+  const [enviando, setEnviando] = useState<EnvioPendente[]>([]);
   const meId = currentUser?.id;
 
   /* `null` = ainda não sabemos quantas eram; a primeira consulta semeia.
@@ -299,31 +321,74 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ) => {
       if (!meId) return;
 
-      /* Duas idas, nesta ordem, e a ordem é obrigatória.
-         O anexo aponta para a mensagem — `gestor.anexos.dono_id` — então a
-         mensagem precisa existir antes. Por isso `chatSend` devolve o id: é
-         ele que o envio do arquivo usa como dono. */
-      const r = await chatSend({ data: { toUserId, body, comAnexo: !!att } });
-
-      if (att) {
-        const { enviarAnexo } = await import("@/lib/anexo.functions");
-        await enviarAnexo({
-          data: {
-            donoTipo: "mensagem",
-            donoId: r.message.id,
-            nome: att.name,
-            tipoMime: att.type,
-            // O seletor de arquivo entrega data URL; o servidor tira o
-            // cabeçalho e guarda os bytes no Blob.
-            conteudo: att.dataUrl,
+      // Aparece na conversa já, antes de o servidor responder.
+      const idLocal = `enviando-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      setEnviando((l) => [
+        ...l,
+        {
+          idLocal,
+          idNoServidor: null,
+          concluido: false,
+          peer: toUserId,
+          mensagem: {
+            id: idLocal,
+            from_user_id: meId,
+            to_user_id: toUserId,
+            body: body || null,
+            att_name: att?.name ?? null,
+            att_type: att?.type ?? null,
+            att_data: att?.dataUrl ?? null,
+            created_at: new Date().toISOString(),
+            read_at: null,
+            enviando: true,
           },
-        });
+        },
+      ]);
+      const marcar = (patch: Partial<EnvioPendente>) =>
+        setEnviando((l) => l.map((e) => (e.idLocal === idLocal ? { ...e, ...patch } : e)));
+
+      try {
+        /* Duas idas, nesta ordem, e a ordem é obrigatória.
+           O anexo aponta para a mensagem — `gestor.anexos.dono_id` — então a
+           mensagem precisa existir antes. Por isso `chatSend` devolve o id: é
+           ele que o envio do arquivo usa como dono. */
+        const r = await chatSend({ data: { toUserId, body, comAnexo: !!att } });
+        marcar({ idNoServidor: r.message.id });
+
+        if (att) {
+          const { enviarAnexo } = await import("@/lib/anexo.functions");
+          await enviarAnexo({
+            data: {
+              donoTipo: "mensagem",
+              donoId: r.message.id,
+              nome: att.name,
+              tipoMime: att.type,
+              // O seletor de arquivo entrega data URL; o servidor tira o
+              // cabeçalho e guarda os bytes no Blob.
+              conteudo: att.dataUrl,
+            },
+          });
+        }
+        marcar({ concluido: true });
+      } catch (e) {
+        // Não foi: some da conversa, e quem chamou devolve o texto ao campo.
+        setEnviando((l) => l.filter((x) => x.idLocal !== idLocal));
+        throw e;
       }
 
       setPulse((p) => p + 1);
     },
     [meId],
   );
+
+  const descartarEnvios = useCallback((idsNoServidor: ReadonlySet<string>) => {
+    setEnviando((l) => {
+      const resto = l.filter(
+        (e) => !(e.concluido && e.idNoServidor && idsNoServidor.has(e.idNoServidor)),
+      );
+      return resto.length === l.length ? l : resto;
+    });
+  }, []);
 
   const markRead = useCallback(
     (peerId: string) => {
@@ -361,6 +426,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sendMessage,
     markRead,
     pulse,
+    enviando,
+    descartarEnvios,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -393,11 +460,13 @@ export type MensagemDaConversa = {
   created_at: string;
   /** Quando o destinatário leu. `null` = ainda não leu. É o que acende o ✓✓. */
   read_at: string | null;
+  /** Só nas minhas que ainda não chegaram ao servidor — o balão mostra o relógio. */
+  enviando?: boolean;
 };
 
 export function useConversation(peerId: string | null): Conversa {
   const { currentUser } = useFluxo();
-  const { pulse } = useChat();
+  const { pulse, enviando, descartarEnvios } = useChat();
   const [digitando, setDigitando] = useState(false);
   const [messages, setMessages] = useState<MensagemDaConversa[]>([]);
   const meId = currentUser?.id;
@@ -439,9 +508,29 @@ export function useConversation(peerId: string | null): Conversa {
      conversa seria pior que não mostrar nada. `useMemo` para a identidade do
      array não mudar a cada render — `MessageList` rola até o fim quando
      `messages.length` muda, e um array novo a cada render remontaria isso. */
+  // A conversa já trouxe do servidor as que estavam pendentes: saem da fila.
+  useEffect(() => {
+    if (enviando.length === 0) return;
+    descartarEnvios(new Set(messages.map((m) => m.id)));
+  }, [messages, enviando.length, descartarEnvios]);
+
   return useMemo(() => {
-    const lista = messages.slice() as Conversa;
+    /* Servidor + pendentes desta conversa, sem repetir.
+       Uma pendente com anexo ainda subindo esconde a versão do servidor da mesma
+       mensagem: aquela chega sem o arquivo, e trocar uma pela outra faria a
+       imagem sumir e voltar. As pendentes vão no fim — são as mais novas. */
+    const minhas = enviando.filter((e) => e.peer === peerId);
+    const escondidas = new Set(
+      minhas.filter((e) => !e.concluido && e.idNoServidor).map((e) => e.idNoServidor!),
+    );
+    const noServidor = new Set(messages.map((m) => m.id));
+    const lista = [
+      ...messages.filter((m) => !escondidas.has(m.id)),
+      ...minhas
+        .filter((e) => !(e.concluido && e.idNoServidor && noServidor.has(e.idNoServidor)))
+        .map((e) => e.mensagem),
+    ] as Conversa;
     lista.peerDigitando = digitando;
     return lista;
-  }, [messages, digitando]);
+  }, [messages, digitando, enviando, peerId]);
 }
