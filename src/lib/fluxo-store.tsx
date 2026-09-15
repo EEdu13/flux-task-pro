@@ -2240,6 +2240,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       }
     },
     deleteProject: (id) => {
+      const removido = state.projects.find((p) => p.id === id);
+      const subtarefas = new Set(state.tasks.filter((t) => t.projectId === id).map((t) => t.id));
       setState((s) => ({
         ...s,
         projects: s.projects.filter((p) => p.id !== id),
@@ -2251,11 +2253,43 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          `projetos` é `ON DELETE SET NULL`, então a tarefa sobrevive ao projeto
          e fica sem ele. Os membros saem por cascata. Conferido em sys.foreign_keys,
          não suposto — se fosse NO_ACTION, este DELETE falharia. */
-      if (/^[0-9a-f-]{36}$/i.test(id)) {
-        void import("@/lib/projetos.functions")
-          .then((api) => api.apagarProjeto({ data: { id } }))
-          .catch((e) => console.warn("[fluxo] projeto não apagou:", (e as Error)?.message));
-      }
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return;
+
+      /* Na fila do projeto: excluir logo depois de criar esperava a criação
+         terminar. Fora dela, o DELETE podia chegar antes do INSERT, não achar
+         nada, e o projeto nascia no banco depois de "excluído".
+
+         E a falha agora aparece. Antes ela ia só para o console: o projeto
+         sumia da tela, continuava no banco e voltava no carregamento seguinte,
+         sem ninguém entender por quê. */
+      naFilaDoProjeto(id, async () => {
+        try {
+          const api = await import("@/lib/projetos.functions");
+          const { apagou } = await api.apagarProjeto({ data: { id } });
+          if (apagou) return;
+          // Nada apagado: ou outra pessoa já excluiu (tudo certo), ou ele continua lá.
+          const { projetos } = await api.listarProjetos();
+          if (projetos.some((p) => p.id.toLowerCase() === id.toLowerCase())) {
+            throw new Error("o projeto continua no banco");
+          }
+        } catch (e) {
+          console.warn("[fluxo] projeto não apagou:", (e as Error)?.message);
+          if (removido) {
+            setState((s) =>
+              s.projects.some((p) => p.id === id)
+                ? s
+                : {
+                    ...s,
+                    projects: [removido, ...s.projects],
+                    tasks: s.tasks.map((t) => (subtarefas.has(t.id) ? { ...t, projectId: id } : t)),
+                  },
+            );
+          }
+          toast.error(`Não foi possível excluir "${removido?.name ?? "o projeto"}"`, {
+            description: "Ele voltou para a lista. Tente excluir de novo em instantes.",
+          });
+        }
+      });
     },
     visibleProjects: () => {
       if (currentUser.role === "gerente") return state.projects;

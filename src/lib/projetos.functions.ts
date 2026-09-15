@@ -269,16 +269,20 @@ export const apagarProjeto = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, d: { id: string }) => {
+    comSessao(async (_eu, d: { id: string }): Promise<{ apagou: boolean }> => {
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       // Os membros saem por cascata (a chave estrangeira cuida). As tarefas do
       // projeto NÃO são apagadas — elas continuam existindo sem projeto, que é
       // o comportamento de hoje na tela.
-      await pool
+      const r = await pool
         .request()
         .input("id", sql.UniqueIdentifier, d.id)
         .query(`DELETE FROM gestor.projetos WHERE id=@id`);
-      return { ok: true };
+      /* Diz se apagou de fato. Antes voltava `ok` sempre: um DELETE que não
+         achava o id passava por sucesso, o projeto sumia da tela e voltava no
+         carregamento seguinte — foi o que aconteceu com os projetos criados
+         antes da correção do id, em que a tela e o banco tinham ids diferentes. */
+      return { apagou: (r.rowsAffected[0] ?? 0) > 0 };
     }),
   );
