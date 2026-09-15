@@ -13,7 +13,14 @@ import { TaskTimerControls } from "@/components/task-timer-controls";
 import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
-import { DIAS_SEMANA, ULTIMO_DIA_DO_MES, descreverRecorrencia } from "@/lib/recorrencia";
+import {
+  DIAS_SEMANA,
+  MESES,
+  ULTIMO_DIA_DO_MES,
+  ULTIMO_DIA_UTIL,
+  descreverRecorrencia,
+  primeiraDataDaRegra,
+} from "@/lib/recorrencia";
 import { toast } from "sonner";
 import {
   sectors,
@@ -529,7 +536,8 @@ export function TaskDialog() {
       // Guardar só o que vale para a frequência escolhida: trocar de semanal
       // para mensal não pode deixar dias da semana órfãos decidindo a série.
       recurringWeekdays: recurring && frequency === "semanal" ? recurringWeekdays : null,
-      recurringMonthDay: recurring && frequency === "mensal" ? recurringMonthDay : null,
+      recurringMonthDay:
+        recurring && (frequency === "mensal" || frequency === "anual") ? recurringMonthDay : null,
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       requireProof: isCreator ? requireProof : !!editing?.requireProof,
@@ -882,16 +890,52 @@ export function TaskDialog() {
                   </div>
                 )}
 
-                {recurring && frequency === "mensal" && (
+                {recurring && (frequency === "mensal" || frequency === "anual") && (
                   <div className="mt-3 border-t border-border/60 pt-2.5">
-                    <span className="text-[11px] font-medium text-foreground">Repete no dia:</span>
+                    <span className="text-[11px] font-medium text-foreground">
+                      {frequency === "anual" ? "Repete todo ano em:" : "Repete no dia:"}
+                    </span>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      {frequency === "anual" && (
+                        <select
+                          value={(isoParaData(dueDate) ?? new Date()).getMonth()}
+                          onChange={(e) => {
+                            const mes = Number(e.target.value);
+                            const atual = isoParaData(dueDate) ?? new Date();
+                            setDueDate(
+                              dataParaIso(
+                                primeiraDataDaRegra("anual", recurringMonthDay ?? atual.getDate(), mes),
+                              ),
+                            );
+                          }}
+                          className="input max-w-40 py-1 text-xs capitalize"
+                          aria-label="Mês"
+                        >
+                          {MESES.map((nome, i) => (
+                            <option key={nome} value={i}>
+                              {nome}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <select
                         value={recurringMonthDay ?? ""}
-                        onChange={(e) =>
-                          setRecurringMonthDay(e.target.value === "" ? null : Number(e.target.value))
-                        }
+                        onChange={(e) => {
+                          const dia = e.target.value === "" ? null : Number(e.target.value);
+                          setRecurringMonthDay(dia);
+                          // O prazo acompanha a regra: escolher "último dia útil"
+                          // com o prazo em hoje criaria a primeira no dia errado.
+                          if (dia !== null) {
+                            const mes = (isoParaData(dueDate) ?? new Date()).getMonth();
+                            setDueDate(
+                              dataParaIso(
+                                primeiraDataDaRegra(frequency === "anual" ? "anual" : "mensal", dia, mes),
+                              ),
+                            );
+                          }
+                        }}
                         className="input max-w-[13rem] py-1 text-xs"
+                        aria-label="Dia"
                       >
                         <option value="">Mesmo dia do prazo</option>
                         {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
@@ -900,6 +944,7 @@ export function TaskDialog() {
                           </option>
                         ))}
                         <option value={ULTIMO_DIA_DO_MES}>Último dia do mês</option>
+                        <option value={ULTIMO_DIA_UTIL}>Último dia útil do mês</option>
                       </select>
                       {recurringMonthDay !== null && recurringMonthDay > 28 && (
                         <span className="text-[10px] text-warning">
@@ -937,6 +982,7 @@ export function TaskDialog() {
                         frequency,
                         recurringWeekdays,
                         recurringMonthDay,
+                        dueDate,
                       })}
                     </span>
                   </div>

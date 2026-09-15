@@ -22,7 +22,7 @@ export type TarefaDoBanco = {
   sector: string;
   createdBy: string;
   assigneeId: string;
-  frequency: "diaria" | "semanal" | "mensal";
+  frequency: "diaria" | "semanal" | "mensal" | "anual";
   status: "pendente" | "andamento" | "concluida";
   priority: "baixa" | "media" | "alta";
   score: number;
@@ -38,7 +38,7 @@ export type TarefaDoBanco = {
   projectId?: string;
 };
 
-const FREQUENCIAS = ["diaria", "semanal", "mensal"] as const;
+const FREQUENCIAS = ["diaria", "semanal", "mensal", "anual"] as const;
 const SITUACOES = ["pendente", "andamento", "concluida"] as const;
 const PRIORIDADES = ["baixa", "media", "alta"] as const;
 
@@ -230,13 +230,13 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           return Number.isFinite(n) && n > 0 ? Math.min(teto, Math.trunc(n)) : null;
         };
 
-        /* -1 significa "último dia do mês" — é o valor que o CHECK da tabela
-           aceita além de 1..31, e o que `proximaOcorrencia` já entende. */
+        /* -1 é "último dia do mês" e -2 "último dia útil" — os valores que o
+           CHECK da tabela aceita além de 1..31, e os que `proximaOcorrencia` entende. */
         const dia = Number(e?.recurringMonthDay);
         const diaDoMes =
           e?.recurringMonthDay === null || e?.recurringMonthDay === undefined
             ? null
-            : dia === -1 || (Number.isInteger(dia) && dia >= 1 && dia <= 31)
+            : dia === -1 || dia === -2 || (Number.isInteger(dia) && dia >= 1 && dia <= 31)
               ? dia
               : null;
 

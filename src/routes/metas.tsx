@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
-import { sectors, type Task, type User } from "@/lib/fluxo-types";
+import { freqLabels, sectors, type Task, type User } from "@/lib/fluxo-types";
 import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -1149,7 +1149,7 @@ function ExportarPeriodo({
               ? [[{ content: "Nenhuma tarefa atribuída no período.", colSpan: 4, styles: { halign: "center", textColor: muted } }]]
               : row.breakdown.map((x) => [
                   x.task.title,
-                  x.task.frequency === "diaria" ? "Diária" : x.task.frequency === "mensal" ? "Mensal" : "Semanal",
+                  freqLabels[x.task.frequency] ?? "Diária",
                   new Date(x.task.dueDate).toLocaleDateString("pt-BR"),
                   stateLabel[x.state],
                 ]),

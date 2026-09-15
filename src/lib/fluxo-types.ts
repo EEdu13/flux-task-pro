@@ -1,5 +1,5 @@
 export type Role = "gerente" | "supervisor" | "adm";
-export type Frequency = "diaria" | "semanal" | "mensal";
+export type Frequency = "diaria" | "semanal" | "mensal" | "anual";
 export type Status = "pendente" | "andamento" | "concluida";
 export type Priority = "alta" | "media" | "baixa";
 
@@ -81,8 +81,9 @@ export interface Task {
    */
   recurringWeekdays?: number[] | null;
   /**
-   * Dia do mês em que repete, quando `frequency` é "mensal".
-   * 1 a 31, ou -1 para "último dia do mês". Ausente = mantém o dia do prazo.
+   * Dia do mês em que repete, quando `frequency` é "mensal" ou "anual".
+   * 1 a 31, -1 para "último dia do mês" ou -2 para "último dia útil do mês".
+   * Ausente = mantém o dia do prazo. No anual, o mês é o do prazo.
    * Meses curtos são tratados por `proximaOcorrencia`: dia 31 em fevereiro cai
    * no dia 28/29, em vez de escorregar para março.
    */
@@ -258,6 +259,7 @@ export const freqLabels: Record<Frequency, string> = {
   diaria: "Diária",
   semanal: "Semanal",
   mensal: "Mensal",
+  anual: "Anual",
 };
 
 export const statusLabels: Record<Status, string> = {

@@ -41,7 +41,10 @@ import { tituloDoAviso } from "@/lib/aviso";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
 import { QuickTaskModal } from "@/components/quick-task-modal";
-import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { InlineTaskCreator, type ModoDaGrade } from "@/components/inline-task-creator";
+
+/** Chave do modo da grade (cartões ou tabela) no localStorage. */
+const MODO_GRADE_KEY = "fluxo.grade.modo";
 import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
 import { AttentionOverlay } from "@/components/attention-overlay";
 import { TaskContextMenu } from "@/components/task-context-menu";
@@ -52,7 +55,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
 import { UndoProvider } from "@/lib/undo-stack";
-import { X, Lock } from "lucide-react";
+import { X, Lock, LayoutList, Table2 } from "lucide-react";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
@@ -123,6 +126,24 @@ export function FluxoLayout({
   const [sincronizando, setSincronizando] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [gridOpen, setGridOpen] = useState(false);
+  /* Cartões ou tabela. Fica lembrado neste computador: quem prefere planilha
+     não quer trocar toda vez que abre a grade. */
+  const [modoGrade, setModoGrade] = useState<ModoDaGrade>("cartoes");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(MODO_GRADE_KEY) === "tabela") setModoGrade("tabela");
+    } catch {
+      /* sem localStorage, começa em cartões */
+    }
+  }, []);
+  const escolherModoGrade = (modo: ModoDaGrade) => {
+    setModoGrade(modo);
+    try {
+      localStorage.setItem(MODO_GRADE_KEY, modo);
+    } catch {
+      /* idem */
+    }
+  };
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
@@ -1230,7 +1251,10 @@ export function FluxoLayout({
         >
           <TravaScroll />
           <div
-            className="flex w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+            className={`flex w-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl ${
+              // A tabela tem uma coluna por campo: ganha a largura que precisa.
+              modoGrade === "tabela" ? "max-w-360" : "max-w-6xl"
+            }`}
             style={{ maxHeight: "calc(100vh - var(--titlebar-h) - 3.5rem)" }}
           >
             <div className="flex shrink-0 items-center justify-between border-b border-border bg-secondary/60 px-3 py-2 sm:px-4 sm:py-2.5">
@@ -1249,6 +1273,36 @@ export function FluxoLayout({
                     </span>
                   ))}
                 </span>
+                <div
+                  role="radiogroup"
+                  aria-label="Visualização"
+                  className="ml-2 inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5 sm:ml-4"
+                >
+                  {([
+                    { id: "cartoes", rotulo: "Cartões", Icone: LayoutList },
+                    { id: "tabela", rotulo: "Tabela", Icone: Table2 },
+                  ] as const).map(({ id, rotulo, Icone }) => {
+                    const ativo = modoGrade === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={ativo}
+                        onClick={() => escolherModoGrade(id)}
+                        title={id === "cartoes" ? "Uma faixa por tarefa" : "Preencher como planilha"}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                          ativo
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        }`}
+                      >
+                        <Icone className="h-3.5 w-3.5" />
+                        {rotulo}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1261,7 +1315,7 @@ export function FluxoLayout({
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-              <InlineTaskCreator />
+              <InlineTaskCreator modo={modoGrade} />
             </div>
           </div>
         </div>
