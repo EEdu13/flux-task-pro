@@ -17,6 +17,8 @@
     ]
   },
   "permissions": [
+    "allow-open-attachment-file",
+    "allow-tempo-ocioso-segundos",
     "core:default",
     "notification:default",
     "autostart:allow-enable",

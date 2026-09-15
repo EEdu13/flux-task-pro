@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tempo-ocioso-segundos"
+description = "Enables the tempo_ocioso_segundos command without any pre-configured scope."
+commands.allow = ["tempo_ocioso_segundos"]
+
+[[permission]]
+identifier = "deny-tempo-ocioso-segundos"
+description = "Denies the tempo_ocioso_segundos command without any pre-configured scope."
+commands.deny = ["tempo_ocioso_segundos"]

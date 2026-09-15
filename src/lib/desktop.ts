@@ -41,13 +41,21 @@ export async function desktopFlashTaskbar(
  * comando existir: o invoke falha e o Ausente automático simplesmente não liga,
  * em vez de dar erro — quem não reinstalou fica como estava.
  */
+let avisouTempoOcioso = false;
+
 export async function desktopTempoOcioso(): Promise<number | null> {
   if (!isTauri()) return null;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const s = await invoke<number>("tempo_ocioso_segundos");
     return typeof s === "number" && Number.isFinite(s) ? s : null;
-  } catch {
+  } catch (e) {
+    /* Uma vez só, no console: foi a falta deste aviso que deixou a 0.2.0 sair
+       com o comando bloqueado pela permissão sem ninguém perceber. */
+    if (!avisouTempoOcioso) {
+      avisouTempoOcioso = true;
+      console.warn("[fluxo] tempo parado indisponível no app de desktop:", e);
+    }
     return null;
   }
 }
