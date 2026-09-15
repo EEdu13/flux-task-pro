@@ -19,7 +19,14 @@ import {
 } from "@/lib/chat.functions";
 import { paraEstado, type EstadoDoChat, type SituacaoNoChat } from "@/lib/estado-do-chat";
 import { tocarMensagemNova } from "@/lib/sons";
-import { desktopFlashTaskbar } from "@/lib/desktop";
+import { desktopFlashTaskbar, desktopTempoOcioso, isTauri } from "@/lib/desktop";
+
+/** Parado por este tempo, quem está Disponível vira Ausente sozinho. */
+const AUSENTE_APOS_S = 10 * 60;
+/** Mexeu há menos que isto: a pessoa voltou. */
+const VOLTOU_SE_ATIVO_HA_S = 60;
+/** Marca de que o Ausente atual foi o automático — só esse volta sozinho. */
+const CHAVE_AUSENTE_AUTOMATICO = "fluxo.chat.ausente-automatico";
 
 export interface ChatThread {
   peer: string;
@@ -292,7 +299,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [isOnline, estados, meId, meuEstado],
   );
 
-  const mudarMeuEstado = useCallback((estado: EstadoDoChat) => {
+  /* Quem pôs o Ausente: a pessoa ou o relógio. Guardado no localStorage porque
+     o app pode ser fechado e reaberto no meio — o status vem do banco como
+     "ausente", e sem a marca ninguém saberia que ele deve voltar sozinho. */
+  const ausenteAutomaticoRef = useRef(false);
+  useEffect(() => {
+    try {
+      ausenteAutomaticoRef.current = localStorage.getItem(CHAVE_AUSENTE_AUTOMATICO) === "1";
+    } catch {
+      /* sem localStorage, a marca vale só nesta sessão */
+    }
+  }, []);
+  const marcarAutomatico = (v: boolean) => {
+    ausenteAutomaticoRef.current = v;
+    try {
+      if (v) localStorage.setItem(CHAVE_AUSENTE_AUTOMATICO, "1");
+      else localStorage.removeItem(CHAVE_AUSENTE_AUTOMATICO);
+    } catch {
+      /* idem */
+    }
+  };
+
+  const gravarEstado = useCallback((estado: EstadoDoChat) => {
     meuEstadoRef.current = estado;
     setMeuEstado(estado);
     trocaPendenteRef.current = { estado, ate: Date.now() + 15_000 };
@@ -300,6 +328,53 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       trocaPendenteRef.current = null;
     });
   }, []);
+
+  // Escolha da pessoa: vale mais que o automático, então apaga a marca.
+  const mudarMeuEstado = useCallback(
+    (estado: EstadoDoChat) => {
+      marcarAutomatico(false);
+      gravarEstado(estado);
+    },
+    [gravarEstado],
+  );
+
+  /* Ausente automático — só no app de desktop, que mede o computador inteiro.
+     No navegador não liga: lá só daria para ver o mouse dentro da página, e
+     quem trabalha em outro programa seria dado como ausente estando ali.
+
+     Regras: só sai de Disponível (Ocupado e o Ausente escolhido à mão ficam
+     como estão) e só volta sozinho o Ausente que ele mesmo pôs. Consulta a cada
+     30s — a volta leva até isso para aparecer, o que basta para um status. */
+  useEffect(() => {
+    if (!isAuthenticated || !meId || !isTauri()) return;
+    let cancelado = false;
+    const conferir = async () => {
+      const parado = await desktopTempoOcioso();
+      if (cancelado || parado === null) return;
+      const atual = meuEstadoRef.current;
+      if (ausenteAutomaticoRef.current && atual !== "ausente") {
+        // Trocado em outro computador: a marca não vale mais.
+        marcarAutomatico(false);
+      }
+      if (atual === "disponivel" && parado >= AUSENTE_APOS_S) {
+        marcarAutomatico(true);
+        gravarEstado("ausente");
+      } else if (
+        atual === "ausente" &&
+        ausenteAutomaticoRef.current &&
+        parado < VOLTOU_SE_ATIVO_HA_S
+      ) {
+        marcarAutomatico(false);
+        gravarEstado("disponivel");
+      }
+    };
+    void conferir();
+    const id = window.setInterval(conferir, 30_000);
+    return () => {
+      cancelado = true;
+      window.clearInterval(id);
+    };
+  }, [meId, isAuthenticated, gravarEstado]);
 
   const openChat = useCallback((userId: string) => {
     setMinimized((m) => m.filter((u) => u !== userId)); // restaura se estava minimizado

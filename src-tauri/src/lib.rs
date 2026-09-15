@@ -92,6 +92,50 @@ fn open_path_os(path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Segundos desde o último movimento de mouse ou tecla em QUALQUER programa.
+///
+/// É o que decide o "Ausente" automático do chat. O WebView só enxerga o mouse
+/// dentro da própria janela: quem passasse meia hora no Excel com o app aberto
+/// atrás seria dado como ausente estando no computador. O Windows sabe da
+/// última entrada do usuário na sessão inteira (`GetLastInputInfo`), e tela
+/// bloqueada conta como parada, porque ninguém mexe na sessão.
+///
+/// Chamada direta à API, sem crate: são duas funções e uma struct, e uma
+/// dependência nova só para isso pesaria mais que o código.
+#[tauri::command]
+fn tempo_ocioso_segundos() -> u64 {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct LastInputInfo {
+            cb_size: u32,
+            dw_time: u32,
+        }
+        #[link(name = "user32")]
+        extern "system" {
+            fn GetLastInputInfo(plii: *mut LastInputInfo) -> i32;
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetTickCount() -> u32;
+        }
+        let mut info = LastInputInfo {
+            cb_size: std::mem::size_of::<LastInputInfo>() as u32,
+            dw_time: 0,
+        };
+        if unsafe { GetLastInputInfo(&mut info) } == 0 {
+            return 0;
+        }
+        // `wrapping_sub`: o contador de ms dá a volta a cada ~49 dias ligado.
+        let agora = unsafe { GetTickCount() };
+        (agora.wrapping_sub(info.dw_time) / 1000) as u64
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        0
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -108,7 +152,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![open_attachment_file])
+        .invoke_handler(tauri::generate_handler![open_attachment_file, tempo_ocioso_segundos])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

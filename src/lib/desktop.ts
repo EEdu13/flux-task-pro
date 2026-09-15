@@ -34,6 +34,25 @@ export async function desktopFlashTaskbar(
 }
 
 /**
+ * Há quantos segundos ninguém mexe no mouse ou teclado do computador.
+ *
+ * Mede o computador inteiro, não só a janela do app (ver `tempo_ocioso_segundos`
+ * no lib.rs). `null` no navegador e nos apps de desktop instalados antes deste
+ * comando existir: o invoke falha e o Ausente automático simplesmente não liga,
+ * em vez de dar erro — quem não reinstalou fica como estava.
+ */
+export async function desktopTempoOcioso(): Promise<number | null> {
+  if (!isTauri()) return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const s = await invoke<number>("tempo_ocioso_segundos");
+    return typeof s === "number" && Number.isFinite(s) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Traz a janela pra frente de todas as telas, estilo "nudge" do MSN:
  * mostra, restaura, foca e força sempre-no-topo por alguns segundos.
  */
