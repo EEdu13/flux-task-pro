@@ -22,7 +22,7 @@ import { tocarMensagemNova } from "@/lib/sons";
 import { desktopFlashTaskbar, desktopTempoOcioso, isTauri } from "@/lib/desktop";
 
 /** Parado por este tempo, quem está Disponível vira Ausente sozinho. */
-const AUSENTE_APOS_S = 10 * 60;
+const AUSENTE_APOS_S = 5 * 60;
 /** Mexeu há menos que isto: a pessoa voltou. */
 const VOLTOU_SE_ATIVO_HA_S = 60;
 /** Marca de que o Ausente atual foi o automático — só esse volta sozinho. */

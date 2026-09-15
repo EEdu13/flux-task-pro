@@ -6,6 +6,7 @@ import {
   AudioLines,
   CalendarDays,
   Check,
+  ChevronDown,
   Mic,
   MicOff,
   RotateCcw,
@@ -15,7 +16,12 @@ import { toast } from "sonner";
 import { useFluxo } from "@/lib/fluxo-store";
 import type { User } from "@/lib/fluxo-types";
 import { useMicrofone, type EstadoMicrofone } from "@/lib/use-microfone";
-import { useDitado } from "@/lib/use-ditado";
+import { useDitado, type TrechoDeFala } from "@/lib/use-ditado";
+import {
+  gravarMicrofonePreferido,
+  lerMicrofonePreferido,
+  useMicrofonesDisponiveis,
+} from "@/lib/microfone-preferido";
 import {
   interpretarVoz,
   transcreverVoz,
@@ -24,6 +30,7 @@ import {
   type TarefaInterpretada,
 } from "@/lib/voz.functions";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
+import { nomeCurto } from "@/lib/nome-curto";
 import { ALTURA_DA_FAIXA, FaixaDeVoz } from "@/components/faixa-de-voz";
 import { UserAvatar } from "@/components/user-avatar";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -35,7 +42,7 @@ import { confirmar } from "@/components/confirm-dialog";
  * A pessoa dita, e as tarefas vão aparecendo prontas enquanto ela fala:
  *   1. `useDitado` corta a fala nas pausas e entrega cada frase como áudio;
  *   2. a OpenAI transcreve a frase (`transcreverVoz`);
- *   3. o Claude Haiku atualiza a lista de tarefas com o que foi dito
+ *   3. o Claude atualiza a lista de tarefas com o que foi dito
  *      (`interpretarVoz`) — inclusive correções: "não, essa é para a Milena".
  *
  * As transcrições correm em paralelo, mas a interpretação vai uma de cada vez,
@@ -79,15 +86,6 @@ const novaPipeline = (): Pipeline => ({
   refSeq: 0,
 });
 
-const capitalizar = (p: string) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
-
-/** "LUCAS GABRIEL BARRETO" → "Lucas Barreto". O cadastro vem em maiúsculas da IAM. */
-function nomeCurto(nome: string): string {
-  const partes = nome.trim().split(/\s+/);
-  const primeiro = partes[0] ?? "";
-  const ultimo = partes.length > 1 ? partes[partes.length - 1]! : "";
-  return [primeiro, ultimo].filter(Boolean).map(capitalizar).join(" ");
-}
 
 /** "sex, 18/09" */
 const rotuloDia = (d: Date) =>
@@ -138,7 +136,13 @@ export function TarefaPorVoz({ aberto, aoFechar }: { aberto: boolean; aoFechar: 
 function VozAberta({ aoFechar }: { aoFechar: () => void }) {
   const { users, currentUser, createTask } = useFluxo();
   const [pausado, setPausado] = useState(false);
-  const { estado: estadoMic, leituraRef } = useMicrofone(!pausado);
+  const [microfoneId, setMicrofoneId] = useState(lerMicrofonePreferido);
+  const { estado: estadoMic, leituraRef, nomeDoAparelho } = useMicrofone(!pausado, microfoneId);
+  const microfones = useMicrofonesDisponiveis(estadoMic);
+  const escolherMicrofone = (id: string | undefined) => {
+    setMicrofoneId(id);
+    gravarMicrofonePreferido(id);
+  };
 
   const [rodada, setRodada] = useState(0);
   const [trechos, setTrechos] = useState<string[]>([]);
@@ -307,7 +311,7 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
 
   /* ---------------- Ouvir ---------------- */
 
-  const aoTrecho = async (audio: Blob) => {
+  const aoTrecho = async ({ audio, falaMs }: TrechoDeFala) => {
     if (!montadoRef.current) return;
     const p = pipelineRef.current;
     const seq = p.seq++;
@@ -322,6 +326,8 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
           audio: await paraBase64(audio),
           mime: audio.type,
           nomes: usersRef.current.slice(0, 80).map((u) => nomeCurto(u.name)),
+          contexto: "ditado",
+          falaMs,
         },
       });
       texto = r.texto;
@@ -347,7 +353,7 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
   const { falandoAgora, semSuporte } = useDitado({
     ativo: escutando,
     leituraRef,
-    aoTrecho: (audio) => void aoTrecho(audio),
+    aoTrecho: (trecho) => void aoTrecho(trecho),
   });
 
   /* Dois minutos sem fala soltam o microfone. Esquecer o painel aberto não
@@ -746,6 +752,12 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
             >
               {pausado ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </button>
+            <EscolhaDoMicrofone
+              microfones={microfones}
+              escolhido={microfoneId}
+              emUso={estadoMic === "ativo" ? nomeDoAparelho : ""}
+              aoEscolher={escolherMicrofone}
+            />
             <p className="min-w-0 flex-1 text-[11px] leading-snug text-sidebar-foreground/55">
               {legendaDoMicrofone(estadoMic, pausado, semSuporte)}
             </p>
@@ -839,7 +851,7 @@ function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean, semSuport
     case "pedindo":
       return "Pedindo acesso ao microfone…";
     case "ativo":
-      return "Cada frase é enviada para transcrição (OpenAI). O app não guarda o áudio.";
+      return "Cada frase é transcrita pela OpenAI e organizada pelo Claude. O app não guarda o áudio.";
     case "negado":
       return "Sem permissão para o microfone. Libere nas configurações do navegador ou do app.";
     case "indisponivel":
@@ -847,6 +859,63 @@ function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean, semSuport
     default:
       return "";
   }
+}
+
+/** "Headset (Jabra Evolve2)" → "Headset" quando não cabe; o nome inteiro fica no title. */
+const nomeDoMicrofone = (rotulo: string) =>
+  rotulo.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, "").trim() || "Microfone";
+
+/**
+ * Qual microfone está ouvindo, e a troca dele.
+ *
+ * O padrão do Windows costuma ser o microfone do notebook, mesmo com o headset
+ * no ouvido — e a voz chegando de longe, com o teclado e a sala junto, é o que
+ * faz a transcrição inventar trechos. O nome em uso fica sempre à vista.
+ *
+ * `<select>` nativo por cima da pílula: teclado, leitor de tela e a lista do
+ * sistema de graça. As `<option>` levam cor própria porque herdariam o texto
+ * claro sobre a lista branca do Windows.
+ */
+function EscolhaDoMicrofone({
+  microfones,
+  escolhido,
+  emUso,
+  aoEscolher,
+}: {
+  microfones: MediaDeviceInfo[];
+  escolhido: string | undefined;
+  emUso: string;
+  aoEscolher: (id: string | undefined) => void;
+}) {
+  if (microfones.length === 0) return null;
+  const valor = microfones.some((m) => m.deviceId === escolhido) ? escolhido! : "";
+  const daLista = microfones.find((m) => m.deviceId === valor)?.label;
+  const rotulo = emUso || daLista ? nomeDoMicrofone(emUso || daLista!) : "Padrão do sistema";
+  return (
+    <label
+      className="relative inline-flex h-9 max-w-64 min-w-0 shrink items-center gap-2 rounded-full border border-white/10 bg-white/5 pl-3 pr-2.5 text-[12px] text-sidebar-foreground/85 transition focus-within:outline-2 focus-within:outline-sidebar-primary hover:bg-white/10"
+      title={emUso ? `Ouvindo por: ${emUso}` : "Escolher o microfone"}
+    >
+      <Mic className="h-3.5 w-3.5 shrink-0 text-sidebar-primary" aria-hidden="true" />
+      <span className="truncate">{rotulo}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground/50" aria-hidden="true" />
+      <select
+        aria-label="Microfone"
+        value={valor}
+        onChange={(e) => aoEscolher(e.target.value || undefined)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        <option value="" className="bg-popover text-popover-foreground">
+          Padrão do sistema
+        </option>
+        {microfones.map((m, i) => (
+          <option key={m.deviceId} value={m.deviceId} className="bg-popover text-popover-foreground">
+            {m.label ? nomeDoMicrofone(m.label) : `Microfone ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 /** "● Ouvindo 00:14" — o estado e há quanto tempo a escuta está aberta. */

@@ -2,25 +2,36 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
 
+import {
+  ataDaEntrada,
+  type AtaAoVivo,
+  type FalaDaReuniao,
+} from "./ata-ao-vivo";
+
 /**
- * Tarefa por voz, lado do servidor: ouvir e entender.
+ * Voz, lado do servidor: ouvir e entender. Serve à Tarefa por voz e à Ata da
+ * reunião.
  *
- * Duas IAs, uma para cada coisa que faz bem e barato:
- *   - OpenAI `gpt-4o-mini-transcribe` transforma o áudio de UMA frase em texto
- *     (~US$ 0,003 por minuto de fala). O Claude não recebe áudio.
- *   - Claude Haiku 4.5 transforma o texto em tarefas estruturadas, validadas
- *     contra um esquema (~US$ 0,004 por ditado de 2 minutos).
+ * Duas IAs, uma para cada coisa:
+ *   - OpenAI `gpt-4o-transcribe` transforma o áudio de UMA frase em texto. O
+ *     Claude não recebe áudio.
+ *   - Claude Sonnet 5 transforma o texto em tarefas, ou na ata, validadas contra
+ *     um esquema.
+ *
+ * Os dois eram os modelos menores (mini-transcribe e Haiku). Subiram depois de
+ * um teste com microfone de notebook em que a transcrição inventou trechos e a
+ * interpretação os aceitou como pedido. Custam mais por minuto; a troca de
+ * volta é só nestas duas constantes.
  *
  * O áudio vai por frase, não em fluxo contínuo: a tela corta nas pausas e só
- * manda trecho que teve fala. Silêncio não custa nada — na transcrição ao vivo
- * (US$ 0,017/min) a conexão cobraria cada segundo aberto.
+ * manda trecho que teve fala. Silêncio não custa nada.
  *
  * Sem `@/` nos imports de propósito: assim um script de teste consegue carregar
  * este arquivo direto no Node, com as chaves reais, sem subir o app inteiro.
  */
 
-export const MODELO_TRANSCRICAO = "gpt-4o-mini-transcribe";
-export const MODELO_INTERPRETACAO = "claude-haiku-4-5";
+export const MODELO_TRANSCRICAO = "gpt-4o-transcribe";
+export const MODELO_INTERPRETACAO = "claude-sonnet-5";
 
 export type Prioridade = "alta" | "media" | "baixa";
 
@@ -72,16 +83,66 @@ const EXTENSAO: Record<string, string> = {
 /**
  * Frases que os modelos de transcrição "ouvem" em trecho quase mudo. São
  * alucinações conhecidas — vêm das legendas com que eles foram treinados — e
- * virariam tarefa se passassem.
+ * virariam tarefa ou linha de ata se passassem. As de `SOZINHAS` só contam
+ * quando são o texto inteiro: "obrigado" no meio de uma frase é fala de verdade.
  */
-const ALUCINACOES = [/amara\.org/i, /^obrigad[oa] por assistir/i, /^legendas? (pela|por)/i];
+const ALUCINACOES = [/amara\.org/i, /legendas? (pela|por|da) comunidade/i, /inscreva-se no canal/i];
+const SOZINHAS = [
+  /^obrigad[oa]( por assistir(em)?)?[.!]?$/i,
+  /^legendad[oa] por/i,
+  /^tchau[,.!]?( tchau)?[.!]?$/i,
+  /^até a próxima[.!]?$/i,
+  /^(e )?é isso[.!]?$/i,
+];
+
+export type ContextoDeFala = "ditado" | "reuniao";
+
+const semAcento = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase();
+
+/**
+ * Tira do texto o eco da dica de vocabulário.
+ *
+ * O modelo recebe os nomes da equipe como dica, e em trecho com pouca voz ele
+ * às vezes devolve a própria dica como se tivesse sido dita — foi o que
+ * apareceu na tela: "ditados em português do Brasil. Pessoas da equipe:
+ * Eduardo Silva, Elaine Klug, …". Cai fora a frase que é uma lista de nomes da
+ * dica (3 ou mais, quase sem outras palavras) ou que repete as palavras dela.
+ */
+function semEcoDaDica(texto: string, nomes: string[]): string {
+  const frases = texto.split(/(?<=[.!?:])\s+/);
+  const nomesNorm = nomes.map(semAcento).filter((n) => n.length > 2);
+  const ficam = frases.filter((frase) => {
+    const f = semAcento(frase);
+    // O rótulo da própria dica ("Equipe:", "Participantes:") solto depois do corte.
+    if (/^(equipe|participantes)\s*:?$/.test(f.trim())) return false;
+    if (/(pessoas|nomes) da equipe|participantes da reuniao|ditados em portugues|portugues do brasil|pedidos de tarefas/.test(f))
+      return false;
+    const citados = nomesNorm.filter((n) => f.includes(n)).length;
+    if (citados < 3) return true;
+    let resto = f;
+    for (const n of nomesNorm) resto = resto.split(n).join(" ");
+    const outrasPalavras = (resto.match(/[a-z0-9]+/g) ?? []).filter(
+      (p) => !["e", "a", "o", "da", "de", "do", "equipe", "participantes"].includes(p),
+    );
+    // "Lucas, Milena e Eduardo vão revisar o contrato" tem nomes E assunto: fica.
+    return outrasPalavras.length >= 2;
+  });
+  return ficam.join(" ").trim();
+}
 
 export async function transcreverTrecho(opcoes: {
   apiKey: string | undefined;
   audio: Uint8Array<ArrayBuffer>;
   mime: string;
-  /** Nomes da equipe: é o que faz "Milena" sair Milena e não "Me lena". */
+  /** Nomes da equipe ou dos participantes: é o que faz "Milena" sair Milena e não "Me lena". */
   nomes: string[];
+  contexto?: ContextoDeFala;
+  /** Quanto do trecho foi voz, medido na tela. */
+  falaMs?: number;
 }): Promise<string> {
   if (!opcoes.apiKey) throw new ErroDeVoz("A transcrição não está configurada no servidor.");
 
@@ -93,9 +154,15 @@ export async function transcreverTrecho(opcoes: {
   form.append("model", MODELO_TRANSCRICAO);
   form.append("language", "pt");
   form.append("response_format", "json");
-  // A dica é curta de propósito: é contexto de vocabulário, não instrução.
-  const dica = `Pedidos de tarefas ditados em português do Brasil. Pessoas da equipe: ${opcoes.nomes.join(", ")}.`;
-  form.append("prompt", dica.slice(0, 900));
+  // A confiança de cada pedaço do texto: é o que denuncia texto inventado.
+  form.append("include[]", "logprobs");
+  /* A dica é só vocabulário, sem nenhuma frase de instrução: o que o modelo
+     ecoa dela em trecho mudo é removido abaixo, e uma lista de nomes é mais
+     fácil de reconhecer como eco do que uma frase. */
+  if (opcoes.nomes.length) {
+    const rotulo = opcoes.contexto === "reuniao" ? "Participantes" : "Equipe";
+    form.append("prompt", `${rotulo}: ${opcoes.nomes.join(", ")}.`.slice(0, 900));
+  }
 
   const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -112,17 +179,57 @@ export async function transcreverTrecho(opcoes: {
       throw new ErroDeVoz("A chave da transcrição foi recusada.", `openai 401 ${codigo}`);
     if (r.status === 429)
       throw new ErroDeVoz(
-        codigo === "insufficient_quota"
-          ? "A conta da transcrição está sem crédito."
+        // A OpenAI usa os dois códigos para conta sem saldo.
+        codigo === "insufficient_quota" || codigo === "credit_balance_exhausted"
+          ? "A conta da OpenAI (transcrição) está sem crédito."
           : "Muitas transcrições de uma vez. Tente de novo em instantes.",
         `openai 429 ${codigo}`,
       );
     throw new ErroDeVoz("Não consegui transcrever esse trecho.", `openai ${r.status} ${codigo}`);
   }
 
-  const { text } = (await r.json()) as { text?: string };
-  const texto = (text ?? "").trim();
-  if (texto.length < 2 || ALUCINACOES.some((re) => re.test(texto))) return "";
+  const resposta = (await r.json()) as {
+    text?: string;
+    logprobs?: { logprob?: number }[];
+  };
+  let texto = (resposta.text ?? "").trim();
+  if (texto.length < 2) return "";
+  if (ALUCINACOES.some((re) => re.test(texto)) || SOZINHAS.some((re) => re.test(texto))) {
+    console.info("[voz] trecho descartado: frase de legenda");
+    return "";
+  }
+
+  /* Confiança média baixa: o modelo estava adivinhando. Fala clara fica bem
+     acima de 0,8; o corte é baixo de propósito para não perder fala real com
+     sotaque ou palavra técnica. */
+  const probs = (resposta.logprobs ?? [])
+    .map((l) => l.logprob)
+    .filter((l): l is number => typeof l === "number");
+  if (probs.length >= 3) {
+    const confianca = Math.exp(probs.reduce((s, l) => s + l, 0) / probs.length);
+    if (confianca < 0.4) {
+      console.info(`[voz] trecho descartado: confiança ${confianca.toFixed(2)}`);
+      return "";
+    }
+  }
+
+  texto = semEcoDaDica(texto, opcoes.nomes);
+  if (texto.length < 2) {
+    console.info("[voz] trecho descartado: eco da dica");
+    return "";
+  }
+
+  /* Texto demais para a voz que houve. Ninguém fala 20 palavras em meio segundo;
+     quando isso aparece, o modelo completou o trecho por conta própria. A folga
+     é grande: a medida de voz da tela conta só as partes mais altas da fala. */
+  if (typeof opcoes.falaMs === "number" && opcoes.falaMs > 0) {
+    const palavras = texto.split(/\s+/).filter(Boolean).length;
+    if (palavras >= 8 && palavras > (opcoes.falaMs / 1000) * 8 + 4) {
+      console.info(`[voz] trecho descartado: ${palavras} palavras em ${opcoes.falaMs} ms de voz`);
+      return "";
+    }
+  }
+
   return texto;
 }
 
@@ -172,7 +279,26 @@ Campos:
 - hora: HH:MM só se um horário foi dito ("até as 15h" = "15:00"); senão null.
 - prioridade: "alta" para urgente/prioridade alta/"pra ontem"; "baixa" quando disserem que não tem pressa; senão "media".
 
-Ignore o que não for pedido de tarefa (cumprimentos, hesitações, comentários soltos).`;
+Ignore o que não for pedido de tarefa (cumprimentos, hesitações, comentários soltos).
+
+Sobre a transcrição:
+- O texto vem de transcrição automática do microfone e pode ter erros: palavras trocadas por outras de som parecido, nomes escritos de outro jeito, pontuação fora do lugar. Entenda pelo sentido e pelos nomes da equipe, e escreva título e descrição corrigidos.
+- Microfone distante, ruído do ambiente ou outra pessoa falando perto geram trechos soltos, sem sentido, fora do assunto ou que são só uma lista de nomes. Não crie nem altere tarefa por causa deles.
+- Na dúvida se algo é mesmo um pedido, não crie a tarefa: é melhor a pessoa repetir do que revisar uma tarefa inventada.`;
+
+/** Erro da API do Claude trocado pela frase da tela. */
+function erroDoClaude(e: unknown, fazendo: string): ErroDeVoz {
+  if (e instanceof Anthropic.AuthenticationError)
+    return new ErroDeVoz("A chave do Claude foi recusada.", "anthropic 401");
+  if (e instanceof Anthropic.RateLimitError)
+    return new ErroDeVoz("Muitos pedidos de uma vez. Tente de novo em instantes.", "anthropic 429");
+  // Saldo zerado chega como 400 com a explicação na mensagem.
+  if (e instanceof Anthropic.BadRequestError && /credit balance/i.test(e.message))
+    return new ErroDeVoz("A conta do Claude está sem crédito.", "anthropic 400 credit");
+  if (e instanceof Anthropic.APIError)
+    return new ErroDeVoz(`Não consegui ${fazendo}.`, `anthropic ${e.status}`);
+  return new ErroDeVoz(`Não consegui ${fazendo}.`, (e as Error)?.name);
+}
 
 const RespostaSchema = z.object({
   tarefas: z.array(
@@ -249,16 +375,7 @@ ${opcoes.trechoNovo}
       output_config: { format: zodOutputFormat(RespostaSchema) },
     });
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError)
-      throw new ErroDeVoz("A chave da interpretação foi recusada.", "anthropic 401");
-    if (e instanceof Anthropic.RateLimitError)
-      throw new ErroDeVoz(
-        "Muitos pedidos de uma vez. Tente de novo em instantes.",
-        "anthropic 429",
-      );
-    if (e instanceof Anthropic.APIError)
-      throw new ErroDeVoz("Não consegui organizar esse trecho.", `anthropic ${e.status}`);
-    throw new ErroDeVoz("Não consegui organizar esse trecho.", (e as Error)?.name);
+    throw erroDoClaude(e, "organizar esse trecho");
   }
 
   const bruto = resposta.parsed_output;
@@ -294,6 +411,119 @@ ${opcoes.trechoNovo}
 
   return {
     tarefas,
+    tokens: { entrada: resposta.usage.input_tokens, saida: resposta.usage.output_tokens },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Ata da reunião                                                       */
+/* ------------------------------------------------------------------ */
+
+const INSTRUCOES_DA_ATA = `Você é o redator da ata de uma reunião de trabalho de uma empresa brasileira, em português do Brasil. A reunião está acontecendo agora: as falas chegam transcritas aos poucos, com a hora e o nome de quem falou, e você mantém a ata atualizada enquanto as pessoas conversam.
+
+Você recebe a ata como está e as falas novas. Devolva a ata completa, atualizada:
+- Incorpore o que as falas novas trazem e mantenha o que já estava. Reescreva um item só quando uma fala nova corrigir, completar ou mudar o que foi dito ("na verdade o prazo é dia 20").
+- As falas anteriores servem só de contexto para entender as novas; elas já estão na ata.
+
+Campos:
+- resumo: de 2 a 4 frases sobre o que a reunião tratou até agora. Objetivo, sem floreio.
+- assuntos: os temas discutidos, na ordem em que surgiram. Cada um com título curto e pontos curtos com o que importa: fatos, números, argumentos, quem trouxe o quê. Junte no mesmo assunto o que for do mesmo tema.
+- decisoes: só o que foi decidido de fato ("vamos fazer assim", "ficou definido", concordância clara). Proposta ou ideia sem acordo não é decisão.
+- proximos_passos: ações combinadas, começando por verbo no infinitivo. responsavel é o nome de quem ficou com a ação, escrito como na lista de participantes; null se ninguém foi citado. prazo como foi dito ("sexta-feira", "até dia 20"); null se não foi dito.
+- pontos_de_atencao: riscos, bloqueios, dependências e preocupações levantadas.
+Lista vazia quando não houver nada para o campo.
+
+Sobre as falas:
+- Vêm de transcrição automática, cada pessoa pelo seu microfone. Podem ter palavras trocadas por outras de som parecido e nomes escritos errado: entenda pelo sentido, pelo assunto da reunião e pelos nomes dos participantes, e escreva certo na ata.
+- Trechos sem sentido, soltos ou fora do assunto (ruído, eco, conversa paralela) devem ser ignorados.
+- Nunca registre o que não foi dito com clareza. Não invente responsável, prazo, número nem decisão.
+- Conversa social e de conexão ("bom dia", "tá me ouvindo?", "deixa eu compartilhar a tela") não entra.
+- Escreva em terceira pessoa, citando as pessoas pelo nome ("Lucas explicou que…").`;
+
+const AtaSchema = z.object({
+  resumo: z.string(),
+  assuntos: z.array(z.object({ titulo: z.string(), pontos: z.array(z.string()) })),
+  decisoes: z.array(z.string()),
+  proximos_passos: z.array(
+    z.object({ acao: z.string(), responsavel: z.string().nullable(), prazo: z.string().nullable() }),
+  ),
+  pontos_de_atencao: z.array(z.string()),
+});
+
+const linhasDeFala = (falas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[]) =>
+  falas.map((f) => `[${f.hora}] ${f.quem}: ${f.texto}`).join("\n");
+
+export async function atualizarAta(opcoes: {
+  apiKey: string | undefined;
+  titulo: string;
+  data: string;
+  participantes: string[];
+  ata: AtaAoVivo;
+  anteriores: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+  novas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+  chat: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+}): Promise<{ ata: AtaAoVivo; tokens: { entrada: number; saida: number } }> {
+  if (!opcoes.apiKey) throw new ErroDeVoz("A redação da ata não está configurada no servidor.");
+
+  const client = new Anthropic({ apiKey: opcoes.apiKey, timeout: 90_000, maxRetries: 1 });
+
+  const atual = {
+    resumo: opcoes.ata.resumo,
+    assuntos: opcoes.ata.assuntos,
+    decisoes: opcoes.ata.decisoes,
+    proximos_passos: opcoes.ata.proximosPassos,
+    pontos_de_atencao: opcoes.ata.pontosDeAtencao,
+  };
+
+  const pedido = `<reuniao titulo=${JSON.stringify(opcoes.titulo)} data="${opcoes.data}">
+<participantes>
+${opcoes.participantes.join(", ") || "(não identificados)"}
+</participantes>
+
+<ata_atual>
+${JSON.stringify(atual)}
+</ata_atual>
+
+<falas_anteriores>
+${linhasDeFala(opcoes.anteriores) || "(nenhuma)"}
+</falas_anteriores>
+
+<falas_novas>
+${linhasDeFala(opcoes.novas) || "(nenhuma)"}
+</falas_novas>
+
+<chat_novo>
+${linhasDeFala(opcoes.chat) || "(nenhuma mensagem)"}
+</chat_novo>
+</reuniao>`;
+
+  let resposta;
+  try {
+    resposta = await client.messages.parse({
+      model: MODELO_INTERPRETACAO,
+      max_tokens: 8000,
+      system: INSTRUCOES_DA_ATA,
+      messages: [{ role: "user", content: pedido }],
+      output_config: { format: zodOutputFormat(AtaSchema) },
+    });
+  } catch (e) {
+    throw erroDoClaude(e, "escrever a ata");
+  }
+
+  const bruto = resposta.parsed_output;
+  if (!bruto) {
+    throw new ErroDeVoz("Não consegui escrever a ata.", `anthropic stop=${resposta.stop_reason}`);
+  }
+
+  return {
+    // Passa pelo mesmo conferidor de quem recebe a ata pela sala: tetos e itens vazios.
+    ata: ataDaEntrada({
+      resumo: bruto.resumo,
+      assuntos: bruto.assuntos,
+      decisoes: bruto.decisoes,
+      proximosPassos: bruto.proximos_passos,
+      pontosDeAtencao: bruto.pontos_de_atencao,
+    }),
     tokens: { entrada: resposta.usage.input_tokens, saida: resposta.usage.output_tokens },
   };
 }

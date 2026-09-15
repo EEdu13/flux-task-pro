@@ -30,7 +30,7 @@ export const INFO_DO_ESTADO: Record<
   ausente: {
     rotulo: "Ausente",
     descricao:
-      "Longe do computador por um tempo. Mensagens continuam com som. No app de desktop, entra sozinho após 10 minutos sem mexer no computador.",
+      "Longe do computador por um tempo. Mensagens continuam com som. No app de desktop, entra sozinho após 5 minutos sem mexer no computador.",
     ponto: "bg-warning",
     texto: "text-warning",
   },

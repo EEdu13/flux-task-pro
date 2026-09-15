@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { comSessao, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
 import type { PessoaDoTime, Prioridade, TarefaDitada, TarefaInterpretada } from "@/lib/voz.server";
+import { ataDaEntrada, type AtaAoVivo } from "@/lib/ata-ao-vivo";
 
 export type { PessoaDoTime, Prioridade, TarefaDitada, TarefaInterpretada };
 
@@ -16,18 +17,25 @@ const MAX_BASE64 = 2_500_000;
  * Limite por pessoa, por hora, na memória do processo.
  *
  * Um ditado normal usa uma chamada de cada por frase — umas 20 num ditado
- * longo. O teto só existe para um laço com defeito (ou alguém insistindo) não
- * virar conta: some a cada reinício do servidor, e tudo bem, porque não é
- * cota de uso, é freio de emergência.
+ * longo. Na reunião, quem abre a ata transcreve TODOS os participantes, então
+ * a transcrição de reunião tem teto próprio e bem maior. O teto só existe para
+ * um laço com defeito (ou alguém insistindo) não virar conta: some a cada
+ * reinício do servidor, e tudo bem, porque não é cota de uso, é freio de
+ * emergência.
  */
-const LIMITE_POR_HORA = 300;
+const LIMITE_POR_HORA = {
+  transcricao: 300,
+  interpretacao: 300,
+  "transcricao-reuniao": 2000,
+  ata: 240,
+} as const;
 const usos = new Map<string, number[]>();
 
-function conferirLimite(tipo: "transcricao" | "interpretacao", eu: number) {
+function conferirLimite(tipo: keyof typeof LIMITE_POR_HORA, eu: number) {
   const chave = `${tipo}:${eu}`;
   const agora = Date.now();
   const recentes = (usos.get(chave) ?? []).filter((t) => agora - t < 3_600_000);
-  if (recentes.length >= LIMITE_POR_HORA) {
+  if (recentes.length >= LIMITE_POR_HORA[tipo]) {
     throw new Error("Limite de uso da voz atingido nesta hora. Tente mais tarde.");
   }
   recentes.push(agora);
@@ -62,27 +70,47 @@ function pessoasDaEntrada(v: unknown): PessoaDoTime[] {
 
 /* -------------------- Ouvir -------------------- */
 
+type EntradaTranscricao = {
+  audio: string;
+  mime: string;
+  nomes: string[];
+  contexto: "ditado" | "reuniao";
+  falaMs: number | undefined;
+};
+
 export const transcreverVoz = createServerFn({ method: "POST" })
   .inputValidator(
-    semIdentidade((e: { audio: string; mime: string; nomes?: string[] }) => {
-      const audio = typeof e?.audio === "string" ? e.audio.replace(/^data:[^,]*,/, "") : "";
-      if (!audio) throw new Error("Trecho de áudio vazio");
-      if (audio.length > MAX_BASE64) throw new Error("Trecho de áudio longo demais");
-      if (!/^[A-Za-z0-9+/=]+$/.test(audio)) throw new Error("Áudio em formato inválido");
-      const mime = texto(e?.mime, 60) || "audio/webm";
-      if (!mime.startsWith("audio/")) throw new Error("Áudio em formato inválido");
-      const nomes = Array.isArray(e?.nomes)
-        ? e.nomes
-            .slice(0, 80)
-            .map((n) => texto(n, 60))
-            .filter(Boolean)
-        : [];
-      return { audio, mime, nomes };
-    }),
+    semIdentidade(
+      (e: {
+        audio: string;
+        mime: string;
+        nomes?: string[];
+        contexto?: "ditado" | "reuniao";
+        falaMs?: number;
+      }): EntradaTranscricao => {
+        const audio = typeof e?.audio === "string" ? e.audio.replace(/^data:[^,]*,/, "") : "";
+        if (!audio) throw new Error("Trecho de áudio vazio");
+        if (audio.length > MAX_BASE64) throw new Error("Trecho de áudio longo demais");
+        if (!/^[A-Za-z0-9+/=]+$/.test(audio)) throw new Error("Áudio em formato inválido");
+        const mime = texto(e?.mime, 60) || "audio/webm";
+        if (!mime.startsWith("audio/")) throw new Error("Áudio em formato inválido");
+        const nomes = Array.isArray(e?.nomes)
+          ? e.nomes
+              .slice(0, 80)
+              .map((n) => texto(n, 60))
+              .filter(Boolean)
+          : [];
+        const falaMs =
+          typeof e?.falaMs === "number" && Number.isFinite(e.falaMs) && e.falaMs >= 0
+            ? Math.min(e.falaMs, 600_000)
+            : undefined;
+        return { audio, mime, nomes, contexto: e?.contexto === "reuniao" ? "reuniao" : "ditado", falaMs };
+      },
+    ),
   )
   .handler(
-    comSessao(async (eu, d: { audio: string; mime: string; nomes: string[] }) => {
-      conferirLimite("transcricao", eu);
+    comSessao(async (eu, d: EntradaTranscricao) => {
+      conferirLimite(d.contexto === "reuniao" ? "transcricao-reuniao" : "transcricao", eu);
       return comFrase("transcrição", eu, async () => {
         const { transcreverTrecho } = await import("@/lib/voz.server");
         const textoOuvido = await transcreverTrecho({
@@ -90,6 +118,8 @@ export const transcreverVoz = createServerFn({ method: "POST" })
           audio: Buffer.from(d.audio, "base64"),
           mime: d.mime,
           nomes: d.nomes,
+          contexto: d.contexto,
+          falaMs: d.falaMs,
         });
         return { texto: textoOuvido };
       });
@@ -168,6 +198,75 @@ export const interpretarVoz = createServerFn({ method: "POST" })
           `[voz] interpretação de ${eu}: ${r.tokens.entrada} in / ${r.tokens.saida} out, ${r.tarefas.length} tarefa(s)`,
         );
         return { tarefas: r.tarefas };
+      });
+    }),
+  );
+
+/* -------------------- Escrever a ata -------------------- */
+
+type LinhaDeFala = { hora: string; quem: string; texto: string };
+
+type EntradaAta = {
+  titulo: string;
+  data: string;
+  participantes: string[];
+  ata: AtaAoVivo;
+  anteriores: LinhaDeFala[];
+  novas: LinhaDeFala[];
+  chat: LinhaDeFala[];
+};
+
+function linhasDaEntrada(v: unknown, maximo: number): LinhaDeFala[] {
+  if (!Array.isArray(v)) return [];
+  return v.slice(-maximo).flatMap((l) => {
+    const t = texto(l?.texto, 1500);
+    if (!t) return [];
+    return [{ hora: texto(l?.hora, 5), quem: texto(l?.quem, 120) || "Alguém", texto: t }];
+  });
+}
+
+export const atualizarAtaDaReuniao = createServerFn({ method: "POST" })
+  .inputValidator(
+    semIdentidade(
+      (e: {
+        titulo: string;
+        data: string;
+        participantes?: string[];
+        ata?: AtaAoVivo;
+        anteriores?: LinhaDeFala[];
+        novas?: LinhaDeFala[];
+        chat?: LinhaDeFala[];
+      }): EntradaAta => {
+        const novas = linhasDaEntrada(e?.novas, 200);
+        const chat = linhasDaEntrada(e?.chat, 100);
+        if (!novas.length && !chat.length) throw new Error("Nada novo para a ata");
+        return {
+          titulo: texto(e?.titulo, 120) || "Reunião",
+          data: texto(e?.data, 10),
+          participantes: Array.isArray(e?.participantes)
+            ? e.participantes
+                .slice(0, 60)
+                .map((p) => texto(p, 120))
+                .filter(Boolean)
+            : [],
+          ata: ataDaEntrada(e?.ata),
+          anteriores: linhasDaEntrada(e?.anteriores, 30),
+          novas,
+          chat,
+        };
+      },
+    ),
+  )
+  .handler(
+    comSessao(async (eu, d: EntradaAta): Promise<{ ata: AtaAoVivo }> => {
+      conferirLimite("ata", eu);
+      return comFrase("ata", eu, async () => {
+        const { atualizarAta } = await import("@/lib/voz.server");
+        const r = await atualizarAta({ apiKey: process.env.CLAUDE_API_KEY, ...d });
+        console.info(
+          `[voz] ata de ${eu}: ${r.tokens.entrada} in / ${r.tokens.saida} out, ${d.novas.length} fala(s)`,
+        );
+        return { ata: r.ata };
       });
     }),
   );

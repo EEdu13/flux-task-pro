@@ -344,6 +344,7 @@ function CallContents({
     if (!titleEditing) setTitleDraft(meetingTitle);
   }, [meetingTitle, titleEditing]);
   const meetingRef = useRef<MeetingExtrasHandle | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [endConfirm, setEndConfirm] = useState<null | "prompt" | "saving">(null);
   const [endError, setEndError] = useState<string | null>(null);
 
@@ -625,6 +626,7 @@ function CallContents({
 
   return (
     <div
+      ref={rootRef}
       className={`fluxo-meet ${mini ? "fluxo-meet-mini" : ""} flex h-full w-full flex-col text-white`}
       data-lk-theme="default"
     >
@@ -970,23 +972,29 @@ function CallContents({
                 )}
               </div>
 
-              {/* Meeting minute (ata) — component brings its own button styling */}
-              <MeetingExtras
-                ref={meetingRef}
-                roomName={roomName}
-                roomLabel={roomLabel}
-                meetingTitle={meetingTitle}
-                autoStartTranscription={autoMinute}
-                chatLines={chatLines}
-              />
-              <ToolBtn
-                icon={PhoneOff}
-                label="Encerrar chamada"
-                onClick={requestEnd}
-                danger
-                wide
-              />
             </>
+          )}
+          {/* Gravar e Ata. Fora do `!mini` de propósito: no modo mini os botões
+              somem, mas a gravação e a ata continuam — desmontar aqui perdia as
+              duas no meio da reunião. */}
+          <MeetingExtras
+            ref={meetingRef}
+            roomName={roomName}
+            roomLabel={roomLabel}
+            meetingTitle={meetingTitle}
+            autoStartTranscription={autoMinute}
+            chatLines={chatLines}
+            mini={mini}
+            containerRef={rootRef}
+          />
+          {!mini && (
+            <ToolBtn
+              icon={PhoneOff}
+              label="Encerrar chamada"
+              onClick={requestEnd}
+              danger
+              wide
+            />
           )}
           {mini && (
             <ToolBtn

@@ -311,10 +311,11 @@ export function PreCall({
                 <span className="flex-1 text-xs">
                   <span className="flex items-center gap-1.5 font-semibold">
                     <FileText className="h-3.5 w-3.5 text-primary" />
-                    Ata automática (transcrição ao vivo)
+                    Ata automática
                   </span>
                   <span className="mt-0.5 block leading-relaxed text-muted-foreground">
-                    A IA grava as falas em texto para gerar a ata ao final da reunião.
+                    Ao entrar, a IA começa a ouvir a reunião e escreve a ata enquanto vocês
+                    conversam. Se alguém já estiver escrevendo a ata da sala, você só acompanha.
                   </span>
                 </span>
               </label>

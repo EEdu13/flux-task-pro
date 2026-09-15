@@ -38,8 +38,10 @@ const VAZIA = (): LeituraDoMicrofone => ({
  * A leitura vive num ref, e não em estado, porque quem a consome é um laço de
  * desenho a 60 quadros por segundo — em estado seriam 60 renders por segundo.
  */
-export function useMicrofone(ligado: boolean) {
+export function useMicrofone(ligado: boolean, aparelhoId?: string) {
   const [estado, setEstado] = useState<EstadoMicrofone>("desligado");
+  /** Nome do microfone em uso ("Headset (Jabra…)"), para a pessoa ver qual está ouvindo. */
+  const [nomeDoAparelho, setNomeDoAparelho] = useState("");
   const leituraRef = useRef<LeituraDoMicrofone>(VAZIA());
 
   useEffect(() => {
@@ -57,9 +59,20 @@ export function useMicrofone(ligado: boolean) {
     let contexto: AudioContext | null = null;
     setEstado("pedindo");
 
-    navigator.mediaDevices
-      .getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    const tratamento = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+    const pedir = (id?: string) =>
+      navigator.mediaDevices.getUserMedia({
+        audio: id ? { ...tratamento, deviceId: { exact: id } } : tratamento,
+      });
+
+    pedir(aparelhoId)
+      /* O microfone escolhido pode ter sido desconectado (headset guardado na
+         gaveta). Aí vale o padrão do sistema, em vez de deixar a pessoa sem voz. */
+      .catch((e: unknown) => {
+        const nome = e instanceof DOMException ? e.name : "";
+        if (aparelhoId && (nome === "OverconstrainedError" || nome === "NotFoundError"))
+          return pedir();
+        throw e;
       })
       .then((s) => {
         // Fechou o modal enquanto o navegador ainda perguntava.
@@ -68,6 +81,7 @@ export function useMicrofone(ligado: boolean) {
           return;
         }
         fluxo = s;
+        setNomeDoAparelho(s.getAudioTracks()[0]?.label ?? "");
         contexto = new AudioContext();
         const analisador = contexto.createAnalyser();
         analisador.fftSize = 512;
@@ -97,7 +111,7 @@ export function useMicrofone(ligado: boolean) {
       void contexto?.close().catch(() => {});
       leituraRef.current = VAZIA();
     };
-  }, [ligado]);
+  }, [ligado, aparelhoId]);
 
-  return { estado, leituraRef };
+  return { estado, leituraRef, nomeDoAparelho };
 }
