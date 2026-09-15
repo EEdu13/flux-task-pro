@@ -1430,8 +1430,17 @@ export function InlineTaskCreator({
                                 PRIORIDADES.find((p) => p.id === row.priority)?.texto ?? ""
                               }`}
                             >
+                              {/* Fundo e cor explícitos na opção: a célula é
+                                  transparente para a grade aparecer, e a lista
+                                  nativa herdava esse fundo como branco — com o
+                                  texto claro do tema escuro por cima, as opções
+                                  sumiam. */}
                               {PRIORIDADES.map((p) => (
-                                <option key={p.id} value={p.id} className="text-foreground">
+                                <option
+                                  key={p.id}
+                                  value={p.id}
+                                  className="bg-popover font-medium text-popover-foreground"
+                                >
                                   {p.label}
                                 </option>
                               ))}
