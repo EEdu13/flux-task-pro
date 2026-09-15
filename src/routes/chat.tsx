@@ -4,7 +4,14 @@ import { MessageSquare, Search } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
-import { ChatAvatar, Composer, MessageList, OnlineDot } from "@/components/chat-ui";
+import {
+  ChatAvatar,
+  Composer,
+  MessageList,
+  OnlineDot,
+  RotuloDeSituacao,
+  SeletorDeStatus,
+} from "@/components/chat-ui";
 
 export const Route = createFileRoute("/chat")({
   head: () => ({ meta: [{ title: "Chat · Fluxo" }] }),
@@ -22,7 +29,7 @@ function fmtWhen(iso: string) {
 
 function ChatPage() {
   const { users, currentUser } = useFluxo();
-  const { threads, isOnline, markRead } = useChat();
+  const { threads, isOnline, situacaoDe, markRead } = useChat();
   const [selected, setSelected] = useState<string | null>(null);
   const [q, setQ] = useState("");
 
@@ -69,6 +76,10 @@ function ChatPage() {
         {/* Lista de conversas */}
         <aside className="flex w-full max-w-[360px] flex-col border-r border-border">
           <div className="border-b border-border p-3">
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-muted-foreground">Conversas</span>
+              <SeletorDeStatus />
+            </div>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -93,7 +104,7 @@ function ChatPage() {
                   <div className="relative">
                     <ChatAvatar user={r.user} size={46} />
                     <span className="absolute -bottom-0.5 -right-0.5">
-                      <OnlineDot online={isOnline(r.user.id)} />
+                      <OnlineDot situacao={situacaoDe(r.user.id)} />
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -105,7 +116,12 @@ function ChatPage() {
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-xs text-muted-foreground">
-                        {r.last || (isOnline(r.user.id) ? "online" : r.user.jobTitle)}
+                        {r.last ||
+                          (isOnline(r.user.id) ? (
+                            <RotuloDeSituacao situacao={situacaoDe(r.user.id)} />
+                          ) : (
+                            r.user.jobTitle
+                          ))}
                       </span>
                       {r.unread > 0 && (
                         <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
@@ -130,7 +146,7 @@ function ChatPage() {
                 </span>
                 <h3 className="text-sm font-semibold">Suas conversas</h3>
                 <p className="text-xs text-muted-foreground">
-                  Escolha alguém à esquerda para conversar. Quem está online aparece com o ponto verde.
+                  Escolha alguém à esquerda para conversar. A bolinha mostra o status de cada pessoa: verde disponível, vermelho ocupado, amarelo ausente e cinza offline.
                 </p>
               </div>
             </div>
@@ -141,11 +157,7 @@ function ChatPage() {
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{peer.name}</div>
                   <div className="text-[11px] text-muted-foreground">
-                    {isOnline(peer.id) ? (
-                      <span className="text-success">online</span>
-                    ) : (
-                      "offline"
-                    )}
+                    <RotuloDeSituacao situacao={situacaoDe(peer.id)} />
                   </div>
                 </div>
               </header>

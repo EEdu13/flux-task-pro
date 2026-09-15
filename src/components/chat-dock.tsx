@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { MessageCircle, Minus, Search, X } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
-import { ChatAvatar, Composer, MessageList, OnlineDot } from "@/components/chat-ui";
+import {
+  ChatAvatar,
+  Composer,
+  MessageList,
+  OnlineDot,
+  RotuloDeSituacao,
+  SeletorDeStatus,
+} from "@/components/chat-ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLancadoresRecolhidos } from "@/lib/lancadores";
 
@@ -21,6 +28,7 @@ export function ChatDock() {
     closeChat,
     minimizeChat,
     isOnline,
+    situacaoDe,
     threads,
     markRead,
     naoLidasFora,
@@ -115,12 +123,14 @@ export function ChatDock() {
                 <div className="relative">
                   <ChatAvatar user={u} size={30} />
                   <span className="absolute -bottom-0.5 -right-0.5">
-                    <OnlineDot online={isOnline(u.id)} />
+                    <OnlineDot situacao={situacaoDe(u.id)} />
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-semibold">{u.name}</div>
-                  <div className="text-[10px] opacity-70">{isOnline(u.id) ? "online" : "offline"}</div>
+                  <div className="text-[10px] opacity-90">
+                    <RotuloDeSituacao situacao={situacaoDe(u.id)} />
+                  </div>
                 </div>
                 <button
                   onClick={() => minimizeChat(id)}
@@ -182,7 +192,7 @@ export function ChatDock() {
                   <div className="relative shrink-0">
                     <ChatAvatar user={u} size={28} />
                     <span className="absolute -bottom-0.5 -right-0.5">
-                      <OnlineDot online={isOnline(u.id)} />
+                      <OnlineDot situacao={situacaoDe(u.id)} />
                     </span>
                   </div>
                   <span className="truncate text-xs font-semibold">{u.name}</span>
@@ -225,6 +235,9 @@ export function ChatDock() {
                 <div className="text-sm font-semibold">Conversas</div>
                 <div className="text-[11px] opacity-70">{onlineCount} online agora</div>
               </div>
+              {/* O meu status mora no topo da lista de quem eu vejo: é onde a
+                  pessoa está pensando em conversa, e onde repara na própria bolinha. */}
+              <SeletorDeStatus className="ml-auto mr-2" />
               <button
                 onClick={() => setPanelOpen(false)}
                 className="rounded-md p-1 opacity-80 hover:bg-white/10"
@@ -257,13 +270,13 @@ export function ChatDock() {
                         <ChatAvatar user={u} size={38} />
                       </span>
                       <span className="absolute -bottom-0.5 -right-0.5">
-                        <OnlineDot online={isOnline(u.id)} />
+                        <OnlineDot situacao={situacaoDe(u.id)} />
                       </span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{u.name}</div>
                       <div className="truncate text-[11px] text-muted-foreground">
-                        {isOnline(u.id) ? <span className="text-success">online</span> : u.jobTitle}
+                        {isOnline(u.id) ? <RotuloDeSituacao situacao={situacaoDe(u.id)} /> : u.jobTitle}
                       </div>
                     </div>
                     {unread > 0 && (

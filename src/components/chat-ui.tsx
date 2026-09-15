@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, Paperclip, Send, Smile, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Check, CheckCheck, ChevronDown, Paperclip, Send, Smile, X } from "lucide-react";
+import { ESTADOS, INFO_DO_ESTADO, type SituacaoNoChat } from "@/lib/estado-do-chat";
 import { toast } from "sonner";
 import type { User } from "@/lib/fluxo-types";
 import { filesToAttachments, isImage, openAttachment } from "@/lib/attachments";
@@ -35,13 +37,129 @@ export function ChatAvatar({ user, size = 40 }: { user?: User; size?: number }) 
   );
 }
 
-export function OnlineDot({ online }: { online: boolean }) {
+/** A bolinha de status: offline, ou o que a pessoa escolheu (disponível, ocupado, ausente). */
+export function OnlineDot({ situacao }: { situacao: SituacaoNoChat }) {
+  const info = INFO_DO_ESTADO[situacao];
   return (
     <span
-      className={`inline-block h-2.5 w-2.5 rounded-full ring-2 ring-card ${
-        online ? "bg-success" : "bg-muted-foreground/40"
-      }`}
+      title={info.rotulo}
+      className={`inline-block h-2.5 w-2.5 rounded-full ring-2 ring-card ${info.ponto}`}
     />
+  );
+}
+
+/** O status por extenso, na cor dele. */
+export function RotuloDeSituacao({ situacao }: { situacao: SituacaoNoChat }) {
+  const info = INFO_DO_ESTADO[situacao];
+  return <span className={info.texto}>{info.rotulo}</span>;
+}
+
+/**
+ * Onde a pessoa escolhe o próprio status.
+ *
+ * A lista abre num portal, e não dentro do painel: o painel de conversas tem
+ * `overflow-hidden` (é o que arredonda os cantos da animação), e uma lista
+ * absoluta lá dentro seria cortada na borda.
+ */
+export function SeletorDeStatus({ className = "" }: { className?: string }) {
+  const { meuEstado, mudarMeuEstado } = useChat();
+  const [aberto, setAberto] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const painelRef = useRef<HTMLDivElement>(null);
+  const info = INFO_DO_ESTADO[meuEstado];
+
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (painelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setAberto(false);
+    };
+    const fechar = () => setAberto(false);
+    const tecla = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
+    document.addEventListener("mousedown", fora);
+    document.addEventListener("keydown", tecla);
+    window.addEventListener("resize", fechar);
+    return () => {
+      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("keydown", tecla);
+      window.removeEventListener("resize", fechar);
+    };
+  }, [aberto]);
+
+  const abrir = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const largura = 288;
+    const altura = 250;
+    setPos({
+      // Vira para cima quando não cabe embaixo — o painel do chat mora no rodapé.
+      top: r.bottom + 6 + altura > window.innerHeight ? Math.max(8, r.top - altura - 6) : r.bottom + 6,
+      left: Math.max(8, Math.min(r.left, window.innerWidth - largura - 8)),
+    });
+    setAberto(true);
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrir())}
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        title="Mudar meu status"
+        className={`inline-flex items-center gap-1.5 rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold transition hover:bg-white/10 ${className}`}
+      >
+        <span className={`h-2 w-2 rounded-full ${info.ponto}`} />
+        {info.rotulo}
+        <ChevronDown className={`h-3 w-3 opacity-70 transition-transform ${aberto ? "rotate-180" : ""}`} />
+      </button>
+      {aberto && pos && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={painelRef}
+            role="listbox"
+            aria-label="Meu status"
+            className="fixed z-200 w-72 overflow-hidden rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              Meu status no chat
+            </div>
+            {ESTADOS.map((estado) => {
+              const i = INFO_DO_ESTADO[estado];
+              const sel = estado === meuEstado;
+              return (
+                <button
+                  key={estado}
+                  type="button"
+                  role="option"
+                  aria-selected={sel}
+                  onClick={() => {
+                    mudarMeuEstado(estado);
+                    setAberto(false);
+                  }}
+                  className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                    sel ? "bg-secondary" : "hover:bg-secondary/60"
+                  }`}
+                >
+                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${i.ponto}`} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold">{i.rotulo}</span>
+                    <span className="block text-[11px] leading-snug text-muted-foreground">
+                      {i.descricao}
+                    </span>
+                  </span>
+                  {sel && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

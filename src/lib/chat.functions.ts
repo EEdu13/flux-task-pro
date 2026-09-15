@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { ESTADOS, paraEstado, type EstadoDoChat } from "@/lib/estado-do-chat";
 
 /* Conversa privada, agora em `gestor.mensagens`.
 
@@ -310,11 +311,48 @@ export const presenceList = createServerFn({ method: "POST" }).handler(async () 
   const pool = await getPool();
   const res = await pool
     .request()
-    .query(`SELECT pessoa_id AS user_id, visto_em AS last_seen FROM gestor.presenca`);
+    .query(`SELECT pessoa_id AS user_id, visto_em AS last_seen, estado FROM gestor.presenca`);
   return {
-    presence: (res.recordset as { user_id: number; last_seen: Date }[]).map((p) => ({
-      user_id: String(p.user_id),
-      last_seen: iso(p.last_seen) as string,
-    })),
+    presence: (res.recordset as { user_id: number; last_seen: Date; estado: string | null }[]).map(
+      (p) => ({
+        user_id: String(p.user_id),
+        last_seen: iso(p.last_seen) as string,
+        estado: paraEstado(p.estado),
+      }),
+    ),
   };
 });
+
+/* -------------------- Status escolhido (disponível/ocupado/ausente) -------------------- */
+
+/**
+ * Troca o status de quem está logado.
+ *
+ * Mora na mesma linha da presença, e não numa tabela à parte, porque só faz
+ * sentido junto dela: status de quem está offline não aparece para ninguém. O
+ * `IF EXISTS ... ELSE INSERT` é o mesmo do heartbeat — trocar o status antes do
+ * primeiro heartbeat não pode se perder.
+ */
+export const definirEstado = createServerFn({ method: "POST" })
+  .inputValidator((input: { estado: string }) => {
+    if (!(ESTADOS as readonly string[]).includes(input?.estado)) throw new Error("Status inválido");
+    return { estado: input.estado as EstadoDoChat };
+  })
+  .handler(async ({ data }) => {
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    const eu = await pessoaDaSessao();
+
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("pessoa", sql.Int, eu)
+      .input("estado", sql.NVarChar(12), data.estado)
+      .query(
+        `IF EXISTS (SELECT 1 FROM gestor.presenca WHERE pessoa_id=@pessoa)
+           UPDATE gestor.presenca SET estado=@estado WHERE pessoa_id=@pessoa;
+         ELSE
+           INSERT INTO gestor.presenca (pessoa_id, estado) VALUES (@pessoa, @estado);`,
+      );
+    return { estado: data.estado };
+  });

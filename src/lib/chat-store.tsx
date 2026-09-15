@@ -13,9 +13,11 @@ import {
   chatMarkRead,
   chatSend,
   chatThreads,
+  definirEstado,
   presenceHeartbeat,
   presenceList,
 } from "@/lib/chat.functions";
+import { paraEstado, type EstadoDoChat, type SituacaoNoChat } from "@/lib/estado-do-chat";
 import { tocarMensagemNova } from "@/lib/sons";
 import { desktopFlashTaskbar } from "@/lib/desktop";
 
@@ -55,6 +57,11 @@ export function pessoaOlhando(): boolean {
 interface ChatCtx {
   presence: Record<string, number>; // userId -> last_seen ms
   isOnline: (userId: string) => boolean;
+  /** Offline, ou o status que a pessoa escolheu — é o que a bolinha mostra. */
+  situacaoDe: (userId: string) => SituacaoNoChat;
+  /** O meu status escolhido. */
+  meuEstado: EstadoDoChat;
+  mudarMeuEstado: (estado: EstadoDoChat) => void;
   threads: ChatThread[];
   /**
    * Não lidas fora das conversas que estão desenhadas na tela agora — o
@@ -88,6 +95,16 @@ const ONLINE_WINDOW_MS = 45_000;
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { currentUser, isAuthenticated } = useFluxo();
   const [presence, setPresence] = useState<Record<string, number>>({});
+  const [estados, setEstados] = useState<Record<string, EstadoDoChat>>({});
+  const [meuEstado, setMeuEstado] = useState<EstadoDoChat>("disponivel");
+  /* O laço das mensagens lê o status por aqui para decidir o som, pelo mesmo
+     motivo de `contagemNaTelaRef`: nas dependências, trocar de status
+     reiniciaria o intervalo calibrado. */
+  const meuEstadoRef = useRef<EstadoDoChat>("disponivel");
+  /* Troca feita agora e ainda não confirmada pela lista de presença. Sem isto,
+     uma sondagem que saiu antes da troca voltaria com o status antigo e o
+     seletor pularia de volta por um instante. */
+  const trocaPendenteRef = useRef<{ estado: EstadoDoChat; ate: number } | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [openWindows, setOpenWindows] = useState<string[]>([]);
   const [minimized, setMinimized] = useState<string[]>([]);
@@ -152,10 +169,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const res = await presenceList();
         if (cancelled) return;
         const map: Record<string, number> = {};
+        const est: Record<string, EstadoDoChat> = {};
         for (const p of res.presence ?? []) {
           map[p.user_id] = new Date(p.last_seen).getTime();
+          est[p.user_id] = paraEstado(p.estado);
         }
         setPresence(map);
+        // O meu vem do banco também: quem deixou "ocupado" ontem continua
+        // ocupado ao abrir o app hoje, em qualquer computador.
+        const pendente = trocaPendenteRef.current;
+        if (pendente && Date.now() < pendente.ate) {
+          est[meId] = pendente.estado;
+        } else {
+          trocaPendenteRef.current = null;
+          if (est[meId]) {
+            meuEstadoRef.current = est[meId];
+            setMeuEstado(est[meId]);
+          }
+        }
+        setEstados(est);
       } catch {
         /* ignore */
       }
@@ -206,7 +238,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const anterior = totalNaoLidasRef.current;
         totalNaoLidasRef.current = total;
         if (anterior !== null && total > anterior) {
-          tocarMensagemNova();
+          // Ocupado cala só o som. O número e a barra piscando continuam: a
+          // pessoa escolheu não ser interrompida, não deixar de saber.
+          if (meuEstadoRef.current !== "ocupado") tocarMensagemNova();
           // Só o botão da barra, não a janela: ver a nota em `desktopFlashTaskbar`.
           void desktopFlashTaskbar("informativo");
         }
@@ -226,6 +260,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (userId: string) => Date.now() - (presence[userId] ?? 0) < ONLINE_WINDOW_MS,
     [presence],
   );
+
+  const situacaoDe = useCallback(
+    (userId: string): SituacaoNoChat => {
+      // O meu é o escolhido agora, sem esperar a próxima sondagem.
+      if (userId === meId) return meuEstado;
+      return isOnline(userId) ? (estados[userId] ?? "disponivel") : "offline";
+    },
+    [isOnline, estados, meId, meuEstado],
+  );
+
+  const mudarMeuEstado = useCallback((estado: EstadoDoChat) => {
+    meuEstadoRef.current = estado;
+    setMeuEstado(estado);
+    trocaPendenteRef.current = { estado, ate: Date.now() + 15_000 };
+    void definirEstado({ data: { estado } }).catch(() => {
+      trocaPendenteRef.current = null;
+    });
+  }, []);
 
   const openChat = useCallback((userId: string) => {
     setMinimized((m) => m.filter((u) => u !== userId)); // restaura se estava minimizado
@@ -295,6 +347,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const value: ChatCtx = {
     presence,
     isOnline,
+    situacaoDe,
+    meuEstado,
+    mudarMeuEstado,
     threads,
     naoLidasFora,
     registrarNaTela,
