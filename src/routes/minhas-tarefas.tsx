@@ -299,7 +299,13 @@ function MinhasTarefas() {
 
   return (
     <FluxoLayout title="Minhas tarefas">
-      <div className="mx-auto max-w-7xl">
+      {/* Sem teto de 1280px: numa tela de 1920 sobravam ~300px vazios de cada
+          lado, justamente na página em que o título da tarefa e as colunas do
+          quadro mais precisam de largura. A área já é o que sobra ao lado da
+          barra lateral, então abrir ou recolher a barra redistribui sozinho. O
+          teto alto só segura monitor ultrawide, onde uma linha de tabela de
+          ponta a ponta fica difícil de seguir com o olho. */}
+      <div className="mx-auto w-full max-w-[2200px]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
           <div className="flex flex-wrap">
             {(Object.keys(scopeLabels) as Scope[]).map((s) => (
@@ -944,7 +950,7 @@ function KanbanBoard({
                     /* A marca de "cai aqui" só com ordem manual: ordenado por
                        prazo, ela prometeria uma posição que a lista desfaz no
                        quadro seguinte. */
-                    className={`cursor-grab rounded-md border bg-card p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
+                    className={`@container cursor-grab rounded-md border bg-card p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
                       ordem === "manual" && dragOver?.col === col.id && dragOver.index === index
                         ? "border-primary"
                         : "border-border"
@@ -1015,12 +1021,40 @@ function KanbanBoard({
                         )}
                       </div>
                     )}
-                    <div className="mt-3 flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3" />
-                        {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                    {/* Rodapé numa linha só: o que se lê à esquerda (prazo, e
+                        o atalho de concluir), o que se opera à direita
+                        (temporizador e responsável). Eram três linhas, cada uma
+                        com um item e o resto vazio — o cartão ficava alto sem
+                        mostrar mais nada. `flex-wrap` só entra em coluna
+                        estreita, quando a linha não cabe. */}
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5 whitespace-nowrap">
+                          <Clock className="h-3 w-3" />
+                          {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                        </span>
+                        {col.id !== "concluida" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onQuickComplete(t.id);
+                            }}
+                            title="Marcar concluída"
+                            aria-label="Marcar concluída"
+                            className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                          >
+                            {/* O rótulo acompanha a largura do CARTÃO, não da
+                                janela: num notebook de 1366 com a barra aberta,
+                                "Marcar concluída" passava do espaço por ~7px e
+                                empurrava temporizador e foto para outra linha. */}
+                            <CheckCircle2 className="h-3 w-3" />
+                            <span className="@sm:hidden">Concluir</span>
+                            <span className="hidden @sm:inline">Marcar concluída</span>
+                          </button>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="ml-auto flex items-center gap-2">
+                        <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
                         {/* Foto, com as iniciais por trás como reserva. O
                             cartão desenhava só as iniciais, então o quadro era
                             uma parede de siglas — e reconhecer alguém por "LP"
@@ -1033,20 +1067,6 @@ function KanbanBoard({
                         />
                       </div>
                     </div>
-                    <div className="mt-2 flex items-center justify-end">
-                      <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
-                    </div>
-                    {col.id !== "concluida" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onQuickComplete(t.id);
-                        }}
-                        className="mt-2 inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                      >
-                        <CheckCircle2 className="h-3 w-3" /> Marcar concluída
-                      </button>
-                    )}
                   </div>
                 );
               })}
