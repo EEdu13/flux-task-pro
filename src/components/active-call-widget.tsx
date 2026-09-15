@@ -83,17 +83,19 @@ type ChatMessage = {
   at: number;
 };
 
-type RaiseToast = { id: string; name: string };
+type RaiseToast = { id: string; quem: string; name: string };
 
 /**
- * Quantas vezes cada pessoa pode levantar a mão numa reunião.
+ * Quantas faixas de "levantou a mão" cada pessoa pode ter na tela AO MESMO TEMPO.
  *
  * Sem teto, apertar H seguido enchia a tela de faixas amarelas por cima do
- * vídeo de todo mundo. O teto vale nos dois lados: quem levanta vê o botão
- * travar, e quem recebe ignora a sexta em diante — assim uma versão antiga do
- * app, ou alguém que saia e volte, também não passa do limite na tela dos outros.
+ * vídeo de todo mundo. Não é uma cota da reunião: a pessoa aperta quando quiser,
+ * só que a sexta seguida não aparece enquanto as cinco ainda estão na tela.
+ * Vale nos dois lados — quem recebe também conta pela identidade de quem mandou,
+ * então uma versão antiga do app não passa do limite na tela dos outros.
  */
 const LIMITE_DE_MAOS = 5;
+const DURACAO_DA_MAO_MS = 4500;
 
 type VideoEffect = "none" | "blur" | "office";
 const EFFECT_STORAGE_KEY = "fluxo:video-effect";
@@ -514,31 +516,26 @@ function CallContents({
     if (chatOpen) setUnread(0);
   }, [chatOpen]);
 
-  /** Mãos levantadas por participante nesta reunião — as minhas e as recebidas. */
-  const maosRef = useRef<Map<string, number>>(new Map());
-  const [minhasMaos, setMinhasMaos] = useState(0);
-  const timersDeMaoRef = useRef<Map<string, number>>(new Map());
+  /* Faixas na tela agora, por participante. Fica num ref e não no estado porque
+     apertar H cinco vezes seguidas acontece antes de o React redesenhar — contar
+     pelo estado deixaria passar a sexta. */
+  const maosNaTelaRef = useRef<Map<string, number>>(new Map());
+  const timersDeMaoRef = useRef<Set<number>>(new Set());
 
-  /* Uma faixa por pessoa. Levantar de novo com a faixa ainda na tela renova o
-     tempo dela em vez de empilhar outra — quem insiste não ocupa mais espaço. */
   const pushRaise = (quem: string, name: string) => {
-    const antigo = timersDeMaoRef.current.get(quem);
-    if (antigo) window.clearTimeout(antigo);
-    setRaises((r) => [...r.filter((x) => x.id !== quem), { id: quem, name }]);
-    timersDeMaoRef.current.set(
-      quem,
-      window.setTimeout(() => {
-        timersDeMaoRef.current.delete(quem);
-        setRaises((r) => r.filter((x) => x.id !== quem));
-      }, 4500),
-    );
-  };
-
-  /** Conta a mão e diz se ela ainda está dentro do limite. */
-  const contarMao = (quem: string): boolean => {
-    const n = (maosRef.current.get(quem) ?? 0) + 1;
-    maosRef.current.set(quem, n);
-    return n <= LIMITE_DE_MAOS;
+    const naTela = maosNaTelaRef.current.get(quem) ?? 0;
+    if (naTela >= LIMITE_DE_MAOS) return;
+    maosNaTelaRef.current.set(quem, naTela + 1);
+    const id = `${quem}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    setRaises((r) => [...r, { id, quem, name }]);
+    const timer = window.setTimeout(() => {
+      timersDeMaoRef.current.delete(timer);
+      const resto = (maosNaTelaRef.current.get(quem) ?? 1) - 1;
+      if (resto > 0) maosNaTelaRef.current.set(quem, resto);
+      else maosNaTelaRef.current.delete(quem);
+      setRaises((r) => r.filter((x) => x.id !== id));
+    }, DURACAO_DA_MAO_MS);
+    timersDeMaoRef.current.add(timer);
   };
 
   useEffect(() => {
@@ -556,8 +553,7 @@ function CallContents({
         if (!chatOpenRef.current) setUnread((n) => n + 1);
       } else if (data.kind === "raise") {
         // Conta pela identidade de quem mandou, não pelo nome que veio junto.
-        const quem = msg.from?.identity ?? data.name;
-        if (contarMao(quem)) pushRaise(quem, data.name);
+        pushRaise(msg.from?.identity ?? data.name, data.name);
       }
     } catch {
       /* ignore */
@@ -588,14 +584,11 @@ function CallContents({
     broadcast({ kind: "chat", msg });
   };
 
-  const maosRestantes = Math.max(0, LIMITE_DE_MAOS - minhasMaos);
   const raiseHand = () => {
     // O atalho H passa por aqui também, então o limite não depende do botão.
-    if (maosRestantes === 0) return;
     const name = localParticipant.name || localParticipant.identity || "Alguém";
     const quem = localParticipant.identity || name;
-    contarMao(quem);
-    setMinhasMaos((n) => n + 1);
+    if ((maosNaTelaRef.current.get(quem) ?? 0) >= LIMITE_DE_MAOS) return;
     pushRaise(quem, name);
     broadcast({ kind: "raise", name });
   };
@@ -806,15 +799,8 @@ function CallContents({
             <>
               <ToolBtn
                 icon={Hand}
-                label={
-                  maosRestantes === 0
-                    ? `Limite atingido: ${LIMITE_DE_MAOS} mãos levantadas nesta reunião`
-                    : maosRestantes === LIMITE_DE_MAOS
-                      ? "Levantar a mão"
-                      : `Levantar a mão (${maosRestantes} de ${LIMITE_DE_MAOS} restantes)`
-                }
+                label="Levantar a mão"
                 onClick={raiseHand}
-                disabled={maosRestantes === 0}
               />
               <div className="relative">
                 <ToolBtn

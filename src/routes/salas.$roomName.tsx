@@ -70,12 +70,19 @@ function RoomPage() {
      aprovação que ninguém via. Só aparecia saindo e voltando da sala. */
   useEffect(() => {
     setAccess({ kind: "checking" });
+    startedRef.current = false;
+    setPendingPreCall(null);
   }, [roomName]);
 
-  // If we already have an active call for this room (e.g. returning from
-  // minimized mode), skip the pre-call screen.
+  /* Com a ligação desta sala ativa (voltando do modo minimizado), pula a prévia.
+
+     Isto NÃO libera uma nova entrada. Liberava: ao clicar em sair, a ligação
+     acabava com a página da sala ainda montada, este efeito zerava o
+     `startedRef` e o efeito de entrar — que roda no mesmo ciclo, ainda vendo a
+     prévia como concluída — conectava de novo. A pessoa ia para a lista de salas
+     e a ligação reaparecia minimizada. Quem libera uma nova entrada agora é só
+     trocar de sala ou concluir a prévia outra vez. */
   useEffect(() => {
-    startedRef.current = false;
     setShowPreCall(!(active && active.roomName === roomName));
   }, [roomName, active]);
 
@@ -322,6 +329,8 @@ function RoomPage() {
             alreadyPrivate={isPrivate}
             forcePrivate={isDiretoria}
             onEnter={(r) => {
+              // Entrar de novo pela prévia (depois de cair a conexão, por exemplo).
+              startedRef.current = false;
               setPendingPreCall(r);
               setShowPreCall(false);
               if ((isDiretoria || r.makePrivate) && !isPrivate) {
