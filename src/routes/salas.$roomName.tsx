@@ -7,7 +7,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
-import { PreCall } from "@/components/pre-call";
+import { PreCall, type PreCallResult } from "@/components/pre-call";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import {
   getKnockStatus,
@@ -43,11 +43,7 @@ function RoomPage() {
   const [access, setAccess] = useState<AccessState>({ kind: "checking" });
   const [isPrivate, setIsPrivate] = useState(false);
   const [showPreCall, setShowPreCall] = useState(true);
-  const [pendingPreCall, setPendingPreCall] = useState<{
-    title: string;
-    autoMinute: boolean;
-    makePrivate: boolean;
-  } | null>(null);
+  const [pendingPreCall, setPendingPreCall] = useState<PreCallResult | null>(null);
   const [knocks, setKnocks] = useState<
     { id: string; requester_user_id: string; requester_name: string }[]
   >([]);
@@ -66,12 +62,20 @@ function RoomPage() {
   }, [roomName]);
   const isDiretoria = useMemo(() => roomName.split("-")[0] === "diretoria", [roomName]);
 
-  // Reset when navigating between rooms
+  /* Trocar de sala recomeça a checagem de acesso — e SÓ trocar de sala.
+     Isto morava junto do efeito de baixo, que roda toda vez que a ligação
+     muda. Ao conectar, o acesso voltava para "verificando" e a checagem não
+     rodava de novo: quem estava DENTRO da reunião ficava sem acesso aos
+     pedidos para entrar, e a sala privada deixava a outra pessoa esperando uma
+     aprovação que ninguém via. Só aparecia saindo e voltando da sala. */
+  useEffect(() => {
+    setAccess({ kind: "checking" });
+  }, [roomName]);
+
+  // If we already have an active call for this room (e.g. returning from
+  // minimized mode), skip the pre-call screen.
   useEffect(() => {
     startedRef.current = false;
-    setAccess({ kind: "checking" });
-    // If we already have an active call for this room (e.g. returning from
-    // minimized mode), skip the pre-call screen.
     setShowPreCall(!(active && active.roomName === roomName));
   }, [roomName, active]);
 
@@ -157,6 +161,13 @@ function RoomPage() {
       name: currentUser.name,
       meetingTitle: pendingPreCall?.title,
       autoMinute: pendingPreCall?.autoMinute ?? true,
+      /* O que foi escolhido na prévia. Era ignorado: a sala conectava sempre
+         com microfone e câmera ligados, e quem desligou os dois para entrar
+         caía na reunião aberto. */
+      micOn: pendingPreCall?.micOn,
+      camOn: pendingPreCall?.camOn,
+      micDeviceId: pendingPreCall?.micDeviceId,
+      camDeviceId: pendingPreCall?.camDeviceId,
     });
   }, [access, showPreCall, active, roomName, roomLabel, identity, currentUser.id, currentUser.name, startCall, pendingPreCall]);
 
@@ -311,7 +322,7 @@ function RoomPage() {
             alreadyPrivate={isPrivate}
             forcePrivate={isDiretoria}
             onEnter={(r) => {
-              setPendingPreCall({ title: r.title, autoMinute: r.autoMinute, makePrivate: r.makePrivate });
+              setPendingPreCall(r);
               setShowPreCall(false);
               if ((isDiretoria || r.makePrivate) && !isPrivate) {
                 setRoomPrivacy({

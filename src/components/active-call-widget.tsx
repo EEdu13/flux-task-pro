@@ -85,6 +85,16 @@ type ChatMessage = {
 
 type RaiseToast = { id: string; name: string };
 
+/**
+ * Quantas vezes cada pessoa pode levantar a mão numa reunião.
+ *
+ * Sem teto, apertar H seguido enchia a tela de faixas amarelas por cima do
+ * vídeo de todo mundo. O teto vale nos dois lados: quem levanta vê o botão
+ * travar, e quem recebe ignora a sexta em diante — assim uma versão antiga do
+ * app, ou alguém que saia e volte, também não passa do limite na tela dos outros.
+ */
+const LIMITE_DE_MAOS = 5;
+
 type VideoEffect = "none" | "blur" | "office";
 const EFFECT_STORAGE_KEY = "fluxo:video-effect";
 
@@ -504,11 +514,37 @@ function CallContents({
     if (chatOpen) setUnread(0);
   }, [chatOpen]);
 
-  const pushRaise = (name: string) => {
-    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    setRaises((r) => [...r, { id, name }]);
-    setTimeout(() => setRaises((r) => r.filter((x) => x.id !== id)), 4500);
+  /** Mãos levantadas por participante nesta reunião — as minhas e as recebidas. */
+  const maosRef = useRef<Map<string, number>>(new Map());
+  const [minhasMaos, setMinhasMaos] = useState(0);
+  const timersDeMaoRef = useRef<Map<string, number>>(new Map());
+
+  /* Uma faixa por pessoa. Levantar de novo com a faixa ainda na tela renova o
+     tempo dela em vez de empilhar outra — quem insiste não ocupa mais espaço. */
+  const pushRaise = (quem: string, name: string) => {
+    const antigo = timersDeMaoRef.current.get(quem);
+    if (antigo) window.clearTimeout(antigo);
+    setRaises((r) => [...r.filter((x) => x.id !== quem), { id: quem, name }]);
+    timersDeMaoRef.current.set(
+      quem,
+      window.setTimeout(() => {
+        timersDeMaoRef.current.delete(quem);
+        setRaises((r) => r.filter((x) => x.id !== quem));
+      }, 4500),
+    );
   };
+
+  /** Conta a mão e diz se ela ainda está dentro do limite. */
+  const contarMao = (quem: string): boolean => {
+    const n = (maosRef.current.get(quem) ?? 0) + 1;
+    maosRef.current.set(quem, n);
+    return n <= LIMITE_DE_MAOS;
+  };
+
+  useEffect(() => {
+    const timers = timersDeMaoRef.current;
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, []);
 
   const { send } = useDataChannel("fluxo-room", (msg) => {
     try {
@@ -519,7 +555,9 @@ function CallContents({
         setMessages((m) => [...m, data.msg]);
         if (!chatOpenRef.current) setUnread((n) => n + 1);
       } else if (data.kind === "raise") {
-        pushRaise(data.name);
+        // Conta pela identidade de quem mandou, não pelo nome que veio junto.
+        const quem = msg.from?.identity ?? data.name;
+        if (contarMao(quem)) pushRaise(quem, data.name);
       }
     } catch {
       /* ignore */
@@ -550,9 +588,15 @@ function CallContents({
     broadcast({ kind: "chat", msg });
   };
 
+  const maosRestantes = Math.max(0, LIMITE_DE_MAOS - minhasMaos);
   const raiseHand = () => {
+    // O atalho H passa por aqui também, então o limite não depende do botão.
+    if (maosRestantes === 0) return;
     const name = localParticipant.name || localParticipant.identity || "Alguém";
-    pushRaise(name);
+    const quem = localParticipant.identity || name;
+    contarMao(quem);
+    setMinhasMaos((n) => n + 1);
+    pushRaise(quem, name);
     broadcast({ kind: "raise", name });
   };
 
@@ -762,8 +806,15 @@ function CallContents({
             <>
               <ToolBtn
                 icon={Hand}
-                label="Levantar a mão"
+                label={
+                  maosRestantes === 0
+                    ? `Limite atingido: ${LIMITE_DE_MAOS} mãos levantadas nesta reunião`
+                    : maosRestantes === LIMITE_DE_MAOS
+                      ? "Levantar a mão"
+                      : `Levantar a mão (${maosRestantes} de ${LIMITE_DE_MAOS} restantes)`
+                }
                 onClick={raiseHand}
+                disabled={maosRestantes === 0}
               />
               <div className="relative">
                 <ToolBtn
@@ -1412,8 +1463,22 @@ export function ActiveCallWidget() {
         token={active.token}
         serverUrl={active.serverUrl}
         connect
-        audio
-        video
+        /* Microfone e câmera como a pessoa escolheu na prévia. Eram `audio` e
+           `video` fixos em true: desligar os dois antes de entrar não valia
+           nada, e a pessoa caía na reunião com câmera e microfone abertos.
+
+           O LiveKit aplica isto UMA vez, ao conectar — mudar depois não religa
+           nada, então silenciar pelos botões da ligação continua valendo. */
+        audio={active.micOn && (active.micDeviceId ? { deviceId: active.micDeviceId } : true)}
+        video={active.camOn && (active.camDeviceId ? { deviceId: active.camDeviceId } : true)}
+        /* O aparelho escolhido também vale para quando a pessoa liga depois.
+           Sem isto, entrar com a câmera desligada e ligá-la na reunião abria a
+           câmera padrão do sistema, e não a escolhida. As opções são comparadas
+           pelo valor, então recriar o objeto a cada render não recria a sala. */
+        options={{
+          audioCaptureDefaults: active.micDeviceId ? { deviceId: active.micDeviceId } : undefined,
+          videoCaptureDefaults: active.camDeviceId ? { deviceId: active.camDeviceId } : undefined,
+        }}
         style={{ height: "100%", width: "100%" }}
         onDisconnected={() => endCall()}
       >

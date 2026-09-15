@@ -10,6 +10,12 @@ export interface ActiveCall {
   name: string;
   meetingTitle: string;
   autoMinute: boolean;
+  /** Como a pessoa escolheu entrar, na prévia. Vale só para a conexão: dali em
+      diante quem manda são os botões da própria ligação. */
+  micOn: boolean;
+  camOn: boolean;
+  micDeviceId?: string;
+  camDeviceId?: string;
 }
 
 interface ActiveCallContextValue {
@@ -25,6 +31,10 @@ interface ActiveCallContextValue {
     // `userId` saiu: quem entra na sala é decidido pela sessão no servidor.
     meetingTitle?: string;
     autoMinute?: boolean;
+    micOn?: boolean;
+    camOn?: boolean;
+    micDeviceId?: string;
+    camDeviceId?: string;
   }): Promise<void>;
   endCall(): void;
   setMinimized(v: boolean): void;
@@ -41,7 +51,18 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const startCall = useCallback<ActiveCallContextValue["startCall"]>(
-    async ({ roomName, roomLabel, identity, name, meetingTitle, autoMinute }) => {
+    async ({
+      roomName,
+      roomLabel,
+      identity,
+      name,
+      meetingTitle,
+      autoMinute,
+      micOn,
+      camOn,
+      micDeviceId,
+      camDeviceId,
+    }) => {
       const prev = activeRef.current;
       if (prev && prev.roomName === roomName && prev.identity === identity) {
         setMinimized(false);
@@ -71,6 +92,10 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
           name,
           meetingTitle: (meetingTitle && meetingTitle.trim()) || (roomLabel ?? roomName),
           autoMinute: autoMinute ?? true,
+          micOn: micOn ?? true,
+          camOn: camOn ?? true,
+          micDeviceId,
+          camDeviceId,
         };
         activeRef.current = next;
         setActive(next);
