@@ -191,9 +191,16 @@ export const salvarProjeto = createServerFn({ method: "POST" })
           .input("cor", sql.NVarChar, d.cor)
           .input("por", sql.Int, eu);
 
-        /* `OUTPUT INSERTED.id` no INSERT devolve o GUID que o banco gerou —
-           é ele que o cliente passa a usar, e é o que permite ao anexo do
-           projeto existir. Sem isso o cliente ficaria sem saber o id novo. */
+        /* O INSERT grava COM o id que veio do cliente.
+           Gravava sem ele, e o banco gerava outro: a tela seguia usando o id
+           dela, que não existia no banco. Toda subtarefa criada naquele projeto,
+           na mesma sessão, era recusada pela chave estrangeira ("Não foi
+           possível salvar") e sumia ao recarregar — a lista voltava do banco
+           com o id certo, e a tarefa nunca tinha sido gravada. E cada edição do
+           projeto antes de recarregar caía no ELSE e criava uma cópia.
+
+           `COALESCE` cobre quem chama sem id. `OUTPUT INSERTED.id` continua
+           devolvendo o id final nos dois casos. */
         const r = await req.query(
           `IF @id IS NOT NULL AND EXISTS (SELECT 1 FROM gestor.projetos WHERE id=@id)
              BEGIN
@@ -205,9 +212,10 @@ export const salvarProjeto = createServerFn({ method: "POST" })
              END
            ELSE
              INSERT INTO gestor.projetos
-               (id_legado, nome, descricao, situacao, dono_id, setor, prazo, cor, criado_por)
+               (id, id_legado, nome, descricao, situacao, dono_id, setor, prazo, cor, criado_por)
              OUTPUT INSERTED.id
-             VALUES (@id_legado, @nome, @descricao, @situacao, @dono, @setor, @prazo, @cor, @por);`,
+             VALUES (COALESCE(@id, NEWID()), @id_legado, @nome, @descricao, @situacao, @dono,
+                     @setor, @prazo, @cor, @por);`,
         );
         const id = (r.recordset[0] as { id: string }).id;
 
