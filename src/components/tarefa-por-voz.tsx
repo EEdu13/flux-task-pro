@@ -839,10 +839,11 @@ function Reticencias() {
 }
 
 /**
- * O que o microfone está fazendo, dito para a pessoa.
+ * O que está no caminho do microfone, dito para a pessoa.
  *
- * A legenda diz para onde a voz vai: microfone aceso num app de trabalho, sem
- * explicação, é a primeira coisa que gera desconfiança.
+ * Só aparece quando há algo a resolver — pausado, sem permissão, sem aparelho.
+ * Escutando normalmente a linha fica vazia: o estado já está no cabeçalho, na
+ * faixa de voz e no próprio texto aparecendo na tela.
  */
 function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean, semSuporte: boolean) {
   if (pausado) return "Microfone pausado. O que já foi ditado continua na lista.";
@@ -851,7 +852,7 @@ function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean, semSuport
     case "pedindo":
       return "Pedindo acesso ao microfone…";
     case "ativo":
-      return "Cada frase é transcrita pela OpenAI e organizada pelo Claude. O app não guarda o áudio.";
+      return "";
     case "negado":
       return "Sem permissão para o microfone. Libere nas configurações do navegador ou do app.";
     case "indisponivel":
