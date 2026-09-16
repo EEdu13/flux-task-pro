@@ -15,7 +15,8 @@
  *
  * Cada trecho é um MediaRecorder novo, e não pedaços de um só: os pedaços de
  * uma gravação contínua não se abrem sozinhos (só o primeiro tem o cabeçalho do
- * arquivo), e a transcrição recusaria do segundo em diante.
+ * arquivo), e a transcrição recusaria do segundo em diante. No corte, o
+ * gravador novo começa antes de o antigo parar — ver `cortar`.
  */
 
 export interface TrechoDeFala {
@@ -51,10 +52,12 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
   /** Para de ouvir. `entregar` manda o trecho em andamento se ele teve fala. */
   parar: (entregar?: boolean, depois?: () => void) => void;
 } {
-  const pausaQueCorta = o.pausaQueCortaMs ?? 850;
+  const pausaQueCorta = o.pausaQueCortaMs ?? 1000;
   const trechoMaximo = o.trechoMaximoMs ?? 25_000;
   const formato = FORMATOS.find((f) => MediaRecorder.isTypeSupported(f));
   const amostra = new Uint8Array(o.analisador.fftSize);
+
+  type Medida = { falaMs: number; duracaoMs: number; inicio: number };
 
   let gravador: MediaRecorder | null = null;
   let pedacos: Blob[] = [];
@@ -67,6 +70,12 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
   let falando = false;
   let parado = false;
 
+  const medida = (): Medida => ({
+    falaMs,
+    duracaoMs: performance.now() - inicio,
+    inicio: inicioRelogio,
+  });
+
   const iniciar = () => {
     pedacos = [];
     inicio = performance.now();
@@ -74,12 +83,16 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
     falaMs = 0;
     silencioMs = 0;
     seguidas = 0;
+    gravador = null;
     // Trilha encerrada (aparelho trocado, pessoa saiu): quem criou recria.
     if (o.fluxo.getAudioTracks().every((t) => t.readyState === "ended")) return;
     try {
       const g = new MediaRecorder(
         o.fluxo,
-        formato ? { mimeType: formato, audioBitsPerSecond: 32_000 } : undefined,
+        /* 64 kbps e não 32: a transcrição erra mais com áudio muito comprimido,
+           e na reunião o som já vem comprimido uma vez pela chamada. Um trecho
+           de 20 s ainda dá ~160 KB. */
+        formato ? { mimeType: formato, audioBitsPerSecond: 64_000 } : undefined,
       );
       const destes = pedacos;
       g.ondataavailable = (e) => {
@@ -92,17 +105,20 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
     }
   };
 
-  const fechar = (enviar: boolean, depois?: () => void) => {
-    const g = gravador;
-    const destes = pedacos;
-    const meta = { falaMs, duracaoMs: performance.now() - inicio, inicio: inicioRelogio };
-    gravador = null;
+  /** Para o gravador e entrega o trecho dele, se valer a pena mandar. */
+  const entregar = (
+    g: MediaRecorder | null,
+    destes: Blob[],
+    m: Medida,
+    enviar: boolean,
+    depois?: () => void,
+  ) => {
     if (!g) return depois?.();
     const aoParar = () => {
       if (enviar && destes.length) {
         const audio = new Blob(destes, { type: g.mimeType || formato || "audio/webm" });
         // Menos de ~1,5 KB não chega a meio segundo de áudio: é estalo, não fala.
-        if (audio.size > 1500) o.aoTrecho({ audio, ...meta });
+        if (audio.size > 1500) o.aoTrecho({ audio, ...m });
       }
       depois?.();
     };
@@ -114,6 +130,23 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
         aoParar();
       }
     } else aoParar();
+  };
+
+  /**
+   * Fecha a frase e já começa a próxima.
+   *
+   * O gravador novo começa ANTES de o antigo parar. Parar e começar em seguida
+   * deixava um vão de alguns milissegundos sem ninguém gravando, e a primeira
+   * sílaba dita logo depois da pausa caía nele — a palavra chegava cortada na
+   * transcrição. O corte acontece no silêncio, então o pedaço em que os dois
+   * gravam junto não tem fala e não duplica nada.
+   */
+  const cortar = (enviar: boolean) => {
+    const velho = gravador;
+    const destes = pedacos;
+    const m = medida();
+    iniciar();
+    entregar(velho, destes, m, enviar);
   };
 
   const marcarFalando = (sim: boolean) => {
@@ -160,18 +193,19 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
     const duracao = performance.now() - inicio;
     const teveFala = falaMs >= FALA_MINIMA_MS;
     if ((teveFala && silencioMs >= pausaQueCorta) || duracao >= trechoMaximo) {
-      fechar(teveFala);
-      iniciar();
+      cortar(teveFala);
     }
   }, TICK_MS);
 
   return {
-    parar: (entregar = true, depois) => {
+    parar: (enviar = true, depois) => {
       if (parado) return depois?.();
       parado = true;
       window.clearInterval(relogio);
       marcarFalando(false);
-      fechar(entregar && falaMs >= FALA_MINIMA_MS, depois);
+      const g = gravador;
+      gravador = null;
+      entregar(g, pedacos, medida(), enviar && falaMs >= FALA_MINIMA_MS, depois);
     },
   };
 }

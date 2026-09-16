@@ -7,6 +7,8 @@ import {
   type AtaAoVivo,
   type FalaDaReuniao,
 } from "./ata-ao-vivo";
+import { sectors } from "./fluxo-types";
+import { DEPARTMENT_ROOMS } from "./rooms";
 
 /**
  * Voz, lado do servidor: ouvir e entender. Serve à Tarefa por voz e à Ata da
@@ -97,6 +99,39 @@ const SOZINHAS = [
 
 export type ContextoDeFala = "ditado" | "reuniao";
 
+/**
+ * As palavras da casa, para a transcrição não tentar adivinhá-las.
+ *
+ * Nome de empresa e sigla de setor é onde o modelo mais erra: ele nunca ouviu
+ * "Larsil" nem "PCP" e troca pelo que soa parecido. A lista sai dos setores e
+ * das salas do próprio app, então ela acompanha quando eles mudam.
+ */
+const GLOSSARIO = [
+  ...new Set(
+    ["Larsil", "SGL", "Conecta", ...sectors.map((s) => s.name), ...DEPARTMENT_ROOMS.map((r) => r.label)]
+      .map((t) => t.trim())
+      // "CONTÁBIL/FISCAL" é maiúscula só na tela; como vocabulário ela atrapalha.
+      // Sigla curta (TI, PCP, DHO) continua como é.
+      .map((t) => (t.length > 4 && t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t))
+      // "Sem setor" é rótulo de tela, não palavra que alguém fala.
+      .filter((t) => t.length > 2 && !/^sem /i.test(t)),
+  ),
+];
+
+/**
+ * Uma letra que não é do nosso alfabeto: cirílico, bengali, árabe, japonês,
+ * qualquer um.
+ *
+ * O modelo às vezes "ouve" um trecho ruim em outro idioma e devolve a
+ * transcrição no alfabeto dele — apareceu russo e bengali numa reunião inteira
+ * em português. Texto assim é invenção, não fala: vai fora inteiro.
+ *
+ * Lê-se "o que não é não-letra e não é latino", ou seja: letra de outro
+ * alfabeto. Acento não entra nisso — "é" é letra latina —, e emoji e pontuação
+ * não são letras.
+ */
+const OUTRO_ALFABETO = /[^\P{L}\p{Script=Latin}]/u;
+
 const semAcento = (s: string) =>
   s
     .normalize("NFD")
@@ -112,14 +147,18 @@ const semAcento = (s: string) =>
  * Eduardo Silva, Elaine Klug, …". Cai fora a frase que é uma lista de nomes da
  * dica (3 ou mais, quase sem outras palavras) ou que repete as palavras dela.
  */
-function semEcoDaDica(texto: string, nomes: string[]): string {
+function semEcoDaDica(texto: string, termos: string[]): string {
   const frases = texto.split(/(?<=[.!?:])\s+/);
-  const nomesNorm = nomes.map(semAcento).filter((n) => n.length > 2);
+  const nomesNorm = termos.map(semAcento).filter((n) => n.length > 2);
   const ficam = frases.filter((frase) => {
     const f = semAcento(frase);
-    // O rótulo da própria dica ("Equipe:", "Participantes:") solto depois do corte.
-    if (/^(equipe|participantes)\s*:?$/.test(f.trim())) return false;
-    if (/(pessoas|nomes) da equipe|participantes da reuniao|ditados em portugues|portugues do brasil|pedidos de tarefas/.test(f))
+    // O rótulo da própria dica ("Nomes:", "Termos:") solto depois do corte.
+    if (/^(equipe|participantes|nomes|termos|vocabulario)\s*:?$/.test(f.trim())) return false;
+    if (
+      /(pessoas|nomes) da equipe|participantes da reuniao|ditados? em portugues|portugues do brasil|pedidos de tarefas|transcricao em portugues/.test(
+        f,
+      )
+    )
       return false;
     const citados = nomesNorm.filter((n) => f.includes(n)).length;
     if (citados < 3) return true;
@@ -156,13 +195,20 @@ export async function transcreverTrecho(opcoes: {
   form.append("response_format", "json");
   // A confiança de cada pedaço do texto: é o que denuncia texto inventado.
   form.append("include[]", "logprobs");
-  /* A dica é só vocabulário, sem nenhuma frase de instrução: o que o modelo
-     ecoa dela em trecho mudo é removido abaixo, e uma lista de nomes é mais
-     fácil de reconhecer como eco do que uma frase. */
-  if (opcoes.nomes.length) {
-    const rotulo = opcoes.contexto === "reuniao" ? "Participantes" : "Equipe";
-    form.append("prompt", `${rotulo}: ${opcoes.nomes.join(", ")}.`.slice(0, 900));
-  }
+  // Sem margem para criatividade: aqui ela só produz palavra que ninguém falou.
+  form.append("temperature", "0");
+  /* A dica carrega o idioma e o vocabulário da casa. A frase do idioma reforça
+     o `language=pt` acima, que sozinho não impediu o modelo de devolver trecho
+     em outro idioma. O que ele ecoar da dica em trecho quase mudo é removido
+     mais abaixo. */
+  const termos = [...opcoes.nomes, ...GLOSSARIO];
+  form.append(
+    "prompt",
+    `Transcrição em português do Brasil. Nomes: ${opcoes.nomes.join(", ")}. Termos: ${GLOSSARIO.join(", ")}.`.slice(
+      0,
+      1400,
+    ),
+  );
 
   const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -198,6 +244,10 @@ export async function transcreverTrecho(opcoes: {
     console.info("[voz] trecho descartado: frase de legenda");
     return "";
   }
+  if (OUTRO_ALFABETO.test(texto)) {
+    console.info("[voz] trecho descartado: veio em outro alfabeto");
+    return "";
+  }
 
   /* Confiança média baixa: o modelo estava adivinhando. Fala clara fica bem
      acima de 0,8; o corte é baixo de propósito para não perder fala real com
@@ -213,7 +263,7 @@ export async function transcreverTrecho(opcoes: {
     }
   }
 
-  texto = semEcoDaDica(texto, opcoes.nomes);
+  texto = semEcoDaDica(texto, termos);
   if (texto.length < 2) {
     console.info("[voz] trecho descartado: eco da dica");
     return "";
@@ -275,14 +325,21 @@ Campos:
 - titulo: curto e acionável, começando por um verbo no infinitivo ("Revisar relatório de fretes de setembro"). Sem o nome do responsável nem o prazo.
 - descricao: o que mais foi dito sobre como fazer. Frase curta; string vazia se não houver.
 - responsavel_id: o id da pessoa da equipe a quem o pedido foi dirigido. "Para mim", "eu vou", "me lembra" = a pessoa que está ditando. Se o nome não corresponder com segurança a ninguém da lista, use null — não chute entre homônimos.
-- prazo: data AAAA-MM-DD resolvida pelo calendário fornecido; null se nenhum prazo foi dito. "Sexta" é a próxima sexta a partir de hoje; "sexta que vem" é a da semana seguinte.
-- hora: HH:MM só se um horário foi dito ("até as 15h" = "15:00"); senão null.
+- prazo: data AAAA-MM-DD resolvida pelo calendário fornecido; null se nenhum prazo foi dito. "Sexta" é a próxima sexta a partir de hoje; "sexta que vem" é a da semana seguinte. "Fim do mês" é o último dia do mês; "início da semana que vem" é a próxima segunda-feira; "daqui a dois dias" conta a partir de hoje. Se a data dita já passou, use a próxima ocorrência dela.
+- hora: HH:MM só se um horário foi dito ("até as 15h" = "15:00", "meio-dia" = "12:00", "fim do dia" não é horário); senão null.
 - prioridade: "alta" para urgente/prioridade alta/"pra ontem"; "baixa" quando disserem que não tem pressa; senão "media".
 
-Ignore o que não for pedido de tarefa (cumprimentos, hesitações, comentários soltos).
+Escrevendo o título e a descrição:
+- Número, código, nota fiscal, placa, valor e nome de arquivo ou sistema vão como foram ditos, sem arredondar nem "consertar" ("nota 12.345", "R$ 1.200", "planilha de fretes").
+- Escreva números por algarismo ("15 notas", e não "quinze notas"), menos quando fizer parte do nome de algo.
+- Não repita no título o que já está nos campos: nada de "para a Milena" nem "até sexta".
+- Nada de inventar detalhe que não foi dito para deixar a tarefa mais completa. Descrição vazia é melhor que descrição imaginada.
+
+Ignore o que não for pedido de tarefa: cumprimentos, hesitações ("é…", "então", "deixa eu ver"), conversa paralela e comentários soltos.
 
 Sobre a transcrição:
-- O texto vem de transcrição automática do microfone e pode ter erros: palavras trocadas por outras de som parecido, nomes escritos de outro jeito, pontuação fora do lugar. Entenda pelo sentido e pelos nomes da equipe, e escreva título e descrição corrigidos.
+- Tudo foi dito em português do Brasil, e você escreve só em português do Brasil. Trecho que aparecer em outro idioma é erro da transcrição: ignore, nunca traduza nem repita.
+- O texto vem de transcrição automática do microfone e pode ter erros: palavras trocadas por outras de som parecido, nomes escritos de outro jeito, pontuação fora do lugar, palavra cortada no começo ou no fim da frase. Entenda pelo sentido e pelos nomes da equipe, e escreva título e descrição corrigidos, com a palavra inteira.
 - Microfone distante, ruído do ambiente ou outra pessoa falando perto geram trechos soltos, sem sentido, fora do assunto ou que são só uma lista de nomes. Não crie nem altere tarefa por causa deles.
 - Na dúvida se algo é mesmo um pedido, não crie a tarefa: é melhor a pessoa repetir do que revisar uma tarefa inventada.`;
 
@@ -434,7 +491,8 @@ Campos:
 Lista vazia quando não houver nada para o campo.
 
 Sobre as falas:
-- Vêm de transcrição automática, cada pessoa pelo seu microfone. Podem ter palavras trocadas por outras de som parecido e nomes escritos errado: entenda pelo sentido, pelo assunto da reunião e pelos nomes dos participantes, e escreva certo na ata.
+- A reunião é em português do Brasil e a ata é escrita só em português do Brasil. Fala que aparecer em outro idioma é erro da transcrição: ignore, nunca traduza nem repita.
+- Vêm de transcrição automática, cada pessoa pelo seu microfone. Podem ter palavras trocadas por outras de som parecido, nomes escritos errado e palavra cortada no começo ou no fim da frase: entenda pelo sentido, pelo assunto da reunião e pelos nomes dos participantes, e escreva certo e por extenso na ata.
 - Trechos sem sentido, soltos ou fora do assunto (ruído, eco, conversa paralela) devem ser ignorados.
 - Nunca registre o que não foi dito com clareza. Não invente responsável, prazo, número nem decisão.
 - Conversa social e de conexão ("bom dia", "tá me ouvindo?", "deixa eu compartilhar a tela") não entra.

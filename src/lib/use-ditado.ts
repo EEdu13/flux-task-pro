@@ -8,9 +8,9 @@ export type { TrechoDeFala };
  * A fala da Tarefa por voz cortada em frases, cada uma entregue como áudio.
  *
  * O corte e o filtro do que conta como fala moram em `segmentador-de-fala.ts`,
- * que a Ata da reunião também usa. Aqui: 850 ms de silêncio fecham a frase, e um
- * trecho fecha aos 25 s mesmo sem pausa, para a pessoa que fala sem respirar não
- * esperar muito para ver o texto aparecer.
+ * que a Ata da reunião também usa. Aqui valem os tempos padrão: 1 s de silêncio
+ * fecha a frase, e um trecho fecha aos 25 s mesmo sem pausa, para a pessoa que
+ * fala sem respirar não esperar muito para ver o texto aparecer.
  */
 export function useDitado(opcoes: {
   /** Microfone pronto e escuta não pausada. */

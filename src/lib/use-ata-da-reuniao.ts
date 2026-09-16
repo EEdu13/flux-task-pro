@@ -437,7 +437,7 @@ export function useAtaDaReuniao(o: {
         fluxo,
         analisador,
         // Reunião tem mais pausa de pensamento no meio da frase do que ditado.
-        pausaQueCortaMs: 1000,
+        pausaQueCortaMs: 1200,
         trechoMaximoMs: 20_000,
         aoTrecho: (t) => void transcreverRef.current(t, quem),
         aoFalar: (sim) => marcarFalando(quem, sim),
