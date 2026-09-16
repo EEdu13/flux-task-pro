@@ -13,7 +13,35 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFluxo } from "@/lib/fluxo-store";
-import { suggestTasksFromNote, type NoteTaskSuggestion } from "@/lib/notes-ai.functions";
+import { sugerirTarefasDaNota } from "@/lib/nota-ia.functions";
+import type { Prioridade } from "@/lib/nota-ia.functions";
+import { dataParaIso, isoParaData } from "@/lib/data-iso";
+
+/**
+ * Uma sugestão como ela fica na tela: já editável.
+ *
+ * A IA propõe, a pessoa confere. Responsável e prazo são justamente o que ela
+ * mais precisa ajustar — a nota costuma dizer o que fazer, e não para quem nem
+ * para quando —, então eles são campos, e não texto.
+ */
+interface Sugestao {
+  id: string;
+  titulo: string;
+  descricao: string;
+  responsavelId: string;
+  /** AAAA-MM-DD, sempre preenchido: a tarefa precisa de um prazo. */
+  prazo: string;
+  prioridade: Prioridade;
+  origem: string;
+  /** A nota não disse o prazo — a data é um palpite da tela, e isso fica à vista. */
+  prazoSuposto: boolean;
+}
+
+const PRIORIDADES: { valor: Prioridade; rotulo: string }[] = [
+  { valor: "alta", rotulo: "Alta" },
+  { valor: "media", rotulo: "Média" },
+  { valor: "baixa", rotulo: "Baixa" },
+];
 
 interface Tab {
   id: string;
@@ -83,13 +111,13 @@ function loadState(userId: string): NotepadState {
 }
 
 export function FloatingNotepad() {
-  const { createTask, currentUser, isAuthenticated } = useFluxo();
+  const { createTask, currentUser, isAuthenticated, users, visibleUsersForAssign } = useFluxo();
   const [state, setState] = useState<NotepadState>(() => loadState(currentUser.id));
   const [dragging, setDragging] = useState<null | { dx: number; dy: number }>(null);
   const [resizing, setResizing] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<NoteTaskSuggestion[] | null>(null);
+  const [suggestions, setSuggestions] = useState<Sugestao[] | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
   // reload when the active user changes (each user has their own notepad)
@@ -288,11 +316,35 @@ export function FloatingNotepad() {
     setLoading(true);
     setSuggestions(null);
     try {
-      const res = await suggestTasksFromNote({
-        data: { title: active.title, content: active.content },
+      const hoje = dataParaIso(new Date());
+      const res = await sugerirTarefasDaNota({
+        data: {
+          titulo: active.title,
+          conteudo: active.content,
+          pessoas: users.map((u) => ({
+            id: u.id,
+            nome: u.name,
+            setor: u.sector,
+            cargo: u.jobTitle,
+          })),
+          quemEscreve: currentUser.id,
+          hoje,
+        },
       });
-      setSuggestions(res.suggestions);
-      if (res.suggestions.length === 0) toast.info("A IA não encontrou tarefas acionáveis");
+      // Sem responsável dito, a tarefa nasce com quem escreveu; sem prazo dito, hoje.
+      setSuggestions(
+        res.tarefas.map((t, i) => ({
+          id: `s${i}-${Math.random().toString(36).slice(2, 7)}`,
+          titulo: t.titulo,
+          descricao: t.descricao,
+          responsavelId: t.responsavelId ?? currentUser.id,
+          prazo: t.prazo ?? hoje,
+          prioridade: t.prioridade,
+          origem: t.origem,
+          prazoSuposto: !t.prazo,
+        })),
+      );
+      if (res.tarefas.length === 0) toast.info("A IA não encontrou tarefas nesta nota");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao analisar");
     } finally {
@@ -300,33 +352,41 @@ export function FloatingNotepad() {
     }
   };
 
-  const createFromSuggestion = (s: NoteTaskSuggestion, index: number) => {
-    const due = new Date();
-    due.setDate(due.getDate() + s.dueInDays);
-    due.setHours(23, 59, 0, 0);
-    createTask({
-      title: s.title,
-      description: s.reason ? `Sugerido pela IA a partir da nota "${active?.title}". Motivo: ${s.reason}` : `Sugerido pela IA a partir da nota "${active?.title}".`,
-      sector: currentUser.sector,
-      createdBy: currentUser.id,
-      assigneeId: currentUser.id,
-      mentions: [],
-      frequency: "diaria",
-      status: "pendente",
-      score: 10,
-      dueDate: due.toISOString(),
-      recurring: false,
-      priority: s.priority,
-      tags: ["nota"],
-    });
-    toast.success("Tarefa criada");
-    setSuggestions((cur) => (cur ? cur.filter((_, i) => i !== index) : cur));
-  };
-  const createAll = () => {
-    if (!suggestions) return;
-    suggestions.forEach((s) => createFromSuggestion(s, -1));
-    toast.success(`${suggestions.length} tarefas criadas`);
-    setSuggestions([]);
+  const ajustar = (id: string, patch: Partial<Sugestao>) =>
+    setSuggestions((cur) =>
+      cur ? cur.map((s) => (s.id === id ? { ...s, ...patch, prazoSuposto: false } : s)) : cur,
+    );
+  const descartar = (id: string) =>
+    setSuggestions((cur) => (cur ? cur.filter((s) => s.id !== id) : cur));
+
+  /** O OK: cria tudo o que sobrou na lista, já conferido. */
+  const criarTodas = () => {
+    if (!suggestions?.length) return;
+    for (const s of suggestions) {
+      const pessoa = users.find((u) => u.id === s.responsavelId) ?? currentUser;
+      const prazo = isoParaData(s.prazo) ?? new Date();
+      prazo.setHours(23, 59, 0, 0);
+      const daNota = `Sugerido pela IA a partir da nota "${active?.title}".`;
+      createTask({
+        title: s.titulo,
+        description: s.descricao ? `${s.descricao}\n\n${daNota}` : daNota,
+        sector: pessoa.sector,
+        createdBy: currentUser.id,
+        assigneeId: pessoa.id,
+        mentions: pessoa.id !== currentUser.id ? [pessoa.id] : [],
+        frequency: "diaria",
+        status: "pendente",
+        score: 10,
+        dueDate: prazo.toISOString(),
+        recurring: false,
+        priority: s.prioridade,
+        tags: ["nota"],
+      });
+    }
+    toast.success(
+      suggestions.length === 1 ? "Tarefa criada" : `${suggestions.length} tarefas criadas`,
+    );
+    setSuggestions(null);
   };
 
   if (!isAuthenticated || !state.open) return null;
@@ -451,45 +511,108 @@ export function FloatingNotepad() {
         className="flex-1 resize-none bg-background px-3 py-2 text-sm outline-none"
       />
 
-      {/* suggestions area */}
+      {/* O que a IA achou, para conferir antes de virar tarefa */}
       {suggestions && suggestions.length > 0 && (
-        <div className="max-h-[45%] overflow-y-auto border-t border-border bg-secondary/40 p-2">
-          <div className="mb-1 flex items-center justify-between">
+        <div className="flex max-h-[62%] flex-col border-t border-border bg-secondary/40">
+          <div className="flex items-center justify-between px-2 py-1.5">
             <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-primary">
-              <Sparkles className="h-3 w-3" /> Sugestões da IA
+              <Sparkles className="h-3 w-3" /> Confira antes de criar
             </div>
             <button
-              onClick={createAll}
-              className="rounded-md bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground hover:brightness-110"
+              onClick={() => setSuggestions(null)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
+              title="Descartar as sugestões"
             >
-              Criar todas
+              <X className="h-3 w-3" />
             </button>
           </div>
-          <ul className="space-y-1">
-            {suggestions.map((s, i) => (
-              <li
-                key={i}
-                className="flex items-start gap-2 rounded-md border border-border bg-card p-2 text-xs"
-              >
-                <div className="flex-1">
-                  <div className="font-medium leading-snug text-foreground">{s.title}</div>
-                  {s.reason && (
-                    <div className="text-[10px] text-muted-foreground">{s.reason}</div>
-                  )}
-                  <div className="text-[10px] text-muted-foreground">
-                    {s.dueInDays === 0 ? "vence hoje" : `vence em ${s.dueInDays} dia${s.dueInDays > 1 ? "s" : ""}`}
-                  </div>
+
+          <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2">
+            {suggestions.map((s) => (
+              <li key={s.id} className="rounded-md border border-border bg-card p-2">
+                <div className="flex items-start gap-1.5">
+                  <input
+                    value={s.titulo}
+                    onChange={(e) => ajustar(s.id, { titulo: e.target.value.slice(0, 200) })}
+                    aria-label="Título da tarefa"
+                    className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs font-medium text-foreground outline-none hover:border-border focus:border-primary"
+                  />
+                  <button
+                    onClick={() => descartar(s.id)}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title="Tirar da lista"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => createFromSuggestion(s, i)}
-                  className="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20"
-                  title="Criar tarefa"
-                >
-                  <Check className="h-3 w-3" />
-                </button>
+
+                {s.origem && (
+                  <div
+                    className="mt-0.5 truncate px-1 text-[10px] italic text-muted-foreground"
+                    title={s.origem}
+                  >
+                    da nota: “{s.origem}”
+                  </div>
+                )}
+
+                <div className="mt-1.5 grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] gap-1">
+                  <select
+                    value={s.responsavelId}
+                    onChange={(e) => ajustar(s.id, { responsavelId: e.target.value })}
+                    aria-label="Responsável"
+                    className="min-w-0 rounded border border-border bg-background px-1 py-0.5 text-[11px] outline-none focus:border-primary"
+                  >
+                    {visibleUsersForAssign().map((u) => (
+                      <option key={u.id} value={u.id} className="bg-popover text-popover-foreground">
+                        {u.id === currentUser.id ? "Eu" : u.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={s.prazo}
+                    onChange={(e) => e.target.value && ajustar(s.id, { prazo: e.target.value })}
+                    aria-label="Prazo"
+                    title={s.prazoSuposto ? "A nota não disse o prazo — confira" : "Prazo"}
+                    className={`min-w-0 rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:border-primary ${
+                      s.prazoSuposto ? "border-amber-500/60 text-amber-600 dark:text-amber-400" : "border-border"
+                    }`}
+                  />
+                  <select
+                    value={s.prioridade}
+                    onChange={(e) => ajustar(s.id, { prioridade: e.target.value as Prioridade })}
+                    aria-label="Prioridade"
+                    className="rounded border border-border bg-background px-1 py-0.5 text-[11px] outline-none focus:border-primary"
+                  >
+                    {PRIORIDADES.map((p) => (
+                      <option
+                        key={p.valor}
+                        value={p.valor}
+                        className="bg-popover text-popover-foreground"
+                      >
+                        {p.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </li>
             ))}
           </ul>
+
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+            <span className="truncate text-[10px] text-muted-foreground">
+              {suggestions.some((s) => s.prazoSuposto)
+                ? "Prazo em amarelo: a nota não disse quando."
+                : "Tudo conferido?"}
+            </span>
+            <button
+              onClick={criarTodas}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:brightness-110"
+            >
+              <Check className="h-3 w-3" />
+              Criar {suggestions.length} {suggestions.length === 1 ? "tarefa" : "tarefas"}
+            </button>
+          </div>
         </div>
       )}
 

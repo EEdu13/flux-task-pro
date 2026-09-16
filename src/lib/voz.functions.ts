@@ -44,11 +44,11 @@ function conferirLimite(tipo: keyof typeof LIMITE_POR_HORA, eu: number) {
 
 /** Troca o erro técnico pela frase da tela, deixando o técnico no log. */
 async function comFrase<T>(onde: string, eu: number, fazer: () => Promise<T>): Promise<T> {
-  const { ErroDeVoz } = await import("@/lib/voz.server");
+  const { ErroDaIa } = await import("@/lib/ia.server");
   try {
     return await fazer();
   } catch (e) {
-    if (e instanceof ErroDeVoz) {
+    if (e instanceof ErroDaIa) {
       console.error(`[voz] ${onde} falhou para ${eu}: ${e.message}`);
       throw new Error(e.paraTela);
     }

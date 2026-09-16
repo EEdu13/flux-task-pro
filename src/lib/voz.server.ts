@@ -9,6 +9,16 @@ import {
 } from "./ata-ao-vivo";
 import { sectors } from "./fluxo-types";
 import { DEPARTMENT_ROOMS } from "./rooms";
+import {
+  calendario,
+  equipeEmTexto,
+  ErroDaIa,
+  erroDoClaude,
+  MODELO_DE_TEXTO,
+  type PessoaDoTime,
+} from "./ia.server";
+
+export type { PessoaDoTime };
 
 /**
  * Voz, lado do servidor: ouvir e entender. Serve à Tarefa por voz e à Ata da
@@ -33,16 +43,9 @@ import { DEPARTMENT_ROOMS } from "./rooms";
  */
 
 export const MODELO_TRANSCRICAO = "gpt-4o-transcribe";
-export const MODELO_INTERPRETACAO = "claude-sonnet-5";
+export const MODELO_INTERPRETACAO = MODELO_DE_TEXTO;
 
 export type Prioridade = "alta" | "media" | "baixa";
-
-export interface PessoaDoTime {
-  id: string;
-  nome: string;
-  setor?: string;
-  cargo?: string;
-}
 
 /** Uma tarefa como a tela a tem agora. `ref` é o apelido estável dela na conversa. */
 export interface TarefaDitada {
@@ -59,15 +62,6 @@ export interface TarefaDitada {
 
 /** O que a IA devolve: `ref` nulo é tarefa nova. */
 export type TarefaInterpretada = Omit<TarefaDitada, "ref"> & { ref: string | null };
-
-/** Erro com frase para a tela. O `message` técnico fica só no log do servidor. */
-export class ErroDeVoz extends Error {
-  readonly paraTela: string;
-  constructor(paraTela: string, tecnico?: string) {
-    super(tecnico ?? paraTela);
-    this.paraTela = paraTela;
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /* Transcrição                                                          */
@@ -183,7 +177,7 @@ export async function transcreverTrecho(opcoes: {
   /** Quanto do trecho foi voz, medido na tela. */
   falaMs?: number;
 }): Promise<string> {
-  if (!opcoes.apiKey) throw new ErroDeVoz("A transcrição não está configurada no servidor.");
+  if (!opcoes.apiKey) throw new ErroDaIa("A transcrição não está configurada no servidor.");
 
   const tipo = opcoes.mime.split(";")[0]!.trim().toLowerCase();
   const ext = EXTENSAO[tipo] ?? "webm";
@@ -222,16 +216,16 @@ export async function transcreverTrecho(opcoes: {
     // Só o status e o código de erro vão para o log — nunca cabeçalho nem chave.
     const codigo = /"code"\s*:\s*"([^"]+)"/.exec(corpo)?.[1] ?? "";
     if (r.status === 401)
-      throw new ErroDeVoz("A chave da transcrição foi recusada.", `openai 401 ${codigo}`);
+      throw new ErroDaIa("A chave da transcrição foi recusada.", `openai 401 ${codigo}`);
     if (r.status === 429)
-      throw new ErroDeVoz(
+      throw new ErroDaIa(
         // A OpenAI usa os dois códigos para conta sem saldo.
         codigo === "insufficient_quota" || codigo === "credit_balance_exhausted"
           ? "A conta da OpenAI (transcrição) está sem crédito."
           : "Muitas transcrições de uma vez. Tente de novo em instantes.",
         `openai 429 ${codigo}`,
       );
-    throw new ErroDeVoz("Não consegui transcrever esse trecho.", `openai ${r.status} ${codigo}`);
+    throw new ErroDaIa("Não consegui transcrever esse trecho.", `openai ${r.status} ${codigo}`);
   }
 
   const resposta = (await r.json()) as {
@@ -287,32 +281,6 @@ export async function transcreverTrecho(opcoes: {
 /* Interpretação                                                        */
 /* ------------------------------------------------------------------ */
 
-const DIAS = [
-  "domingo",
-  "segunda-feira",
-  "terça-feira",
-  "quarta-feira",
-  "quinta-feira",
-  "sexta-feira",
-  "sábado",
-];
-
-/**
- * Os próximos dias escritos por extenso. Modelo pequeno erra conta de
- * calendário ("sexta que vem" numa quinta); com a tabela na frente ele só lê.
- */
-function calendario(hoje: string): string {
-  const [a, m, d] = hoje.split("-").map(Number) as [number, number, number];
-  const linhas: string[] = [];
-  for (let i = 0; i < 21; i++) {
-    const dia = new Date(Date.UTC(a, m - 1, d + i));
-    const iso = dia.toISOString().slice(0, 10);
-    const rotulo = i === 0 ? " (hoje)" : i === 1 ? " (amanhã)" : "";
-    linhas.push(`${iso} ${DIAS[dia.getUTCDay()]}${rotulo}`);
-  }
-  return linhas.join("\n");
-}
-
 const INSTRUCOES = `Você organiza pedidos de tarefas ditados em voz, em português do Brasil, dentro do sistema de tarefas de uma empresa. A fala chega transcrita, frase a frase, enquanto a pessoa ainda está falando.
 
 Seu trabalho é manter a lista de tarefas atualizada:
@@ -343,20 +311,6 @@ Sobre a transcrição:
 - Microfone distante, ruído do ambiente ou outra pessoa falando perto geram trechos soltos, sem sentido, fora do assunto ou que são só uma lista de nomes. Não crie nem altere tarefa por causa deles.
 - Na dúvida se algo é mesmo um pedido, não crie a tarefa: é melhor a pessoa repetir do que revisar uma tarefa inventada.`;
 
-/** Erro da API do Claude trocado pela frase da tela. */
-function erroDoClaude(e: unknown, fazendo: string): ErroDeVoz {
-  if (e instanceof Anthropic.AuthenticationError)
-    return new ErroDeVoz("A chave do Claude foi recusada.", "anthropic 401");
-  if (e instanceof Anthropic.RateLimitError)
-    return new ErroDeVoz("Muitos pedidos de uma vez. Tente de novo em instantes.", "anthropic 429");
-  // Saldo zerado chega como 400 com a explicação na mensagem.
-  if (e instanceof Anthropic.BadRequestError && /credit balance/i.test(e.message))
-    return new ErroDeVoz("A conta do Claude está sem crédito.", "anthropic 400 credit");
-  if (e instanceof Anthropic.APIError)
-    return new ErroDeVoz(`Não consegui ${fazendo}.`, `anthropic ${e.status}`);
-  return new ErroDeVoz(`Não consegui ${fazendo}.`, (e as Error)?.name);
-}
-
 const RespostaSchema = z.object({
   tarefas: z.array(
     z.object({
@@ -380,17 +334,11 @@ export async function interpretarDitado(opcoes: {
   quemDita: string;
   hoje: string;
 }): Promise<{ tarefas: TarefaInterpretada[]; tokens: { entrada: number; saida: number } }> {
-  if (!opcoes.apiKey) throw new ErroDeVoz("A interpretação não está configurada no servidor.");
+  if (!opcoes.apiKey) throw new ErroDaIa("A interpretação não está configurada no servidor.");
 
   const client = new Anthropic({ apiKey: opcoes.apiKey, timeout: 45_000, maxRetries: 1 });
 
-  const equipe = opcoes.pessoas
-    .map((p) => {
-      const extra = [p.cargo, p.setor].filter(Boolean).join(" · ");
-      const eu = p.id === opcoes.quemDita ? " (quem está ditando)" : "";
-      return `${p.id} | ${p.nome}${extra ? ` | ${extra}` : ""}${eu}`;
-    })
-    .join("\n");
+  const equipe = equipeEmTexto(opcoes.pessoas, opcoes.quemDita, "(quem está ditando)");
 
   const atuais = opcoes.tarefas.map((t) => ({
     ref: t.ref,
@@ -437,7 +385,7 @@ ${opcoes.trechoNovo}
 
   const bruto = resposta.parsed_output;
   if (!bruto) {
-    throw new ErroDeVoz(
+    throw new ErroDaIa(
       "Não consegui organizar esse trecho.",
       `anthropic stop=${resposta.stop_reason}`,
     );
@@ -521,7 +469,7 @@ export async function atualizarAta(opcoes: {
   novas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
   chat: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
 }): Promise<{ ata: AtaAoVivo; tokens: { entrada: number; saida: number } }> {
-  if (!opcoes.apiKey) throw new ErroDeVoz("A redação da ata não está configurada no servidor.");
+  if (!opcoes.apiKey) throw new ErroDaIa("A redação da ata não está configurada no servidor.");
 
   const client = new Anthropic({ apiKey: opcoes.apiKey, timeout: 90_000, maxRetries: 1 });
 
@@ -570,7 +518,7 @@ ${linhasDeFala(opcoes.chat) || "(nenhuma mensagem)"}
 
   const bruto = resposta.parsed_output;
   if (!bruto) {
-    throw new ErroDeVoz("Não consegui escrever a ata.", `anthropic stop=${resposta.stop_reason}`);
+    throw new ErroDaIa("Não consegui escrever a ata.", `anthropic stop=${resposta.stop_reason}`);
   }
 
   return {
