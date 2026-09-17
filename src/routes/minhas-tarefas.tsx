@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   AtSign,
+  Check,
   CheckCircle2,
   CheckSquare,
   Flame,
@@ -20,8 +21,11 @@ import {
   Wand2,
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
+  ArrowRight,
+  Undo2,
   GripVertical,
 } from "lucide-react";
+import { LayoutGroup, motion } from "framer-motion";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 
@@ -845,6 +849,10 @@ function KanbanBoard({
   ];
 
   return (
+    /* O `LayoutGroup` é o que faz o cartão ATRAVESSAR a tela ao trocar de
+       coluna: ele sai de uma lista e entra na outra, e o framer liga as duas
+       posições pelo `layoutId` em vez de o cartão sumir aqui e piscar ali. */
+    <LayoutGroup>
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       {cols.map((col) => {
         const ordem = ordemPorColuna[col.id];
@@ -934,8 +942,17 @@ function KanbanBoard({
                 const alvoDoArraste =
                   ordem === "manual" && dragOver?.col === col.id && dragOver.index === index;
                 return (
-                  <CartaoNaCorDoProjeto
+                  <motion.div
                     key={t.id}
+                    /* `layoutId` e não só `layout`: o cartão não se move dentro
+                       da mesma lista quando troca de coluna — ele desmonta de
+                       uma e monta na outra. O id compartilhado é o que liga as
+                       duas posições e faz o cartão viajar até lá. */
+                    layout
+                    layoutId={`cartao-${t.id}`}
+                    transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.8 }}
+                  >
+                  <CartaoNaCorDoProjeto
                     projectId={t.projectId}
                     destacado={alvoDoArraste}
                     draggable
@@ -959,7 +976,12 @@ function KanbanBoard({
                     /* A marca de "cai aqui" só com ordem manual: ordenado por
                        prazo, ela prometeria uma posição que a lista desfaz no
                        quadro seguinte. */
-                    className={`@container cursor-grab rounded-md border bg-card p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
+                    /* `transition-[box-shadow,border-color]` e não o utilitário
+                       `transition` inteiro: o cartão vive dentro de um
+                       `motion.div` com `layout`, e o cheio poria transição CSS
+                       em transform — que é justamente o que a animação de
+                       troca de coluna escreve a cada quadro. */
+                    className={`cursor-grab rounded-md border bg-card p-3 shadow-sm transition-[box-shadow,border-color] hover:shadow-md active:cursor-grabbing ${
                       alvoDoArraste ? "border-primary" : "border-border"
                     }`}
                   >
@@ -1001,7 +1023,30 @@ function KanbanBoard({
                         <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
                       </button>
                     </div>
-                    <div className="mt-1.5 text-sm font-medium leading-snug">{t.title}</div>
+                    {/* Título ladeado pelos dois atalhos: concluir à esquerda
+                        (o mesmo círculo do Meu pack) e a seta que empurra para
+                        a próxima coluna à direita. */}
+                    <div className="mt-1.5 flex items-start gap-2">
+                      <CirculoDeConcluir
+                        concluida={col.id === "concluida"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (col.id === "concluida") onMove(t.id, "andamento");
+                          else onQuickComplete(t.id);
+                        }}
+                      />
+                      <div className="min-w-0 flex-1 text-sm font-medium leading-snug">
+                        {t.title}
+                      </div>
+                      <SetaDeColuna
+                        destino={PROXIMA_COLUNA[col.id]}
+                        voltando={col.id === "concluida"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMove(t.id, PROXIMA_COLUNA[col.id]);
+                        }}
+                      />
+                    </div>
                     {(t.mentions.length > 0 || t.checklist.length > 0) && (
                       <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
                         {t.checklist.length > 0 && (
@@ -1032,37 +1077,16 @@ function KanbanBoard({
                         )}
                       </div>
                     )}
-                    {/* Rodapé numa linha só: o que se lê à esquerda (prazo, e
-                        o atalho de concluir), o que se opera à direita
-                        (temporizador e responsável). Eram três linhas, cada uma
-                        com um item e o resto vazio — o cartão ficava alto sem
-                        mostrar mais nada. `flex-wrap` só entra em coluna
-                        estreita, quando a linha não cabe. */}
+                    {/* Rodapé numa linha só: o que se lê à esquerda (prazo), o
+                        que se opera à direita (temporizador e responsável).
+                        Concluir saiu daqui e virou o círculo na frente do
+                        título — ver `CirculoDeConcluir`. */}
                     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                       <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1.5 whitespace-nowrap">
                           <Clock className="h-3 w-3" />
                           {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
                         </span>
-                        {col.id !== "concluida" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickComplete(t.id);
-                            }}
-                            title="Marcar concluída"
-                            aria-label="Marcar concluída"
-                            className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1 py-0.5 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                          >
-                            {/* O rótulo acompanha a largura do CARTÃO, não da
-                                janela: num notebook de 1366 com a barra aberta,
-                                "Marcar concluída" passava do espaço por ~7px e
-                                empurrava temporizador e foto para outra linha. */}
-                            <CheckCircle2 className="h-3 w-3" />
-                            <span className="@sm:hidden">Concluir</span>
-                            <span className="hidden @sm:inline">Marcar concluída</span>
-                          </button>
-                        )}
                       </div>
                       <div className="ml-auto flex items-center gap-2">
                         <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
@@ -1079,6 +1103,7 @@ function KanbanBoard({
                       </div>
                     </div>
                   </CartaoNaCorDoProjeto>
+                  </motion.div>
                 );
               })}
               {items.length === 0 && (
@@ -1091,6 +1116,104 @@ function KanbanBoard({
         );
       })}
     </div>
+    </LayoutGroup>
+  );
+}
+
+/**
+ * Para onde a seta do cartão joga a tarefa.
+ *
+ * "A fazer" e "Em andamento" andam para a direita, na ordem do quadro.
+ * "Concluída" volta para "Em andamento" — é o desfazer de quem concluiu sem
+ * querer, e por isso a seta ali é de retorno, não de avanço.
+ */
+const PROXIMA_COLUNA: Record<Status, Status> = {
+  pendente: "andamento",
+  andamento: "concluida",
+  concluida: "andamento",
+};
+
+/**
+ * O círculo de concluir, o mesmo gesto do Meu pack: um alvo redondo à esquerda
+ * do título, que conclui num clique só.
+ *
+ * Substituiu o "Marcar concluída" escrito no rodapé. O texto disputava a linha
+ * com o temporizador e a foto — em coluna estreita ele quebrava para baixo e
+ * esticava o cartão — e ainda assim era menos visível do que um alvo redondo
+ * na frente do título, que é onde o olho já está.
+ *
+ * `transition-[...]` em vez do utilitário `transition` inteiro: o cheio poria
+ * transição CSS em `transform`/`scale`, que é o que o `whileTap` daqui anima —
+ * o navegador passaria a perseguir o framer com 150ms de atraso.
+ */
+function CirculoDeConcluir({
+  concluida,
+  onClick,
+}: {
+  concluida: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const titulo = concluida ? "Reabrir em Em andamento" : "Marcar concluída";
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileHover={{ scale: 1.15 }}
+      whileTap={{ scale: 0.85 }}
+      transition={{ type: "spring", stiffness: 500, damping: 26 }}
+      title={titulo}
+      aria-label={titulo}
+      aria-pressed={concluida}
+      className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-[background-color,border-color,color] ${
+        concluida
+          ? "border-emerald-500 bg-emerald-500 text-white"
+          : "border-muted-foreground/40 hover:border-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-500"
+      }`}
+    >
+      <Check className={`h-3 w-3 ${concluida ? "" : "opacity-0 transition-opacity hover:opacity-60"}`} />
+    </motion.button>
+  );
+}
+
+/**
+ * A seta que empurra o cartão para a próxima coluna sem arrastar.
+ *
+ * Arrastar continua valendo, mas exige mira e mão firme; a seta resolve o caso
+ * comum — "comecei isto", "terminei isto" — num clique. Ela se pinta com a cor
+ * da coluna de DESTINO, então dá para ver para onde a tarefa vai antes de
+ * clicar.
+ */
+function SetaDeColuna({
+  destino,
+  voltando,
+  onClick,
+}: {
+  destino: Status;
+  voltando: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const cor = statusColor[destino];
+  const titulo = voltando
+    ? `Voltar para ${statusLabels[destino]}`
+    : `Mover para ${statusLabels[destino]}`;
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileHover={{ scale: 1.14, x: voltando ? -2 : 2 }}
+      whileTap={{ scale: 0.86 }}
+      transition={{ type: "spring", stiffness: 500, damping: 26 }}
+      title={titulo}
+      aria-label={titulo}
+      style={{
+        color: cor,
+        borderColor: `color-mix(in oklab, ${cor} 45%, transparent)`,
+        background: `color-mix(in oklab, ${cor} 12%, transparent)`,
+      }}
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border"
+    >
+      {voltando ? <Undo2 className="h-3 w-3" /> : <ArrowRight className="h-3.5 w-3.5" />}
+    </motion.button>
   );
 }
 

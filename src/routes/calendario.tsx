@@ -94,7 +94,7 @@ function CalendarioPage() {
 
   return (
     <FluxoLayout title="Calendário">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto w-full max-w-[2200px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold capitalize tracking-tight">{headerLabel}</h1>

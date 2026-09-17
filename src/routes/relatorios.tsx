@@ -410,7 +410,7 @@ function Relatorios() {
 
   return (
     <FluxoLayout title="Relatórios">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto w-full max-w-[2200px] space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>

@@ -48,7 +48,7 @@ function InboxPage() {
 
   return (
     <FluxoLayout title="Caixa de entrada">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto w-full max-w-[2200px]">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Caixa de entrada</h1>

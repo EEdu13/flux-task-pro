@@ -219,7 +219,7 @@ function ProjetosPage() {
 
   return (
     <FluxoLayout title="Projetos" breadcrumb="Execução">
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-6">
+      <div className="mx-auto flex w-full max-w-[2200px] flex-col gap-4 py-2">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">

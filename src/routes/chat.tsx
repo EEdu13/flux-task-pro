@@ -72,7 +72,7 @@ function ChatPage() {
 
   return (
     <FluxoLayout title="Chat" breadcrumb="Conversas">
-      <div className="mx-auto flex h-[calc(100vh-8.5rem)] w-full max-w-[1400px] overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="mx-auto flex h-[calc(100vh-8.5rem)] w-full max-w-[2200px] overflow-hidden rounded-2xl border border-border bg-card">
         {/* Lista de conversas */}
         <aside className="flex w-full max-w-[360px] flex-col border-r border-border">
           <div className="border-b border-border p-3">

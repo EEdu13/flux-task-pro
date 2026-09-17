@@ -138,7 +138,7 @@ function PackPage() {
 
   return (
     <FluxoLayout title="Pack diário" breadcrumb="Rotinas">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
+      <div className="mx-auto flex w-full max-w-[2200px] flex-col gap-6 py-2">
         <header className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/15 text-amber-500">

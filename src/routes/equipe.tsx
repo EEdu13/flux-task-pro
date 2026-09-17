@@ -143,7 +143,7 @@ function EquipePage() {
 
   return (
     <FluxoLayout title="Equipe">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto w-full max-w-[2200px]">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>

@@ -305,7 +305,7 @@ function MetasPage() {
         className={`space-y-5 ${
           presenting
             ? "fixed z-410 max-w-none overflow-auto bg-background p-8 text-[1.05rem]"
-            : "mx-auto max-w-6xl"
+            : "mx-auto w-full max-w-[2200px]"
         }`}
       >
         {presenting && <TravaScroll />}
