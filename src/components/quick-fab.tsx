@@ -661,7 +661,10 @@ export function QuickFab() {
               /* Sai deslizando para a direita e encolhendo, como se entrasse
                  atrás do botão de recolher. `initial={false}` no
                  AnimatePresence acima evita a entrada na primeira pintura —
-                 senão o raio "chegaria" toda vez que a tela monta. */
+                 senão o raio "chegaria" toda vez que a tela monta.
+                 Mesma física de mola do balão do chat (`chat-dock.tsx`), sem
+                 atraso entre os dois — mudar um valor aqui sem espelhar lá
+                 volta a dessincronizar. */
               initial={{ opacity: 0, x: 24, scale: 0.6 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 24, scale: 0.6 }}

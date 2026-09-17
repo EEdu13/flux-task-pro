@@ -298,10 +298,10 @@ export function ChatDock() {
         </AnimatePresence>
 
         {/* Recolhe junto com o raio, pelo botão que mora no `QuickFab`.
-            Sai deslizando para a direita e encolhendo — o mesmo movimento do
-            raio, para os dois parecerem entrar no mesmo lugar. Um atraso
-            pequeno na saída faz o de cima sair depois do de baixo, em cascata,
-            em vez de os dois sumirem no mesmo quadro. */}
+            Sai deslizando para a direita e encolhendo — o mesmo movimento e a
+            mesma física de mola do raio (ver `quick-fab.tsx`), sem atraso
+            entre os dois: mudar um valor aqui sem espelhar lá volta a
+            dessincronizar. */}
         <AnimatePresence initial={false}>
           {!recolhido && (
             <motion.button
@@ -311,7 +311,7 @@ export function ChatDock() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 28, scale: 0.6 }}
               whileTap={{ scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7, delay: 0.04 }}
+              transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
               style={{ transformOrigin: "bottom right" }}
               className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110"
               title="Chat"
