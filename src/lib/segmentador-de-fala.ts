@@ -11,7 +11,15 @@
  *   - só vale som alto por pelo menos 3 leituras seguidas (~180 ms). Clique de
  *     tecla e batida na mesa são picos de uma leitura e não somam mais nada;
  *   - o trecho só é enviado com meio segundo de fala assim contada. Trecho
- *     quase mudo é exatamente onde os modelos de transcrição "inventam" texto.
+ *     quase mudo é exatamente onde os modelos de transcrição "inventam" texto;
+ *   - abrir a frase exige um som bem acima do ruído da sala; continuar uma
+ *     frase já aberta aceita um som mais fraco. Sem essa diferença, uma
+ *     sílaba mais fraca no fim de uma palavra (quem fala baixo ou está longe)
+ *     cortava a frase no meio, e a palavra chegava truncada na transcrição;
+ *   - o piso do ruído desce rápido quando a sala fica mais quieta, mas sobe
+ *     devagar quando fica mais alta. Sem essa diferença, quem fala baixo
+ *     ensinava o próprio piso a subir, até a voz virar "ruído normal" e parar
+ *     de ser ouvida.
  *
  * Cada trecho é um MediaRecorder novo, e não pedaços de um só: os pedaços de
  * uma gravação contínua não se abrem sozinhos (só o primeiro tem o cabeçalho do
@@ -166,23 +174,45 @@ export function criarSegmentador(o: OpcoesDoSegmentador): {
     }
     const rms = Math.sqrt(soma / amostra.length);
 
-    /* O limiar acompanha o ruído da sala: ar-condicionado e teclado sobem o
-       chão, e um limiar fixo ou cortaria no meio das frases ou nunca cortaria.
-       O ruído só é medido nos momentos sem voz. */
-    const limiar = Math.max(0.02, ruido * 2.8);
-    if (rms > limiar) {
-      seguidas++;
-      if (seguidas >= LEITURAS_SEGUIDAS) {
-        // A primeira vez que a sequência fecha conta as leituras que a abriram.
-        falaMs += seguidas === LEITURAS_SEGUIDAS ? TICK_MS * LEITURAS_SEGUIDAS : TICK_MS;
+    /* Dois limiares, não um: abrir a frase exige bem mais que o ruído da sala
+       (evita clique de tecla ou sopro de ventilador virando frase nova);
+       continuar uma frase já aberta aceita bem menos (uma sílaba mais fraca
+       no meio ou fim não deve fechar a frase nem parar de contar como fala —
+       isso também mantinha o falaMs baixo demais e derrubava transcrições
+       boas no filtro de tamanho do servidor). */
+    const limiarEntrar = Math.max(0.02, ruido * 2.8);
+    const limiarManter = Math.max(0.012, ruido * 1.5);
+
+    if (falando) {
+      if (rms > limiarManter) {
+        falaMs += TICK_MS;
         silencioMs = 0;
-        marcarFalando(true);
+      } else {
+        silencioMs += TICK_MS;
+        if (silencioMs > 300) marcarFalando(false);
       }
     } else {
-      seguidas = 0;
-      silencioMs += TICK_MS;
-      ruido = ruido * 0.97 + rms * 0.03;
-      if (silencioMs > 300) marcarFalando(false);
+      /* O piso só aprende fora da fala, e assimétrico: desce rápido (a sala
+         ficou mais quieta) mas sobe devagar (ficou mais alta). Antes subia no
+         mesmo ritmo dos dois lados — e quem fala baixo, ao nunca cruzar o
+         limiar de abrir, ensinava o próprio piso a subir até a voz parar de
+         se destacar do ruído. Agora um som mais alto só vira "ruído normal"
+         depois de durar segundos, não uma ou duas leituras. */
+      if (rms < ruido) ruido = ruido * 0.9 + rms * 0.1;
+      else ruido = ruido * 0.995 + rms * 0.005;
+
+      if (rms > limiarEntrar) {
+        seguidas++;
+        if (seguidas >= LEITURAS_SEGUIDAS) {
+          falaMs += TICK_MS * LEITURAS_SEGUIDAS;
+          silencioMs = 0;
+          seguidas = 0;
+          marcarFalando(true);
+        }
+      } else {
+        seguidas = 0;
+        silencioMs += TICK_MS;
+      }
     }
 
     if (!gravador) {
