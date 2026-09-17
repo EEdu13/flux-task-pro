@@ -66,8 +66,6 @@ function SettingsPage() {
   const [name, setName] = useState(currentUser.name);
   const [email, setEmail] = useState(currentUser.email ?? "");
   const [phone, setPhone] = useState(currentUser.phone ?? "");
-  const [jobTitle, setJobTitle] = useState(currentUser.jobTitle);
-  const [sector, setSector] = useState(currentUser.sector);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -96,8 +94,9 @@ function SettingsPage() {
       email: trimmedEmail,
       // Guarda com DDI: é o formato que o WhatsApp precisa e o que a empresa usa.
       phone: trimmedPhone ? telefoneParaGuardar(trimmedPhone) : "",
-      jobTitle: jobTitle.trim(),
-      sector,
+      // Cargo e setor são travados nesta tela — quem muda é o gestor, na Equipe.
+      jobTitle: currentUser.jobTitle,
+      sector: currentUser.sector,
       contactCompleted,
     });
     /* Sem isto a confirmação nunca chegava no banco: `updateCurrentUser` só
@@ -191,17 +190,32 @@ function SettingsPage() {
                   <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
                 </Field>
                 <Field label="Cargo">
-                  <input className="input" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+                  <input
+                    className="input"
+                    value={currentUser.jobTitle}
+                    disabled
+                    title="Definido pelo gestor — fale com ele para alterar."
+                  />
                 </Field>
                 <Field label="Setor">
-                  <select className="input" value={sector} onChange={(e) => setSector(e.target.value)}>
+                  <select
+                    className="input"
+                    value={currentUser.sector}
+                    disabled
+                    title="Definido pelo gestor — fale com ele para alterar."
+                  >
                     {sectors.map((s) => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </Field>
                 <Field label="Papel">
-                  <input className="input" value={roleLabels[currentUser.role]} disabled />
+                  <input
+                    className="input"
+                    value={roleLabels[currentUser.role]}
+                    disabled
+                    title="Definido pelo gestor — fale com ele para alterar."
+                  />
                 </Field>
                 <Field label="Email de contato">
                   <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 focus-within:ring-2 focus-within:ring-ring">
