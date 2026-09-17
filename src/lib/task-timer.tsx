@@ -116,11 +116,12 @@ export function TaskTimerProvider({ children }: { children: ReactNode }) {
         endedAt: now,
         seconds,
       };
+      /* appendSession grava o total certo no localStorage e, ao gravar,
+         dispara "fluxo:timer-updated" — o efeito abaixo escuta esse evento e
+         recarrega `totals` dali. Somar `seconds` aqui também dobrava a conta:
+         o React aplica os dois setTotals em sequência, e o segundo somava em
+         cima do valor que o evento já tinha corrigido (5 min virava 10). */
       appendSession(userId, session);
-      setTotals((prev) => ({
-        ...prev,
-        [state.taskId]: (prev[state.taskId] ?? 0) + seconds,
-      }));
 
       // Só sobe ao banco quem tem tarefa de banco: uma sessão apontando para
       // uma tarefa do formato antigo daria erro de formato no servidor.
