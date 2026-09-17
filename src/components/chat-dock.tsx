@@ -313,7 +313,13 @@ export function ChatDock() {
               whileTap={{ scale: 0.9 }}
               transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
               style={{ transformOrigin: "bottom right" }}
-              className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition hover:brightness-110"
+              /* `transition-[filter]` e não `transition`: o utilitário cheio do
+                 Tailwind põe 150ms de transição CSS em transform/scale/opacity
+                 — as MESMAS propriedades que o framer-motion escreve a cada
+                 quadro. O navegador passava a perseguir cada valor com 150ms de
+                 atraso, e o balão chegava bem depois do raio (que não tem a
+                 classe). Aqui só o `filter` do hover precisa de transição. */
+              className="relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl transition-[filter] hover:brightness-110"
               title="Chat"
             >
               {/* O ícone gira ao virar X — o botão responde, não só o painel. */}

@@ -730,7 +730,10 @@ function BotaoRecolher({
          rótulo; com `items-end` puro, este botão encostaria no rodapé e
          apareceria na altura do texto. A margem também é o que impede o botão
          de pular de lugar quando o raio some. */
-      className="mb-6 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition hover:brightness-110"
+      /* `transition-[filter]` e não `transition`: pelo mesmo motivo do balão do
+         chat — o utilitário cheio faria a transição CSS competir com o
+         `whileHover`/`whileTap` daqui, que também mexem em `scale`. */
+      className="mb-6 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition-[filter] hover:brightness-110"
     >
       <motion.span
         animate={{ rotate: recolhido ? 180 : 0 }}
