@@ -23,7 +23,8 @@ import type {
   Task,
   User,
 } from "./fluxo-types";
-import { priorityMultiplier } from "./fluxo-types";
+import { priorityMultiplier, statusLabels } from "./fluxo-types";
+import { isoParaData } from "@/lib/data-iso";
 import { createRoomCall } from "./livekit-token.functions";
 import { iamLogout } from "@/integrations/iam/auth.functions";
 // Só a regra de iniciais, que é string pura e roda no navegador. Reescrevê-la
@@ -499,6 +500,32 @@ export function descartarPendencias(taskId: string): void {
  * erro, mas os campos extras seriam descartados em silêncio pelo validador, e
  * seria fácil concluir que eles foram salvos.
  */
+/**
+ * Manda uma linha para o histórico da tarefa — o que a aba Timeline mostra.
+ *
+ * Precisa de chamada própria porque `salvarTarefa` NÃO grava histórico, de
+ * propósito: ele só cresce, e regravá-lo em bloco junto com a tarefa apagaria
+ * o que outra pessoa escreveu enquanto esta tinha a tela aberta.
+ *
+ * Sem isto, as linhas que `updateTask` montava ("mudou o status", "atribuiu
+ * para") existiam só na memória de quem fez a mudança e sumiam no recarregar —
+ * era por isso que a Timeline aparecia vazia em quase toda tarefa. A única que
+ * sobrevivia era "comentou", que já tinha esta chamada.
+ *
+ * Falha em silêncio (só um aviso no console) pelo mesmo motivo que o
+ * comentário: é registro de apoio. Perder uma linha de histórico não pode
+ * derrubar a mudança de status que a pessoa acabou de fazer.
+ */
+async function gravarHistorico(tarefaId: string, tipo: ActivityKind, texto: string): Promise<void> {
+  if (!ehGuid(tarefaId)) return; // tarefa do formato antigo fica local
+  try {
+    const api = await import("@/lib/tarefa-satelites.functions");
+    await api.registrarHistorico({ data: { tarefaId, tipo, texto } });
+  } catch (e) {
+    console.warn("[fluxo] histórico não gravou:", (e as Error)?.message);
+  }
+}
+
 async function gravarTarefa(t: Task): Promise<void> {
   if (!ehGuid(t.id)) return; // tarefa do formato antigo fica local
   try {
@@ -1230,29 +1257,36 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            gravação. O navegador sabe o que ele mesmo tinha em tela, que não é a
            mesma coisa quando duas pessoas mexem na tarefa no mesmo dia. */
 
-        // activity log for status change
+        /* O que vira linha do histórico.
+           `statusLabels` em vez do valor cru: a Timeline é para ler, e "mudou
+           o status para andamento" não é como ninguém fala. O prazo entrou na
+           lista porque é a mudança sobre a qual mais se discute depois — "mas
+           não era para ontem?" — e era justamente a que não deixava rastro. */
         const activityAdd: ActivityEntry[] = [];
+        const anotar = (kind: ActivityKind, text: string) =>
+          activityAdd.push({ id: rid("a"), at: nowIso(), userId: currentUser.id, kind, text });
+
         if (patch.status && patch.status !== prev.status) {
-          activityAdd.push({
-            id: rid("a"),
-            at: nowIso(),
-            userId: currentUser.id,
-            kind: "status" as ActivityKind,
-            text: `mudou o status para ${patch.status}`,
-          });
+          anotar("status", `mudou o status para ${statusLabels[patch.status]}`);
         }
         if (patch.assigneeId && patch.assigneeId !== prev.assigneeId) {
           const to = s.users.find((u) => u.id === patch.assigneeId);
-          activityAdd.push({
-            id: rid("a"),
-            at: nowIso(),
-            userId: currentUser.id,
-            kind: "atribuicao",
-            text: `atribuiu para ${to?.name ?? "outro"}`,
-          });
+          anotar("atribuicao", `atribuiu para ${to?.name ?? "outro"}`);
+        }
+        if (patch.dueDate && patch.dueDate !== prev.dueDate) {
+          const dia = (iso: string) =>
+            isoParaData(iso.slice(0, 10))?.toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "short",
+            }) ?? iso.slice(0, 10);
+          anotar("editada", `mudou o prazo de ${dia(prev.dueDate)} para ${dia(patch.dueDate)}`);
         }
 
         const withActivity: Task = { ...next, activity: [...next.activity, ...activityAdd] };
+
+        /* As mesmas linhas, agora no banco. Sem esta volta, elas viviam só
+           nesta aba do navegador — ver `gravarHistorico`. */
+        for (const a of activityAdd) void gravarHistorico(id, a.kind, a.text);
 
         /* Grava a tarefa já com a mudança aplicada.
            Sai daqui de dentro porque `salvarTarefa` regrava a linha inteira e

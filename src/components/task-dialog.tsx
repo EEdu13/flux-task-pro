@@ -6,7 +6,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
 import { subirAnexos } from "@/lib/anexo-upload";
-import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
+import type { ActivityKind, Attachment, ChecklistItem } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import { formatHM, parseHM } from "@/lib/time-log";
 import { TaskTimerControls } from "@/components/task-timer-controls";
@@ -1205,7 +1205,14 @@ export function TaskDialog() {
 
           {tab === "timeline" && editing && (() => {
             type Item =
-              | { kind: "activity"; id: string; at: string; userId: string; text: string }
+              | {
+                  kind: "activity";
+                  tipo: ActivityKind;
+                  id: string;
+                  at: string;
+                  userId: string;
+                  text: string;
+                }
               | {
                   kind: "comment";
                   id: string;
@@ -1217,6 +1224,7 @@ export function TaskDialog() {
             const items: Item[] = [
               ...editing.activity.map((a) => ({
                 kind: "activity" as const,
+                tipo: a.kind,
                 id: a.id,
                 at: a.at,
                 userId: a.userId,
@@ -1230,7 +1238,52 @@ export function TaskDialog() {
                 text: c.text,
                 attachments: c.attachments,
               })),
-            ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+            ];
+
+            /* A criação não é gravada no histórico, e não precisa ser: ela já
+               está na própria linha da tarefa, em `createdAt`/`createdBy`. Por
+               isso é montada aqui, e não no banco.
+
+               É também o que faz as tarefas ANTIGAS terem Timeline. O
+               histórico só passou a ser gravado agora; sem esta linha, tudo o
+               que existia antes continuaria abrindo a aba em branco — e sem
+               precisar escrever nada em `historico_da_tarefa` para corrigir o
+               passado.
+
+               Só entra se já não houver uma: a tarefa criada nesta sessão traz
+               a sua própria, e a que nasce de recorrência traz o texto dela,
+               que diz mais do que este. */
+            if (editing.createdAt && !items.some((i) => i.kind === "activity" && i.tipo === "criada")) {
+              items.push({
+                kind: "activity",
+                tipo: "criada",
+                id: `criada-${editing.id}`,
+                at: editing.createdAt,
+                userId: editing.createdBy,
+                text: "criou esta tarefa",
+              });
+            }
+
+            items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+            /* Rede de proteção: com a linha de criação acima, chegar aqui
+               significa tarefa sem `createdAt` — raro, mas melhor do que o que
+               havia antes, que era um <ol> vazio com só o risco da borda. Quem
+               abria não distinguia "nada aconteceu" de "isto quebrou", e a
+               segunda leitura era a óbvia. */
+            if (items.length === 0) {
+              return (
+                <div className="flex flex-col items-center gap-2 py-10 text-center">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary">
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                  </span>
+                  <p className="text-sm font-medium">Nada aconteceu nesta tarefa ainda.</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    Mudanças de status, de responsável e de prazo, além dos comentários, aparecem
+                    aqui em ordem.
+                  </p>
+                </div>
+              );
+            }
             return (
               <ol className="relative space-y-4 border-l border-border pl-5">
                 {items.map((it) => {
