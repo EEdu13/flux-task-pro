@@ -16,8 +16,10 @@ import {
   BarChart3,
   Settings,
   Phone,
+  DoorOpen,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { useCallInviter } from "@/lib/call-inviter-context";
 import { toast } from "sonner";
@@ -154,6 +156,17 @@ export function CommandPalette() {
                 onSelect={() =>
                   go(() => window.dispatchEvent(new CustomEvent("fluxo:team-panel-open")))
                 }
+              />
+              {/* As palavras-chave são o que faz este item aparecer: quem
+                  procura pensa em "sala de reunião", "Sala Maior", "reservar"
+                  — não no nome da tela. E "sala" sozinho traz também as salas
+                  de voz logo abaixo, que é justamente a confusão a evitar. */}
+              <PaletteItem
+                icon={DoorOpen}
+                label="Reservar sala de reunião"
+                hint="Sala Maior ou Sala Menor"
+                keywords={["sala", "reuniao", "reunião", "reservar", "agendador", "maior", "menor"]}
+                onSelect={() => go(() => abrirReservaDeSala())}
               />
             </Command.Group>
 

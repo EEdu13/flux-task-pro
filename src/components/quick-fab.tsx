@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   AudioLines,
+  DoorOpen,
 } from "lucide-react";
 
 import { useFluxo } from "@/lib/fluxo-store";
@@ -22,6 +23,7 @@ import { sendNudge } from "@/components/attention-overlay";
 import { AnimatePresence, motion } from "framer-motion";
 import { alternarLancadores, useLancadoresRecolhidos } from "@/lib/lancadores";
 import { TarefaPorVoz } from "@/components/tarefa-por-voz";
+import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
 
 type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
 type PackTab = "concluir" | "meu" | "outro";
@@ -317,6 +319,23 @@ export function QuickFab() {
             onClick={() => {
               setOpen(false);
               openQuickCreate();
+            }}
+          />
+          {/* Sala FÍSICA — a Maior e a Menor do escritório. O texto de apoio diz
+              isso porque "sala" neste app já é a de voz e vídeo, e o raio tem
+              um item para cada uma a poucos pixels de distância.
+
+              Abre por cima de onde a pessoa estiver, como a tarefa por voz:
+              reservar sala interrompe outra coisa, e tirar a pessoa da tela em
+              que ela estava obrigaria a achar o caminho de volta. */}
+          <FabItem
+            icon={DoorOpen}
+            label="Reservar sala"
+            hint="Sala Maior ou Menor, presencial"
+            onClick={() => {
+              setOpen(false);
+              setMode("menu");
+              abrirReservaDeSala();
             }}
           />
         </div>

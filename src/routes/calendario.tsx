@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Zap, Eye } from "lucide-react";
+import { ChevronLeft, ChevronRight, DoorOpen, Plus, Zap, Eye } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { openTaskContext } from "@/components/task-context-menu";
 import { dataParaIso } from "@/lib/data-iso";
+import { nomeCurto } from "@/lib/nome-curto";
+import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
+import { listarAgendaDeSalas, type ReservaDeSala } from "@/lib/reservas-sala.functions";
 
 export const Route = createFileRoute("/calendario")({
   head: () => ({
@@ -55,6 +58,70 @@ function CalendarioPage() {
     () => (scope === "eu" ? tasks.filter((t) => t.assigneeId === currentUser.id) : tasks),
     [tasks, scope, currentUser.id],
   );
+
+  /* Reservas de sala física por cima do calendário de tarefas.
+   *
+   * Um prazo e uma sala reservada disputam o mesmo dia da semana da pessoa, e
+   * até aqui só um dos dois aparecia — quem olhava a quinta-feira não via que
+   * ela já tem duas horas de reunião marcada.
+   *
+   * A faixa acompanha a visão: o mês pede as 6 semanas inteiras da grade (o
+   * Agendador aceita `data`+`data_fim` de uma vez, então é UMA chamada, não
+   * 42). A visão de lista fica de fora de propósito — ela é sobre a ordem das
+   * tarefas, não sobre o dia. */
+  const [reservas, setReservas] = useState<ReservaDeSala[]>([]);
+  const faixa = useMemo(() => {
+    if (view === "lista") return null;
+    if (view === "dia") {
+      const iso = dataParaIso(cursor);
+      return { de: iso, ate: iso };
+    }
+    const inicio =
+      view === "semana"
+        ? startOfWeek(cursor)
+        : (() => {
+            const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+            const g = new Date(first);
+            g.setDate(first.getDate() - first.getDay());
+            return g;
+          })();
+    const fim = new Date(inicio);
+    fim.setDate(inicio.getDate() + (view === "semana" ? 6 : 41));
+    return { de: dataParaIso(inicio), ate: dataParaIso(fim) };
+  }, [view, cursor]);
+
+  useEffect(() => {
+    if (!faixa) {
+      setReservas([]);
+      return;
+    }
+    let vivo = true;
+    listarAgendaDeSalas({ data: { data: faixa.de, dataFim: faixa.ate } })
+      .then((r) => vivo && setReservas(r.reservas))
+      /* Falha em silêncio: esta tela é o calendário de TAREFAS, e o Agendador
+         fora do ar não pode esvaziá-la nem encher de aviso. Quem precisa saber
+         que ele caiu está na tela de reserva, onde o erro aparece. */
+      .catch(() => vivo && setReservas([]));
+    return () => {
+      vivo = false;
+    };
+  }, [faixa]);
+
+  const reservasPorDia = useMemo(() => {
+    const m = new Map<string, ReservaDeSala[]>();
+    for (const r of reservas) {
+      const lista = m.get(r.data);
+      if (lista) lista.push(r);
+      else m.set(r.data, [r]);
+    }
+    for (const lista of m.values()) lista.sort((a, b) => a.inicio.localeCompare(b.inicio));
+    return m;
+  }, [reservas]);
+
+  /* Abre o modal já no dia clicado, em vez de navegar: o calendário é a tela
+     de onde se enxerga o conflito, e sair dela para resolver seria perder de
+     vista justamente o que motivou a reserva. */
+  const abrirReservas = (iso: string) => abrirReservaDeSala(iso);
 
   const goPrev = () => {
     const d = new Date(cursor);
@@ -143,6 +210,8 @@ function CalendarioPage() {
             cursor={cursor}
             filtered={filtered}
             users={users}
+            reservasPorDia={reservasPorDia}
+            onReservaClick={abrirReservas}
             onDayClick={(iso) => openNewTask({ dueDate: iso })}
             onDayContext={(x, y, iso, count) => setDayCtx({ x, y, date: iso, count })}
             onTaskClick={openTask}
@@ -157,6 +226,8 @@ function CalendarioPage() {
             cursor={cursor}
             filtered={filtered}
             users={users}
+            reservasPorDia={reservasPorDia}
+            onReservaClick={abrirReservas}
             onDayClick={(iso) => openNewTask({ dueDate: iso })}
             onDayContext={(x, y, iso, count) => setDayCtx({ x, y, date: iso, count })}
             onTaskClick={openTask}
@@ -171,6 +242,8 @@ function CalendarioPage() {
             cursor={cursor}
             filtered={filtered}
             users={users}
+            reservasDoDia={reservasPorDia.get(dataParaIso(cursor)) ?? []}
+            onReservaClick={abrirReservas}
             onTaskClick={openTask}
             onNew={() => openNewTask({ dueDate: dataParaIso(cursor) })}
             onReorder={reorderTasks}
@@ -284,10 +357,37 @@ function TaskPill({
   );
 }
 
+/**
+ * A reserva de sala dentro do calendário de tarefas.
+ *
+ * Visual de propósito diferente do `TaskPill`: contorno em vez de fundo
+ * chapado, ícone de porta e a hora na frente. São duas espécies de compromisso
+ * dividindo o mesmo dia, e deixá-las parecidas seria pior do que não mostrar —
+ * a pessoa clicaria numa achando que é a outra.
+ */
+function ReservaPill({ r, onClick }: { r: ReservaDeSala; onClick: () => void }) {
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={`${r.sala} · ${r.inicio}–${r.fim} · ${r.motivo} · ${r.responsavel}`}
+      className="flex w-full items-center gap-1 rounded border border-primary/40 px-1 py-0.5 text-left text-[10px] transition hover:bg-primary/10"
+    >
+      <DoorOpen className="h-2.5 w-2.5 shrink-0 text-primary" />
+      <span className="shrink-0 font-semibold tabular-nums">{r.inicio}</span>
+      <span className="truncate text-muted-foreground">{r.motivo}</span>
+    </button>
+  );
+}
+
 function MonthGrid({
   cursor,
   filtered,
   users,
+  reservasPorDia,
+  onReservaClick,
   onDayClick,
   onDayContext,
   onTaskClick,
@@ -296,6 +396,8 @@ function MonthGrid({
   cursor: Date;
   filtered: any[];
   users: any[];
+  reservasPorDia: Map<string, ReservaDeSala[]>;
+  onReservaClick: (iso: string) => void;
   onDayClick: (iso: string) => void;
   onDayContext: (x: number, y: number, iso: string, count: number) => void;
   onTaskClick: (id: string) => void;
@@ -331,6 +433,11 @@ function MonthGrid({
       {cells.map((cell, i) => {
         const today = cell.date.toDateString() === new Date().toDateString();
         const iso = dataParaIso(cell.date);
+        const salas = reservasPorDia.get(iso) ?? [];
+        /* A célula tem altura fixa, então as reservas comem o espaço das
+           tarefas em vez de esticar o mês: um horário marcado é mais rígido
+           que um prazo, que a pessoa remaneja. */
+        const cabemTarefas = salas.length > 0 ? 2 : 3;
         return (
           <button
             type="button"
@@ -355,7 +462,13 @@ function MonthGrid({
               {cell.tasks.length > 0 && <span className="text-[10px] text-muted-foreground">{cell.tasks.length}</span>}
             </div>
             <div className="mt-1 space-y-0.5">
-              {cell.tasks.slice(0, 3).map((t: any) => (
+              {salas.slice(0, 2).map((r) => (
+                <ReservaPill key={r.id} r={r} onClick={() => onReservaClick(iso)} />
+              ))}
+              {salas.length > 2 && (
+                <div className="text-[10px] text-primary">+{salas.length - 2} reservas</div>
+              )}
+              {cell.tasks.slice(0, cabemTarefas).map((t: any) => (
                 <TaskPill
                   key={t.id}
                   t={t}
@@ -364,8 +477,10 @@ function MonthGrid({
                   onContext={(x, y) => openTaskContext(t.id, x, y)}
                 />
               ))}
-              {cell.tasks.length > 3 && (
-                <div className="text-[10px] text-muted-foreground">+{cell.tasks.length - 3} mais</div>
+              {cell.tasks.length > cabemTarefas && (
+                <div className="text-[10px] text-muted-foreground">
+                  +{cell.tasks.length - cabemTarefas} mais
+                </div>
               )}
             </div>
           </button>
@@ -379,6 +494,8 @@ function WeekGrid({
   cursor,
   filtered,
   users,
+  reservasPorDia,
+  onReservaClick,
   onDayClick,
   onDayContext,
   onTaskClick,
@@ -387,6 +504,8 @@ function WeekGrid({
   cursor: Date;
   filtered: any[];
   users: any[];
+  reservasPorDia: Map<string, ReservaDeSala[]>;
+  onReservaClick: (iso: string) => void;
   onDayClick: (iso: string) => void;
   onDayContext: (x: number, y: number, iso: string, count: number) => void;
   onTaskClick: (id: string) => void;
@@ -434,7 +553,12 @@ function WeekGrid({
               }}
               className="flex-1 space-y-1 p-1.5 text-left hover:bg-secondary/30"
             >
-              {day.tasks.length === 0 && <div className="text-[10px] text-muted-foreground/60">—</div>}
+              {(reservasPorDia.get(iso) ?? []).map((r) => (
+                <ReservaPill key={r.id} r={r} onClick={() => onReservaClick(iso)} />
+              ))}
+              {day.tasks.length === 0 && (reservasPorDia.get(iso) ?? []).length === 0 && (
+                <div className="text-[10px] text-muted-foreground/60">—</div>
+              )}
               {day.tasks.map((t: any) => (
                 <TaskPill
                   key={t.id}
@@ -456,6 +580,8 @@ function DayView({
   cursor,
   filtered,
   users,
+  reservasDoDia,
+  onReservaClick,
   onTaskClick,
   onNew,
   onReorder,
@@ -463,6 +589,8 @@ function DayView({
   cursor: Date;
   filtered: any[];
   users: any[];
+  reservasDoDia: ReservaDeSala[];
+  onReservaClick: (iso: string) => void;
   onTaskClick: (id: string) => void;
   onNew: () => void;
   onReorder: (ids: string[]) => void;
@@ -587,6 +715,49 @@ function DayView({
             </div>
           </div>
         ))}
+
+        {/* A quarta coluna já existia vazia na grade (`md:grid-cols-4` com três
+            filhos). As salas do dia cabem exatamente ali, ao lado do quadro de
+            situações, sem mexer na largura de nada. */}
+        <div className="flex flex-col bg-card p-3">
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <DoorOpen className="h-3 w-3 text-primary" />
+            Salas de reunião
+            <span className="ml-auto">{reservasDoDia.length}</span>
+          </div>
+          <div className="space-y-1.5">
+            {reservasDoDia.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => onReservaClick(r.data)}
+                title={`${r.sala} · ${r.motivo} · ${r.responsavel}`}
+                className="w-full rounded-md border border-primary/40 bg-primary/5 p-2 text-left transition hover:bg-primary/10"
+              >
+                <div className="flex items-center gap-1.5 text-xs font-semibold tabular-nums">
+                  {r.inicio}–{r.fim}
+                  <span className="truncate text-[10px] font-medium text-muted-foreground">
+                    {r.sala}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate text-[11px]">{r.motivo}</div>
+                {/* `nomeCurto` porque o cadastro vem TODO EM MAIÚSCULAS da IAM,
+                    e "EDUARDO FERREIRA DA SILVA" gritando numa coluna estreita
+                    rouba a atenção do motivo, que é o que se lê primeiro. */}
+                <div className="truncate text-[10px] text-muted-foreground">
+                  {nomeCurto(r.para_nome || r.responsavel)}
+                </div>
+              </button>
+            ))}
+            {reservasDoDia.length === 0 && (
+              <button
+                onClick={() => onReservaClick(dataParaIso(cursor))}
+                className="w-full rounded-md border border-dashed border-border p-3 text-[11px] text-muted-foreground transition hover:bg-secondary"
+              >
+                Nenhuma sala reservada — reservar
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

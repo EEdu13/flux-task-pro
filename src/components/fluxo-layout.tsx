@@ -52,6 +52,7 @@ import { TarefasAtrasadas } from "@/components/tarefas-atrasadas";
 import { tocarNotificacao } from "@/lib/sons";
 import { desktopFlashTaskbar } from "@/lib/desktop";
 import { CommandPalette } from "@/components/command-palette";
+import { ReservaDeSalaModal } from "@/components/reserva-de-sala-modal";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
 import { UndoProvider } from "@/lib/undo-stack";
@@ -1238,6 +1239,10 @@ export function FluxoLayout({
       <TaskContextMenu />
       <TarefasAtrasadas />
       <CommandPalette />
+      {/* Montado aqui, e não no raio: o calendário e a paleta também abrem
+          este modal, e um só lugar montando evita duas instâncias disputando
+          o mesmo evento. */}
+      <ReservaDeSalaModal />
       <TeamDelegatePanel />
       <FocusOverlay />
       {/* O respiro do topo sai da própria --titlebar-h: a barra de título é
