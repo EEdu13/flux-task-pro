@@ -394,7 +394,7 @@ function ReservaAberta({ diaInicial, aoFechar }: { diaInicial: string; aoFechar:
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 10, scale: 0.98 }}
         transition={{ type: "spring", stiffness: 420, damping: 34, mass: 0.7 }}
-        className="relative z-10 w-full max-w-[1100px] overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        className="relative z-10 w-full max-w-375 overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
       >
         {/* Cabeçalho: o que é, que dia, e o botão de sair */}
         <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/50 px-4 py-2.5">
@@ -470,10 +470,19 @@ function ReservaAberta({ diaInicial, aoFechar }: { diaInicial: string; aoFechar:
                 Nenhuma sala disponível no Agendador.
               </div>
             ) : (
-              /* A grade rola dentro do cartão: o dia inteiro passa de 700px, e
-                 deixar o modal crescer até lá empurraria o formulário para
-                 fora da tela. */
-              <div className="flex max-h-[min(62vh,620px)] overflow-auto p-4">
+              /* `items-start` é o que mantém a grade certa, não é estilo.
+                 Sem ele, o `align-items: stretch` do flex limitava as colunas à
+                 altura VISÍVEL do contêiner, e dentro delas a grade — que é um
+                 item flex, e portanto encolhe — passava de 28px para 23,5px por
+                 faixa de 30 min. A régua das horas é bloco e não encolhe junto:
+                 daí os horários sobrando embaixo, sem coluna ao lado. E o
+                 estrago maior era invisível: os blocos de reserva são
+                 posicionados por conta com ALTURA_PASSO, então iam se afastando
+                 do horário real quase 100px ao fim do dia.
+
+                 A grade ainda rola, para o caso de uma reserva fora do
+                 expediente esticar a janela além do que cabe no cartão. */
+              <div className="flex max-h-[min(74vh,760px)] items-start overflow-auto p-4">
                 {/* Régua das horas */}
                 <div className="sticky left-0 z-10 w-12 shrink-0 bg-card pt-7">
                   {marcas.map((m) => (
@@ -719,7 +728,11 @@ function ColunaDaSala({
         <span className="truncate">{sala.nome}</span>
       </div>
 
-      <div className="relative overflow-hidden rounded-lg border border-border bg-background">
+      {/* `shrink-0`: esta caixa é item de um flex em coluna, e item de flex
+          encolhe por padrão. Foi assim que as faixas de 30 min viraram 23,5px e
+          a grade saiu do lugar dos horários — o `items-start` lá em cima já
+          resolve a causa, e isto impede que volte por outro caminho. */}
+      <div className="relative shrink-0 overflow-hidden rounded-lg border border-border bg-background">
         {marcas.map((m) => {
           const livre = !ocupado(sala.id, m, m + PASSO);
           return (
