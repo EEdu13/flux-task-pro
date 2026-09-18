@@ -1142,6 +1142,17 @@ html.tauri-app .fluxo-alca-menu {
 html.tauri-app .fixed.top-0:not([data-tauri-drag-region]) {
   top: var(--titlebar-h);
 }
+/* ————— Onde um `sticky` de conteúdo pode grudar —————
+   A aba de criar tarefa tem dois: o cabeçalho da grade e a linha de títulos
+   das colunas. Os dois precisam parar logo ABAIXO da topbar (h-14), e no app
+   nativo a topbar já começa deslocada pela barra de título. Em vez de repetir
+   essa conta em cada elemento, o container publica --topo e eles leem. */
+.fluxo-grade-pagina {
+  --topo: 3.5rem;
+}
+html.tauri-app .fluxo-grade-pagina {
+  --topo: calc(3.5rem + var(--titlebar-h));
+}
 /* Overlays/modais em tela cheia (fixed inset-0): o conteúdo começa abaixo
    da barra de título, senão o cabeçalho do modal fica escondido atrás dela.
    O fundo escurecido continua cobrindo a tela toda. */

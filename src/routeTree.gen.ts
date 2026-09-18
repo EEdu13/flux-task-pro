@@ -17,6 +17,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as ConferirDadosAntigosRouteImport } from './routes/conferir-dados-antigos'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as ContatosRouteImport } from './routes/contatos'
+import { Route as CriarTarefaRouteImport } from './routes/criar-tarefa'
 import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
@@ -74,6 +75,11 @@ const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
 const ContatosRoute = ContatosRouteImport.update({
   id: '/contatos',
   path: '/contatos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CriarTarefaRoute = CriarTarefaRouteImport.update({
+  id: '/criar-tarefa',
+  path: '/criar-tarefa',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EquipeRoute = EquipeRouteImport.update({
@@ -178,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/conferir-dados-antigos': typeof ConferirDadosAntigosRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
+  '/criar-tarefa': typeof CriarTarefaRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
@@ -206,6 +213,7 @@ export interface FileRoutesByTo {
   '/conferir-dados-antigos': typeof ConferirDadosAntigosRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
+  '/criar-tarefa': typeof CriarTarefaRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
@@ -235,6 +243,7 @@ export interface FileRoutesById {
   '/conferir-dados-antigos': typeof ConferirDadosAntigosRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/contatos': typeof ContatosRoute
+  '/criar-tarefa': typeof CriarTarefaRoute
   '/equipe': typeof EquipeRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
@@ -265,6 +274,7 @@ export interface FileRouteTypes {
     | '/conferir-dados-antigos'
     | '/configuracoes'
     | '/contatos'
+    | '/criar-tarefa'
     | '/equipe'
     | '/inbox'
     | '/login'
@@ -293,6 +303,7 @@ export interface FileRouteTypes {
     | '/conferir-dados-antigos'
     | '/configuracoes'
     | '/contatos'
+    | '/criar-tarefa'
     | '/equipe'
     | '/inbox'
     | '/login'
@@ -321,6 +332,7 @@ export interface FileRouteTypes {
     | '/conferir-dados-antigos'
     | '/configuracoes'
     | '/contatos'
+    | '/criar-tarefa'
     | '/equipe'
     | '/inbox'
     | '/login'
@@ -350,6 +362,7 @@ export interface RootRouteChildren {
   ConferirDadosAntigosRoute: typeof ConferirDadosAntigosRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   ContatosRoute: typeof ContatosRoute
+  CriarTarefaRoute: typeof CriarTarefaRoute
   EquipeRoute: typeof EquipeRoute
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
@@ -426,6 +439,13 @@ declare module '@tanstack/react-router' {
       path: '/contatos'
       fullPath: '/contatos'
       preLoaderRoute: typeof ContatosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/criar-tarefa': {
+      id: '/criar-tarefa'
+      path: '/criar-tarefa'
+      fullPath: '/criar-tarefa'
+      preLoaderRoute: typeof CriarTarefaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/equipe': {
@@ -566,6 +586,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConferirDadosAntigosRoute: ConferirDadosAntigosRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   ContatosRoute: ContatosRoute,
+  CriarTarefaRoute: CriarTarefaRoute,
   EquipeRoute: EquipeRoute,
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,

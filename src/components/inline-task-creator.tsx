@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, UploadCloud, ShieldCheck, Timer, Search, Check } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, UploadCloud, ShieldCheck, Search, Check, ListPlus } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { type Status, type Priority, type Frequency } from "@/lib/fluxo-types";
 import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
@@ -12,7 +12,6 @@ import {
   descreverRecorrencia,
   primeiraDataDaRegra,
 } from "@/lib/recorrencia";
-import { AnimatePresence, motion } from "framer-motion";
 import { filesToAttachments, formatBytes, isImage, openAttachment } from "@/lib/attachments";
 import { CampoData } from "@/components/campo-data";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
@@ -274,20 +273,6 @@ function todayStr() {
   return d.toISOString().slice(0, 10);
 }
 
-function tomorrowStr() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-}
-
-function inDaysStr(n: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
-}
-
 function makeDraft(defaults: Partial<DraftRow>): DraftRow {
   return {
     id: rid(),
@@ -317,7 +302,7 @@ const PRIORIDADES: { id: Priority; label: string; curto: string; cor: string; te
   { id: "baixa", label: "Baixa", curto: "Baixa", cor: "text-primary border-primary/50 bg-primary/10", texto: "text-primary" },
 ];
 
-/* Peças do modo tabela. A célula é o próprio campo, sem borda própria: quem
+/* Peças da tabela. A célula é o próprio campo, sem borda própria: quem
    desenha a grade é a tabela, e o foco aparece como um contorno por dentro da
    célula — o jeito de planilha de mostrar onde o cursor está. */
 const TH =
@@ -326,25 +311,30 @@ const TD = "border-b border-r border-foreground/15 align-middle last:border-r-0"
 const CELULA =
   "block h-9 w-full min-w-0 bg-transparent px-2 text-xs text-foreground outline-none placeholder:text-foreground/45 focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary";
 
-/** Como a grade desenha as linhas: cartões (uma faixa por tarefa) ou tabela. */
-export type ModoDaGrade = "cartoes" | "tabela";
-
 export function InlineTaskCreator({
   defaultStatus = "pendente",
   compact = false,
   defaultDueDate,
   defaultAssigneeId,
-  modo = "cartoes",
+  emPagina = false,
 }: {
   defaultStatus?: Status;
   compact?: boolean;
   defaultDueDate?: string;
   defaultAssigneeId?: string;
-  modo?: ModoDaGrade;
+  /** Na aba dedicada a grade é a própria página: não recolhe. */
+  emPagina?: boolean;
 }) {
   const { currentUser, visibleUsersForAssign, createTask, quickCreate, closeQuickCreate } = useFluxo();
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
+  /* Recolher a grade só faz sentido dentro do modal, onde ela divide espaço
+     com o resto. Na aba dedicada, recolher deixaria a página vazia. */
+  const aberto = emPagina || open;
+  /* Só na aba: as duas dicas e os atalhos ficam atrás de "como funciona".
+     Começa fechado e não grava preferência — abrir custa um clique, e não
+     ter as faixas ali todo dia vale mais do que lembrar de quem dispensou. */
+  const [comoFunciona, setComoFunciona] = useState(false);
   const [rows, setRows] = useState<DraftRow[]>(() => [
     makeDraft({
       assigneeId: defaultAssigneeId ?? currentUser.id,
@@ -516,6 +506,22 @@ export function InlineTaskCreator({
   };
 
   const validRows = rows.filter((r) => r.title.trim());
+
+  /* `sticky` no <tr> não funciona com border-collapse: quem gruda é cada <th>,
+     e por isso o fundo e a linha de baixo precisam ir neles também — a borda
+     da célula não é repintada enquanto ela está colada. O 4rem é a altura do
+     cabeçalho da aba (h-16), que fica logo acima. */
+  const cabecalhoGrudento = emPagina
+    ? "[&>th]:sticky [&>th]:top-[calc(var(--topo)+4rem)] [&>th]:z-10 [&>th]:bg-secondary [&>th]:shadow-[inset_0_-1px_0_var(--border)]"
+    : "";
+
+  /** Quantas linhas já têm título — o mesmo selo nos dois cabeçalhos. */
+  const seloProntas =
+    validRows.length > 0 ? (
+      <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
+        {validRows.length} pronta{validRows.length > 1 ? "s" : ""}
+      </span>
+    ) : null;
 
   const requestSubmitAll = () => {
     if (validRows.length === 0) {
@@ -721,11 +727,11 @@ export function InlineTaskCreator({
     fileInputRef.current?.click();
   };
 
-  /* As peças de cada linha moram aqui, fora do JSX principal, porque os dois
-     jeitos de ver a grade (cartões e tabela) desenham os mesmos campos em lugares
-     diferentes. São funções que devolvem JSX, e não componentes: um componente
-     declarado dentro deste seria um tipo novo a cada render, e o React
-     remontaria o campo — o cursor sairia do título a cada letra digitada. */
+  /* As peças de cada linha moram aqui, fora do JSX principal, porque a mesma
+     peça aparece na célula e no painel de extras que abre embaixo. São funções
+     que devolvem JSX, e não componentes: um componente declarado dentro deste
+     seria um tipo novo a cada render, e o React remontaria o campo — o cursor
+     sairia do título a cada letra digitada. */
 
   const mesDoPrazo = (row: DraftRow) => (isoParaData(row.dueDate) ?? new Date()).getMonth();
   const diaDoPrazo = (row: DraftRow) => (isoParaData(row.dueDate) ?? new Date()).getDate();
@@ -1226,7 +1232,7 @@ export function InlineTaskCreator({
     </div>
   );
 
-  /** Arrastar arquivo para cima de uma linha anexa nela — nos dois modos. */
+  /** Arrastar arquivo para cima de uma linha anexa nela. */
   const soltarNaLinha = (row: DraftRow) => ({
     onDragEnter: (e: React.DragEvent) => {
       if (!e.dataTransfer.types.includes("Files")) return;
@@ -1251,9 +1257,20 @@ export function InlineTaskCreator({
 
   return (
     <div
-      className={`relative rounded-lg border-2 bg-card text-foreground shadow-md transition ${
-        cardDrag ? "border-primary ring-2 ring-primary/30" : "border-foreground/70"
-      }`}
+      className={
+        emPagina
+          ? /* Na aba a grade É a página: sem cartão, sem borda grossa, sem
+               sombra. A moldura de 2px existia para descolar do fundo escuro
+               do modal; aqui ela só desenharia uma caixa em volta de nada.
+               `fluxo-grade-pagina` publica o --topo que os dois `sticky`
+               (cabeçalho e títulos das colunas) leem. */
+            `fluxo-grade-pagina relative text-foreground ${
+              cardDrag ? "rounded-lg ring-2 ring-primary/40" : ""
+            }`
+          : `relative rounded-lg border-2 bg-card text-foreground shadow-md transition ${
+              cardDrag ? "border-primary ring-2 ring-primary/30" : "border-foreground/70"
+            }`
+      }
       onDragEnter={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         dragDepth.current += 1;
@@ -1285,35 +1302,145 @@ export function InlineTaskCreator({
           if (fileInputRef.current) fileInputRef.current.value = "";
         }}
       />
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 border-b-2 border-foreground/70 bg-secondary/50 px-4 py-3 text-left hover:bg-secondary"
-        title={open ? "Clique para recolher" : "Clique para expandir"}
-      >
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/40 bg-background text-foreground">
-            {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </span>
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span className="text-base font-bold text-foreground">Planilha de tarefas</span>
-          <span className="ml-1 hidden text-[11px] font-medium text-foreground/60 sm:inline">
-            (clique para {open ? "recolher" : "expandir"})
-          </span>
-          <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-dashed border-primary/40 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary">
-            <UploadCloud className="h-3 w-3" /> arraste arquivos aqui
-          </span>
+      {/* Cabeçalho. No modal ele é o botão que recolhe a grade.
+          Na aba é o único cabeçalho da tela — a rota não desenha outro — e
+          gruda no topo levando junto o botão de criar: com vinte linhas
+          preenchidas, ninguém deveria ter que rolar até o fim para salvar. */}
+      {emPagina ? (
+        <div className="sticky top-(--topo) z-20 flex h-16 items-center justify-between gap-3 border-b border-border bg-background">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <ListPlus className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold leading-tight tracking-tight">
+                Criar tarefa
+              </h1>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="hidden sm:inline">Uma linha por tarefa</span>
+                <span className="hidden sm:inline" aria-hidden>
+                  ·
+                </span>
+                {/* As duas dicas e os atalhos moram aqui dentro. Fixas, elas
+                    custavam uns 100px de altura todo dia para quem já sabe. */}
+                <button
+                  type="button"
+                  onClick={() => setComoFunciona((v) => !v)}
+                  aria-expanded={comoFunciona}
+                  className="inline-flex items-center gap-0.5 rounded font-medium text-foreground/70 transition hover:text-foreground"
+                >
+                  como funciona
+                  <ChevronDown
+                    className={`h-3 w-3 transition-transform ${comoFunciona ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* Os atalhos ficam à vista, e não atrás do "como funciona": eles
+              valem justamente enquanto a pessoa digita, e aqui acompanham a
+              rolagem. As explicações é que podem ficar guardadas — quem já
+              sabe o que é responsável × @ não precisa reler todo dia. */}
+          <div className="hidden min-w-0 items-center gap-3 text-[11px] text-muted-foreground xl:flex">
+            {ATALHOS_GRADE.map((a) => (
+              <span key={a.tecla} className="inline-flex items-center gap-1 whitespace-nowrap">
+                <kbd className="rounded border border-border bg-secondary px-1 font-mono text-foreground">
+                  {a.tecla}
+                </kbd>
+                {a.acao}
+              </span>
+            ))}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {seloProntas}
+            <button
+              type="button"
+              onClick={() => addRow()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Linha</span>
+            </button>
+            <button
+              type="button"
+              onClick={requestSubmitAll}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+            >
+              <Sparkles className="h-4 w-4" />
+              Criar{" "}
+              {validRows.length > 0
+                ? `${validRows.length} tarefa${validRows.length > 1 ? "s" : ""}`
+                : "tarefas"}
+            </button>
+          </div>
         </div>
-        {open && rows.some((r) => r.title.trim()) && (
-          <span className="rounded-full bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary">
-            {rows.filter((r) => r.title.trim()).length} pronta{rows.filter((r) => r.title.trim()).length > 1 ? "s" : ""}
-          </span>
-        )}
-      </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full cursor-pointer items-center justify-between gap-3 border-b-2 border-foreground/70 bg-secondary/50 px-4 py-3 text-left hover:bg-secondary"
+          title={open ? "Clique para recolher" : "Clique para expandir"}
+        >
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-foreground/40 bg-background text-foreground">
+              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </span>
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="text-base font-bold text-foreground">Planilha de tarefas</span>
+            <span className="ml-1 hidden text-[11px] font-medium text-foreground/60 sm:inline">
+              (clique para {open ? "recolher" : "expandir"})
+            </span>
+            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-dashed border-primary/40 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary">
+              <UploadCloud className="h-3 w-3" /> arraste arquivos aqui
+            </span>
+          </div>
+          {open && seloProntas}
+        </button>
+      )}
 
-      {open && (
+      {aberto && (
         <div>
-          {dicaAberta && (
+          {emPagina && comoFunciona && (
+            <div className="mt-3 grid gap-x-6 gap-y-2 rounded-lg border border-border bg-secondary/40 p-3 text-xs leading-relaxed text-foreground/90 lg:grid-cols-2">
+              <p>
+                O <strong className="font-semibold text-foreground">responsável</strong> é quem
+                executa a tarefa. Para que outra pessoa apenas{" "}
+                <strong className="font-semibold text-foreground">acompanhe</strong>, escreva{" "}
+                <kbd className="rounded border border-border bg-background px-1 font-mono">@</kbd>{" "}
+                seguido do nome dela no título.
+              </p>
+              <p>
+                Cada linha guarda{" "}
+                <strong className="font-semibold text-foreground">checklist</strong>,{" "}
+                <strong className="font-semibold text-foreground">repetição</strong> e{" "}
+                <strong className="font-semibold text-foreground">tags</strong> na coluna Extras.
+                Fechado, o botão mostra o que você já preencheu.
+              </p>
+              {/* Os atalhos moram no cabeçalho, sempre à vista — mas lá eles
+                  só aparecem a partir de `xl`. Abaixo disso o cabeçalho não
+                  tem largura para eles, e some-los de vez seria perder a
+                  informação; então reaparecem aqui, e só aqui. */}
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-foreground/75 lg:col-span-2 xl:hidden">
+                {ATALHOS_GRADE.map((a) => (
+                  <span key={a.tecla} className="inline-flex items-center gap-1">
+                    <kbd className="rounded border border-border bg-background px-1 font-mono text-foreground">
+                      {a.tecla}
+                    </kbd>
+                    {a.acao}
+                  </span>
+                ))}
+              </p>
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-foreground/75 lg:col-span-2">
+                <span className="inline-flex items-center gap-1 text-primary">
+                  <UploadCloud className="h-3 w-3" /> arraste arquivos sobre uma linha para anexar
+                </span>
+                <span>
+                  Cada linha vira uma tarefa só quando tem título — as vazias são ignoradas.
+                </span>
+              </p>
+            </div>
+          )}
+          {!emPagina && dicaAberta && (
             <div className="mx-2 mt-2 flex items-start gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-foreground/90 sm:mx-3">
               <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               <p className="flex-1">
@@ -1334,7 +1461,7 @@ export function InlineTaskCreator({
               </button>
             </div>
           )}
-          {dicaExtrasAberta && (
+          {!emPagina && dicaExtrasAberta && (
             <div className="mx-2 mt-2 flex items-start gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-foreground/90 sm:mx-3">
               <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               <p className="flex-1">
@@ -1354,22 +1481,40 @@ export function InlineTaskCreator({
               </button>
             </div>
           )}
-          {modo === "tabela" ? (
-            /* Modo tabela: uma linha por tarefa, uma coluna por campo, como numa
-               planilha. Serve para preencher muita tarefa parecida de uma vez —
-               os campos ficam alinhados e dá para descer coluna abaixo com as
-               setas. Checklist, recorrência e tags continuam atrás do botão da
-               coluna "Extras", que abre uma linha inteira embaixo. */
-            <div className="px-2 pb-2 pt-3 sm:px-3 sm:pb-3">
-              <div className="overflow-x-auto rounded-md border border-foreground/40 bg-background">
+          {/* Uma linha por tarefa, uma coluna por campo, como numa planilha.
+              Serve para preencher muita tarefa parecida de uma vez — os campos
+              ficam alinhados e dá para descer coluna abaixo com as setas.
+              Checklist, recorrência e tags ficam atrás do botão da coluna
+              "Extras", que abre uma linha inteira embaixo. */}
+          <div className={emPagina ? "pt-3" : "px-2 pb-2 pt-3 sm:px-3 sm:pb-3"}>
+              <div
+                className={
+                  emPagina
+                    ? /* Sem `overflow-x-auto` aqui: um contêiner que rola é um
+                         contêiner de recorte, e dentro dele o `sticky` da linha
+                         de títulos gruda no topo da CAIXA, não no da tela — ou
+                         seja, nunca. A tabela cabe na largura da aba (medida:
+                         1288px de 1288 numa tela de 1366), e abaixo do mínimo
+                         quem rola é a página. */
+                      "min-w-0 rounded-md border border-border bg-background"
+                    : "overflow-x-auto rounded-md border border-foreground/40 bg-background"
+                }
+              >
+                {/* Largura em porcentagem no título e na descrição, com piso em
+                    `min-w-*`: numa tela larga a sobra vai para os dois campos de
+                    texto, em vez de ser repartida com Prazo e Prioridade, que
+                    não ficam melhores maiores. */}
                 <table className="w-full min-w-260 border-collapse text-xs">
                   <thead>
-                    <tr className="bg-secondary/70 text-left">
+                    {/* Gruda logo abaixo do cabeçalho da aba (h-16). Com muitas
+                        linhas, o nome da coluna é o que diz o que você está
+                        preenchendo — some ele e a planilha vira campo anônimo. */}
+                    <tr className={`bg-secondary text-left ${cabecalhoGrudento}`}>
                       <th className={`${TH} w-9 text-center`}>#</th>
-                      <th className={`${TH} min-w-56`}>
+                      <th className={`${TH} w-[30%] min-w-56`}>
                         Tarefa <span className="text-destructive">*</span>
                       </th>
-                      <th className={`${TH} min-w-44`}>
+                      <th className={`${TH} w-[24%] min-w-44`}>
                         Descrição{" "}
                         <span className="font-medium normal-case tracking-normal text-foreground/50">
                           (opcional)
@@ -1479,187 +1624,6 @@ export function InlineTaskCreator({
                 </table>
               </div>
             </div>
-          ) : (
-          <>
-          {/* Cabeçalho das colunas: sem ele os dois campos eram só caixas
-              anônimas, e o placeholder some no instante em que se digita. */}
-          <div className="flex items-center gap-2 px-4 pb-1 pt-3 sm:px-5">
-            <span className="h-0 w-6 shrink-0" aria-hidden />
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="min-w-0 flex-[1_1_58%] text-[10px] font-bold uppercase tracking-wide text-foreground/85">
-                Tarefa <span className="text-destructive">*</span>
-              </div>
-              <div className="min-w-0 flex-[1_1_42%] text-[10px] font-bold uppercase tracking-wide text-foreground/65">
-                Descrição{" "}
-                <span className="font-medium normal-case tracking-normal text-foreground/50">
-                  (opcional)
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5 px-2 pb-2 sm:px-3 sm:pb-3">
-            {rows.map((row, idx) => (
-              <div
-                key={row.id}
-                {...soltarNaLinha(row)}
-                className={`relative rounded-md border border-foreground/40 bg-background px-2 py-1.5 shadow-sm transition ${
-                  dragRowId === row.id ? "border-primary bg-primary/5" : "hover:border-foreground/60"
-                }`}
-              >
-                <div className="flex items-stretch gap-2">
-                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
-                    {idx + 1}
-                  </span>
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <div className="relative min-w-0 flex-[1_1_58%]">
-                      {campoTitulo(
-                        row,
-                        idx,
-                        "w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm font-semibold text-foreground outline-none placeholder:text-foreground/55 focus:border-primary focus:ring-1 focus:ring-primary/20",
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-[1_1_42%]">
-                      {campoDescricao(
-                        row,
-                        idx,
-                        "w-full rounded-md border border-foreground/30 bg-background px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-foreground/55 focus:border-primary focus:ring-1 focus:ring-primary/20",
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {anexosDaLinha(row, "mt-1.5 flex flex-wrap gap-1 pl-8")}
-                {/* Faixa de controles agrupada. Antes era uma fileira de seis
-                    controles com a mesma borda e altura, sem nada dizendo que
-                    tratavam de coisas diferentes (quando / quem / quanto tempo). */}
-                <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-2 pl-8">
-                  <div className="flex flex-col gap-1">
-                    <span className={ROTULO}>Prazo</span>
-                    <div className="flex items-center gap-1.5">
-                      <div className="inline-flex h-6 items-center gap-0.5 rounded-md border border-foreground/30 bg-background p-0.5 text-[11px]">
-                          {[
-                            { label: "Hoje", get: todayStr },
-                            { label: "Amanhã", get: tomorrowStr },
-                            { label: "+7d", get: () => inDaysStr(7) },
-                          ].map((opt) => {
-                            const iso = opt.get();
-                            const active = row.dueDate === iso;
-                            return (
-                              <button
-                                type="button"
-                                key={opt.label}
-                                onClick={() => update(row.id, { dueDate: iso })}
-                                className={`rounded px-1.5 py-0.5 font-semibold transition ${
-                                  active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-secondary"
-                                }`}
-                              >
-                                {opt.label}
-                              </button>
-                            );
-                          })}
-                      </div>
-                      <CampoData
-                          value={row.dueDate}
-                          onChange={(v) => update(row.id, { dueDate: v })}
-                          limpavel={false}
-                          placeholder="Escolher"
-                          title="Prazo da tarefa"
-                          className="h-6 w-31 border-foreground/30 text-[11px] font-medium text-foreground"
-                        />
-                    </div>
-                  </div>
-                  {!compact && (
-                    <div className="flex flex-col gap-1">
-                      <span className={ROTULO}>Responsável</span>
-                      <SeletorResponsavel
-                        valor={row.assigneeId}
-                        pessoas={assignees}
-                        aoMudar={(id) => update(row.id, { assigneeId: id })}
-                      />
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-1">
-                    <span className={ROTULO}>Prioridade</span>
-                    <div className="inline-flex h-6 items-center gap-0.5 rounded-md border border-foreground/30 bg-background p-0.5 text-[11px]">
-                      {PRIORIDADES.map((p) => {
-                        const ativa = row.priority === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => update(row.id, { priority: p.id })}
-                            aria-pressed={ativa}
-                            className={`rounded px-1.5 py-0.5 font-semibold transition ${
-                              ativa ? p.cor + " border" : "border border-transparent text-foreground/60 hover:bg-secondary"
-                            }`}
-                          >
-                            {p.curto}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className={ROTULO}>
-                      Estimativa <span className="font-medium normal-case text-foreground/45">(opc.)</span>
-                    </span>
-                    <div className="flex h-6 items-center gap-1 rounded-md border border-foreground/30 bg-background px-1.5 text-[11px] focus-within:border-primary">
-                        <Timer className="h-3 w-3 text-foreground/70" />
-                        <input
-                          value={row.estimateHM}
-                          onChange={(e) => update(row.id, { estimateHM: e.target.value })}
-                          placeholder="00:30"
-                          inputMode="numeric"
-                          className="w-12 bg-transparent font-mono text-foreground outline-none placeholder:text-foreground/55"
-                          title="Tempo estimado — ex.: 00:30, 1:15, 45m, 1.5h"
-                        />
-                    </div>
-                  </div>
-                  {/* Checklist, recorrência e tags ficam atrás deste botão. Ele
-                      mora ao lado da estimativa, e não no canto com as ações:
-                      empurrado para a direita junto do anexar e da lixeira, era
-                      lido como ação secundária e passava despercebido. */}
-                  {botaoExtras(row)}
-                  {/* Ações. "Comprovante" fica sempre escrito — o escudo sozinho
-                      não conta o que faz. Anexar mantém só o ícone (clipe é
-                      convenção universal) e a lixeira sai de perto dos outros
-                      dois: era idêntica a eles, sendo a única irreversível. */}
-                  <div className="ml-auto flex items-end gap-1.5">
-                    <div className="flex flex-col gap-1">
-                      <span className={ROTULO}>Opções</span>
-                      <div className="flex items-center gap-1">
-                        {botaoComprovante(row, false)}
-                        {botaoAnexar(row)}
-                      </div>
-                    </div>
-                    <span className="mx-0.5 h-6 w-px shrink-0 bg-foreground/20" aria-hidden />
-                    {botaoRemover(row)}
-                  </div>
-                </div>
-
-                <AnimatePresence initial={false}>
-                {linhaAberta === row.id && (
-                  <motion.div
-                    key="extras"
-                    // Altura animada com overflow escondido: sem isso o painel
-                    // aparece de estalo e empurra as linhas de baixo num salto.
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{
-                      height: { type: "spring", stiffness: 400, damping: 38, mass: 0.7 },
-                      opacity: { duration: 0.15 },
-                    }}
-                    className="overflow-hidden"
-                  >
-                    {painelExtras(row, "mt-2 pl-8")}
-                  </motion.div>
-                )}
-                </AnimatePresence>
-              </div>
-            ))}
-          </div>
-          </>
-          )}
           {cardDrag && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/5">
               <div className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow">
@@ -1667,41 +1631,60 @@ export function InlineTaskCreator({
               </div>
             </div>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-foreground/70 bg-secondary/60 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2">
+          {/* Rodapé. Na aba ele fica magro: o botão de criar e os atalhos já
+              subiram para o cabeçalho grudento e para o "como funciona", e
+              repetir os dois aqui só empurraria a grade para cima. Sobra o
+              "adicionar linha", que é onde a mão está depois da última. */}
+          {emPagina ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border py-3">
               <button
                 type="button"
                 onClick={() => addRow()}
-                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-foreground/50 bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:text-primary"
+                className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-3 py-2 text-sm font-semibold text-muted-foreground transition hover:border-primary hover:text-primary"
               >
                 <Plus className="h-4 w-4" /> Adicionar linha
               </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-foreground/80">
-              <span className="text-[10px] text-foreground/60">
+              <span className="text-[10px] text-muted-foreground">
                 <span className="text-destructive">*</span> obrigatório
               </span>
-              <span className="hidden md:inline">
-                {ATALHOS_GRADE.map((a, i) => (
-                  <span key={a.tecla}>
-                    {i > 0 && " · "}
-                    <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">
-                      {a.tecla}
-                    </kbd>{" "}
-                    {a.acao}
-                  </span>
-                ))}
-              </span>
-              <button
-                type="button"
-                onClick={requestSubmitAll}
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
-              >
-                <Sparkles className="h-4 w-4" />
-                Criar {validRows.length > 0 ? `${validRows.length} tarefa${validRows.length > 1 ? "s" : ""}` : "tarefas"}
-              </button>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-foreground/70 bg-secondary/60 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addRow()}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-foreground/50 bg-background px-3 py-2 text-sm font-semibold text-foreground transition hover:border-primary hover:text-primary"
+                >
+                  <Plus className="h-4 w-4" /> Adicionar linha
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-foreground/80">
+                <span className="text-[10px] text-foreground/60">
+                  <span className="text-destructive">*</span> obrigatório
+                </span>
+                <span className="hidden md:inline">
+                  {ATALHOS_GRADE.map((a, i) => (
+                    <span key={a.tecla}>
+                      {i > 0 && " · "}
+                      <kbd className="rounded border border-foreground/40 bg-background px-1 font-mono text-foreground">
+                        {a.tecla}
+                      </kbd>{" "}
+                      {a.acao}
+                    </span>
+                  ))}
+                </span>
+                <button
+                  type="button"
+                  onClick={requestSubmitAll}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Criar {validRows.length > 0 ? `${validRows.length} tarefa${validRows.length > 1 ? "s" : ""}` : "tarefas"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
