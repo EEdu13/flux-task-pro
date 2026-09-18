@@ -17,6 +17,7 @@ import {
   Settings,
   Phone,
   DoorOpen,
+  Search,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
@@ -64,6 +65,19 @@ export function CommandPalette() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((v) => !v);
+      }
+      /* `/` abre a busca — a convenção da web, e o que o campo da topbar
+         anuncia desde que virou botão. Fora de campo de texto, claro: senão
+         ninguém escreve uma barra num título de tarefa. */
+      if (e.key === "/" && !open) {
+        const alvo = e.target as HTMLElement | null;
+        const digitando =
+          alvo &&
+          (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable);
+        if (!digitando) {
+          e.preventDefault();
+          setOpen(true);
+        }
       }
       if (e.key === "Escape" && open) setOpen(false);
     };
@@ -115,7 +129,10 @@ export function CommandPalette() {
       >
         <Command label="Busca global" shouldFilter={true} className="flex flex-col">
           <div className="flex items-center gap-2 border-b border-border px-3">
-            <span className="text-xs text-muted-foreground">⌘K</span>
+            {/* "Ctrl+K", não "⌘K": o app roda no Windows, e agora o botão da
+                topbar que abre isto aqui anuncia o atalho com esse nome — dois
+                nomes para a mesma tecla, lado a lado, é contradição na tela. */}
+            <span className="text-xs text-muted-foreground">Ctrl+K</span>
             <Command.Input
               value={query}
               onValueChange={setQuery}
@@ -196,6 +213,32 @@ export function CommandPalette() {
               heading="Tarefas"
               className="mb-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground"
             >
+              {/* A saída para o quadro inteiro. A paleta abre UMA tarefa; quem
+                  quer filtrar a lista por um termo — "me mostra tudo que fala
+                  de orçamento" — precisava da barra da topbar, que agora é só
+                  o gatilho daqui.
+
+                  Este item não precisa escapar do filtro do cmdk: o rótulo
+                  carrega o próprio termo digitado, então ele casa sempre,
+                  inclusive quando nada mais casa. (`forceMount` seria pior —
+                  o item fica montado, mas o cmdk esconde o grupo que não tem
+                  nenhum item pontuado, e ele some junto.) */}
+              {query.trim() && (
+                <PaletteItem
+                  icon={Search}
+                  label={`Ver todas as tarefas com "${query.trim()}"`}
+                  hint="abre o quadro já filtrado"
+                  onSelect={() =>
+                    go(() => {
+                      const q = query.trim();
+                      navigate({ to: "/minhas-tarefas", search: { q } });
+                      window.dispatchEvent(
+                        new CustomEvent("fluxo:busca-global", { detail: { q } }),
+                      );
+                    })
+                  }
+                />
+              )}
               {tasks.slice(0, 200).map((t) => {
                 const assignee = users.find((u) => u.id === t.assigneeId);
                 return (

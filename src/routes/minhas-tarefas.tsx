@@ -51,6 +51,7 @@ import {
 } from "@/lib/fluxo-types";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
 import { estiloDoCartaoDoProjeto, useProjetoDaTarefa } from "@/lib/projeto-da-tarefa";
+import { semAcento } from "@/lib/texto-busca";
 
 export const Route = createFileRoute("/minhas-tarefas")({
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
@@ -182,16 +183,40 @@ function MinhasTarefas() {
       return next;
     });
   };
+  /* Chegou por link, favorito ou botão de voltar: o `q` da URL manda.
+     `?? ""` porque sair do `q` também é um comando — antes, apagar a busca lá
+     em cima tirava o termo do endereço e deixava o filtro ligado na tela, com
+     a URL dizendo uma coisa e o quadro mostrando outra. */
   useEffect(() => {
-    if (initialQ !== undefined && initialQ !== search) {
-      setSearch(initialQ);
-      setScope("todas");
+    const daUrl = initialQ ?? "";
+    if (daUrl !== search) {
+      setSearch(daUrl);
+      if (daUrl) setScope("todas");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQ]);
 
+  /* Alguém deu Enter na busca da topbar. Precisa de aviso próprio porque
+     buscar DE NOVO o mesmo termo não muda a URL, e sem mudança de URL o efeito
+     acima não roda — quem tivesse mexido no campo de busca desta página ficava
+     com a barra de cima sem efeito nenhum. */
+  useEffect(() => {
+    const aoBuscar = (e: Event) => {
+      const q = (e as CustomEvent<{ q: string }>).detail?.q ?? "";
+      setSearch(q);
+      if (q) setScope("todas");
+    };
+    window.addEventListener("fluxo:busca-global", aoBuscar);
+    return () => window.removeEventListener("fluxo:busca-global", aoBuscar);
+  }, []);
+
   const visible = useMemo(() => {
     const range = dateRangeFor(datePreset, dateFrom, dateTo);
+    /* O termo entra sem acento e em minúsculas uma vez só, e o nome do
+       responsável vira mapa antes do laço — buscar dentro do filtro faria uma
+       varredura da lista de pessoas por tarefa. */
+    const busca = semAcento(search);
+    const nomePorId = new Map(users.map((u) => [u.id, u.name]));
     return tasks.filter((t) => {
       if (currentUser.role === "adm") {
         const involved =
@@ -224,8 +249,16 @@ function MinhasTarefas() {
         const due = new Date(t.dueDate).getTime();
         if (due < range[0] || due > range[1]) return false;
       }
-      if (search && !`${t.title} ${t.description ?? ""} ${t.tags.join(" ")}`.toLowerCase().includes(search.toLowerCase()))
-        return false;
+      /* O responsável entra na busca: o campo lá em cima sempre prometeu
+         "tarefa, pessoa, tag" e só cumpria dois terços — procurar pelo nome de
+         alguém não trazia as tarefas dessa pessoa, a menos que o nome estivesse
+         escrito no título. */
+      if (busca) {
+        const alvo = semAcento(
+          `${t.title} ${t.description ?? ""} ${t.tags.join(" ")} ${nomePorId.get(t.assigneeId) ?? ""}`,
+        );
+        if (!alvo.includes(busca)) return false;
+      }
       return true;
     });
   }, [tasks, users, currentUser, scope, sector, freq, priority, assignee, tag, search, datePreset, dateFrom, dateTo]);

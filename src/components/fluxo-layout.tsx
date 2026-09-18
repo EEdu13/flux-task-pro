@@ -121,7 +121,6 @@ export function FluxoLayout({
   const { ask: askInvite } = useCallInviter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
   const [gridOpen, setGridOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -830,23 +829,25 @@ export function FluxoLayout({
             <span className="hidden sm:inline">/</span>
             <span className="truncate font-medium text-foreground">{title}</span>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const q = globalSearch.trim();
-              navigate({ to: "/minhas-tarefas", search: q ? { q } : {} });
-            }}
-            className="ml-6 hidden flex-1 items-center gap-2 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-sm md:flex"
+          {/* Botão, e não mais um campo de texto.
+              Havia duas buscas no app com alcances diferentes: esta caixa, que
+              filtrava título, descrição e tag e saltava no escuro para Minhas
+              Tarefas, e a paleta (Ctrl+K), que já procura ao vivo em tarefas,
+              pessoas, salas, atas, notas e inbox. A caixa mais fraca ficava
+              com os pixels mais valiosos da tela. Agora existe uma busca só, e
+              este lugar continua sendo por onde se chega nela. */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("fluxo:palette-open"))}
+            title="Buscar em tudo (Ctrl+K)"
+            className="ml-6 hidden flex-1 items-center gap-2 rounded-md border border-border bg-secondary/60 px-3 py-1.5 text-left text-sm text-muted-foreground transition hover:bg-secondary hover:text-foreground md:flex"
           >
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={globalSearch}
-              onChange={(e) => setGlobalSearch(e.target.value)}
-              placeholder="Buscar tarefa, pessoa, tag… (Enter)"
-              className="flex-1 bg-transparent placeholder:text-muted-foreground focus:outline-none"
-            />
-            <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">Enter</kbd>
-          </form>
+            <Search className="h-4 w-4" />
+            <span className="flex-1 truncate">Buscar tarefa, pessoa, sala, ata…</span>
+            <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              Ctrl+K
+            </kbd>
+          </button>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             {actions}
             <button
