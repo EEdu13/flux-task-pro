@@ -14,6 +14,7 @@ import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import { LogIn, Loader2, AlertTriangle, Video, Hand } from "lucide-react";
 import { getGuestLiveKitToken } from "@/lib/livekit-token.functions";
+import { ApresentacaoComBolha } from "@/components/apresentacao-com-bolha";
 
 export const Route = createFileRoute("/convidado/$roomName")({
   component: GuestRoomPage,
@@ -145,6 +146,12 @@ function GuestCall({ onLeave }: { onLeave: () => void }) {
     { onlySubscribed: false },
   );
   const visible = useMemo(() => tracks, [tracks]);
+  /* O convidado via tudo em grade, inclusive durante uma apresentação: a tela
+     compartilhada virava mais um quadradinho do tamanho dos rostos. Agora ele
+     vê a apresentação como o time vê — tela no palco e a câmera de quem
+     apresenta numa bolha por cima, que ele também pode arrastar. */
+  const telas = useMemo(() => tracks.filter((t) => t.source === Track.Source.ScreenShare), [tracks]);
+  const cameras = useMemo(() => tracks.filter((t) => t.source === Track.Source.Camera), [tracks]);
   const { localParticipant } = useLocalParticipant();
   const { send } = useDataChannel("fluxo-room");
   const [raised, setRaised] = useState(false);
@@ -183,9 +190,13 @@ function GuestCall({ onLeave }: { onLeave: () => void }) {
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        <GridLayout tracks={visible} style={{ height: "100%" }}>
-          <ParticipantTile />
-        </GridLayout>
+        {telas.length > 0 ? (
+          <ApresentacaoComBolha tela={telas[0]!} cameras={cameras} />
+        ) : (
+          <GridLayout tracks={visible} style={{ height: "100%" }}>
+            <ParticipantTile />
+          </GridLayout>
+        )}
       </div>
       <div className="flex items-center gap-2 overflow-x-auto border-t border-white/10 bg-black/70 px-2 py-1">
         <ControlBar

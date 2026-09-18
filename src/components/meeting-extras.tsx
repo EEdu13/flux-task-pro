@@ -138,26 +138,42 @@ function useMeetingRecorder(roomName: string) {
          câmeras são compostas num canvas. Ver `composicao-gravacao.ts`. */
       const montarFontes = (): FonteDeVideo[] => {
         const lista: FonteDeVideo[] = [];
+        /* A `identity` vai junto para o compositor saber qual câmera é a de
+           quem está apresentando — é ela que vira a bolha por cima da tela, em
+           vez de ir para a fita. Pelo `nome` não dava: dois homônimos na
+           mesma sala colocariam o rosto errado na bolha. */
         const juntar = (
           pub: { track?: { mediaStreamTrack?: MediaStreamTrack; attach?: () => HTMLMediaElement } },
           nome: string,
           tela: boolean,
+          identity: string,
         ) => {
           const t = pub?.track;
           if (!t?.mediaStreamTrack || !t.attach) return;
           const el = t.attach() as HTMLVideoElement;
           el.muted = true; // o som já vem pela mistura de áudio; aqui duplicaria
           void el.play?.().catch(() => {});
-          lista.push({ el, nome, tela });
+          lista.push({ el, nome, tela, identity });
         };
 
         const meuNome = localParticipant.name || "Eu";
-        juntar(localParticipant.getTrackPublication(Track.Source.ScreenShare) ?? {}, meuNome, true);
-        juntar(localParticipant.getTrackPublication(Track.Source.Camera) ?? {}, meuNome, false);
+        const minhaId = localParticipant.identity;
+        juntar(
+          localParticipant.getTrackPublication(Track.Source.ScreenShare) ?? {},
+          meuNome,
+          true,
+          minhaId,
+        );
+        juntar(
+          localParticipant.getTrackPublication(Track.Source.Camera) ?? {},
+          meuNome,
+          false,
+          minhaId,
+        );
         room.remoteParticipants.forEach((p) => {
           const nome = p.name || p.identity;
-          juntar(p.getTrackPublication(Track.Source.ScreenShare) ?? {}, nome, true);
-          juntar(p.getTrackPublication(Track.Source.Camera) ?? {}, nome, false);
+          juntar(p.getTrackPublication(Track.Source.ScreenShare) ?? {}, nome, true, p.identity);
+          juntar(p.getTrackPublication(Track.Source.Camera) ?? {}, nome, false, p.identity);
         });
         return lista;
       };

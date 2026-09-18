@@ -5,9 +5,6 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   GridLayout,
-  FocusLayout,
-  FocusLayoutContainer,
-  CarouselLayout,
   ParticipantTile,
   useTracks,
   useDataChannel,
@@ -61,6 +58,7 @@ import {
 } from "@/lib/livekit-token.functions";
 import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { MeetingExtras, type MeetingExtrasHandle } from "@/components/meeting-extras";
+import { ApresentacaoComBolha } from "@/components/apresentacao-com-bolha";
 import {
   filesToAttachments,
   formatBytes,
@@ -713,12 +711,7 @@ function CallContents({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative min-w-0 flex-1">
           {useFocus ? (
-            <FocusLayoutContainer style={{ height: "100%" }}>
-              <CarouselLayout tracks={cameraTracks}>
-                <ParticipantTile />
-              </CarouselLayout>
-              <FocusLayout trackRef={screenTracks[0]} />
-            </FocusLayoutContainer>
+            <ApresentacaoComBolha tela={screenTracks[0]!} cameras={cameraTracks} />
           ) : (
             <GridLayout tracks={tracks} style={{ height: "100%" }}>
               <ParticipantTile />
