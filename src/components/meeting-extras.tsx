@@ -2,7 +2,12 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import type { RefObject } from "react";
 import { useRoomContext, useLocalParticipant } from "@livekit/components-react";
 import { RoomEvent, Track } from "livekit-client";
-import type { RemoteAudioTrack, LocalAudioTrack, RemoteTrack } from "livekit-client";
+import type {
+  RemoteAudioTrack,
+  LocalAudioTrack,
+  RemoteTrack,
+  LocalTrackPublication,
+} from "livekit-client";
 import { Circle, Square } from "lucide-react";
 import { toast } from "sonner";
 import { updateActiveSpeakers } from "@/lib/livekit-token.functions";
@@ -112,16 +117,27 @@ function useMeetingRecorder(roomName: string) {
       const dest = ctx.createMediaStreamDestination();
 
       let fontesConectadas = 0;
+      /* Registro do que já entrou na mistura. A mesma faixa passa por aqui duas
+         vezes — uma na montagem do início, outra pelo evento de publicação — e
+         ligá-la de novo somaria ela a si mesma, dobrando o volume daquela voz
+         no arquivo. */
+      const jaConectadas = new Set<MediaStreamTrack>();
       const connectTrack = (mediaStreamTrack: MediaStreamTrack) => {
+        if (jaConectadas.has(mediaStreamTrack)) return;
+        jaConectadas.add(mediaStreamTrack);
         const src = ctx.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
         src.connect(dest);
         fontesConectadas++;
       };
 
-      // Local mic
-      const localMic = localParticipant.getTrackPublication(Track.Source.Microphone);
-      const localMicTrack = localMic?.track as LocalAudioTrack | undefined;
-      if (localMicTrack?.mediaStreamTrack) connectTrack(localMicTrack.mediaStreamTrack);
+      /* Microfone e som da tela, os dois. O segundo faltava: apresentar um
+         vídeo com áudio gravava a imagem e deixava o som de fora. Dos remotos
+         ele já vinha de graça, porque `audioTrackPublications` devolve todas as
+         faixas de áudio do participante — a do microfone e a da tela. */
+      [Track.Source.Microphone, Track.Source.ScreenShareAudio].forEach((fonte) => {
+        const t = localParticipant.getTrackPublication(fonte)?.track as LocalAudioTrack | undefined;
+        if (t?.mediaStreamTrack) connectTrack(t.mediaStreamTrack);
+      });
 
       // Remote audio tracks
       room.remoteParticipants.forEach((p) => {
@@ -242,12 +258,48 @@ function useMeetingRecorder(roomName: string) {
           /* ignore */
         }
       };
+      /* Os dois eventos acima só falam de participante REMOTO. O que a pessoa
+         que grava publica passa por `LocalTrackPublished`, e ninguém escutava:
+         compartilhar a tela DEPOIS de clicar em Gravar não mudava nada no
+         arquivo — a montagem do início era uma fotografia do instante do
+         clique, e sem tela naquele momento a gravação seguia só com as câmeras
+         até o fim. Como quem grava costuma ser quem apresenta, esse era o
+         caminho normal, não o raro. A ata escuta estes mesmos eventos, pelo
+         mesmo motivo. */
+      const aoPublicarLocal = (pub: LocalTrackPublication) => {
+        try {
+          const t = pub.track;
+          if (!t) return;
+          if (t.kind === Track.Kind.Audio && t.mediaStreamTrack) {
+            connectTrack(t.mediaStreamTrack);
+            return;
+          }
+          if (t.kind === Track.Kind.Video) compositor.atualizar(montarFontes());
+        } catch {
+          /* uma faixa a menos na mistura não justifica derrubar a gravação */
+        }
+      };
+      /* Parar de compartilhar também muda a imagem: sem isto o canvas seguiria
+         desenhando o elemento parado — o último quadro da tela, congelado até o
+         fim do arquivo, no lugar das câmeras que deveriam voltar. */
+      const aoDespublicarLocal = (pub: LocalTrackPublication) => {
+        if (pub.kind !== Track.Kind.Video) return;
+        try {
+          compositor.atualizar(montarFontes());
+        } catch {
+          /* ignore */
+        }
+      };
       room.on(RoomEvent.TrackSubscribed, aoAssinar);
       room.on(RoomEvent.TrackUnsubscribed, aoSair);
+      room.on(RoomEvent.LocalTrackPublished, aoPublicarLocal);
+      room.on(RoomEvent.LocalTrackUnpublished, aoDespublicarLocal);
 
       const encerrar = () => {
         room.off(RoomEvent.TrackSubscribed, aoAssinar);
         room.off(RoomEvent.TrackUnsubscribed, aoSair);
+        room.off(RoomEvent.LocalTrackPublished, aoPublicarLocal);
+        room.off(RoomEvent.LocalTrackUnpublished, aoDespublicarLocal);
         compositorRef.current?.parar();
         compositorRef.current = null;
         streamRef.current?.getTracks().forEach((t) => t.stop());
