@@ -53,7 +53,7 @@ import { ReservaDeSalaModal } from "@/components/reserva-de-sala-modal";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
 import { UndoProvider } from "@/lib/undo-stack";
-import { X, Lock } from "lucide-react";
+import { X, Lock, Loader2 } from "lucide-react";
 import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
@@ -109,6 +109,7 @@ export function FluxoLayout({
     tasks,
     completions,
     isAuthenticated,
+    restaurandoSessao,
     logout,
     recarregarPessoas,
     sincronizar,
@@ -233,9 +234,22 @@ export function FluxoLayout({
     void desktopFlashTaskbar("informativo");
   }, [unread]);
 
+  // Enquanto a janela confere se a sessão de antes da recarga continua valendo,
+  // ainda não se sabe se a pessoa está fora. Ver `restaurandoSessao` no store.
   useEffect(() => {
-    if (!isAuthenticated) navigate({ to: "/login" });
-  }, [isAuthenticated, navigate]);
+    if (!isAuthenticated && !restaurandoSessao) navigate({ to: "/login" });
+  }, [isAuthenticated, restaurandoSessao, navigate]);
+
+  /* O indicador da espera só aparece depois de 300ms, e por um efeito.
+     O atraso poupa o piscar da conferência rápida, que é a comum. E o efeito é
+     obrigatório: o servidor desenha este layout vazio (lá ninguém está logado),
+     e desenhar outra coisa já no primeiro render quebraria a hidratação. */
+  const [esperaVisivel, setEsperaVisivel] = useState(false);
+  useEffect(() => {
+    if (!restaurandoSessao) return;
+    const id = window.setTimeout(() => setEsperaVisivel(true), 300);
+    return () => window.clearTimeout(id);
+  }, [restaurandoSessao]);
 
   /* Sessão morta derruba para o login, como no Agendador.
    *
@@ -255,9 +269,15 @@ export function FluxoLayout({
    * uma janela aberta desde ontem, e ela merece ver o login, não uma tela
    * quebrada. A segunda é a rede de segurança para quem deixa o app em foco.
    *
-   * Falha de rede NÃO desloga: `iamMe` só devolve `false` com resposta do
-   * servidor, e qualquer erro daqui é engolido de propósito. Derrubar quem
-   * está sem internet seria trocar um problema por outro pior.
+   * Falha NÃO desloga, de nenhum dos dois lados. Entre o navegador e o Fluxo,
+   * o erro é engolido aqui embaixo. Entre o Fluxo e a IAM, `iamMe` devolve
+   * `motivo: "indisponivel"` — e isto aqui precisa olhar o motivo, porque o
+   * `autenticado` vem `false` do mesmo jeito. Por muito tempo este comentário
+   * disse que falha de rede não deslogava, e era verdade só para o primeiro
+   * lado: a IAM demorando mais de 15s ou respondendo 500 chegava aqui como
+   * "sessão expirou", o `logout` apagava o cookie, e quem estivesse trocando de
+   * janela naquele minuto caía. Derrubar alguém porque um servidor soluçou é
+   * trocar um problema por outro pior; só a recusa da IAM tira a pessoa.
    *
    * Premissa registrada: a IAM está sempre ligada. Se um dia `IAM_ENABLED`
    * voltar a 0, o app cai no modo de demonstração — onde a pessoa entra sem
@@ -317,6 +337,8 @@ export function FluxoLayout({
         const { iamMe } = await import("@/integrations/iam/auth.functions");
         const r = await iamMe();
         if (cancelado) return;
+        // A IAM não respondeu: nada foi dito sobre a sessão. Tenta de novo depois.
+        if (!r.autenticado && r.motivo === "indisponivel") return;
         if (!r.autenticado) {
           toast.error("Sua sessão expirou. Entre novamente.");
           acoesRef.current.logout();
@@ -384,6 +406,15 @@ export function FluxoLayout({
       },
     );
 
+  /* A conferência leva uma ida ao servidor, e se a IAM estiver lenta, mais.
+     Tela vazia nesse meio-tempo parece app travado. */
+  if (!isAuthenticated && restaurandoSessao && esperaVisivel) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-background text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin" aria-label="Carregando" />
+      </div>
+    );
+  }
   if (!isAuthenticated) return null;
 
   return (

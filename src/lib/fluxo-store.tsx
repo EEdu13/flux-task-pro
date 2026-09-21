@@ -5,7 +5,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import type {
   ActivityKind,
@@ -24,7 +26,7 @@ import type {
 } from "./fluxo-types";
 import { priorityMultiplier } from "./fluxo-types";
 import { createRoomCall } from "./livekit-token.functions";
-import { iamLogout } from "@/integrations/iam/auth.functions";
+import { iamLogout, iamMe } from "@/integrations/iam/auth.functions";
 // Só a regra de iniciais, que é string pura e roda no navegador. Reescrevê-la
 // aqui para preservar a independência declarada acima faria o mesmo avatar sair
 // com iniciais diferentes dependendo da tela.
@@ -95,6 +97,11 @@ interface Store {
   packTemplates: PackTemplate[];
   currentUserId: string;
   isAuthenticated: boolean;
+  /**
+   * A janela recarregou com uma sessão aberta e está conferindo se ela ainda
+   * vale. Enquanto for `true`, `isAuthenticated: false` não quer dizer "fora".
+   */
+  restaurandoSessao: boolean;
   login: (userId: string) => void;
   /**
    * Entra com uma identidade vinda da IAM Larsil, criando ou atualizando a
@@ -203,6 +210,45 @@ const StoreCtx = createContext<Store | null>(null);
  */
 const LS_KEY = "fluxo.state.v3";
 
+/**
+ * "Esta janela entrou, como esta pessoa" — o que deixa uma recarga voltar para
+ * dentro em vez de cair no login.
+ *
+ * Estar logado não volta do `localStorage` (ver `load`), e isso fazia QUALQUER
+ * recarga pedir a senha de novo, com o cookie ainda valendo por horas: F5, o
+ * "Try again" da tela de erro, e principalmente o deploy — depois dele o
+ * navegador pede pedaços do app que o servidor novo não tem mais, e o roteador
+ * recarrega a página sozinho. Em 21/09/2026, duas pessoas entraram de novo às
+ * 09:30, com 40s de diferença, sete minutos depois de um push.
+ *
+ * `sessionStorage` e não `localStorage` porque é exatamente a fronteira que a
+ * decisão de `load` pede: sobrevive à recarga, morre com a janela. Quem fecha o
+ * app e abre de novo continua vendo o login, e na máquina compartilhada o
+ * próximo não entra na conta do anterior. A janela de chamada é outra janela e
+ * não herda a marca, mas ela nunca dependeu disto.
+ *
+ * A marca não é credencial: quem decide é o cookie, conferido na IAM antes de
+ * a janela voltar. Ela só diz que vale a pena perguntar, e por quem.
+ */
+const SESSAO_DA_JANELA = "fluxo:sessao-da-janela";
+
+function lerSessaoDaJanela(): string | null {
+  try {
+    return window.sessionStorage.getItem(SESSAO_DA_JANELA);
+  } catch {
+    return null;
+  }
+}
+
+function marcarSessaoDaJanela(pessoaId: string | null): void {
+  try {
+    if (pessoaId) window.sessionStorage.setItem(SESSAO_DA_JANELA, pessoaId);
+    else window.sessionStorage.removeItem(SESSAO_DA_JANELA);
+  } catch {
+    /* sem armazenamento: a recarga volta ao login, como era antes */
+  }
+}
+
 /** Ver o comentário em `currentUser`, mais abaixo. */
 const USUARIO_AUSENTE: User = {
   id: "",
@@ -272,7 +318,10 @@ function load(): Persisted {
      * vazia, com os erros só no console.
      *
      * O cookie NÃO é apagado aqui de propósito: a janela de chamada é outra
-     * janela do mesmo app, e limpar sessão ao abrir derrubaria a principal. */
+     * janela do mesmo app, e limpar sessão ao abrir derrubaria a principal.
+     *
+     * Recarregar a MESMA janela é outra história, e volta para dentro depois de
+     * conferir o cookie — ver `SESSAO_DA_JANELA`. */
     return { ...defaults, ...parsed, isAuthenticated: false };
   } catch {
     return defaults;
@@ -612,10 +661,226 @@ function computeScore(base: number, priority: Task["priority"], onTime: boolean)
   return Math.round(base * mult * modifier);
 }
 
+/* O que é do Fluxo, lido do banco depois que se sabe quem é a pessoa.
+
+   Duas portas chegam aqui: o login, e a janela que recarregou com a sessão
+   ainda valendo (ver `sessaoARestaurar`). As duas precisam da mesma carga —
+   o `localStorage` guarda uma cópia, mas a cópia é de quando a pessoa entrou,
+   e o que outra pessoa fez desde então só vem daqui. */
+async function carregarDoBanco(
+  id: string,
+  setState: Dispatch<SetStateAction<Persisted>>,
+): Promise<void> {
+  try {
+    const { meuPerfil } = await import("@/lib/perfil.functions");
+    const p = await meuPerfil();
+    setState((s) => ({
+      ...s,
+      users: s.users.map((x) =>
+        x.id === id
+          ? {
+              ...x,
+              score: p.pontuacao,
+              streak: p.sequencia,
+              contactCompleted: p.contatoConfirmado,
+            }
+          : x,
+      ),
+    }));
+
+    /* O quadro de pessoas — quem mais existe no Fluxo.
+       Sem isto, `users` continha só quem tinha logado NESTE navegador, e
+       o efeito era duplo: ninguém aparecia no Contatos de ninguém, e o
+       seletor de responsável de uma tarefa nova mostrava só a própria
+       pessoa, o que tornava a delegação impossível. */
+    const { listarPessoas } = await import("@/lib/perfil.functions");
+    const { pessoas } = await listarPessoas();
+    setState((s) => mesclarQuadro(s, pessoas));
+
+    // Tema e paleta da pessoa, não da máquina.
+    const { sincronizarPreferencias } = await import("@/lib/use-theme");
+    await sincronizarPreferencias();
+
+    /* As metas são coletivas: o alvo que o gerente traça vale para o
+       setor inteiro. Vindas do banco, elas substituem por completo as
+       locais — não há mescla, porque mesclar duas listas de meta produz
+       alvos duplicados para a mesma pessoa e ninguém saberia qual vale.
+       O banco passa a ser a verdade no instante em que ele responde. */
+    const { listarMetas } = await import("@/lib/metas.functions");
+    const { metas } = await listarMetas();
+    setState((s) => ({ ...s, metas }));
+
+    /* A contagem de chamadas volta no formato aninhado que o store usa:
+       { quem chamou: { sala: { quem foi chamado: vezes } } }. Ela é
+       sempre do ponto de vista de quem está logado, então só existe uma
+       chave no primeiro nível. Antes isso morava no navegador — trocar de
+       computador zerava "quem você mais chama" e a lista de recentes. */
+    const { minhasContagens } = await import("@/lib/contagem-chamadas.functions");
+    const { contagens } = await minhasContagens();
+    if (contagens.length) {
+      const porSala: Record<string, Record<string, number>> = {};
+      for (const c of contagens) {
+        porSala[c.sala] = { ...(porSala[c.sala] ?? {}), [c.paraPessoaId]: c.vezes };
+      }
+      setState((s) => ({ ...s, callCounts: { ...s.callCounts, [id]: porSala } }));
+    }
+
+    /* Projetos e modelos de pack: coletivos, como as metas.
+       Um modelo de pack para "Supervisor de Operações" só faz sentido se
+       outros supervisores puderem recebê-lo — no navegador, ele servia a
+       uma pessoa só, o que anulava a ideia inteira.
+
+       As duas listas substituem as locais em vez de mesclar. Mesclar
+       produziria projetos duplicados assim que a mesma pessoa entrasse em
+       dois computadores, e não haveria como saber qual dos dois é o bom. */
+    const [{ listarProjetos }, { listarPacks }] = await Promise.all([
+      import("@/lib/projetos.functions"),
+      import("@/lib/packs.functions"),
+    ]);
+    const { listarTarefas } = await import("@/lib/tarefas.functions");
+    const [proj, pk, tf] = await Promise.all([listarProjetos(), listarPacks(), listarTarefas()]);
+
+    /* As tarefas do banco entram junto com as locais, não no lugar delas.
+       Diferente de projetos e metas, aqui a mescla é necessária: o que já
+       está no navegador foi criado antes desta migração e ainda não subiu.
+       O id decide — quem veio do banco tem UUID, o que é local tem
+       `t-mf3k2a`. Sem essa distinção, recarregar apagaria o trabalho não
+       migrado de quem está usando o sistema hoje.
+
+       Os satélites (checklist, comentários, histórico) vêm vazios: eles
+       são o bloco D. Uma tarefa que volta do banco perde o checklist que
+       tinha localmente — é a lacuna conhecida desta passagem, e some
+       quando o bloco D entrar. */
+    setState((s) => ({
+      ...s,
+      // As locais são as que ainda não subiram; as do banco entram
+      // completas. A ordem coloca as do banco primeiro, como a consulta
+      // já as devolve (por `ordem`, depois por data).
+      tasks: [
+        ...tf.tarefas.map((t) => ({
+          ...t,
+          mentions: [] as string[],
+          tags: [] as string[],
+          comments: [],
+          checklist: [],
+          activity: [],
+        })),
+        ...s.tasks.filter((t) => !ehGuid(t.id)),
+      ],
+      projects: proj.projetos.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        status: p.status,
+        ownerId: p.ownerId,
+        memberIds: p.memberIds,
+        sector: p.sector,
+        dueDate: p.dueDate,
+        createdAt: p.createdAt,
+        createdBy: p.createdBy,
+        color: p.color,
+        photoUrl: p.photoUrl,
+        // Anexos vêm por `listarAnexos` quando o projeto é aberto — a
+        // lista não carrega arquivo de todos os projetos de uma vez.
+        attachments: [],
+      })),
+      packTemplates: pk.packs,
+    }));
+
+    /* Conclusões e sineta — bloco E.
+       As duas substituem por completo o que havia no navegador. É o
+       mesmo raciocínio das metas, com um agravante: uma conclusão local
+       e a sua cópia do banco são a MESMA conclusão com ids diferentes, e
+       mesclar contaria os pontos duas vezes. O ranking passaria a premiar
+       quem tem mais navegadores.
+
+       A ordem aqui importa. Os avisos de prazo são gerados antes de a
+       lista ser lida — invertido, o atraso de hoje só apareceria na sineta
+       no login de amanhã. */
+    const [conc, notif] = await Promise.all([
+      import("@/lib/conclusoes.functions"),
+      import("@/lib/notificacoes.functions"),
+    ]);
+    await notif.gerarAvisosDePrazo().catch(() => {});
+    const [cn, nt] = await Promise.all([conc.listarConclusoes(), notif.listarNotificacoes()]);
+    setState((s) => ({
+      ...s,
+      completions: cn.conclusoes,
+      notifications: nt.notificacoes,
+    }));
+
+    /* As atas — bloco F.
+       Mescla, e não substituição, ao contrário de tudo acima. O motivo é
+       o único caso em que as duas listas não são a mesma coisa: uma ata
+       gerada antes desta migração existe só aqui, e não tem cópia no
+       banco para substituí-la. Trocar a lista apagaria da tela o registro
+       de reuniões que aconteceram — e ata some é ata perdida, porque
+       ninguém a redigita. O id decide, como nas tarefas. */
+    const { listarAtas } = await import("@/lib/atas.functions");
+    const { atas } = await listarAtas();
+    setState((s) => ({
+      ...s,
+      minutes: [...atas, ...(s.minutes ?? []).filter((m) => !ehGuid(m.id))],
+    }));
+  } catch (e) {
+    // Falhar aqui não pode impedir ninguém de trabalhar: a pessoa entra
+    // com pontuação zerada e o número se acerta no próximo login.
+    console.warn("[fluxo] perfil não carregou do banco:", (e as Error)?.message);
+  }
+}
+
 export function FluxoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Persisted>(() => load());
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ open: false });
   const [quickCreate, setQuickCreate] = useState<{ open: boolean; status?: Status; dueDate?: string; assigneeId?: string }>({ open: false });
+
+  /* A janela recarregou com alguém dentro: confere o cookie e volta.
+
+     O id é lido no primeiro render, e não num efeito, porque o layout decide no
+     primeiro efeito dele se manda para o login — e o efeito do filho roda antes
+     do deste provider. Só vale se a pessoa estiver no quadro guardado: é de lá
+     que a tela tira nome, papel e setor até a carga do banco chegar.
+
+     Quem responde é a IAM, pelo cookie:
+     - a mesma pessoa: volta para dentro;
+     - outra pessoa: alguém entrou com outra conta em outra aba deste navegador,
+       e o cookie agora é dela. Esta janela não entra como ninguém;
+     - token recusado, ou cookie nenhum: login;
+     - a IAM sem responder, ou o próprio Fluxo sem responder — que é justamente
+       o minuto do deploy: volta para dentro. É a regra da conferência periódica
+       no layout (ninguém sai porque um servidor soluçou), e a primeira
+       conferência com a IAM de pé corrige o que tiver de ser corrigido. Até lá
+       o servidor recusa sozinho o que o cookie não autoriza. */
+  const [sessaoARestaurar, setSessaoARestaurar] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const id = lerSessaoDaJanela();
+    return id && state.users.some((u) => u.id === id) ? id : null;
+  });
+  useEffect(() => {
+    const id = sessaoARestaurar;
+    if (!id) return;
+    let vivo = true;
+    void (async () => {
+      let voltar: boolean;
+      try {
+        const r = await iamMe();
+        voltar = r.autenticado ? String(r.usuarioId) === id : r.motivo === "indisponivel";
+      } catch {
+        voltar = true;
+      }
+      if (!vivo) return;
+      if (voltar) {
+        setState((s) => ({ ...s, currentUserId: id, isAuthenticated: true }));
+        void carregarDoBanco(id, setState);
+      } else {
+        marcarSessaoDaJanela(null);
+      }
+      setSessaoARestaurar(null);
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [sessaoARestaurar]);
 
   /* Persistência local, agora protegida.
    *
@@ -936,6 +1201,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
   const store: Store = {
     ...state,
+    restaurandoSessao: sessaoARestaurar !== null,
     login: (id) =>
       setState((s) => ({
         ...s,
@@ -990,177 +1256,15 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          A busca é assíncrona e não segura o login — a tela entra na hora, com
          zero, e corrige quando a resposta chega. É a mesma escrita otimista de
          sempre, ao contrário: mostra primeiro, confere depois. */
-      void (async () => {
-        try {
-          const { meuPerfil } = await import("@/lib/perfil.functions");
-          const p = await meuPerfil();
-          setState((s) => ({
-            ...s,
-            users: s.users.map((x) =>
-              x.id === id
-                ? {
-                    ...x,
-                    score: p.pontuacao,
-                    streak: p.sequencia,
-                    contactCompleted: p.contatoConfirmado,
-                  }
-                : x,
-            ),
-          }));
-
-          /* O quadro de pessoas — quem mais existe no Fluxo.
-             Sem isto, `users` continha só quem tinha logado NESTE navegador, e
-             o efeito era duplo: ninguém aparecia no Contatos de ninguém, e o
-             seletor de responsável de uma tarefa nova mostrava só a própria
-             pessoa, o que tornava a delegação impossível. */
-          const { listarPessoas } = await import("@/lib/perfil.functions");
-          const { pessoas } = await listarPessoas();
-          setState((s) => mesclarQuadro(s, pessoas));
-
-          // Tema e paleta da pessoa, não da máquina.
-          const { sincronizarPreferencias } = await import("@/lib/use-theme");
-          await sincronizarPreferencias();
-
-          /* As metas são coletivas: o alvo que o gerente traça vale para o
-             setor inteiro. Vindas do banco, elas substituem por completo as
-             locais — não há mescla, porque mesclar duas listas de meta produz
-             alvos duplicados para a mesma pessoa e ninguém saberia qual vale.
-             O banco passa a ser a verdade no instante em que ele responde. */
-          const { listarMetas } = await import("@/lib/metas.functions");
-          const { metas } = await listarMetas();
-          setState((s) => ({ ...s, metas }));
-
-          /* A contagem de chamadas volta no formato aninhado que o store usa:
-             { quem chamou: { sala: { quem foi chamado: vezes } } }. Ela é
-             sempre do ponto de vista de quem está logado, então só existe uma
-             chave no primeiro nível. Antes isso morava no navegador — trocar de
-             computador zerava "quem você mais chama" e a lista de recentes. */
-          const { minhasContagens } = await import("@/lib/contagem-chamadas.functions");
-          const { contagens } = await minhasContagens();
-          if (contagens.length) {
-            const porSala: Record<string, Record<string, number>> = {};
-            for (const c of contagens) {
-              porSala[c.sala] = { ...(porSala[c.sala] ?? {}), [c.paraPessoaId]: c.vezes };
-            }
-            setState((s) => ({ ...s, callCounts: { ...s.callCounts, [id]: porSala } }));
-          }
-
-          /* Projetos e modelos de pack: coletivos, como as metas.
-             Um modelo de pack para "Supervisor de Operações" só faz sentido se
-             outros supervisores puderem recebê-lo — no navegador, ele servia a
-             uma pessoa só, o que anulava a ideia inteira.
-
-             As duas listas substituem as locais em vez de mesclar. Mesclar
-             produziria projetos duplicados assim que a mesma pessoa entrasse em
-             dois computadores, e não haveria como saber qual dos dois é o bom. */
-          const [{ listarProjetos }, { listarPacks }] = await Promise.all([
-            import("@/lib/projetos.functions"),
-            import("@/lib/packs.functions"),
-          ]);
-          const { listarTarefas } = await import("@/lib/tarefas.functions");
-          const [proj, pk, tf] = await Promise.all([
-            listarProjetos(),
-            listarPacks(),
-            listarTarefas(),
-          ]);
-
-          /* As tarefas do banco entram junto com as locais, não no lugar delas.
-             Diferente de projetos e metas, aqui a mescla é necessária: o que já
-             está no navegador foi criado antes desta migração e ainda não subiu.
-             O id decide — quem veio do banco tem UUID, o que é local tem
-             `t-mf3k2a`. Sem essa distinção, recarregar apagaria o trabalho não
-             migrado de quem está usando o sistema hoje.
-
-             Os satélites (checklist, comentários, histórico) vêm vazios: eles
-             são o bloco D. Uma tarefa que volta do banco perde o checklist que
-             tinha localmente — é a lacuna conhecida desta passagem, e some
-             quando o bloco D entrar. */
-          setState((s) => ({
-            ...s,
-            // As locais são as que ainda não subiram; as do banco entram
-            // completas. A ordem coloca as do banco primeiro, como a consulta
-            // já as devolve (por `ordem`, depois por data).
-            tasks: [
-              ...tf.tarefas.map((t) => ({
-                ...t,
-                mentions: [] as string[],
-                tags: [] as string[],
-                comments: [],
-                checklist: [],
-                activity: [],
-              })),
-              ...s.tasks.filter((t) => !ehGuid(t.id)),
-            ],
-            projects: proj.projetos.map((p) => ({
-              id: p.id,
-              name: p.name,
-              description: p.description,
-              status: p.status,
-              ownerId: p.ownerId,
-              memberIds: p.memberIds,
-              sector: p.sector,
-              dueDate: p.dueDate,
-              createdAt: p.createdAt,
-              createdBy: p.createdBy,
-              color: p.color,
-              photoUrl: p.photoUrl,
-              // Anexos vêm por `listarAnexos` quando o projeto é aberto — a
-              // lista não carrega arquivo de todos os projetos de uma vez.
-              attachments: [],
-            })),
-            packTemplates: pk.packs,
-          }));
-
-          /* Conclusões e sineta — bloco E.
-             As duas substituem por completo o que havia no navegador. É o
-             mesmo raciocínio das metas, com um agravante: uma conclusão local
-             e a sua cópia do banco são a MESMA conclusão com ids diferentes, e
-             mesclar contaria os pontos duas vezes. O ranking passaria a premiar
-             quem tem mais navegadores.
-
-             A ordem aqui importa. Os avisos de prazo são gerados antes de a
-             lista ser lida — invertido, o atraso de hoje só apareceria na sineta
-             no login de amanhã. */
-          const [conc, notif] = await Promise.all([
-            import("@/lib/conclusoes.functions"),
-            import("@/lib/notificacoes.functions"),
-          ]);
-          await notif.gerarAvisosDePrazo().catch(() => {});
-          const [cn, nt] = await Promise.all([
-            conc.listarConclusoes(),
-            notif.listarNotificacoes(),
-          ]);
-          setState((s) => ({
-            ...s,
-            completions: cn.conclusoes,
-            notifications: nt.notificacoes,
-          }));
-
-          /* As atas — bloco F.
-             Mescla, e não substituição, ao contrário de tudo acima. O motivo é
-             o único caso em que as duas listas não são a mesma coisa: uma ata
-             gerada antes desta migração existe só aqui, e não tem cópia no
-             banco para substituí-la. Trocar a lista apagaria da tela o registro
-             de reuniões que aconteceram — e ata some é ata perdida, porque
-             ninguém a redigita. O id decide, como nas tarefas. */
-          const { listarAtas } = await import("@/lib/atas.functions");
-          const { atas } = await listarAtas();
-          setState((s) => ({
-            ...s,
-            minutes: [...atas, ...(s.minutes ?? []).filter((m) => !ehGuid(m.id))],
-          }));
-        } catch (e) {
-          // Falhar aqui não pode impedir ninguém de trabalhar: a pessoa entra
-          // com pontuação zerada e o número se acerta no próximo login.
-          console.warn("[fluxo] perfil não carregou do banco:", (e as Error)?.message);
-        }
-      })();
+      void carregarDoBanco(id, setState);
+      marcarSessaoDaJanela(id);
     },
     logout: () => {
       // Derruba também a sessão da IAM. Sem isto o cookie httpOnly sobreviveria
       // ao "sair" e a próxima pessoa na mesma máquina herdaria a sessão.
       // No-op quando a IAM está desligada; nunca deixa o logout local falhar.
       void iamLogout().catch(() => {});
+      marcarSessaoDaJanela(null);
       setState((s) => ({ ...s, isAuthenticated: false }));
     },
     setCurrentUserId: (id) => setState((s) => ({ ...s, currentUserId: id })),

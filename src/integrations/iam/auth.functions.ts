@@ -176,7 +176,25 @@ export const iamOnboarding = createServerFn({ method: "POST" })
   });
 
 export type MeResposta =
-  | { autenticado: false }
+  | {
+      autenticado: false;
+      /**
+       * Por que não, e a diferença decide se a pessoa sai.
+       *
+       * `sem-sessao` e `recusada` são respostas sobre a PESSOA: não há cookie,
+       * ou a IAM olhou o token e disse não (vencido, revogado, conta
+       * desativada). Aí ela sai.
+       *
+       * `indisponivel` não é resposta sobre ninguém: a IAM não respondeu a
+       * tempo, respondeu erro, ou estava subindo. Até 21/09/2026 isto saía como
+       * um `autenticado: false` igual aos outros, e um soluço de segundos na IAM
+       * derrubava todo mundo que trocasse de janela naquele instante — com
+       * "Sua sessão expirou" na tela e o cookie apagado, numa sessão que valia
+       * por mais horas. O banco mostrou um login recusado por `indisponivel` às
+       * 10:36 e a mesma pessoa entrando de novo um minuto depois.
+       */
+      motivo: "sem-sessao" | "recusada" | "indisponivel";
+    }
   | {
       autenticado: true;
       usuarioId: number;
@@ -193,9 +211,9 @@ export const iamMe = createServerFn({ method: "GET" }).handler(async (): Promise
   const { iamResolve, iamCacheIdade, iamHabilitado } = await import("./client.server");
   const { lerSessao } = await import("./session.server");
 
-  if (!iamHabilitado()) return { autenticado: false };
+  if (!iamHabilitado()) return { autenticado: false, motivo: "sem-sessao" };
   const token = lerSessao();
-  if (!token) return { autenticado: false };
+  if (!token) return { autenticado: false, motivo: "sem-sessao" };
 
   try {
     const idade = iamCacheIdade(token);
@@ -209,8 +227,15 @@ export const iamMe = createServerFn({ method: "GET" }).handler(async (): Promise
       global: dados.global,
       cacheSegundos: idade,
     };
-  } catch {
-    return { autenticado: false };
+  } catch (e) {
+    // `iamResolve` só marca `credenciais` quando a IAM respondeu 401 ou 403.
+    const { IamError } = await import("./types");
+    if (e instanceof IamError && e.motivo === "credenciais") {
+      return { autenticado: false, motivo: "recusada" };
+    }
+    // Registrado porque é o único rastro: a pessoa não vê nada, de propósito.
+    console.warn("[iam] sessão não pôde ser conferida:", (e as Error)?.message);
+    return { autenticado: false, motivo: "indisponivel" };
   }
 });
 
