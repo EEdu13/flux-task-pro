@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import type {
-  ActivityEntry,
   ActivityKind,
   Attachment,
   ChecklistItem,
@@ -23,8 +22,7 @@ import type {
   Task,
   User,
 } from "./fluxo-types";
-import { priorityMultiplier, statusLabels } from "./fluxo-types";
-import { isoParaData } from "@/lib/data-iso";
+import { priorityMultiplier } from "./fluxo-types";
 import { createRoomCall } from "./livekit-token.functions";
 import { iamLogout } from "@/integrations/iam/auth.functions";
 // Só a regra de iniciais, que é string pura e roda no navegador. Reescrevê-la
@@ -35,6 +33,11 @@ import type { PessoaDoQuadro } from "@/lib/perfil.functions";
 import { toast } from "sonner";
 import { empilharDesfazer } from "@/lib/undo-stack";
 import { proximaOcorrencia } from "./recorrencia";
+import {
+  avisarHistoricoMudou,
+  EVENTO_HISTORICO,
+  type DetalheDoHistorico,
+} from "./historico-eventos";
 
 /**
  * O mínimo que o store precisa saber de alguém vindo da IAM. Declarado aqui de
@@ -493,44 +496,21 @@ export function descartarPendencias(taskId: string): void {
 }
 
 /**
- * Manda a tarefa inteira para o banco.
+ * Manda a tarefa inteira para o banco, e os satélites junto (ver abaixo).
  *
- * Só os campos de `gestor.tarefas` — checklist, comentários, histórico e
- * menções continuam no navegador até o bloco D. Mandar o objeto todo não daria
- * erro, mas os campos extras seriam descartados em silêncio pelo validador, e
- * seria fácil concluir que eles foram salvos.
+ * O histórico — a aba Timeline — não é escrito aqui. Quem grava é o servidor, a
+ * partir do que cada gravação mudou; ver `historico.server.ts`. Este lado só
+ * avisa que gravou, e a Timeline aberta vai buscar a versão nova.
+ *
+ * @param origem  Texto da linha "criou" quando esta gravação cria a tarefa:
+ *                "criou pelo modelo de pack …", "… a partir da ata …". Numa
+ *                tarefa que já existe, o servidor ignora.
  */
-/**
- * Manda uma linha para o histórico da tarefa — o que a aba Timeline mostra.
- *
- * Precisa de chamada própria porque `salvarTarefa` NÃO grava histórico, de
- * propósito: ele só cresce, e regravá-lo em bloco junto com a tarefa apagaria
- * o que outra pessoa escreveu enquanto esta tinha a tela aberta.
- *
- * Sem isto, as linhas que `updateTask` montava ("mudou o status", "atribuiu
- * para") existiam só na memória de quem fez a mudança e sumiam no recarregar —
- * era por isso que a Timeline aparecia vazia em quase toda tarefa. A única que
- * sobrevivia era "comentou", que já tinha esta chamada.
- *
- * Falha em silêncio (só um aviso no console) pelo mesmo motivo que o
- * comentário: é registro de apoio. Perder uma linha de histórico não pode
- * derrubar a mudança de status que a pessoa acabou de fazer.
- */
-async function gravarHistorico(tarefaId: string, tipo: ActivityKind, texto: string): Promise<void> {
-  if (!ehGuid(tarefaId)) return; // tarefa do formato antigo fica local
-  try {
-    const api = await import("@/lib/tarefa-satelites.functions");
-    await api.registrarHistorico({ data: { tarefaId, tipo, texto } });
-  } catch (e) {
-    console.warn("[fluxo] histórico não gravou:", (e as Error)?.message);
-  }
-}
-
-async function gravarTarefa(t: Task): Promise<void> {
+async function gravarTarefa(t: Task, origem?: string): Promise<void> {
   if (!ehGuid(t.id)) return; // tarefa do formato antigo fica local
   try {
     const api = await import("@/lib/tarefas.functions");
-    await api.salvarTarefa({
+    const { nova } = await api.salvarTarefa({
       data: {
         id: t.id,
         title: t.title,
@@ -550,6 +530,7 @@ async function gravarTarefa(t: Task): Promise<void> {
         requireProof: t.requireProof,
         inPack: t.inPack,
         order: t.order,
+        origin: origem,
       },
     });
     /* Os satélites acompanham a tarefa, na mesma gravação.
@@ -577,9 +558,11 @@ async function gravarTarefa(t: Task): Promise<void> {
           mentions: t.mentions,
           tags: t.tags,
           recurringWeekdays: t.recurringWeekdays ?? [],
+          newTask: nova,
         },
       });
     }
+    avisarHistoricoMudou(t.id);
     /* Deu certo. Tira esta tarefa da lista de pendências: ela pode ter sido
        regravada por outro caminho — a pessoa mexeu de novo e dessa vez foi — e
        continuar na lista faria o aviso de erro insistir por algo já salvo.
@@ -621,13 +604,6 @@ async function gravarPack(p: PackTemplate): Promise<void> {
   } catch (e) {
     console.warn("[fluxo] modelo de pack não gravou:", (e as Error)?.message);
   }
-}
-
-function pushActivity(task: Task, entry: Omit<ActivityEntry, "id" | "at">, userId: string): Task {
-  return {
-    ...task,
-    activity: [...task.activity, { ...entry, id: rid("a"), at: nowIso(), userId }],
-  };
 }
 
 function computeScore(base: number, priority: Task["priority"], onTime: boolean): number {
@@ -673,6 +649,49 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [state]);
+
+  /* A Timeline da tarefa aberta acompanha o que o servidor grava.
+   *
+   * O histórico é escrito no servidor, então depois de mudar o status, marcar
+   * um item ou anexar um arquivo a tela não tem a linha nova — ela precisa ir
+   * buscar. Só para a tarefa aberta no painel: as outras leem o histórico
+   * inteiro quando forem abertas, e buscar para todas faria arrastar um cartão
+   * (que grava a coluna inteira) disparar uma leitura por cartão da coluna.
+   *
+   * `rodada` descarta resposta velha: duas gravações seguidas disparam duas
+   * leituras, e a primeira pode chegar por último. */
+  const tarefaAbertaRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    tarefaAbertaRef.current = taskDialog.open ? taskDialog.editingId : undefined;
+  }, [taskDialog]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let rodada = 0;
+    const aoMudar = (e: Event) => {
+      const tarefaId = (e as CustomEvent<DetalheDoHistorico>).detail?.tarefaId;
+      if (!tarefaId || tarefaId !== tarefaAbertaRef.current) return;
+      const minha = ++rodada;
+      void (async () => {
+        try {
+          const { carregarHistorico } = await import("@/lib/tarefa-satelites.functions");
+          const { activity } = await carregarHistorico({ data: { tarefaId } });
+          if (minha !== rodada) return;
+          setState((s) => ({
+            ...s,
+            tasks: s.tasks.map((t) =>
+              t.id === tarefaId
+                ? { ...t, activity: activity.map((a) => ({ ...a, kind: a.kind as ActivityKind })) }
+                : t,
+            ),
+          }));
+        } catch (err) {
+          console.warn("[fluxo] histórico não recarregou:", (err as Error)?.message);
+        }
+      })();
+    };
+    window.addEventListener(EVENTO_HISTORICO, aoMudar);
+    return () => window.removeEventListener(EVENTO_HISTORICO, aoMudar);
+  }, []);
 
   /* === Ponte do WhatsApp ===
      O que havia aqui era um canal em tempo real do Supabase escutando a tabela
@@ -873,19 +892,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
        ele era empilhado neste navegador, endereçado a outra pessoa — e como a
        sineta só mostra o que é do próprio dono, ninguém nunca o viu. */
 
-    const tasks = s.tasks.map((t) =>
-      t.id === next.id
-        ? pushActivity(
-            { ...next },
-            {
-              kind: "concluida",
-              userId: currentUser.id,
-              text: `concluiu (${onTime ? "no prazo" : "com atraso"})`,
-            },
-            currentUser.id,
-          )
-        : t,
-    );
+    /* A linha "concluiu" da Timeline é escrita pelo servidor, no mesmo comando
+       que grava a conclusão. Anotada aqui, ela sumia na próxima vez que a
+       tarefa era aberta. */
+    const tasks = s.tasks.map((t) => (t.id === next.id ? next : t));
 
     // Próxima ocorrência da série. A caixa "repete automaticamente ao concluir"
     // prometia isso desde sempre, mas a geração tinha sido removida no commit
@@ -908,21 +918,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           // da vez que passou. O checklist volta desmarcado, que é o ponto de
           // ter checklist numa tarefa que se repete.
           comments: [],
-          activity: [
-            {
-              id: rid("a"),
-              at: nowIso(),
-              userId: currentUser.id,
-              kind: "criada" as ActivityKind,
-              text: "criada automaticamente pela recorrência",
-            },
-          ],
+          activity: [],
           checklist: next.checklist.map((c) => ({ ...c, id: rid("c"), done: false })),
           attachments: undefined,
           inPack: false,
         }
       : null;
-    if (seguinte) void gravarTarefa(seguinte);
+    if (seguinte) void gravarTarefa(seguinte, "criou pela recorrência, ao concluir a anterior");
 
     return {
       ...s,
@@ -1183,15 +1185,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           // Nasce completa: checklist, menções e etiquetas vieram do formulário,
           // então estas listas são a verdade e podem ser gravadas.
           satellitesLoaded: true,
-          activity: [
-            {
-              id: rid("a"),
-              at: nowIso(),
-              userId: currentUser.id,
-              kind: "criada",
-              text: "criou esta tarefa",
-            },
-          ],
+          // O "criou" é escrito pelo servidor, ao inserir a tarefa.
+          activity: [],
         };
         /* A gravação sai daqui de dentro, onde a tarefa montada existe.
            É ela que faz a delegação chegar: até hoje isto terminava aqui, com
@@ -1257,49 +1252,21 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            gravação. O navegador sabe o que ele mesmo tinha em tela, que não é a
            mesma coisa quando duas pessoas mexem na tarefa no mesmo dia. */
 
-        /* O que vira linha do histórico.
-           `statusLabels` em vez do valor cru: a Timeline é para ler, e "mudou
-           o status para andamento" não é como ninguém fala. O prazo entrou na
-           lista porque é a mudança sobre a qual mais se discute depois — "mas
-           não era para ontem?" — e era justamente a que não deixava rastro. */
-        const activityAdd: ActivityEntry[] = [];
-        const anotar = (kind: ActivityKind, text: string) =>
-          activityAdd.push({ id: rid("a"), at: nowIso(), userId: currentUser.id, kind, text });
-
-        if (patch.status && patch.status !== prev.status) {
-          anotar("status", `mudou o status para ${statusLabels[patch.status]}`);
-        }
-        if (patch.assigneeId && patch.assigneeId !== prev.assigneeId) {
-          const to = s.users.find((u) => u.id === patch.assigneeId);
-          anotar("atribuicao", `atribuiu para ${to?.name ?? "outro"}`);
-        }
-        if (patch.dueDate && patch.dueDate !== prev.dueDate) {
-          const dia = (iso: string) =>
-            isoParaData(iso.slice(0, 10))?.toLocaleDateString("pt-BR", {
-              day: "2-digit",
-              month: "short",
-            }) ?? iso.slice(0, 10);
-          anotar("editada", `mudou o prazo de ${dia(prev.dueDate)} para ${dia(patch.dueDate)}`);
-        }
-
-        const withActivity: Task = { ...next, activity: [...next.activity, ...activityAdd] };
-
-        /* As mesmas linhas, agora no banco. Sem esta volta, elas viviam só
-           nesta aba do navegador — ver `gravarHistorico`. */
-        for (const a of activityAdd) void gravarHistorico(id, a.kind, a.text);
+        /* Status, responsável e prazo viram linha da Timeline no servidor,
+           comparando o antes e o depois da própria linha em `salvarTarefa`. */
 
         /* Grava a tarefa já com a mudança aplicada.
            Sai daqui de dentro porque `salvarTarefa` regrava a linha inteira e
            precisa do objeto completo — montá-lo fora exigiria ler o estado de
            novo e correria o risco de pegar a versão anterior ao `patch`. */
-        void gravarTarefa(withActivity);
+        void gravarTarefa(next);
 
         const base: Persisted = {
           ...s,
-          tasks: s.tasks.map((t) => (t.id === id ? withActivity : t)),
+          tasks: s.tasks.map((t) => (t.id === id ? next : t)),
         };
         if (patch.status === "concluida" && prev.status !== "concluida") {
-          return handleCompletionSideEffects(base, prev, withActivity);
+          return handleCompletionSideEffects(base, prev, next);
         }
         return base;
       });
@@ -1368,19 +1335,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         col.splice(idx, 0, nextTask);
         const reordered = col.map((t, i) => ({ ...t, order: i }));
         const rest = others.filter((t) => t.status !== status);
-        let tasks = [...rest, ...reordered];
-
-        if (status !== prev.status) {
-          tasks = tasks.map((t) =>
-            t.id === id
-              ? pushActivity(
-                  t,
-                  { kind: "status", userId: currentUser.id, text: `moveu para ${status}` },
-                  currentUser.id,
-                )
-              : t,
-          );
-        }
+        // A mudança de coluna vira linha da Timeline no servidor, em `salvarTarefa`.
+        const tasks = [...rest, ...reordered];
 
         /* Mover grava a coluna inteira, não só a tarefa arrastada: soltar um
            cartão no meio empurra a ordem de todos os que estão abaixo dele.
@@ -1418,8 +1374,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            `salvarTarefa`, o autor seria quem salvou a tarefa por último — e um
            comentário assinado pela pessoa errada é pior que comentário nenhum.
 
-           O histórico vai junto, pelo mesmo caminho: quem comentou é quem
-           aparece no registro. */
+           Não há linha "comentou" no histórico: a Timeline mostra o próprio
+           comentário, e a linha extra fazia cada um aparecer duas vezes. */
         if (ehGuid(taskId)) {
           void (async () => {
             try {
@@ -1467,20 +1423,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                       },
                 ),
               }));
-
-              await api.registrarHistorico({
-                data: { tarefaId: taskId, tipo: "comentario", texto: "comentou" },
-              });
             } catch (e) {
               console.warn("[fluxo] comentário não gravou:", (e as Error)?.message);
             }
           })();
         }
-        const updated = pushActivity(
-          { ...t, comments: [...t.comments, c] },
-          { kind: "comentario", userId: currentUser.id, text: "comentou" },
-          currentUser.id,
-        );
+        const updated = { ...t, comments: [...t.comments, c] };
         /* O aviso do comentário vai junto com o comentário, no servidor.
            A lista de quem precisa saber — responsável, quem pediu a tarefa e
            quem está mencionado — sai da tarefa gravada, não da cópia em tela:
@@ -1495,20 +1443,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     addTaskAttachments: (taskId, atts) => {
       if (!atts.length) return;
+      // O "anexou" da Timeline é escrito pelo servidor, ao receber o arquivo.
       setState((s) => ({
         ...s,
         tasks: s.tasks.map((t) =>
-          t.id === taskId
-            ? pushActivity(
-                { ...t, attachments: [...(t.attachments ?? []), ...atts] },
-                {
-                  kind: "editada",
-                  userId: currentUser.id,
-                  text: `anexou ${atts.length} arquivo${atts.length > 1 ? "s" : ""}`,
-                },
-                currentUser.id,
-              )
-            : t,
+          t.id === taskId ? { ...t, attachments: [...(t.attachments ?? []), ...atts] } : t,
         ),
       }));
     },
@@ -1529,6 +1468,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       if (ehGuid(attId)) {
         void import("@/lib/anexo.functions")
           .then((api) => api.removerAnexo({ data: { id: attId } }))
+          // O servidor registrou "removeu o anexo" na Timeline.
+          .then(() => avisarHistoricoMudou(taskId))
           .catch((e) => console.warn("[fluxo] anexo não removido:", (e as Error)?.message));
       }
     },
@@ -1544,14 +1485,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         ...s,
         tasks: s.tasks.map((t) => {
           if (t.id !== taskId) return t;
-          const proxima = pushActivity(
-            {
-              ...t,
-              checklist: [...t.checklist, { id: rid("ck"), text: text.trim(), done: false }],
-            },
-            { kind: "checklist", userId: currentUser.id, text: `adicionou "${text.trim()}"` },
-            currentUser.id,
-          );
+          // O "adicionou" da Timeline sai do servidor, comparando a lista gravada.
+          const proxima = {
+            ...t,
+            checklist: [...t.checklist, { id: rid("ck"), text: text.trim(), done: false }],
+          };
           agendarGravacao(proxima);
           return proxima;
         }),
@@ -2084,17 +2022,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           checklist: [],
           // Nasce completa aqui; sem isto a etiqueta "ata" não seria gravada.
           satellitesLoaded: true,
-          activity: [
-            {
-              id: rid("a"),
-              at: nowIso(),
-              userId: currentUser.id,
-              kind: "criada",
-              text: `criou esta tarefa a partir da ata "${minute.roomLabel}"`,
-            },
-          ],
+          activity: [],
         };
-        void gravarTarefa(task);
+        void gravarTarefa(task, `criou esta tarefa a partir da ata "${minute.roomLabel}"`);
 
         /* E o tópico aponta para a tarefa, no banco.
            É esse vínculo que faz a ata mostrar quantos tópicos já viraram
@@ -2404,19 +2334,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         // Nasce completa: sem isto as etiquetas do pack e a menção de quem
         // recebe não seriam gravadas — e é a menção que dispara o aviso.
         satellitesLoaded: true,
-        activity: [
-          {
-            id: rid("a"),
-            at: nowIso(),
-            userId: currentUser.id,
-            kind: "criada",
-            text: `criou pelo modelo de pack "${tpl.name}"`,
-          },
-        ],
+        activity: [],
         inPack: true,
         estimatedMinutes: item.estimatedMinutes,
       }));
-      newTasks.forEach((t) => void gravarTarefa(t));
+      newTasks.forEach((t) => void gravarTarefa(t, `criou pelo modelo de pack "${tpl.name}"`));
 
       /* Um aviso só para o pack inteiro. As tarefas de pack não avisam uma a
          uma — a regra está no servidor, em `salvarTarefa`, olhando `no_pack`. */
@@ -2449,20 +2371,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       const target = state.users.find((u) => u.id === toUserId);
       const movidas = state.tasks
         .filter((t) => t.assigneeId === fromUserId && t.inPack && t.status !== "concluida")
+        /* O "transferiu para o pack de …" da Timeline é escrito pelo servidor:
+           tarefa de pack que muda de dono é o pack sendo transferido. */
         .map((t) => ({
           ...t,
           assigneeId: toUserId,
           sector: target?.sector ?? t.sector,
-          activity: [
-            ...t.activity,
-            {
-              id: rid("a"),
-              at: nowIso(),
-              userId: currentUser.id,
-              kind: "atribuicao" as ActivityKind,
-              text: `pack transferido para ${target?.name ?? "outro usuário"}`,
-            },
-          ],
         }));
       if (movidas.length === 0) return 0;
 

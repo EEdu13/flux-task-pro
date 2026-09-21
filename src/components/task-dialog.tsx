@@ -47,6 +47,7 @@ export function TaskDialog() {
     removeTaskAttachment,
     taskDialog,
     closeTaskDialog,
+    completions,
   } = useFluxo();
 
   const open = taskDialog.open;
@@ -1221,15 +1222,33 @@ export function TaskDialog() {
                   text: string;
                   attachments?: Attachment[];
                 };
+            /* O servidor escreve `{pessoa:<id>}` no lugar do nome — ver
+               `historico.server.ts`. Trocado aqui pelo nome de hoje. */
+            const comNomes = (texto: string) =>
+              texto.replace(
+                /\{pessoa:(\d+)\}/g,
+                (_, id: string) => users.find((u) => u.id === id)?.name ?? "outra pessoa",
+              );
             const items: Item[] = [
-              ...editing.activity.map((a) => ({
-                kind: "activity" as const,
-                tipo: a.kind,
-                id: a.id,
-                at: a.at,
-                userId: a.userId,
-                text: a.text,
-              })),
+              /* "comentou" ficou para trás: a Timeline já mostra o próprio
+                 comentário, e a linha extra fazia cada um aparecer duas vezes.
+                 As que já estavam no banco são escondidas aqui. */
+              ...editing.activity
+                .filter((a) => a.kind !== "comentario")
+                .map((a) => ({
+                  kind: "activity" as const,
+                  /* Antes a conclusão era gravada como mudança de status. Contar
+                     essas linhas como conclusão impede que a linha montada
+                     abaixo repita o mesmo fato. */
+                  tipo:
+                    a.kind === "status" && a.text === "mudou o status para Concluída"
+                      ? ("concluida" as const)
+                      : a.kind,
+                  id: a.id,
+                  at: a.at,
+                  userId: a.userId,
+                  text: comNomes(a.text),
+                })),
               ...editing.comments.map((c) => ({
                 kind: "comment" as const,
                 id: c.id,
@@ -1240,19 +1259,14 @@ export function TaskDialog() {
               })),
             ];
 
-            /* A criação não é gravada no histórico, e não precisa ser: ela já
-               está na própria linha da tarefa, em `createdAt`/`createdBy`. Por
-               isso é montada aqui, e não no banco.
+            /* A criação das tarefas ANTIGAS. O servidor passou a gravar o
+               "criou" ao inserir a tarefa, mas tudo o que já existia nasceu sem
+               ele. A data e o autor estão na própria linha da tarefa, em
+               `createdAt`/`createdBy`, então a linha é montada aqui — sem
+               escrever nada em `historico_da_tarefa` para corrigir o passado.
 
-               É também o que faz as tarefas ANTIGAS terem Timeline. O
-               histórico só passou a ser gravado agora; sem esta linha, tudo o
-               que existia antes continuaria abrindo a aba em branco — e sem
-               precisar escrever nada em `historico_da_tarefa` para corrigir o
-               passado.
-
-               Só entra se já não houver uma: a tarefa criada nesta sessão traz
-               a sua própria, e a que nasce de recorrência traz o texto dela,
-               que diz mais do que este. */
+               Só entra se já não houver uma: a gravada pelo servidor diz mais,
+               porque traz a origem (pack, ata, recorrência). */
             if (editing.createdAt && !items.some((i) => i.kind === "activity" && i.tipo === "criada")) {
               items.push({
                 kind: "activity",
@@ -1262,6 +1276,28 @@ export function TaskDialog() {
                 userId: editing.createdBy,
                 text: "criou esta tarefa",
               });
+            }
+
+            /* A conclusão, pelo mesmo motivo, para tarefa concluída antes de o
+               servidor escrever o histórico. A data vem de `completions`
+               (`gestor.conclusoes`), a mesma que o placar usa — e essa linha
+               some quando a tarefa é reaberta, então só existe para a conclusão
+               que ainda vale. Quem aparece é o responsável, que é quem pontuou. */
+            if (
+              editing.status === "concluida" &&
+              !items.some((i) => i.kind === "activity" && i.tipo === "concluida")
+            ) {
+              const c = [...completions].reverse().find((x) => x.taskId === editing.id);
+              if (c) {
+                items.push({
+                  kind: "activity",
+                  tipo: "concluida",
+                  id: `concluida-${editing.id}`,
+                  at: c.at,
+                  userId: c.userId,
+                  text: c.onTime ? "concluiu a tarefa no prazo" : "concluiu a tarefa com atraso",
+                });
+              }
             }
 
             items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
@@ -1278,8 +1314,8 @@ export function TaskDialog() {
                   </span>
                   <p className="text-sm font-medium">Nada aconteceu nesta tarefa ainda.</p>
                   <p className="max-w-xs text-xs text-muted-foreground">
-                    Mudanças de status, de responsável e de prazo, além dos comentários, aparecem
-                    aqui em ordem.
+                    Criação, status, responsável, prazo, checklist, anexos, comentários e a
+                    conclusão aparecem aqui, em ordem.
                   </p>
                 </div>
               );

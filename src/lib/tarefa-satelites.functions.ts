@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { comSessao, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import type { LinhaDeHistorico } from "@/lib/historico.server";
 
 /* Bloco D — o que pende da tarefa.
  *
@@ -24,16 +25,20 @@ const guid = (v: unknown): string | null =>
 const texto = (v: unknown, max: number): string =>
   typeof v === "string" ? v.trim().slice(0, max) : "";
 
-const TIPOS_HISTORICO = [
-  "criada",
-  "status",
-  "atribuicao",
-  "comentario",
-  "checklist",
-  "editada",
-  "concluida",
-  "mencao",
-] as const;
+/** Ordem do histórico: pelo horário, e pelo id no empate. */
+const SQL_DO_HISTORICO = `SELECT id, autor_id, tipo, texto, em FROM gestor.historico_da_tarefa
+                           WHERE tarefa_id=@t ORDER BY em, id`;
+
+type LinhaDoHistorico = { id: string; autor_id: number; tipo: string; texto: string; em: Date };
+
+const paraAtividade = (linhas: LinhaDoHistorico[]): SatelitesDaTarefa["activity"] =>
+  linhas.map((a) => ({
+    id: a.id,
+    userId: String(a.autor_id),
+    kind: a.tipo,
+    text: a.texto,
+    at: a.em.toISOString(),
+  }));
 
 /**
  * Anexo como a interface o consome.
@@ -97,10 +102,7 @@ export const carregarSatelites = createServerFn({ method: "POST" })
           `SELECT id, autor_id, texto, criado_em FROM gestor.comentarios
             WHERE tarefa_id=@t ORDER BY criado_em`,
         ),
-        req().query(
-          `SELECT id, autor_id, tipo, texto, em FROM gestor.historico_da_tarefa
-            WHERE tarefa_id=@t ORDER BY em`,
-        ),
+        req().query(SQL_DO_HISTORICO),
         /* Anexos da tarefa E dos comentários dela, numa consulta só.
            O UNION evita uma segunda ida ao banco por comentário — uma tarefa
            com dez comentários daria dez consultas para montar um painel.
@@ -173,22 +175,36 @@ export const carregarSatelites = createServerFn({ method: "POST" })
           attachments: porComentario.get(c.id.toLowerCase()) ?? [],
         })),
         attachments: anexosDaTarefa,
-        activity: (
-          hs.recordset as {
-            id: string;
-            autor_id: number;
-            tipo: string;
-            texto: string;
-            em: Date;
-          }[]
-        ).map((a) => ({
-          id: a.id,
-          userId: String(a.autor_id),
-          kind: a.tipo,
-          text: a.texto,
-          at: a.em.toISOString(),
-        })),
+        activity: paraAtividade(hs.recordset as LinhaDoHistorico[]),
       };
+    }),
+  );
+
+/**
+ * Só o histórico de uma tarefa.
+ *
+ * Quem escreve o histórico agora é o servidor, então a tela não tem mais a
+ * linha nova em mãos depois de gravar — ela precisa buscar. Com a tarefa aberta
+ * no painel, cada gravação termina com esta leitura, e a Timeline mostra o que
+ * acabou de acontecer. Leitura de uma tabela só, pelo índice (tarefa_id, em).
+ */
+export const carregarHistorico = createServerFn({ method: "POST" })
+  .inputValidator(
+    semIdentidade((e: { tarefaId: string }) => {
+      const id = guid(e?.tarefaId);
+      if (!id) throw new Error("Tarefa inválida");
+      return { tarefaId: id };
+    }),
+  )
+  .handler(
+    comSessao(async (_eu, d: { tarefaId: string }) => {
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const r = await pool
+        .request()
+        .input("t", sql.UniqueIdentifier, d.tarefaId)
+        .query(SQL_DO_HISTORICO);
+      return { activity: paraAtividade(r.recordset as LinhaDoHistorico[]) };
     }),
   );
 
@@ -199,9 +215,10 @@ export const carregarSatelites = createServerFn({ method: "POST" })
  * inteiras do cliente; comparar item a item daria três consultas por lista e um
  * bug a mais para manter, com o mesmo resultado.
  *
- * Comentários e histórico NÃO entram aqui: eles só crescem, nunca são
+ * Comentários e histórico NÃO são regravados aqui: eles só crescem, nunca são
  * reescritos em bloco. Regravá-los apagaria o comentário que outra pessoa
- * escreveu enquanto esta tinha a tarefa aberta.
+ * escreveu enquanto esta tinha a tarefa aberta. O que esta função faz com o
+ * histórico é só acrescentar — o que mudou no checklist e quem foi mencionado.
  */
 export const salvarSatelites = createServerFn({ method: "POST" })
   .inputValidator(
@@ -212,6 +229,8 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         mentions?: string[];
         tags?: string[];
         recurringWeekdays?: number[];
+        /** A gravação da tarefa que veio antes desta a criou. Ver `salvarTarefa`. */
+        newTask?: boolean;
       }) => {
         const tarefaId = guid(e?.tarefaId);
         if (!tarefaId) throw new Error("Tarefa inválida");
@@ -238,6 +257,7 @@ export const salvarSatelites = createServerFn({ method: "POST" })
            faz remover a última etiqueta funcionar. */
         return {
           tarefaId,
+          tarefaNova: e?.newTask === true,
           checklist: Array.isArray(e?.checklist)
             ? e.checklist
                 .map((i) => ({ text: texto(i?.text, 300), done: i?.done === true }))
@@ -273,6 +293,7 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         eu,
         d: {
           tarefaId: string;
+          tarefaNova: boolean;
           // Ausente = não mexe nesta tabela. Ver a nota no validador.
           checklist?: { text: string; done: boolean }[];
           mentions?: number[];
@@ -281,11 +302,37 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         },
       ) => {
         const { getPool, sql } = await import("@/integrations/db.server");
+        const { mudancasNoChecklist, pessoaNoTexto, registrarNoHistorico } =
+          await import("@/lib/historico.server");
         const pool = await getPool();
         const comTarefa = () => pool.request().input("t", sql.UniqueIdentifier, d.tarefaId);
 
+        /* O que vai para a Timeline, juntado ao longo da função e gravado no fim.
+           Em tarefa recém-criada fica vazio: os itens e as menções com que ela
+           nasceu fazem parte do "criou", e listar cada um como "adicionou"
+           encheria a Timeline de uma tarefa que acabou de existir. */
+        const paraOHistorico: LinhaDeHistorico[] = [];
+
         // --- Checklist ---
         if (d.checklist) {
+          /* Lido ANTES do apaga-e-regrava, pelo mesmo motivo das menções abaixo:
+             é a diferença entre as duas listas que vira linha na Timeline. */
+          if (!d.tarefaNova) {
+            const antes = await comTarefa().query(
+              `SELECT texto, feito FROM gestor.itens_de_checklist
+                WHERE tarefa_id=@t ORDER BY ordem`,
+            );
+            paraOHistorico.push(
+              ...mudancasNoChecklist(
+                (antes.recordset as { texto: string; feito: boolean }[]).map((a) => ({
+                  texto: a.texto,
+                  feito: !!a.feito,
+                })),
+                d.checklist.map((i) => ({ texto: i.text, feito: i.done })),
+              ),
+            );
+          }
+
           await comTarefa().query(`DELETE FROM gestor.itens_de_checklist WHERE tarefa_id=@t`);
           for (const [ordem, item] of d.checklist.entries()) {
             await comTarefa()
@@ -347,6 +394,15 @@ export const salvarSatelites = createServerFn({ method: "POST" })
                   WHERE t.id=@t AND t.responsavel_id <> @p`,
               );
           }
+
+          /* Na Timeline entra toda menção nova, inclusive a de quem já é dono
+             da tarefa — o filtro acima é sobre não avisar em dobro, e aqui não
+             há aviso nenhum, só o registro de que a pessoa foi chamada. */
+          if (!d.tarefaNova) {
+            for (const p of mencoes.filter((x) => !jaMencionados.has(x))) {
+              paraOHistorico.push({ tipo: "mencao", texto: `mencionou ${pessoaNoTexto(p)}` });
+            }
+          }
         }
 
         // --- Dias de recorrência ---
@@ -391,6 +447,9 @@ export const salvarSatelites = createServerFn({ method: "POST" })
               );
           }
         }
+
+        // Por último: só depois de as listas estarem gravadas.
+        await registrarNoHistorico(d.tarefaId, eu, paraOHistorico);
 
         return { ok: true };
       },
@@ -462,30 +521,7 @@ export const comentarNaTarefa = createServerFn({ method: "POST" })
     }),
   );
 
-/** Registra uma linha no histórico. Só cresce; nada aqui é reescrito. */
-export const registrarHistorico = createServerFn({ method: "POST" })
-  .inputValidator(
-    semIdentidade((e: { tarefaId: string; tipo: string; texto: string }) => {
-      const tarefaId = guid(e?.tarefaId);
-      if (!tarefaId) throw new Error("Tarefa inválida");
-      const tipo = (TIPOS_HISTORICO as readonly string[]).includes(e?.tipo) ? e.tipo : "editada";
-      return { tarefaId, tipo, texto: texto(e?.texto, 500) || tipo };
-    }),
-  )
-  .handler(
-    comSessao(async (eu, d: { tarefaId: string; tipo: string; texto: string }) => {
-      const { getPool, sql } = await import("@/integrations/db.server");
-      const pool = await getPool();
-      await pool
-        .request()
-        .input("t", sql.UniqueIdentifier, d.tarefaId)
-        .input("autor", sql.Int, eu)
-        .input("tipo", sql.NVarChar, d.tipo)
-        .input("texto", sql.NVarChar, d.texto)
-        .query(
-          `INSERT INTO gestor.historico_da_tarefa (tarefa_id, autor_id, tipo, texto)
-           VALUES (@t, @autor, @tipo, @texto)`,
-        );
-      return { ok: true };
-    }),
-  );
+/* O histórico não tem mais função de escrita aberta ao navegador. Quem grava
+   é o servidor, no mesmo comando que cria o fato — ver `historico.server.ts`.
+   O comentário também deixou de gravar "comentou": a Timeline já mostra o
+   próprio comentário, e a linha extra fazia cada um aparecer duas vezes. */

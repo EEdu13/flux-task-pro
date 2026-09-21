@@ -154,6 +154,15 @@ export const enviarAnexo = createServerFn({ method: "POST" })
              VALUES (@id, @dono_tipo, @dono_id, @nome, @tamanho, @mime, @url, @por)`,
           );
 
+        /* Anexo de tarefa aparece na Timeline. O de comentário não: ele já
+           aparece dentro do próprio comentário. */
+        if (dados.donoTipo === "tarefa") {
+          const { registrarNoHistorico } = await import("@/lib/historico.server");
+          await registrarNoHistorico(dados.donoId, eu, [
+            { tipo: "editada", texto: `anexou "${dados.nome}"` },
+          ]);
+        }
+
         return {
           id,
           nome: dados.nome,
@@ -189,7 +198,7 @@ export const removerAnexo = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, dados: { id: string }) => {
+    comSessao(async (eu, dados: { id: string }) => {
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
 
@@ -200,10 +209,24 @@ export const removerAnexo = createServerFn({ method: "POST" })
       const r = await pool
         .request()
         .input("id", sql.UniqueIdentifier, dados.id)
-        .query(`DELETE FROM gestor.anexos OUTPUT DELETED.url WHERE id=@id`);
+        .query(
+          `DELETE FROM gestor.anexos
+           OUTPUT DELETED.url, DELETED.dono_tipo, DELETED.dono_id, DELETED.nome
+            WHERE id=@id`,
+        );
 
-      const linha = r.recordset[0] as { url: string } | undefined;
+      const linha = r.recordset[0] as
+        { url: string; dono_tipo: string; dono_id: string; nome: string } | undefined;
       if (!linha) return { ok: true, removido: false };
+
+      /* Sem esta linha, a Timeline mostraria "anexou" para um arquivo que não
+         está mais na tarefa, e ninguém saberia quem o tirou. */
+      if (linha.dono_tipo === "tarefa") {
+        const { registrarNoHistorico } = await import("@/lib/historico.server");
+        await registrarNoHistorico(linha.dono_id, eu, [
+          { tipo: "editada", texto: `removeu o anexo "${linha.nome}"` },
+        ]);
+      }
 
       const { apagarDoBlob } = await import("@/integrations/blob.server");
       await apagarDoBlob(linha.url);

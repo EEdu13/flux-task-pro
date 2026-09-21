@@ -194,6 +194,8 @@ type EntradaTarefa = {
   exigeComprovante: boolean;
   noPack: boolean;
   ordem: number;
+  /** Texto da linha "criou" no histórico. Só vale quando a tarefa é nova. */
+  origem: string | null;
 };
 
 export const salvarTarefa = createServerFn({ method: "POST" })
@@ -218,6 +220,8 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         requireProof?: boolean;
         inPack?: boolean;
         order?: number;
+        /** De onde a tarefa veio: "criou pelo modelo de pack …", "… a partir da ata …". */
+        origin?: string;
       }): EntradaTarefa => {
         const titulo = texto(e?.title, 200);
         if (!titulo) throw new Error("A tarefa precisa de um título");
@@ -268,12 +272,13 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           exigeComprovante: e?.requireProof === true,
           noPack: e?.inPack === true,
           ordem: Math.max(0, Math.trunc(Number(e?.order) || 0)),
+          origem: texto(e?.origin, 500) || null,
         };
       },
     ),
   )
   .handler(
-    comSessao(async (eu, d: EntradaTarefa): Promise<{ id: string }> => {
+    comSessao(async (eu, d: EntradaTarefa): Promise<{ id: string; nova: boolean }> => {
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
 
@@ -297,6 +302,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         .input("comprovante", sql.Bit, d.exigeComprovante)
         .input("no_pack", sql.Bit, d.noPack)
         .input("ordem", sql.Int, d.ordem)
+        .input("origem", sql.NVarChar(500), d.origem)
         .input("por", sql.Int, eu);
 
       /* `concluida_em` é derivado da situação, não recebido.
@@ -317,13 +323,17 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         `DECLARE @efeito TABLE (
            tarefa             UNIQUEIDENTIFIER,
            criador            INT,
+           nova               BIT,
            responsavel_antes  INT,
            responsavel_depois INT,
+           situacao_antes     NVARCHAR(12),
+           situacao_depois    NVARCHAR(12),
            concluida_antes    DATETIMEOFFSET(3),
            concluida_depois   DATETIMEOFFSET(3),
            titulo             NVARCHAR(200),
            pontos             INT,
            prioridade         NVARCHAR(10),
+           prazo_antes        DATETIMEOFFSET(3),
            prazo              DATETIMEOFFSET(3),
            no_pack            BIT
          );
@@ -343,12 +353,20 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                       THEN SYSDATETIMEOFFSET()
                     WHEN @situacao <> 'concluida' THEN NULL
                     ELSE concluida_em END
-           OUTPUT inserted.id, inserted.criado_por,
+           OUTPUT inserted.id, inserted.criado_por, CAST(0 AS BIT),
                   deleted.responsavel_id, inserted.responsavel_id,
+                  deleted.situacao, inserted.situacao,
                   deleted.concluida_em, inserted.concluida_em,
-                  inserted.titulo, inserted.pontos, inserted.prioridade, inserted.prazo,
+                  inserted.titulo, inserted.pontos, inserted.prioridade,
+                  deleted.prazo, inserted.prazo,
                   inserted.no_pack
-             INTO @efeito
+             INTO @efeito (tarefa, criador, nova,
+                           responsavel_antes, responsavel_depois,
+                           situacao_antes, situacao_depois,
+                           concluida_antes, concluida_depois,
+                           titulo, pontos, prioridade,
+                           prazo_antes, prazo,
+                           no_pack)
             WHERE id=@id;
          END
          ELSE
@@ -358,12 +376,20 @@ export const salvarTarefa = createServerFn({ method: "POST" })
               frequencia, situacao, prioridade, pontos, prazo, recorrente,
               recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
               no_pack, ordem, concluida_em)
-           OUTPUT inserted.id, inserted.criado_por,
+           OUTPUT inserted.id, inserted.criado_por, CAST(1 AS BIT),
                   CAST(NULL AS INT), inserted.responsavel_id,
+                  CAST(NULL AS NVARCHAR(12)), inserted.situacao,
                   CAST(NULL AS DATETIMEOFFSET(3)), inserted.concluida_em,
-                  inserted.titulo, inserted.pontos, inserted.prioridade, inserted.prazo,
+                  inserted.titulo, inserted.pontos, inserted.prioridade,
+                  CAST(NULL AS DATETIMEOFFSET(3)), inserted.prazo,
                   inserted.no_pack
-             INTO @efeito
+             INTO @efeito (tarefa, criador, nova,
+                           responsavel_antes, responsavel_depois,
+                           situacao_antes, situacao_depois,
+                           concluida_antes, concluida_depois,
+                           titulo, pontos, prioridade,
+                           prazo_antes, prazo,
+                           no_pack)
            VALUES
              (COALESCE(@id, NEWID()), @titulo, @descricao, @setor, @por, @responsavel, @projeto,
               @frequencia, @situacao, @prioridade, @pontos, @prazo, @recorrente,
@@ -424,10 +450,100 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           WHERE e.concluida_depois IS NOT NULL AND e.concluida_antes IS NULL
             AND e.criador <> @por;
 
-         SELECT tarefa AS id FROM @efeito;`,
+         /* O histórico, a partir do mesmo antes-e-depois.
+            Mora aqui porque todo caminho que muda a tarefa passa por aqui:
+            arrastar o cartão, concluir pelo círculo, adiar pelo menu, desfazer,
+            transferir o pack, salvar o painel. Quando era o navegador que
+            anotava, cada caminho precisava lembrar de anotar — e mais da metade
+            esquecia. Aqui só vira linha o que de fato mudou nesta gravação:
+            arrastar grava a coluna inteira, mas só o cartão arrastado mudou de
+            situação.
+
+            O prazo é escrito no horário de Brasília. O navegador usava a data
+            em UTC, e prazo às 23:59 aparecia como o dia seguinte. Quando só a
+            hora muda, o texto diz a hora — antes, "Adiar +1 hora" virava "mudou
+            o prazo de 22/09 para 22/09".
+
+            Cada linha sai 1ms depois da anterior. Todas nasceriam no mesmo
+            instante, e a Timeline, que ordena pelo horário, poderia mostrar
+            "concluiu" antes de "criou".
+
+            TRY/CATCH: é registro de apoio. Uma falha aqui não pode virar "não
+            foi possível salvar" numa tarefa que já foi salva. */
+         BEGIN TRY
+           DECLARE @fuso SYSNAME = N'E. South America Standard Time';
+
+           INSERT INTO gestor.historico_da_tarefa (tarefa_id, autor_id, tipo, texto, em)
+           SELECT e.tarefa, @por, h.tipo, LEFT(h.texto, 500),
+                  DATEADD(MILLISECOND, h.ordem, SYSDATETIMEOFFSET())
+             FROM @efeito e
+            CROSS APPLY (SELECT e.prazo_antes AT TIME ZONE @fuso AS antes,
+                                e.prazo AT TIME ZONE @fuso AS depois) p
+            CROSS APPLY (SELECT CONVERT(NVARCHAR(5), p.antes, 103) AS dia_antes,
+                                CONVERT(NVARCHAR(5), CAST(p.antes AS TIME), 108) AS hora_antes,
+                                CONVERT(NVARCHAR(5), p.depois, 103) AS dia_depois,
+                                CONVERT(NVARCHAR(5), CAST(p.depois AS TIME), 108) AS hora_depois) f
+            CROSS APPLY (
+              SELECT 0 AS ordem, N'criada' AS tipo,
+                     ISNULL(@origem, N'criou esta tarefa') AS texto
+               WHERE e.nova = 1
+              UNION ALL
+              /* Na criação também, quando é para outra pessoa: é o que mostra
+                 que a tarefa foi delegada. Tarefa de pack que muda de dono
+                 depois de criada é o pack sendo transferido. */
+              SELECT 1, N'atribuicao',
+                     CASE WHEN e.nova = 0 AND e.no_pack = 1
+                          THEN N'transferiu para o pack de '
+                          ELSE N'atribuiu para ' END
+                     + N'{pessoa:' + CAST(e.responsavel_depois AS NVARCHAR(12)) + N'}'
+               WHERE (e.nova = 0 AND e.responsavel_antes <> e.responsavel_depois)
+                  OR (e.nova = 1 AND e.responsavel_depois <> @por)
+              UNION ALL
+              SELECT 2, N'editada',
+                     CASE
+                       WHEN CAST(p.antes AS DATE) = CAST(p.depois AS DATE)
+                         THEN N'mudou o horário do prazo de ' + f.hora_antes
+                              + N' para ' + f.hora_depois
+                       WHEN f.hora_antes = f.hora_depois
+                         THEN N'mudou o prazo de ' + f.dia_antes + N' para ' + f.dia_depois
+                       ELSE N'mudou o prazo de ' + f.dia_antes + N' ' + f.hora_antes
+                            + N' para ' + f.dia_depois + N' ' + f.hora_depois
+                     END
+               WHERE e.nova = 0 AND e.prazo_antes <> e.prazo
+                 AND (CAST(p.antes AS DATE) <> CAST(p.depois AS DATE)
+                      OR f.hora_antes <> f.hora_depois)
+              UNION ALL
+              /* A conclusão tem linha própria, e é a única: "mudou o status
+                 para Concluída" e "concluiu" diziam a mesma coisa duas vezes. */
+              SELECT 3, N'status',
+                     CASE WHEN e.situacao_antes = N'concluida'
+                          THEN N'reabriu a tarefa, que voltou para '
+                          ELSE N'mudou o status para ' END
+                     + CASE e.situacao_depois WHEN N'pendente' THEN N'A fazer'
+                                              WHEN N'andamento' THEN N'Em andamento'
+                                              ELSE e.situacao_depois END
+               WHERE e.nova = 0 AND e.situacao_antes <> e.situacao_depois
+                 AND e.situacao_depois <> N'concluida'
+              UNION ALL
+              SELECT 4, N'concluida',
+                     CASE WHEN e.prazo >= e.concluida_depois
+                          THEN N'concluiu a tarefa no prazo'
+                          ELSE N'concluiu a tarefa com atraso' END
+               WHERE e.concluida_depois IS NOT NULL AND e.concluida_antes IS NULL
+            ) h;
+         END TRY
+         BEGIN CATCH
+           DECLARE @falha_no_historico NVARCHAR(4000) = ERROR_MESSAGE();
+         END CATCH
+
+         SELECT tarefa AS id, nova FROM @efeito;`,
       );
 
-      return { id: (r.recordset[0] as { id: string }).id };
+      const linha = r.recordset[0] as { id: string; nova: boolean };
+      /* `nova` diz a quem chamou se esta gravação CRIOU a tarefa. Quem grava o
+         checklist em seguida precisa saber: os itens com que a tarefa nasceu
+         fazem parte da criação, não são "adicionou" um por um. */
+      return { id: linha.id, nova: !!linha.nova };
     }),
   );
 

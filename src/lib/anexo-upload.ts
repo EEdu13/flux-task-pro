@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import type { Attachment } from "./fluxo-types";
+import { avisarHistoricoMudou } from "./historico-eventos";
 
 /**
  * Sobe anexo para o Blob — a ponte que faltava entre a tela e `enviarAnexo`.
@@ -83,6 +84,9 @@ export async function subirAnexos(
       },
     );
   }
+
+  // O servidor registrou "anexou" na Timeline da tarefa; a tela vai buscar.
+  if (donoTipo === "tarefa" && enviados.length) avisarHistoricoMudou(donoId);
 
   return enviados;
 }
