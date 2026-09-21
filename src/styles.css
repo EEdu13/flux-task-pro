@@ -1260,41 +1260,66 @@ html.fluxo-apresentando.tauri-app body {
   }
 }
 
-/* ————— Chamar atenção (MSN-style nudge) ————— */
+/* ————— Chamar atenção (MSN-style nudge) —————
+   O tremor anda com `left`/`top`, e não com `transform`, de propósito.
+
+   Qualquer `transform` no body — até `translate(0, 0)`, que é onde a animação
+   termina e fica até a classe sair — faz dele a referência de tudo que é
+   `position: fixed` lá dentro. O modal aberto e o próprio aviso de "chamou sua
+   atenção" deixavam de se centralizar pela janela e passavam a se centralizar
+   pela altura do body. Em página que cabe na tela isso não aparece; no Início,
+   que rola, o centro do body fica bem mais embaixo, e os dois desciam juntos.
+   Só voltavam quando o timer tirava a classe — e com a janela em segundo plano,
+   que é justo quando alguém chama, o navegador segura esse timer por segundos.
+
+   `left`/`top` com `position: relative` desloca a página sem mudar essa
+   referência: o que é fixo fica parado onde está e só o fundo treme. A rotação
+   de meio grau saiu junto, porque só existe como `transform`. */
 @keyframes fluxo-shake {
   0%,
   100% {
-    transform: translate(0, 0) rotate(0);
+    left: 0;
+    top: 0;
   }
   10% {
-    transform: translate(-6px, 4px) rotate(-0.4deg);
+    left: -6px;
+    top: 4px;
   }
   20% {
-    transform: translate(7px, -3px) rotate(0.5deg);
+    left: 7px;
+    top: -3px;
   }
   30% {
-    transform: translate(-8px, -2px) rotate(-0.3deg);
+    left: -8px;
+    top: -2px;
   }
   40% {
-    transform: translate(6px, 5px) rotate(0.4deg);
+    left: 6px;
+    top: 5px;
   }
   50% {
-    transform: translate(-4px, -4px) rotate(-0.2deg);
+    left: -4px;
+    top: -4px;
   }
   60% {
-    transform: translate(5px, 3px) rotate(0.3deg);
+    left: 5px;
+    top: 3px;
   }
   70% {
-    transform: translate(-3px, 2px) rotate(-0.2deg);
+    left: -3px;
+    top: 2px;
   }
   80% {
-    transform: translate(2px, -1px) rotate(0.1deg);
+    left: 2px;
+    top: -1px;
   }
   90% {
-    transform: translate(-1px, 1px) rotate(0);
+    left: -1px;
+    top: 1px;
   }
 }
 html.fluxo-nudge-shake body {
+  position: relative;
   animation: fluxo-shake 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
