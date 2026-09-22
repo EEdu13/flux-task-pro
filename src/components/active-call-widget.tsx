@@ -5,14 +5,13 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   GridLayout,
-  ParticipantTile,
   useTracks,
   useDataChannel,
   useLocalParticipant,
   useRoomContext,
   useTrackToggle,
 } from "@livekit/components-react";
-import { Track, RoomEvent } from "livekit-client";
+import { RemoteParticipant, Track, RoomEvent } from "livekit-client";
 import type { LocalParticipant, LocalVideoTrack, Room } from "livekit-client";
 import { BackgroundProcessor, type BackgroundProcessorWrapper } from "@livekit/track-processors";
 import "@livekit/components-styles";
@@ -47,6 +46,7 @@ import {
   MonitorOff,
   PhoneOff,
   MoreHorizontal,
+  Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useActiveCall } from "@/lib/active-call-context";
@@ -57,9 +57,14 @@ import {
   getRoomAccess,
   setRoomPrivacy,
 } from "@/lib/livekit-token.functions";
+import { volumeGuardado, guardarVolume } from "@/lib/volume-por-pessoa";
 import { useCallShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { MeetingExtras, type MeetingExtrasHandle } from "@/components/meeting-extras";
 import { ApresentacaoComBolha } from "@/components/apresentacao-com-bolha";
+import {
+  ParticipantTileComMenu,
+  type AbrirMenuDeVolume,
+} from "@/components/participant-tile-com-menu";
 import {
   filesToAttachments,
   formatBytes,
@@ -478,6 +483,99 @@ function escutarMicrofoneMudo(
   };
 }
 
+/* --------------------- Volume de uma pessoa, só para você --------------------- */
+
+/** Quem foi clicada e onde abrir — a posição do próprio clique. */
+type AlvoDoMenuDeVolume = { participant: RemoteParticipant; x: number; y: number };
+
+/**
+ * O painel do clique direito: um controle de 0% a 200% e um "Redefinir".
+ *
+ * `setVolume` do LiveKit já mexe só na sua reprodução — a pessoa continua no
+ * volume normal para todo mundo, isto aqui muda o que sai do SEU alto-falante.
+ * Cada arrasto do controle já aplica e já grava; não tem botão de confirmar.
+ */
+function MenuDeVolume({ alvo, onClose }: { alvo: AlvoDoMenuDeVolume; onClose: () => void }) {
+  const [volume, setVolume] = useState(() => volumeGuardado(alvo.participant.identity));
+  const [pos, setPos] = useState({ left: alvo.x, top: alvo.y });
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Some ao clicar fora ou apertar Esc — igual aos outros menus soltos desta
+  // barra (convite, convidado externo).
+  useEffect(() => {
+    const foraDoMenu = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) onClose();
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", foraDoMenu);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", foraDoMenu);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [onClose]);
+
+  // Reencaixa depois de medir o próprio tamanho: um clique perto da borda
+  // direita ou de baixo da tela não pode abrir um menu cortado para fora dela.
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({
+      left: Math.max(8, Math.min(alvo.x, window.innerWidth - r.width - 8)),
+      top: Math.max(8, Math.min(alvo.y, window.innerHeight - r.height - 8)),
+    });
+    // Só no clique novo: reencaixar de novo a cada medida geraria um laço
+    // (medir muda a posição, a posição muda o layout, o layout pede nova
+    // medida...).
+  }, [alvo.x, alvo.y]);
+
+  const aplicar = (v: number) => {
+    setVolume(v);
+    alvo.participant.setVolume(v);
+    guardarVolume(alvo.participant.identity, v);
+  };
+
+  const primeiroNome = (alvo.participant.name || alvo.participant.identity).split(" ")[0];
+
+  return (
+    <div
+      ref={menuRef}
+      style={{ position: "fixed", left: pos.left, top: pos.top }}
+      className="z-40 w-56 rounded-md border border-white/10 bg-neutral-900 p-3 text-white shadow-xl"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold">
+        <Volume2 className="h-3.5 w-3.5 text-primary" />
+        Volume de {primeiroNome}
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={2}
+        step={0.05}
+        value={volume}
+        onChange={(e) => aplicar(Number(e.target.value))}
+        className="w-full accent-primary"
+        aria-label={`Volume de ${primeiroNome}`}
+      />
+      <div className="mt-1 flex items-center justify-between text-[11px] text-white/60">
+        <span>{Math.round(volume * 100)}%</span>
+        {volume !== 1 && (
+          <button type="button" onClick={() => aplicar(1)} className="text-primary hover:underline">
+            Redefinir
+          </button>
+        )}
+      </div>
+      <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+        Só muda o que você ouve. {primeiroNome} continua no volume normal para o resto da sala.
+      </p>
+    </div>
+  );
+}
+
 function CallContents({
   mini,
   roomLabel,
@@ -504,6 +602,31 @@ function CallContents({
   );
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
+
+  /* O volume que você já escolheu para cada pessoa, reaplicado sozinho.
+     `setVolume` só "gruda" no objeto RemoteParticipant de agora — um objeto
+     novo nasce a cada vez que a pessoa entra na sala (o primeiro ingresso, e
+     qualquer reconexão dela no meio da chamada), e um objeto novo começa
+     sempre no volume normal. Sem isto, quem você ajustou sumiria do jeito
+     certo assim que a conexão dela soluçasse. */
+  useEffect(() => {
+    const aplicarSalvo = (participant: RemoteParticipant) => {
+      const v = volumeGuardado(participant.identity);
+      if (v !== 1) participant.setVolume(v);
+    };
+    room.remoteParticipants.forEach(aplicarSalvo);
+    room.on(RoomEvent.ParticipantConnected, aplicarSalvo);
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, aplicarSalvo);
+    };
+  }, [room]);
+
+  const [menuVolume, setMenuVolume] = useState<AlvoDoMenuDeVolume | null>(null);
+  const abrirMenuDeVolume: AbrirMenuDeVolume = (participant, x, y) => {
+    if (!(participant instanceof RemoteParticipant)) return;
+    setMenuVolume({ participant, x, y });
+  };
+
   const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)
     ?.videoTrack as LocalVideoTrack | undefined;
   const [effect, setEffect] = useVideoEffect(cameraTrack);
@@ -913,10 +1036,14 @@ function CallContents({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="relative min-w-0 flex-1">
           {useFocus ? (
-            <ApresentacaoComBolha tela={screenTracks[0]!} cameras={cameraTracks} />
+            <ApresentacaoComBolha
+              tela={screenTracks[0]!}
+              cameras={cameraTracks}
+              aoAbrirMenu={abrirMenuDeVolume}
+            />
           ) : (
             <GridLayout tracks={tracks} style={{ height: "100%" }}>
-              <ParticipantTile />
+              <ParticipantTileComMenu aoAbrirMenu={abrirMenuDeVolume} />
             </GridLayout>
           )}
           {hasScreen && !mini && (
@@ -1272,6 +1399,7 @@ function CallContents({
         )}
       </div>
       <RoomAudioRenderer />
+      {menuVolume && <MenuDeVolume alvo={menuVolume} onClose={() => setMenuVolume(null)} />}
       {endConfirm && !mini && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
           <div className="w-full max-w-md rounded-xl border border-white/10 bg-neutral-900 p-5 text-white shadow-2xl">
@@ -1678,6 +1806,12 @@ export function ActiveCallWidget() {
         options={{
           audioCaptureDefaults: active.micDeviceId ? { deviceId: active.micDeviceId } : undefined,
           videoCaptureDefaults: active.camDeviceId ? { deviceId: active.camDeviceId } : undefined,
+          /* Sem isto, `participant.setVolume()` só sabe abaixar — o volume da
+             reprodução cai num `<audio>.volume` comum, que o navegador trava
+             em 100%. É "gritar" quem fala baixo que precisa de mais: o
+             LiveKit só ganha esse teto solto quando mistura o áudio pelo Web
+             Audio (um `GainNode`), e é isto que a opção liga. Ver `MenuDeVolume`. */
+          webAudioMix: true,
         }}
         style={{ height: "100%", width: "100%" }}
         onDisconnected={() => endCall()}

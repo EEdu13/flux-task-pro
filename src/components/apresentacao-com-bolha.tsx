@@ -3,7 +3,6 @@ import {
   CarouselLayout,
   FocusLayout,
   FocusLayoutContainer,
-  ParticipantTile,
   VideoTrack,
 } from "@livekit/components-react";
 import type { TrackReference, TrackReferenceOrPlaceholder } from "@livekit/components-react";
@@ -14,6 +13,10 @@ import {
   posicaoLimitada,
   type PosicaoDaBolha,
 } from "@/lib/bolha-da-camera";
+import {
+  ParticipantTileComMenu,
+  type AbrirMenuDeVolume,
+} from "@/components/participant-tile-com-menu";
 
 /**
  * Apresentação com o rosto de quem apresenta numa bolha por cima.
@@ -36,9 +39,14 @@ import {
 export function ApresentacaoComBolha({
   tela,
   cameras,
+  aoAbrirMenu,
 }: {
   tela: TrackReferenceOrPlaceholder;
   cameras: TrackReferenceOrPlaceholder[];
+  /** Clique direito em alguém: menu de volume, só para quem clicou. Sem isto
+      (a sala de convidado, por exemplo), o clique direito fica no padrão do
+      navegador. */
+  aoAbrirMenu?: AbrirMenuDeVolume;
 }) {
   const areaRef = useRef<HTMLDivElement | null>(null);
 
@@ -60,7 +68,7 @@ export function ApresentacaoComBolha({
       {outras.length > 0 ? (
         <FocusLayoutContainer style={{ height: "100%" }}>
           <CarouselLayout tracks={outras}>
-            <ParticipantTile />
+            <ParticipantTileComMenu aoAbrirMenu={aoAbrirMenu} />
           </CarouselLayout>
           <FocusLayout trackRef={tela} />
         </FocusLayoutContainer>
@@ -69,7 +77,9 @@ export function ApresentacaoComBolha({
            toda em vez de reservar espaço para uma faixa vazia. */
         <FocusLayout trackRef={tela} style={{ height: "100%" }} />
       )}
-      {doApresentador && <Bolha trackRef={doApresentador} areaRef={areaRef} />}
+      {doApresentador && (
+        <Bolha trackRef={doApresentador} areaRef={areaRef} aoAbrirMenu={aoAbrirMenu} />
+      )}
     </div>
   );
 }
@@ -77,9 +87,11 @@ export function ApresentacaoComBolha({
 function Bolha({
   trackRef,
   areaRef,
+  aoAbrirMenu,
 }: {
   trackRef: TrackReference;
   areaRef: React.RefObject<HTMLDivElement | null>;
+  aoAbrirMenu?: AbrirMenuDeVolume;
 }) {
   const [pos, setPos] = useState<PosicaoDaBolha>(() => posicaoDaBolha());
   const bolhaRef = useRef<HTMLDivElement | null>(null);
@@ -135,6 +147,16 @@ function Bolha({
         }
         guardarBolha();
       }}
+      onContextMenu={
+        aoAbrirMenu &&
+        ((e) => {
+          // A bolha pode ser a SUA própria câmera (você é quem apresenta) —
+          // aí não há o que regular, ninguém ajusta o próprio volume para si.
+          if (trackRef.participant.isLocal) return;
+          e.preventDefault();
+          aoAbrirMenu(trackRef.participant, e.clientX, e.clientY);
+        })
+      }
       style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%` }}
       title="Arraste para tirar do canto do slide"
       /* `touch-none`: sem isso, no touch o navegador interpreta o arrasto como
