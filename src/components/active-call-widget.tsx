@@ -48,6 +48,7 @@ import {
   PhoneOff,
   MoreHorizontal,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
@@ -160,14 +161,29 @@ function MediaToggle({
   IconOff,
   labelOn,
   labelOff,
+  onEnabledChange,
+  onDeviceError,
 }: {
   source: Track.Source.Microphone | Track.Source.Camera | Track.Source.ScreenShare;
   IconOn: typeof X;
   IconOff: typeof X;
   labelOn: string;
   labelOff: string;
+  /** Toda vez que o estado muda — pelo clique aqui OU pelo próprio LiveKit
+      (reconexão de sinalização). Quem chama é quem precisa saber o valor atual
+      de verdade; ver `setMediaState` em `active-call-context.tsx`. */
+  onEnabledChange?: (enabled: boolean) => void;
+  /** A troca falhou de verdade (câmera em uso por outro app, permissão
+      negada…). Sem isto o erro do LiveKit some em silêncio — ver `toggle` em
+      `setupMediaToggle` no pacote `@livekit/components-core`, que engole a
+      exceção quando há um `onError` para entregá-la. */
+  onDeviceError?: (e: Error) => void;
 }) {
-  const { enabled, pending, toggle } = useTrackToggle({ source });
+  const { enabled, pending, toggle } = useTrackToggle({
+    source,
+    onChange: onEnabledChange,
+    onDeviceError,
+  });
   return (
     <ToolBtn
       icon={enabled ? IconOn : IconOff}
@@ -178,6 +194,37 @@ function MediaToggle({
       active={enabled && source === Track.Source.ScreenShare}
     />
   );
+}
+
+/** As promises do LiveKit rejeitam com o que quer que o navegador jogue —
+    quase sempre um `Error`, mas o tipo não garante. */
+function comoErro(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e));
+}
+
+/**
+ * Traduz o que o `getUserMedia` recusa. Nome do erro, não a mensagem — o
+ * Chrome e o Edge escrevem a mensagem em inglês técnico ("Could not start
+ * video source"), e o nome (`NotReadableError`, `NotAllowedError`…) é estável
+ * entre navegadores, ao contrário do texto.
+ */
+function mensagemDoErroDeDispositivo(aparelho: string, e: Error): string {
+  // `aparelho` já chega com o artigo certo: "o microfone", "a câmera". Por
+  // isso as frases abaixo evitam pronome e adjetivo que concordassem com ele
+  // ("ela", "escolhida") — o texto tem que valer para os dois gêneros.
+  switch (e.name) {
+    case "NotReadableError":
+    case "TrackStartError":
+      return `Não deu para ligar ${aparelho}: outro programa parece estar usando o mesmo aparelho agora.`;
+    case "NotAllowedError":
+    case "PermissionDeniedError":
+      return `O navegador não deixou ligar ${aparelho}. Confira a permissão do site.`;
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return `Não encontrei ${aparelho} que você tinha escolhido. Confira se o aparelho continua conectado.`;
+    default:
+      return `Não deu para ligar ${aparelho}.`;
+  }
 }
 
 function Divider() {
@@ -333,7 +380,7 @@ function CallContents({
   const [effect, setEffect] = useVideoEffect(cameraTrack);
   const [effectMenu, setEffectMenu] = useState(false);
   const { users, currentUser } = useFluxo();
-  const { active: activeCall, setMeetingTitle } = useActiveCall();
+  const { active: activeCall, setMeetingTitle, setMediaState } = useActiveCall();
   const meetingTitle = activeCall?.meetingTitle || roomLabel;
   const autoMinute = activeCall?.autoMinute ?? true;
   const [titleEditing, setTitleEditing] = useState(false);
@@ -601,14 +648,29 @@ function CallContents({
   const useFocus =
     hasScreen && (presenterMode === "auto" || presenterMode === "focus") && !mini;
 
-  // Keyboard shortcuts (ignored in mini mode to avoid trapping global keys)
+  /* Os atalhos M e V mexem direto no LiveKit, por fora do botão — e por isso
+     também precisam avisar `setMediaState`. Esquecer isto aqui reabriria o
+     mesmo bug: apertar M reabilitaria o microfone na hora, mas `active.micOn`
+     continuaria com o valor da prévia, e a próxima reconexão desfaria o
+     atalho silenciosamente. */
+  const avisarErroDeDispositivo = (aparelho: string) => (e: unknown) =>
+    toast.error(mensagemDoErroDeDispositivo(aparelho, comoErro(e)));
+
   useCallShortcuts({
     enabled: !mini,
     onToggleMic: () => {
-      localParticipant.setMicrophoneEnabled(!localParticipant.isMicrophoneEnabled).catch(() => {});
+      const ligar = !localParticipant.isMicrophoneEnabled;
+      localParticipant
+        .setMicrophoneEnabled(ligar)
+        .then(() => setMediaState({ micOn: localParticipant.isMicrophoneEnabled }))
+        .catch(avisarErroDeDispositivo("o microfone"));
     },
     onToggleCam: () => {
-      localParticipant.setCameraEnabled(!localParticipant.isCameraEnabled).catch(() => {});
+      const ligar = !localParticipant.isCameraEnabled;
+      localParticipant
+        .setCameraEnabled(ligar)
+        .then(() => setMediaState({ camOn: localParticipant.isCameraEnabled }))
+        .catch(avisarErroDeDispositivo("a câmera"));
     },
     onEnd: requestEnd,
     onToggleChat: () => setChatOpen((v) => !v),
@@ -768,6 +830,14 @@ function CallContents({
             IconOff={MicOff}
             labelOn="Silenciar microfone"
             labelOff="Ativar microfone"
+            /* Mantém `active.micOn` em dia — é o que o LiveKit reaplica a cada
+               reconexão de sinalização. Sem isto, ligar o microfone aqui e
+               depois sofrer uma queda breve de rede fazia o LiveKit religar o
+               valor velho da prévia (geralmente desligado), apagando o
+               microfone sozinho, sem erro nenhum na tela. Ver o comentário em
+               `active-call-context.tsx`. */
+            onEnabledChange={(enabled) => setMediaState({ micOn: enabled })}
+            onDeviceError={avisarErroDeDispositivo("o microfone")}
           />
           <MediaToggle
             source={Track.Source.Camera}
@@ -775,6 +845,8 @@ function CallContents({
             IconOff={VideoOff}
             labelOn="Desligar câmera"
             labelOff="Ligar câmera"
+            onEnabledChange={(enabled) => setMediaState({ camOn: enabled })}
+            onDeviceError={avisarErroDeDispositivo("a câmera")}
           />
           <MediaToggle
             source={Track.Source.ScreenShare}
@@ -782,6 +854,7 @@ function CallContents({
             IconOff={MonitorUp}
             labelOn="Parar de compartilhar"
             labelOff="Compartilhar tela"
+            onDeviceError={avisarErroDeDispositivo("o compartilhamento de tela")}
           />
           {mini && onMaximize && (
             <ToolBtn

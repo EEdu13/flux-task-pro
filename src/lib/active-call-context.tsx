@@ -10,8 +10,18 @@ export interface ActiveCall {
   name: string;
   meetingTitle: string;
   autoMinute: boolean;
-  /** Como a pessoa escolheu entrar, na prévia. Vale só para a conexão: dali em
-      diante quem manda são os botões da própria ligação. */
+  /**
+   * O que a pessoa quer AGORA: câmera e microfone ligados ou não.
+   *
+   * Nasce do escolhido na prévia, mas não para aí — `setMediaState` mantém isto
+   * em dia a cada clique nos botões da própria ligação. Precisa ser assim
+   * porque o LiveKit usa este valor não só para conectar, mas para decidir o
+   * que ligar de novo depois de toda reconexão de sinalização (queda breve de
+   * rede, por exemplo): sem a atualização, quem entrasse calado e ligasse o
+   * microfone na sala via ele apagar sozinho na primeira soluçada da rede,
+   * porque o LiveKit reaplicava a escolha velha da prévia. Ver o uso em
+   * `<LiveKitRoom audio=… video=…>`, em `active-call-widget.tsx`.
+   */
   micOn: boolean;
   camOn: boolean;
   micDeviceId?: string;
@@ -39,6 +49,9 @@ interface ActiveCallContextValue {
   endCall(): void;
   setMinimized(v: boolean): void;
   setMeetingTitle(t: string): void;
+  /** O botão de mic/câmera da ligação chama isto a cada troca. Ver o
+      comentário de `micOn`/`camOn` em `ActiveCall`. */
+  setMediaState(patch: { micOn?: boolean; camOn?: boolean }): void;
 }
 
 const Ctx = createContext<ActiveCallContextValue | null>(null);
@@ -125,8 +138,36 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
     setActive(next);
   }, []);
 
+  const setMediaState = useCallback((patch: { micOn?: boolean; camOn?: boolean }) => {
+    const cur = activeRef.current;
+    if (!cur) return;
+    // Nada mudou: não gera um render (e uma nova identidade de objeto) à toa
+    // a cada evento do LiveKit que só confirma o que já estava certo.
+    if (
+      (patch.micOn === undefined || patch.micOn === cur.micOn) &&
+      (patch.camOn === undefined || patch.camOn === cur.camOn)
+    ) {
+      return;
+    }
+    const next = { ...cur, ...patch };
+    activeRef.current = next;
+    setActive(next);
+  }, []);
+
   return (
-    <Ctx.Provider value={{ active, minimized, loading, error, startCall, endCall, setMinimized, setMeetingTitle }}>
+    <Ctx.Provider
+      value={{
+        active,
+        minimized,
+        loading,
+        error,
+        startCall,
+        endCall,
+        setMinimized,
+        setMeetingTitle,
+        setMediaState,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );
