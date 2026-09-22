@@ -13,7 +13,7 @@ import {
   useTrackToggle,
 } from "@livekit/components-react";
 import { Track, RoomEvent } from "livekit-client";
-import type { LocalVideoTrack } from "livekit-client";
+import type { LocalParticipant, LocalVideoTrack, Room } from "livekit-client";
 import { BackgroundProcessor, type BackgroundProcessorWrapper } from "@livekit/track-processors";
 import "@livekit/components-styles";
 import {
@@ -349,6 +349,135 @@ function useVideoEffect(cameraTrack: LocalVideoTrack | undefined) {
   return [effect, setEffect] as const;
 }
 
+/* ---------------------- Aviso de "você está mudo" ---------------------- */
+
+/** Não repete o aviso antes disso, mesmo que a pessoa continue falando muda. */
+const RETOMAR_AVISO_MUDO_MS = 20_000;
+/** ~480ms de som sustentado (8 leituras de 60ms) — abaixo disso é tosse, uma
+    batida na mesa, o clique do próprio botão de desmutar sendo apertado. */
+const LEITURAS_PARA_AVISAR = 8;
+const TICK_MUDO_MS = 60;
+
+/**
+ * Ouve o PRÓPRIO microfone e avisa quando a pessoa fala com ele mudo.
+ *
+ * Mutar não solta o aparelho do sistema — `stopOnMute` é falso por padrão no
+ * LiveKit — mas a faixa PUBLICADA fica com `enabled=false`, e uma
+ * `MediaStreamTrack` desligada só entrega silêncio para quem a analisa,
+ * mesmo dentro do próprio navegador. Por isso o aviso ouve um CLONE dela: o
+ * clone tem o próprio `enabled`, independente do original, e continua
+ * captando de verdade enquanto o original está mudo — sem abrir uma segunda
+ * captura do aparelho, que um dispositivo de sala às vezes recusa (ver
+ * `mensagemDoErroDeDispositivo`, acima).
+ *
+ * Só existe faixa para clonar depois que o microfone foi ligado ao menos uma
+ * vez nesta chamada: quem entra mudo e nunca desmuta não tem o que analisar,
+ * e passa a valer para o aviso a partir da primeira vez que desmutar.
+ */
+function useAvisoDeMicMutado(room: Room, aoTentarDesmutar: () => void) {
+  useEffect(() => {
+    const { localParticipant } = room;
+    let pararAnalise: (() => void) | null = null;
+
+    const escutarFaixaAtual = () => {
+      pararAnalise?.();
+      pararAnalise = null;
+      const trilha = localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+        ?.mediaStreamTrack;
+      if (!trilha || trilha.readyState !== "live") return;
+      pararAnalise = escutarMicrofoneMudo(trilha, localParticipant, aoTentarDesmutar);
+    };
+
+    escutarFaixaAtual();
+    // Primeiro "ligar o microfone" da chamada, e qualquer republish depois
+    // (trocar de aparelho): a faixa é outra, o clone velho não serve mais.
+    room.on(RoomEvent.LocalTrackPublished, escutarFaixaAtual);
+    room.on(RoomEvent.LocalTrackUnpublished, escutarFaixaAtual);
+    return () => {
+      pararAnalise?.();
+      room.off(RoomEvent.LocalTrackPublished, escutarFaixaAtual);
+      room.off(RoomEvent.LocalTrackUnpublished, escutarFaixaAtual);
+    };
+  }, [room, aoTentarDesmutar]);
+}
+
+/** O clone, o analisador e o relógio de uma faixa. Devolve como desligar tudo. */
+function escutarMicrofoneMudo(
+  trilha: MediaStreamTrack,
+  localParticipant: LocalParticipant,
+  aoTentarDesmutar: () => void,
+): () => void {
+  const clone = trilha.clone();
+  clone.enabled = true;
+
+  const ctx = new AudioContext();
+  void ctx.resume().catch(() => {});
+  const fonte = ctx.createMediaStreamSource(new MediaStream([clone]));
+  const analisador = ctx.createAnalyser();
+  analisador.fftSize = 512;
+  fonte.connect(analisador);
+  const amostra = new Uint8Array(analisador.fftSize);
+
+  // Mesma ideia do piso adaptativo do segmentador de fala (transcrição): desce
+  // rápido quando a sala fica mais quieta, sobe devagar quando fica mais alta.
+  let ruido = 0.01;
+  let seguidas = 0;
+  let ultimoAviso = 0;
+
+  const relogio = window.setInterval(() => {
+    if (trilha.readyState !== "live") {
+      window.clearInterval(relogio);
+      return;
+    }
+    analisador.getByteTimeDomainData(amostra);
+    let soma = 0;
+    for (let i = 0; i < amostra.length; i++) {
+      const x = ((amostra[i] ?? 128) - 128) / 128;
+      soma += x * x;
+    }
+    const rms = Math.sqrt(soma / amostra.length);
+    const limiar = Math.max(0.025, ruido * 3);
+    const falando = rms > limiar;
+
+    if (localParticipant.isMicrophoneEnabled) {
+      // Ao vivo: falar é normal. Zera o cronômetro — o PRÓXIMO mudo-e-falando
+      // merece aviso de novo, mesmo que tenha sido há poucos segundos.
+      seguidas = 0;
+      ultimoAviso = 0;
+    } else if (falando) {
+      seguidas++;
+      if (seguidas >= LEITURAS_PARA_AVISAR) {
+        seguidas = 0;
+        const agora = Date.now();
+        if (agora - ultimoAviso >= RETOMAR_AVISO_MUDO_MS) {
+          ultimoAviso = agora;
+          toast.warning("Seu microfone está mudo", {
+            description: "Ninguém está te ouvindo agora.",
+            duration: 6000,
+            action: { label: "Desmutar", onClick: aoTentarDesmutar },
+          });
+        }
+      }
+    } else {
+      seguidas = 0;
+    }
+
+    // O piso aprende sempre que não há fala — inclusive mudo, que é
+    // justamente quando ele precisa estar calibrado para reconhecer voz.
+    if (!falando) {
+      if (rms < ruido) ruido = ruido * 0.9 + rms * 0.1;
+      else ruido = ruido * 0.995 + rms * 0.005;
+    }
+  }, TICK_MUDO_MS);
+
+  return () => {
+    window.clearInterval(relogio);
+    fonte.disconnect();
+    clone.stop();
+    void ctx.close().catch(() => {});
+  };
+}
+
 function CallContents({
   mini,
   roomLabel,
@@ -655,6 +784,17 @@ function CallContents({
      atalho silenciosamente. */
   const avisarErroDeDispositivo = (aparelho: string) => (e: unknown) =>
     toast.error(mensagemDoErroDeDispositivo(aparelho, comoErro(e)));
+
+  /* O botão "Desmutar" do aviso de microfone mudo passa por aqui — o mesmo
+     caminho do atalho M — para `active.micOn` também ficar em dia quando a
+     pessoa desmuta a partir do aviso, e não só pelo botão da barra. */
+  const desmutarPeloAviso = useCallback(() => {
+    localParticipant
+      .setMicrophoneEnabled(true)
+      .then(() => setMediaState({ micOn: true }))
+      .catch(avisarErroDeDispositivo("o microfone"));
+  }, [localParticipant, setMediaState]);
+  useAvisoDeMicMutado(room, desmutarPeloAviso);
 
   useCallShortcuts({
     enabled: !mini,
