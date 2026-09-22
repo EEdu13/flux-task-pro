@@ -176,7 +176,7 @@ function MediaToggle({
   labelOff: string;
   /** Toda vez que o estado muda — pelo clique aqui OU pelo próprio LiveKit
       (reconexão de sinalização). Quem chama é quem precisa saber o valor atual
-      de verdade; ver `setMediaState` em `active-call-context.tsx`. */
+      de verdade; ver `aoMudarMidia` em `CallContents`. */
   onEnabledChange?: (enabled: boolean) => void;
   /** A troca falhou de verdade (câmera em uso por outro app, permissão
       negada…). Sem isto o erro do LiveKit some em silêncio — ver `toggle` em
@@ -576,7 +576,20 @@ function MenuDeVolume({ alvo, onClose }: { alvo: AlvoDoMenuDeVolume; onClose: ()
   );
 }
 
-function CallContents({
+/** Microfone e câmera como a pessoa quer agora. Ver `micOn` em `ActiveCall`. */
+export type MudarMidia = (patch: { micOn?: boolean; camOn?: boolean }) => void;
+
+/**
+ * A chamada por dentro: vídeos, barra de controles, chat, mãos, menus.
+ *
+ * Serve às duas portas de entrada. O time chega por `ActiveCallWidget`, logo
+ * abaixo; o convidado por link chega por `convidado.$roomName.tsx`, que até
+ * então tinha uma tela à parte montada com a barra padrão do LiveKit — sem
+ * chat, sem ver mão levantada, e com o microfone reabrindo sozinho numa
+ * reconexão. Uma tela só é o que garante que o convidado não fique de novo
+ * para trás quando esta ganhar alguma coisa.
+ */
+export function CallContents({
   mini,
   roomLabel,
   roomName,
@@ -584,14 +597,30 @@ function CallContents({
   onEnd,
   onMinimize,
   onDragStart,
+  aoMudarMidia,
+  convidado = false,
 }: {
   mini: boolean;
   roomLabel: string;
   roomName: string;
-  onMaximize: () => void;
+  onMaximize?: () => void;
   onEnd: () => void;
   onMinimize?: () => void;
   onDragStart?: (e: React.PointerEvent) => void;
+  /**
+   * Chamado a cada troca de microfone ou câmera — pelo botão, pelo atalho ou
+   * pelo "Desmutar" do aviso. Quem monta o `<LiveKitRoom>` guarda o valor e o
+   * passa em `audio`/`video`: é o que o LiveKit reaplica a cada reconexão.
+   * Precisa ser estável (useCallback), senão o aviso de mudo se remonta a
+   * cada render.
+   */
+  aoMudarMidia: MudarMidia;
+  /**
+   * Visitante por link, sem login. Tira o que é de quem conduz a reunião —
+   * convidar colegas, gerar link de convidado, gravar, ata, renomear — e o
+   * que depende de sessão no servidor.
+   */
+  convidado?: boolean;
 }) {
   const tracks = useTracks(
     [
@@ -632,7 +661,7 @@ function CallContents({
   const [effect, setEffect] = useVideoEffect(cameraTrack);
   const [effectMenu, setEffectMenu] = useState(false);
   const { users, currentUser } = useFluxo();
-  const { active: activeCall, setMeetingTitle, setMediaState } = useActiveCall();
+  const { active: activeCall, setMeetingTitle } = useActiveCall();
   const meetingTitle = activeCall?.meetingTitle || roomLabel;
   const autoMinute = activeCall?.autoMinute ?? true;
   const [titleEditing, setTitleEditing] = useState(false);
@@ -735,6 +764,9 @@ function CallContents({
 
   // Poll privacy state so the lock button reflects reality.
   useEffect(() => {
+    // `getRoomAccess` exige sessão: para o convidado seria um erro no
+    // servidor a cada 3 s, sem nada para mostrar.
+    if (convidado) return;
     let cancelled = false;
     const tick = async () => {
       try {
@@ -752,7 +784,7 @@ function CallContents({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [roomName, currentUser.id]);
+  }, [roomName, currentUser.id, convidado]);
 
   async function togglePrivacy() {
     if (privBusy) return;
@@ -901,22 +933,22 @@ function CallContents({
     hasScreen && (presenterMode === "auto" || presenterMode === "focus") && !mini;
 
   /* Os atalhos M e V mexem direto no LiveKit, por fora do botão — e por isso
-     também precisam avisar `setMediaState`. Esquecer isto aqui reabriria o
-     mesmo bug: apertar M reabilitaria o microfone na hora, mas `active.micOn`
-     continuaria com o valor da prévia, e a próxima reconexão desfaria o
-     atalho silenciosamente. */
+     também precisam avisar `aoMudarMidia`. Esquecer isto aqui reabriria o
+     mesmo bug: apertar M reabilitaria o microfone na hora, mas o `audio` do
+     `<LiveKitRoom>` continuaria com o valor da prévia, e a próxima reconexão
+     desfaria o atalho silenciosamente. */
   const avisarErroDeDispositivo = (aparelho: string) => (e: unknown) =>
     toast.error(mensagemDoErroDeDispositivo(aparelho, comoErro(e)));
 
   /* O botão "Desmutar" do aviso de microfone mudo passa por aqui — o mesmo
-     caminho do atalho M — para `active.micOn` também ficar em dia quando a
+     caminho do atalho M — para o estado guardado também ficar em dia quando a
      pessoa desmuta a partir do aviso, e não só pelo botão da barra. */
   const desmutarPeloAviso = useCallback(() => {
     localParticipant
       .setMicrophoneEnabled(true)
-      .then(() => setMediaState({ micOn: true }))
+      .then(() => aoMudarMidia({ micOn: true }))
       .catch(avisarErroDeDispositivo("o microfone"));
-  }, [localParticipant, setMediaState]);
+  }, [localParticipant, aoMudarMidia]);
   useAvisoDeMicMutado(room, desmutarPeloAviso);
 
   useCallShortcuts({
@@ -925,14 +957,14 @@ function CallContents({
       const ligar = !localParticipant.isMicrophoneEnabled;
       localParticipant
         .setMicrophoneEnabled(ligar)
-        .then(() => setMediaState({ micOn: localParticipant.isMicrophoneEnabled }))
+        .then(() => aoMudarMidia({ micOn: localParticipant.isMicrophoneEnabled }))
         .catch(avisarErroDeDispositivo("o microfone"));
     },
     onToggleCam: () => {
       const ligar = !localParticipant.isCameraEnabled;
       localParticipant
         .setCameraEnabled(ligar)
-        .then(() => setMediaState({ camOn: localParticipant.isCameraEnabled }))
+        .then(() => aoMudarMidia({ camOn: localParticipant.isCameraEnabled }))
         .catch(avisarErroDeDispositivo("a câmera"));
     },
     onEnd: requestEnd,
@@ -959,7 +991,16 @@ function CallContents({
       >
         <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-medium text-white/80">
           {mini && <GripHorizontal className="h-3.5 w-3.5 opacity-60" />}
-          {mini || !titleEditing ? (
+          {convidado ? (
+            /* O título da reunião mora só na máquina de quem abriu a sala;
+               o convidado não o recebe. A sala e o aviso de visitante bastam. */
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-semibold text-white">{roomLabel}</span>
+              <span className="shrink-0 rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
+                Convidado
+              </span>
+            </span>
+          ) : mini || !titleEditing ? (
             <>
               <span className="truncate">
                 <span className="opacity-60">{roomLabel} · </span>
@@ -1103,7 +1144,7 @@ function CallContents({
                valor velho da prévia (geralmente desligado), apagando o
                microfone sozinho, sem erro nenhum na tela. Ver o comentário em
                `active-call-context.tsx`. */
-            onEnabledChange={(enabled) => setMediaState({ micOn: enabled })}
+            onEnabledChange={(enabled) => aoMudarMidia({ micOn: enabled })}
             onDeviceError={avisarErroDeDispositivo("o microfone")}
           />
           <MediaToggle
@@ -1112,7 +1153,7 @@ function CallContents({
             IconOff={VideoOff}
             labelOn="Desligar câmera"
             labelOff="Ligar câmera"
-            onEnabledChange={(enabled) => setMediaState({ camOn: enabled })}
+            onEnabledChange={(enabled) => aoMudarMidia({ camOn: enabled })}
             onDeviceError={avisarErroDeDispositivo("a câmera")}
           />
           <MediaToggle
@@ -1174,152 +1215,164 @@ function CallContents({
                   </div>
                 )}
               </div>
-              <div className="relative">
-                <ToolBtn
-                  icon={UserPlus}
-                  label="Convidar colaborador"
-                  onClick={() => setInviteOpen((v) => !v)}
-                  active={inviteOpen}
-                />
-                {inviteOpen && (
-                <div className="absolute bottom-full right-0 z-30 mb-1 w-64 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
-                  <div className="relative border-b border-white/10 p-2">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />
-                    <input
-                      autoFocus
-                      value={inviteQuery}
-                      onChange={(e) => setInviteQuery(e.target.value)}
-                      placeholder="Buscar colaborador…"
-                      className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-2 text-xs text-white outline-none placeholder:text-white/40 focus:border-primary/60"
+              {/* Convidar colegas e gerar link de visitante são de quem conduz a
+                  reunião — e as duas coisas pedem sessão no servidor. */}
+              {!convidado && (
+                <>
+                  <div className="relative">
+                    <ToolBtn
+                      icon={UserPlus}
+                      label="Convidar colaborador"
+                      onClick={() => setInviteOpen((v) => !v)}
+                      active={inviteOpen}
                     />
+                    {inviteOpen && (
+                      <div className="absolute bottom-full right-0 z-30 mb-1 w-64 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
+                        <div className="relative border-b border-white/10 p-2">
+                          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/40" />
+                          <input
+                            autoFocus
+                            value={inviteQuery}
+                            onChange={(e) => setInviteQuery(e.target.value)}
+                            placeholder="Buscar colaborador…"
+                            className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-2 text-xs text-white outline-none placeholder:text-white/40 focus:border-primary/60"
+                          />
+                        </div>
+                        <ul className="max-h-56 overflow-auto py-1">
+                          {inviteMatches.length === 0 ? (
+                            <li className="px-3 py-3 text-center text-[11px] text-white/50">
+                              Ninguém encontrado.
+                            </li>
+                          ) : (
+                            inviteMatches.map((u) => (
+                              <li key={u.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    askInvite(u.id, roomName, roomLabel);
+                                    setInviteOpen(false);
+                                    setInviteQuery("");
+                                  }}
+                                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-white/10"
+                                >
+                                  <UserAvatar
+                                    nome={u.name}
+                                    iniciais={u.avatar}
+                                    className="h-6 w-6 shrink-0 text-[10px]"
+                                  />
+                                  <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                                  <UserPlus className="h-3 w-3 text-primary" />
+                                </button>
+                              </li>
+                            ))
+                          )}
+                        </ul>
+                      </div>
+                    )}
                   </div>
-                  <ul className="max-h-56 overflow-auto py-1">
-                    {inviteMatches.length === 0 ? (
-                      <li className="px-3 py-3 text-center text-[11px] text-white/50">
-                        Ninguém encontrado.
-                      </li>
-                    ) : (
-                      inviteMatches.map((u) => (
-                        <li key={u.id}>
+
+                  <div className="relative">
+                    <ToolBtn
+                      icon={Link2}
+                      label="Convidado externo (link)"
+                      onClick={openGuestPanel}
+                      active={guestOpen}
+                    />
+                    {guestOpen && (
+                      <div className="absolute bottom-full right-0 z-40 mb-1 w-80 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs text-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                          <span className="flex items-center gap-1.5 font-semibold">
+                            <Share2 className="h-3.5 w-3.5 text-sky-300" />
+                            Convidar alguém externo
+                          </span>
                           <button
                             type="button"
-                            onClick={() => {
-                              askInvite(u.id, roomName, roomLabel);
-                              setInviteOpen(false);
-                              setInviteQuery("");
-                            }}
-                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-white/10"
+                            onClick={() => setGuestOpen(false)}
+                            className="rounded p-1 hover:bg-white/10"
                           >
-                            <UserAvatar
-                              nome={u.name}
-                              iniciais={u.avatar}
-                              className="h-6 w-6 shrink-0 text-[10px]"
-                            />
-                            <span className="min-w-0 flex-1 truncate">{u.name}</span>
-                            <UserPlus className="h-3 w-3 text-primary" />
+                            <X className="h-3 w-3" />
                           </button>
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                </div>
-                )}
-              </div>
-
-              <div className="relative">
-                <ToolBtn
-                  icon={Link2}
-                  label="Convidado externo (link)"
-                  onClick={openGuestPanel}
-                  active={guestOpen}
-                />
-                {guestOpen && (
-                <div className="absolute bottom-full right-0 z-40 mb-1 w-80 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs text-white shadow-xl">
-                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                    <span className="flex items-center gap-1.5 font-semibold">
-                      <Share2 className="h-3.5 w-3.5 text-sky-300" />
-                      Convidar alguém externo
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setGuestOpen(false)}
-                      className="rounded p-1 hover:bg-white/10"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="space-y-2 px-3 py-3">
-                    <p className="text-[11px] leading-snug text-white/70">
-                      Copie o link abaixo e envie por WhatsApp, e-mail ou onde preferir. Quem
-                      receber entra na sala <b>{roomLabel}</b> só com o nome — não precisa criar
-                      conta. O link vale por 24 horas.
-                    </p>
-                    {guestErr ? (
-                      <div className="rounded-md border border-red-400/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-200">
-                        {guestErr}
+                        </div>
+                        <div className="space-y-2 px-3 py-3">
+                          <p className="text-[11px] leading-snug text-white/70">
+                            Copie o link abaixo e envie por WhatsApp, e-mail ou onde preferir. Quem
+                            receber entra na sala <b>{roomLabel}</b> só com o nome — não precisa
+                            criar conta. O link vale por 24 horas.
+                          </p>
+                          {guestErr ? (
+                            <div className="rounded-md border border-red-400/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-200">
+                              {guestErr}
+                            </div>
+                          ) : null}
+                          <div className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 p-1.5">
+                            <input
+                              readOnly
+                              value={guestBusy ? "Gerando link…" : (guestUrl ?? "")}
+                              onFocus={(e) => e.currentTarget.select()}
+                              className="min-w-0 flex-1 truncate bg-transparent px-1 py-0.5 text-[11px] text-white outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={!guestUrl || guestBusy}
+                              onClick={async () => {
+                                if (!guestUrl) return;
+                                try {
+                                  await navigator.clipboard.writeText(guestUrl);
+                                  setGuestCopied(true);
+                                  window.setTimeout(() => setGuestCopied(false), 1600);
+                                } catch {
+                                  /* ignore */
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 rounded bg-sky-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-400 disabled:opacity-50"
+                            >
+                              {guestCopied ? (
+                                <>
+                                  <Check className="h-3 w-3" /> Copiado
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3 w-3" /> Copiar
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void generateGuestLink()}
+                            disabled={guestBusy}
+                            className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                          >
+                            Gerar um novo link
+                          </button>
+                        </div>
                       </div>
-                    ) : null}
-                    <div className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 p-1.5">
-                      <input
-                        readOnly
-                        value={guestBusy ? "Gerando link…" : (guestUrl ?? "")}
-                        onFocus={(e) => e.currentTarget.select()}
-                        className="min-w-0 flex-1 truncate bg-transparent px-1 py-0.5 text-[11px] text-white outline-none"
-                      />
-                      <button
-                        type="button"
-                        disabled={!guestUrl || guestBusy}
-                        onClick={async () => {
-                          if (!guestUrl) return;
-                          try {
-                            await navigator.clipboard.writeText(guestUrl);
-                            setGuestCopied(true);
-                            window.setTimeout(() => setGuestCopied(false), 1600);
-                          } catch {
-                            /* ignore */
-                          }
-                        }}
-                        className="inline-flex items-center gap-1 rounded bg-sky-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-400 disabled:opacity-50"
-                      >
-                        {guestCopied ? (
-                          <>
-                            <Check className="h-3 w-3" /> Copiado
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-3 w-3" /> Copiar
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void generateGuestLink()}
-                      disabled={guestBusy}
-                      className="w-full rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
-                    >
-                      Gerar um novo link
-                    </button>
+                    )}
                   </div>
-                </div>
-                )}
-              </div>
-
+                </>
+              )}
             </>
           )}
           {/* Gravar e Ata. Fora do `!mini` de propósito: no modo mini os botões
               somem, mas a gravação e a ata continuam — desmontar aqui perdia as
-              duas no meio da reunião. */}
-          <MeetingExtras
-            ref={meetingRef}
-            roomName={roomName}
-            roomLabel={roomLabel}
-            meetingTitle={meetingTitle}
-            autoStartTranscription={autoMinute}
-            chatLines={chatLines}
-            mini={mini}
-            containerRef={rootRef}
-          />
+              duas no meio da reunião.
+
+              Não para o convidado: a ata é escrita por alguém do time (e já
+              inclui a fala do convidado — ela ouve todos os microfones da
+              sala), e gravar é decisão de quem conduz. Sem `MeetingExtras`,
+              `meetingRef` fica vazio e sair vai direto, sem a pergunta da ata. */}
+          {!convidado && (
+            <MeetingExtras
+              ref={meetingRef}
+              roomName={roomName}
+              roomLabel={roomLabel}
+              meetingTitle={meetingTitle}
+              autoStartTranscription={autoMinute}
+              chatLines={chatLines}
+              mini={mini}
+              containerRef={rootRef}
+            />
+          )}
           {!mini && (
             <ToolBtn
               icon={PhoneOff}
@@ -1655,7 +1708,7 @@ const MIN_W = 280;
 const MIN_H = 260;
 
 export function ActiveCallWidget() {
-  const { active, minimized, setMinimized, endCall } = useActiveCall();
+  const { active, minimized, setMinimized, endCall, setMediaState } = useActiveCall();
   const location = useLocation();
   const navigate = useNavigate();
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -1837,6 +1890,7 @@ export function ActiveCallWidget() {
               navigate({ to: "/salas" });
             }
           }}
+          aoMudarMidia={setMediaState}
         />
         {!docked && (
           <div

@@ -1,20 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import {
-  LiveKitRoom,
-  RoomAudioRenderer,
-  ControlBar,
-  GridLayout,
-  ParticipantTile,
-  useTracks,
-  useDataChannel,
-  useLocalParticipant,
-} from "@livekit/components-react";
-import { Track } from "livekit-client";
+import { useCallback, useMemo, useState } from "react";
+import { LiveKitRoom } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { LogIn, Loader2, AlertTriangle, Video, Hand } from "lucide-react";
+import { AlertTriangle, DoorOpen, Loader2, LogIn } from "lucide-react";
 import { getGuestLiveKitToken } from "@/lib/livekit-token.functions";
-import { ApresentacaoComBolha } from "@/components/apresentacao-com-bolha";
+import { CallContents, type MudarMidia } from "@/components/active-call-widget";
+import { CabecalhoDaPrevia, PainelDePrevia, usePreviaDeDispositivos } from "@/components/pre-call";
+import { rotuloDaSala } from "@/lib/rooms";
 
 export const Route = createFileRoute("/convidado/$roomName")({
   component: GuestRoomPage,
@@ -30,13 +22,131 @@ export const Route = createFileRoute("/convidado/$roomName")({
   }),
 });
 
+/** A ligação do convidado, e como ele quer o microfone e a câmera agora. */
+type Sessao = {
+  token: string;
+  url: string;
+  micOn: boolean;
+  camOn: boolean;
+  micDeviceId?: string;
+  camDeviceId?: string;
+};
+
+/**
+ * A reunião para quem entra por link, sem login.
+ *
+ * Por dentro da chamada é a MESMA tela do time (`CallContents`, em modo
+ * convidado): chat, mão levantada, aviso de microfone mudo, fundo de vídeo,
+ * volume por pessoa e atalhos. Antes era uma tela à parte, com a barra padrão
+ * do LiveKit, e o convidado ficava sem chat — o time escrevia achando que ele
+ * lia — e sem ver as mãos dos outros.
+ */
 function GuestRoomPage() {
   const { roomName } = Route.useParams();
   const { t: guestToken } = Route.useSearch();
+  const roomLabel = useMemo(() => rotuloDaSala(roomName), [roomName]);
   const [name, setName] = useState("");
+  const [sessao, setSessao] = useState<Sessao | null>(null);
+  const [saiu, setSaiu] = useState(false);
+
+  /* O microfone e a câmera eram `audio` e `video` fixos em true, e o LiveKit
+     reaplica esse valor a cada reconexão: o convidado se mutava, a rede dele
+     oscilava, e o microfone reabria sem aviso — ele achando que estava mudo
+     e a sala ouvindo. Agora o valor acompanha cada troca feita na chamada.
+     `useCallback` sem dependências porque `CallContents` precisa dele estável
+     (ver a prop `aoMudarMidia` lá). */
+  const aoMudarMidia = useCallback<MudarMidia>((patch) => {
+    setSessao((s) => {
+      if (!s) return s;
+      if (
+        (patch.micOn === undefined || patch.micOn === s.micOn) &&
+        (patch.camOn === undefined || patch.camOn === s.camOn)
+      ) {
+        return s;
+      }
+      return { ...s, ...patch };
+    });
+  }, []);
+
+  const sair = useCallback(() => {
+    setSessao(null);
+    setSaiu(true);
+  }, []);
+
+  if (sessao) {
+    return (
+      <div className="fixed inset-0 z-0 bg-black">
+        <LiveKitRoom
+          token={sessao.token}
+          serverUrl={sessao.url}
+          connect
+          audio={sessao.micOn && (sessao.micDeviceId ? { deviceId: sessao.micDeviceId } : true)}
+          video={sessao.camOn && (sessao.camDeviceId ? { deviceId: sessao.camDeviceId } : true)}
+          /* As mesmas opções da sala do time — ver `ActiveCallWidget`: o
+             aparelho escolhido vale também para quando liga depois, e
+             `webAudioMix` é o que deixa o volume por pessoa passar de 100%. */
+          options={{
+            audioCaptureDefaults: sessao.micDeviceId ? { deviceId: sessao.micDeviceId } : undefined,
+            videoCaptureDefaults: sessao.camDeviceId ? { deviceId: sessao.camDeviceId } : undefined,
+            webAudioMix: true,
+          }}
+          style={{ height: "100%", width: "100%" }}
+          onDisconnected={sair}
+        >
+          <CallContents
+            convidado
+            mini={false}
+            roomName={roomName}
+            roomLabel={roomLabel}
+            onEnd={sair}
+            aoMudarMidia={aoMudarMidia}
+          />
+        </LiveKitRoom>
+      </div>
+    );
+  }
+
+  /* Uma tela de "saiu" em vez de voltar direto para a entrada: a entrada tem
+     prévia, e a prévia liga a câmera. Sair da reunião e ver a luz da câmera
+     acender de novo, sem ter pedido, é a última coisa que um visitante espera. */
+  if (saiu) {
+    return <Saiu roomLabel={roomLabel} onVoltar={() => setSaiu(false)} />;
+  }
+
+  return (
+    <Entrada
+      roomName={roomName}
+      roomLabel={roomLabel}
+      guestToken={guestToken}
+      name={name}
+      setName={setName}
+      onEntrar={setSessao}
+    />
+  );
+}
+
+/**
+ * Nome, prévia da câmera e do microfone, e entrar — o mesmo cartão que o time
+ * vê antes de entrar numa sala, com o nome no lugar do título da reunião.
+ */
+function Entrada({
+  roomName,
+  roomLabel,
+  guestToken,
+  name,
+  setName,
+  onEntrar,
+}: {
+  roomName: string;
+  roomLabel: string;
+  guestToken: string;
+  name: string;
+  setName: (v: string) => void;
+  onEntrar: (s: Sessao) => void;
+}) {
+  const previa = usePreviaDeDispositivos();
   const [joining, setJoining] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [session, setSession] = useState<{ token: string; url: string } | null>(null);
 
   async function join() {
     if (!guestToken) {
@@ -53,7 +163,18 @@ function GuestRoomPage() {
       const res = await getGuestLiveKitToken({
         data: { roomName, guestToken, name: name.trim() },
       });
-      setSession({ token: res.token, url: res.url });
+      const { prefs } = previa;
+      // A prévia solta os aparelhos só depois que o convite foi aceito: se ele
+      // for recusado, a pessoa continua vendo a própria imagem para tentar de novo.
+      previa.soltar();
+      onEntrar({
+        token: res.token,
+        url: res.url,
+        micOn: prefs.micOn,
+        camOn: prefs.camOn,
+        micDeviceId: prefs.micDeviceId,
+        camDeviceId: prefs.camDeviceId,
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Não foi possível entrar na sala");
     } finally {
@@ -61,157 +182,97 @@ function GuestRoomPage() {
     }
   }
 
-  if (session) {
-    return (
-      <div className="fixed inset-0 z-0 bg-black" data-lk-theme="default">
-        <LiveKitRoom
-          token={session.token}
-          serverUrl={session.url}
-          connect
-          audio
-          video
-          style={{ height: "100%", width: "100%" }}
-          onDisconnected={() => setSession(null)}
-        >
-          <GuestCall onLeave={() => setSession(null)} />
-        </LiveKitRoom>
-      </div>
-    );
-  }
-
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-neutral-950 via-neutral-900 to-sky-950 p-4">
-      <section className="w-full max-w-md rounded-2xl border border-white/10 bg-neutral-900/80 p-6 text-white shadow-2xl backdrop-blur">
-        <div className="flex items-center gap-2 text-sky-300">
-          <Video className="h-5 w-5" />
-          <span className="text-xs font-semibold uppercase tracking-widest">Reunião no Fluxo</span>
-        </div>
-        <h1 className="mt-2 text-xl font-semibold">Você foi convidado como visitante</h1>
-        <p className="mt-1 text-xs text-white/60">
-          Sala <span className="font-mono text-white/80">{roomName}</span>. Você não precisa criar
-          conta — só digite seu nome e entre.
-        </p>
-
-        <label className="mt-5 block text-xs font-medium text-white/70">Seu nome</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void join();
-          }}
-          maxLength={60}
-          placeholder="Ex.: Maria Silva – Cliente Acme"
-          autoFocus
-          className="mt-1 w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-sky-400"
+    <main className="flex min-h-screen w-full items-center justify-center bg-background p-4 text-foreground">
+      <div className="w-full max-w-6xl overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+        <CabecalhoDaPrevia
+          rotulo="Você foi convidado"
+          titulo={roomLabel}
+          loading={previa.loading}
+          err={previa.err}
         />
+        <div className="grid gap-0 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <PainelDePrevia previa={previa} />
+          <form
+            className="flex flex-col gap-4 p-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void join();
+            }}
+          >
+            <div>
+              <label
+                htmlFor="nome-do-convidado"
+                className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Seu nome <span className="text-destructive">*</span>
+              </label>
+              <input
+                id="nome-do-convidado"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={60}
+                placeholder="Ex.: Maria Silva – Cliente Acme"
+                autoFocus
+                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                É como os outros vão te ver na reunião. Você não precisa criar conta.
+              </p>
+            </div>
 
-        {err && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-red-400/40 bg-red-500/10 p-2 text-xs text-red-200">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{err}</span>
-          </div>
-        )}
+            {err && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{err}</span>
+              </div>
+            )}
 
-        <button
-          type="button"
-          onClick={() => void join()}
-          disabled={joining}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-400 disabled:opacity-60"
-        >
-          {joining ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Entrando na sala…
-            </>
-          ) : (
-            <>
-              <LogIn className="h-4 w-4" /> Entrar na reunião
-            </>
-          )}
-        </button>
-
-        <p className="mt-4 text-center text-[10px] text-white/40">
-          Ao entrar você concorda em usar sua câmera e microfone apenas para esta conversa.
-        </p>
-      </section>
+            <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p className="text-[11px] text-muted-foreground">
+                Câmera e microfone são usados só nesta conversa.
+              </p>
+              <button
+                type="submit"
+                disabled={joining || !name.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110 disabled:opacity-50"
+              >
+                {joining ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Entrando…
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="h-4 w-4" /> Entrar na reunião
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </main>
   );
 }
 
-function GuestCall({ onLeave }: { onLeave: () => void }) {
-  const tracks = useTracks(
-    [
-      { source: Track.Source.Camera, withPlaceholder: true },
-      { source: Track.Source.ScreenShare, withPlaceholder: false },
-    ],
-    { onlySubscribed: false },
-  );
-  const visible = useMemo(() => tracks, [tracks]);
-  /* O convidado via tudo em grade, inclusive durante uma apresentação: a tela
-     compartilhada virava mais um quadradinho do tamanho dos rostos. Agora ele
-     vê a apresentação como o time vê — tela no palco e a câmera de quem
-     apresenta numa bolha por cima, que ele também pode arrastar. */
-  const telas = useMemo(() => tracks.filter((t) => t.source === Track.Source.ScreenShare), [tracks]);
-  const cameras = useMemo(() => tracks.filter((t) => t.source === Track.Source.Camera), [tracks]);
-  const { localParticipant } = useLocalParticipant();
-  const { send } = useDataChannel("fluxo-room");
-  const [raised, setRaised] = useState(false);
-  const raiseHand = () => {
-    const name = localParticipant.name || localParticipant.identity || "Convidado";
-    try {
-      send?.(new TextEncoder().encode(JSON.stringify({ kind: "raise", name })), { reliable: true });
-    } catch {
-      /* ignore */
-    }
-    setRaised(true);
-    window.setTimeout(() => setRaised(false), 2500);
-  };
+function Saiu({ roomLabel, onVoltar }: { roomLabel: string; onVoltar: () => void }) {
   return (
-    <div className="flex h-full w-full flex-col bg-black text-white">
-      <div className="flex items-center justify-between border-b border-white/10 bg-black/70 px-3 py-1.5 text-xs">
-        <span className="font-semibold text-sky-300">Você está na reunião como convidado</span>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={raiseHand}
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold ${
-              raised ? "bg-amber-400 text-black" : "bg-white/10 text-white hover:bg-white/20"
-            }`}
-            title="Levantar a mão"
-          >
-            <Hand className="h-3.5 w-3.5" /> Mão
-          </button>
-          <button
-            type="button"
-            onClick={onLeave}
-            className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500"
-          >
-            Sair
-          </button>
-        </div>
+    <main className="flex min-h-screen w-full items-center justify-center bg-background p-4 text-foreground">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-xl">
+        <DoorOpen className="mx-auto h-8 w-8 text-muted-foreground" />
+        <h1 className="mt-3 text-base font-semibold">Você não está mais na reunião</h1>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {roomLabel}. Sua câmera e seu microfone foram desligados. Se saiu sem querer, dá para
+          voltar enquanto o convite valer.
+        </p>
+        <button
+          type="button"
+          onClick={onVoltar}
+          className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+        >
+          <LogIn className="h-4 w-4" /> Entrar de novo
+        </button>
       </div>
-      <div className="min-h-0 flex-1">
-        {telas.length > 0 ? (
-          <ApresentacaoComBolha tela={telas[0]!} cameras={cameras} />
-        ) : (
-          <GridLayout tracks={visible} style={{ height: "100%" }}>
-            <ParticipantTile />
-          </GridLayout>
-        )}
-      </div>
-      <div className="flex items-center gap-2 overflow-x-auto border-t border-white/10 bg-black/70 px-2 py-1">
-        <ControlBar
-          variation="minimal"
-          controls={{
-            microphone: true,
-            camera: true,
-            screenShare: true,
-            chat: false,
-            leave: true,
-            settings: false,
-          }}
-        />
-      </div>
-      <RoomAudioRenderer />
-    </div>
+    </main>
   );
 }

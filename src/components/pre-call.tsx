@@ -52,95 +52,14 @@ export function PreCall({
   alreadyPrivate?: boolean;
   forcePrivate?: boolean;
 }) {
-  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  const previa = usePreviaDeDispositivos();
+  const { prefs, loading, err } = previa;
   const [title, setTitle] = useState<string>(roomLabel);
   const [autoMinute, setAutoMinute] = useState<boolean>(true);
   const [makePrivate, setMakePrivate] = useState<boolean>(forcePrivate || !!alreadyPrivate);
-  const [devices, setDevices] = useState<{ mics: MediaDeviceInfo[]; cams: MediaDeviceInfo[] }>({
-    mics: [],
-    cams: [],
-  });
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  const constraints = useMemo(
-    () => ({
-      audio: prefs.micOn
-        ? prefs.micDeviceId
-          ? { deviceId: { exact: prefs.micDeviceId } }
-          : true
-        : false,
-      video: prefs.camOn
-        ? prefs.camDeviceId
-          ? { deviceId: { exact: prefs.camDeviceId }, width: 640, height: 360 }
-          : { width: 640, height: 360 }
-        : false,
-    }),
-    [prefs.micOn, prefs.camOn, prefs.micDeviceId, prefs.camDeviceId],
-  );
-
-  // Acquire stream
-  useEffect(() => {
-    let cancelled = false;
-    let localStream: MediaStream | null = null;
-    (async () => {
-      setErr(null);
-      setLoading(true);
-      try {
-        if (!prefs.micOn && !prefs.camOn) {
-          setStream(null);
-          setLoading(false);
-          return;
-        }
-        localStream = await navigator.mediaDevices.getUserMedia(constraints);
-        if (cancelled) {
-          localStream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        setStream(localStream);
-      } catch (e) {
-        if (!cancelled)
-          setErr(e instanceof Error ? e.message : "Não foi possível acessar mic/câmera");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (localStream) localStream.getTracks().forEach((t) => t.stop());
-    };
-  }, [constraints, prefs.micOn, prefs.camOn]);
-
-  // Enumerate devices (needs at least one permission grant to show labels)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await navigator.mediaDevices.enumerateDevices();
-        if (cancelled) return;
-        setDevices({
-          mics: list.filter((d) => d.kind === "audioinput"),
-          cams: list.filter((d) => d.kind === "videoinput"),
-        });
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [stream]);
-
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = stream;
-  }, [stream]);
-
-  useEffect(() => savePrefs(prefs), [prefs]);
 
   const submit = () => {
-    if (stream) stream.getTracks().forEach((t) => t.stop());
+    previa.soltar();
     onEnter({
       micOn: prefs.micOn,
       camOn: prefs.camOn,
@@ -155,132 +74,16 @@ export function PreCall({
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl items-center justify-center p-4">
       <div className="w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-secondary/40 via-card to-card px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Video className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Sala de reunião
-              </div>
-              <div className="text-base font-semibold leading-tight">{roomLabel}</div>
-            </div>
-          </div>
-          <div className="hidden items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-[11px] text-muted-foreground sm:inline-flex">
-            <span className={`h-1.5 w-1.5 rounded-full ${loading ? "bg-amber-400 animate-pulse" : err ? "bg-red-500" : "bg-emerald-500"}`} />
-            {loading ? "Preparando dispositivos" : err ? "Verifique permissões" : "Pronto para entrar"}
-          </div>
-        </div>
+        <CabecalhoDaPrevia
+          rotulo="Sala de reunião"
+          titulo={roomLabel}
+          loading={loading}
+          err={err}
+        />
 
         {/* Body */}
         <div className="grid gap-0 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          {/* Left: video preview + device controls */}
-          <div className="flex flex-col gap-3 border-b border-border p-5 md:border-b-0 md:border-r">
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-neutral-950 shadow-inner ring-1 ring-white/5">
-              {loading ? (
-                <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Iniciando câmera…
-                </div>
-              ) : prefs.camOn && stream ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="h-full w-full object-cover [transform:scaleX(-1)]"
-                />
-              ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/50">
-                  <div className="rounded-full bg-white/5 p-4">
-                    <VideoOff className="h-8 w-8" />
-                  </div>
-                  <span className="text-xs">Câmera desligada</span>
-                </div>
-              )}
-
-              {/* Floating status chip */}
-              <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Prévia
-              </div>
-
-              {/* Floating device controls */}
-              <div className="absolute inset-x-0 bottom-3 flex justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPrefs((p) => ({ ...p, micOn: !p.micOn }))}
-                  title={prefs.micOn ? "Desligar microfone" : "Ligar microfone"}
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-sm transition ${
-                    prefs.micOn
-                      ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
-                      : "border-red-500/60 bg-red-500/90 text-white hover:bg-red-500"
-                  }`}
-                >
-                  {prefs.micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrefs((p) => ({ ...p, camOn: !p.camOn }))}
-                  title={prefs.camOn ? "Desligar câmera" : "Ligar câmera"}
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-sm transition ${
-                    prefs.camOn
-                      ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
-                      : "border-red-500/60 bg-red-500/90 text-white hover:bg-red-500"
-                  }`}
-                >
-                  {prefs.camOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            {/* Device selectors */}
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="flex flex-col gap-1">
-                <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <Mic className="h-3 w-3" /> Microfone
-                </span>
-                <select
-                  value={prefs.micDeviceId ?? ""}
-                  onChange={(e) => setPrefs((p) => ({ ...p, micDeviceId: e.target.value || undefined }))}
-                  disabled={!prefs.micOn}
-                  className="rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none transition focus:border-primary disabled:opacity-50"
-                >
-                  <option value="">Padrão do sistema</option>
-                  {devices.mics.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || `Microfone ${d.deviceId.slice(0, 6)}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <Video className="h-3 w-3" /> Câmera
-                </span>
-                <select
-                  value={prefs.camDeviceId ?? ""}
-                  onChange={(e) => setPrefs((p) => ({ ...p, camDeviceId: e.target.value || undefined }))}
-                  disabled={!prefs.camOn}
-                  className="rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none transition focus:border-primary disabled:opacity-50"
-                >
-                  <option value="">Padrão do sistema</option>
-                  {devices.cams.map((d) => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || `Câmera ${d.deviceId.slice(0, 6)}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {err && (
-              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {err}
-              </div>
-            )}
-          </div>
+          <PainelDePrevia previa={previa} />
 
           {/* Right: meeting details */}
           <div className="flex flex-col gap-4 p-5">
@@ -381,4 +184,268 @@ export function PreCall({
 
 export function readPreCallPrefs(): Prefs {
   return loadPrefs();
+}
+
+/* ------------------------ Prévia de câmera e microfone ------------------------ */
+
+/**
+ * A câmera e o microfone antes de entrar: o que está ligado, qual aparelho, e
+ * a imagem ao vivo.
+ *
+ * Saiu de dentro da `PreCall` porque o convidado por link precisa da mesma
+ * prévia — e entrava sem nenhuma, direto na sala com os dois abertos. As
+ * escolhas ficam no mesmo `fluxo:precall-prefs` do navegador.
+ */
+export interface PreviaDeDispositivos {
+  prefs: Prefs;
+  setPrefs: React.Dispatch<React.SetStateAction<Prefs>>;
+  stream: MediaStream | null;
+  devices: { mics: MediaDeviceInfo[]; cams: MediaDeviceInfo[] };
+  err: string | null;
+  loading: boolean;
+  /**
+   * Solta a câmera e o microfone da prévia. Chamar antes de entrar: um
+   * aparelho que só aceita uma captura por vez (comum em equipamento de sala)
+   * recusaria a do LiveKit enquanto a prévia ainda o segura.
+   */
+  soltar: () => void;
+}
+
+export function usePreviaDeDispositivos(): PreviaDeDispositivos {
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  const [devices, setDevices] = useState<{ mics: MediaDeviceInfo[]; cams: MediaDeviceInfo[] }>({
+    mics: [],
+    cams: [],
+  });
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const constraints = useMemo(
+    () => ({
+      audio: prefs.micOn
+        ? prefs.micDeviceId
+          ? { deviceId: { exact: prefs.micDeviceId } }
+          : true
+        : false,
+      video: prefs.camOn
+        ? prefs.camDeviceId
+          ? { deviceId: { exact: prefs.camDeviceId }, width: 640, height: 360 }
+          : { width: 640, height: 360 }
+        : false,
+    }),
+    [prefs.micOn, prefs.camOn, prefs.micDeviceId, prefs.camDeviceId],
+  );
+
+  // Acquire stream
+  useEffect(() => {
+    let cancelled = false;
+    let localStream: MediaStream | null = null;
+    (async () => {
+      setErr(null);
+      setLoading(true);
+      try {
+        if (!prefs.micOn && !prefs.camOn) {
+          setStream(null);
+          setLoading(false);
+          return;
+        }
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (cancelled) {
+          localStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        setStream(localStream);
+      } catch (e) {
+        if (!cancelled)
+          setErr(e instanceof Error ? e.message : "Não foi possível acessar mic/câmera");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (localStream) localStream.getTracks().forEach((t) => t.stop());
+    };
+  }, [constraints, prefs.micOn, prefs.camOn]);
+
+  // Enumerate devices (needs at least one permission grant to show labels)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        if (cancelled) return;
+        setDevices({
+          mics: list.filter((d) => d.kind === "audioinput"),
+          cams: list.filter((d) => d.kind === "videoinput"),
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stream]);
+
+  useEffect(() => savePrefs(prefs), [prefs]);
+
+  const soltar = () => {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+  };
+
+  return { prefs, setPrefs, stream, devices, err, loading, soltar };
+}
+
+/** O topo do cartão de entrada, com o estado dos aparelhos à direita. */
+export function CabecalhoDaPrevia({
+  rotulo,
+  titulo,
+  loading,
+  err,
+}: {
+  rotulo: string;
+  titulo: string;
+  loading: boolean;
+  err: string | null;
+}) {
+  return (
+    <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-secondary/40 via-card to-card px-6 py-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Video className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {rotulo}
+          </div>
+          <div className="text-base font-semibold leading-tight">{titulo}</div>
+        </div>
+      </div>
+      <div className="hidden items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-[11px] text-muted-foreground sm:inline-flex">
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${loading ? "bg-amber-400 animate-pulse" : err ? "bg-red-500" : "bg-emerald-500"}`}
+        />
+        {loading ? "Preparando dispositivos" : err ? "Verifique permissões" : "Pronto para entrar"}
+      </div>
+    </div>
+  );
+}
+
+/** A coluna da esquerda: a imagem, os botões de ligar/desligar e os aparelhos. */
+export function PainelDePrevia({ previa }: { previa: PreviaDeDispositivos }) {
+  const { prefs, setPrefs, stream, devices, err, loading } = previa;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.srcObject = stream;
+  }, [stream]);
+
+  return (
+    <div className="flex flex-col gap-3 border-b border-border p-5 md:border-b-0 md:border-r">
+      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-neutral-950 shadow-inner ring-1 ring-white/5">
+        {loading ? (
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Iniciando câmera…
+          </div>
+        ) : prefs.camOn && stream ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="h-full w-full object-cover [transform:scaleX(-1)]"
+          />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/50">
+            <div className="rounded-full bg-white/5 p-4">
+              <VideoOff className="h-8 w-8" />
+            </div>
+            <span className="text-xs">Câmera desligada</span>
+          </div>
+        )}
+
+        {/* Floating status chip */}
+        <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          Prévia
+        </div>
+
+        {/* Floating device controls */}
+        <div className="absolute inset-x-0 bottom-3 flex justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPrefs((p) => ({ ...p, micOn: !p.micOn }))}
+            title={prefs.micOn ? "Desligar microfone" : "Ligar microfone"}
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-sm transition ${
+              prefs.micOn
+                ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                : "border-red-500/60 bg-red-500/90 text-white hover:bg-red-500"
+            }`}
+          >
+            {prefs.micOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPrefs((p) => ({ ...p, camOn: !p.camOn }))}
+            title={prefs.camOn ? "Desligar câmera" : "Ligar câmera"}
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-sm transition ${
+              prefs.camOn
+                ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                : "border-red-500/60 bg-red-500/90 text-white hover:bg-red-500"
+            }`}
+          >
+            {prefs.camOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Device selectors */}
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Mic className="h-3 w-3" /> Microfone
+          </span>
+          <select
+            value={prefs.micDeviceId ?? ""}
+            onChange={(e) => setPrefs((p) => ({ ...p, micDeviceId: e.target.value || undefined }))}
+            disabled={!prefs.micOn}
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none transition focus:border-primary disabled:opacity-50"
+          >
+            <option value="">Padrão do sistema</option>
+            {devices.mics.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Microfone ${d.deviceId.slice(0, 6)}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Video className="h-3 w-3" /> Câmera
+          </span>
+          <select
+            value={prefs.camDeviceId ?? ""}
+            onChange={(e) => setPrefs((p) => ({ ...p, camDeviceId: e.target.value || undefined }))}
+            disabled={!prefs.camOn}
+            className="rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none transition focus:border-primary disabled:opacity-50"
+          >
+            <option value="">Padrão do sistema</option>
+            {devices.cams.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Câmera ${d.deviceId.slice(0, 6)}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {err && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {err}
+        </div>
+      )}
+    </div>
+  );
 }

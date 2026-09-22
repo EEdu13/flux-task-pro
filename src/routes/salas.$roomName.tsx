@@ -8,7 +8,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { useActiveCall } from "@/lib/active-call-context";
 import { ACTIVE_CALL_MOUNT_ID } from "@/components/active-call-widget";
 import { PreCall, type PreCallResult } from "@/components/pre-call";
-import { DEPARTMENT_ROOMS } from "@/lib/rooms";
+import { rotuloDaSala } from "@/lib/rooms";
 import {
   getKnockStatus,
   getRoomAccess,
@@ -53,13 +53,7 @@ function RoomPage() {
     () => `${currentUser.id}-${currentUser.name.replace(/\s+/g, "_")}`,
     [currentUser],
   );
-  const roomLabel = useMemo(() => {
-    const sector = roomName.split("-")[0];
-    const base = DEPARTMENT_ROOMS.find((r) => r.name === sector)?.label ?? sector;
-    const parts = roomName.split("-");
-    if (parts.length === 1) return `${base} · Sala 1`;
-    return `${base} · Sala ${parts[1]}`;
-  }, [roomName]);
+  const roomLabel = useMemo(() => rotuloDaSala(roomName), [roomName]);
   const isDiretoria = useMemo(() => roomName.split("-")[0] === "diretoria", [roomName]);
 
   /* Trocar de sala recomeça a checagem de acesso — e SÓ trocar de sala.

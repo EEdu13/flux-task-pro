@@ -14,7 +14,7 @@ export interface DepartmentRoom {
  * 1. Sem acento, sem barra, sem espaço. "CONTÁBIL/FISCAL" na URL viraria
  *    `/salas/contabil/fiscal` — outra rota, que não existe.
  *
- * 2. SEM HÍFEN. O hífen já tem dono: `salas.$roomName.tsx` monta o rótulo com
+ * 2. SEM HÍFEN. O hífen já tem dono: `rotuloDaSala`, abaixo, monta o rótulo com
  *    `roomName.split("-")`, tratando o que vem antes como o departamento e o
  *    que vem depois como o número da sala. Um `contabil-fiscal` seria lido como
  *    "departamento contabil, Sala fiscal".
@@ -40,3 +40,16 @@ export const DEPARTMENT_ROOMS: DepartmentRoom[] = [
   { name: "pcp", label: "PCP", desc: "Planejamento e Controle da Produção", sector: "pcp" },
   { name: "suprimentos", label: "Suprimentos", desc: "Sala de suprimentos e compras", sector: "suprimentos" },
 ];
+
+/**
+ * "financeiro-2" → "Financeiro · Sala 2"; "financeiro" → "Financeiro · Sala 1".
+ *
+ * Usado pela sala do time e pela do convidado por link — o visitante via o
+ * código cru da sala na tela.
+ */
+export function rotuloDaSala(roomName: string): string {
+  const parts = roomName.split("-");
+  const sector = parts[0] ?? roomName;
+  const base = DEPARTMENT_ROOMS.find((r) => r.name === sector)?.label ?? sector;
+  return parts.length === 1 ? `${base} · Sala 1` : `${base} · Sala ${parts[1]}`;
+}
