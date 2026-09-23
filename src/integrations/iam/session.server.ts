@@ -13,6 +13,30 @@ export const IAM_COOKIE = "fluxo_sessao";
 const FALLBACK_MAX_AGE_S = 8 * 3600;
 
 /**
+ * O token é fatiado entre vários cookies porque UM cookie não cabe o JWT inteiro.
+ *
+ * Navegadores limitam cada cookie a 4096 bytes contando nome + valor (RFC 6265
+ * pede que se aceite ao menos isso; Chrome/Firefox/Safari param aí). O JWT da
+ * IAM carrega a lista completa de permissões efetivas da pessoa — ~36 bytes por
+ * permissão —, então quem acumula acesso cresce o token: com 122 permissões ele
+ * passa de 4800 bytes. Acima do limite o navegador DESCARTA o Set-Cookie em
+ * silêncio: o login responde 200, o cookie nunca chega, e a pessoa volta para a
+ * tela de entrada sem nenhum erro visível. Só quebra para quem tem muito acesso,
+ * o que faz parecer problema de conta e não de tamanho.
+ *
+ * 3500 bytes por fatia deixa folga para o nome, os atributos e proxies que
+ * contam o cabeçalho inteiro. Quatro fatias cobrem ~14 KB de token, ainda dentro
+ * do teto de cabeçalho do Node (16 KB) somado aos outros cookies do domínio.
+ */
+const TAMANHO_FATIA = 3500;
+const MAX_FATIAS = 4;
+
+/** Nome do cookie de cada fatia. A fatia 0 mantém o nome antigo, sem sufixo. */
+function nomeDaFatia(i: number): string {
+  return i === 0 ? IAM_COOKIE : `${IAM_COOKIE}_${i}`;
+}
+
+/**
  * Lê o `exp` do JWT sem validar assinatura.
  *
  * Não é verificação de segurança — é só para o cookie morrer junto com o token,
@@ -52,22 +76,59 @@ export function definirSessao(token: string): void {
   const restante = exp ? exp - Math.floor(Date.now() / 1000) : null;
   const maxAge = restante && restante > 0 ? restante : FALLBACK_MAX_AGE_S;
 
-  setCookie(IAM_COOKIE, token, {
+  const fatias: string[] = [];
+  for (let i = 0; i < token.length; i += TAMANHO_FATIA) {
+    fatias.push(token.slice(i, i + TAMANHO_FATIA));
+  }
+
+  // Falha ALTO em vez de gravar uma sessão pela metade: um token acima do teto
+  // viria de permissão descontrolada na IAM, e sessão truncada volta a ser o
+  // mesmo bug silencioso — com a diferença de custar horas para achar de novo.
+  if (fatias.length > MAX_FATIAS) {
+    throw new Error(
+      `Token da IAM com ${token.length} bytes excede o teto de ${MAX_FATIAS * TAMANHO_FATIA} ` +
+        `suportado pelo cookie de sessão. Reduza as permissões da pessoa na IAM ou aumente MAX_FATIAS.`,
+    );
+  }
+
+  const opcoes = {
     httpOnly: true,
-    sameSite: "lax", // front e API são a mesma origem; não precisa de None
+    sameSite: "lax" as const, // front e API são a mesma origem; não precisa de None
     path: "/",
     secure: requisicaoSegura(),
     maxAge,
-  });
+  };
+
+  fatias.forEach((fatia, i) => setCookie(nomeDaFatia(i), fatia, opcoes));
+
+  // Uma sessão anterior pode ter usado MAIS fatias que esta (a pessoa perdeu
+  // permissões, ou trocou de conta). Sobra não apagada seria concatenada na
+  // leitura e corromperia o token.
+  for (let i = fatias.length; i < MAX_FATIAS; i++) {
+    if (getCookie(nomeDaFatia(i))) deleteCookie(nomeDaFatia(i), { path: "/" });
+  }
 }
 
 export function lerSessao(): string | null {
-  const token = getCookie(IAM_COOKIE);
-  return token && token.length > 0 ? token : null;
+  const primeira = getCookie(IAM_COOKIE);
+  if (!primeira) return null;
+
+  let token = primeira;
+  // Para na primeira ausência: as fatias são sempre gravadas em sequência, e
+  // pular um buraco montaria um token inválido em vez de recusar a sessão.
+  for (let i = 1; i < MAX_FATIAS; i++) {
+    const fatia = getCookie(nomeDaFatia(i));
+    if (!fatia) break;
+    token += fatia;
+  }
+
+  return token.length > 0 ? token : null;
 }
 
 export function limparSessao(): void {
-  deleteCookie(IAM_COOKIE, { path: "/" });
+  for (let i = 0; i < MAX_FATIAS; i++) {
+    deleteCookie(nomeDaFatia(i), { path: "/" });
+  }
 }
 
 /* ------------------------- Dispositivo conhecido ------------------------- */
