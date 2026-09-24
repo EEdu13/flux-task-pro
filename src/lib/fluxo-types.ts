@@ -130,6 +130,23 @@ export interface Task {
    * A subtarefa continua sendo a tarefa do dia-a-dia do assignee.
    */
   projectId?: string;
+  /**
+   * Quando foi marcada como concluída (ISO) — o clique. Vem de `concluida_em`,
+   * que o servidor deriva da situação; aqui é preenchido na hora, de forma
+   * otimista, e a sincronização traz o valor do banco. Nulo fora de "concluida".
+   */
+  completedAt?: string | null;
+  /**
+   * O dia em que a tarefa de fato terminou ("yyyy-MM-dd"), quando a pessoa
+   * informou — para quem esqueceu de marcar no dia. A Timeline mostra esta
+   * data; pontos e prazo seguem o clique (`completedAt`).
+   */
+  actualCompletionDate?: string | null;
+  /**
+   * Só na próxima ocorrência de uma recorrente, enquanto ela é gravada: quando
+   * ela passa a existir na tela (ISO, "amanhã à meia-noite"). Ver `salvarTarefa`.
+   */
+  availableFrom?: string | null;
 }
 
 export type ProjectStatus = "ativo" | "pausado" | "concluido";
@@ -200,7 +217,7 @@ export interface MeetingMinute {
 export interface Notification {
   id: string;
   userId: string; // recipient
-  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida";
+  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto";
   title: string;
   desc: string;
   at: string; // ISO
@@ -209,6 +226,8 @@ export interface Notification {
   roomName?: string;
   roomLabel?: string;
   fromUserId?: string;
+  /** "te adicionou a um projeto": o projeto que o clique abre. */
+  projectId?: string;
 }
 
 export interface Meta {
@@ -266,6 +285,21 @@ export const freqLabels: Record<Frequency, string> = {
   mensal: "Mensal",
   anual: "Anual",
 };
+
+export const SEM_RECORRENCIA = "Sem recorrência";
+
+/**
+ * A frequência como a pessoa deve ler.
+ *
+ * `frequency` sozinha mentia. Toda tarefa nasce com "diaria" — a coluna do
+ * banco não aceita vazio —, e quem decide se ela repete é `recurring`. Em
+ * 24/09/2026, 282 das 284 tarefas ativas eram "Diária" sem repetir nada: a
+ * tarefa pontual não tinha como se dizer pontual. Sem `recurring`, a
+ * frequência é só o valor que preenche a coluna.
+ */
+export function rotuloDaFrequencia(t: Pick<Task, "frequency" | "recurring">): string {
+  return t.recurring ? freqLabels[t.frequency] : SEM_RECORRENCIA;
+}
 
 export const statusLabels: Record<Status, string> = {
   pendente: "A fazer",

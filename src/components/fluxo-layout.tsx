@@ -36,8 +36,9 @@ import {
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
-import { roleLabels } from "@/lib/fluxo-types";
+import { roleLabels, type Notification as Aviso } from "@/lib/fluxo-types";
 import { tituloDoAviso } from "@/lib/aviso";
+import { avisarNoSistema } from "@/lib/aviso-do-sistema";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { TaskDialog } from "@/components/task-dialog";
 import { QuickTaskModal } from "@/components/quick-task-modal";
@@ -112,7 +113,9 @@ export function FluxoLayout({
     restaurandoSessao,
     logout,
     recarregarPessoas,
+    recarregarProjetos,
     sincronizar,
+    sincronizarAvisos,
     topContactsForRoom,
   } = useFluxo();
   const { theme, toggle } = useTheme();
@@ -234,6 +237,49 @@ export function FluxoLayout({
     void desktopFlashTaskbar("informativo");
   }, [unread]);
 
+  /* E cada aviso novo vira notificação do Windows, com o app fora de foco —
+     "te deu uma tarefa", "te mencionou", "te adicionou a um projeto". O som e
+     a piscada acima dizem que chegou algo; esta diz o quê, e o clique abre.
+
+     Por id, e não pela contagem: é preciso saber QUAIS chegaram. A primeira
+     leitura só semeia, pelo mesmo motivo do som. Uma leva grande (o pack de
+     segunda-feira, dez tarefas) vira uma notificação só.
+
+     O de projeto também relê os projetos: eles são lidos no login, e sem isso
+     o clique levaria a um projeto que esta tela ainda não conhece. */
+  const avisosVistosRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const meus = notifications.filter((n) => n.userId === currentUser.id);
+    const vistos = avisosVistosRef.current;
+    avisosVistosRef.current = new Set(meus.map((n) => n.id));
+    if (!vistos) return;
+    const novos = meus.filter((n) => !n.read && !vistos.has(n.id));
+    if (novos.length === 0) return;
+
+    if (novos.some((n) => n.type === "projeto")) {
+      void acoesRef.current.recarregarProjetos().catch(() => {});
+    }
+    if (novos.length > 3) {
+      void avisarNoSistema({
+        titulo: `${novos.length} avisos novos no SGL - CONECTA`,
+        corpo: novos
+          .slice(0, 3)
+          .map((n) => tituloDoAviso(n, users))
+          .join(" · "),
+        tag: "sineta",
+      });
+      return;
+    }
+    for (const n of novos) {
+      void avisarNoSistema({
+        titulo: tituloDoAviso(n, users),
+        corpo: n.desc,
+        tag: n.id,
+        aoClicar: () => acoesRef.current.abrirAviso(n),
+      });
+    }
+  }, [notifications, currentUser.id, users]);
+
   // Enquanto a janela confere se a sessão de antes da recarga continua valendo,
   // ainda não se sabe se a pessoa está fora. Ver `restaurandoSessao` no store.
   useEffect(() => {
@@ -284,8 +330,35 @@ export function FluxoLayout({
    * sessão e `iamMe()` responde `false` para todo mundo, porque não há o que
    * resolver. Esta vigilância então precisaria olhar `iamStatus()` antes de
    * armar, ou derrubaria a pessoa num laço de logout. */
-  const acoesRef = useRef({ logout, navigate, recarregarPessoas, sincronizar });
-  acoesRef.current = { logout, navigate, recarregarPessoas, sincronizar };
+  /* Abrir um aviso — da sineta ou da notificação do Windows. Um caminho só,
+     para o clique na notificação levar ao mesmo lugar que o clique na sineta. */
+  const abrirAviso = (n: Aviso) => {
+    markNotifRead(n.id);
+    if (n.taskId) openTask(n.taskId);
+    if (n.roomName) navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
+    if (n.type === "projeto") {
+      navigate({ to: "/projetos", search: n.projectId ? { projeto: n.projectId } : {} });
+    }
+  };
+
+  const acoesRef = useRef({
+    logout,
+    navigate,
+    recarregarPessoas,
+    recarregarProjetos,
+    sincronizar,
+    sincronizarAvisos,
+    abrirAviso,
+  });
+  acoesRef.current = {
+    logout,
+    navigate,
+    recarregarPessoas,
+    recarregarProjetos,
+    sincronizar,
+    sincronizarAvisos,
+    abrirAviso,
+  };
 
   /* Tarefas e sineta chegam sozinhas.
      Antes disto, tudo o que outra pessoa fizesse — delegar uma tarefa, mandar
@@ -309,7 +382,15 @@ export function FluxoLayout({
     let cancelado = false;
 
     const sincronizarSilencioso = () => {
-      if (cancelado || document.hidden) return;
+      if (cancelado) return;
+      /* Oculta, a janela lê só a sineta. Antes não lia nada, e quem estava em
+         outra aba só descobria a tarefa nova ao voltar — agora é ela que vira
+         a notificação do Windows (ver `avisarNoSistema` logo abaixo). A lista
+         de tarefas, que é a consulta pesada, continua esperando a volta. */
+      if (document.hidden) {
+        void acoesRef.current.sincronizarAvisos().catch(() => {});
+        return;
+      }
       void acoesRef.current.sincronizar().catch(() => {});
     };
 
@@ -318,11 +399,14 @@ export function FluxoLayout({
     };
     document.addEventListener("visibilitychange", aoFocar);
     window.addEventListener("focus", aoFocar);
+    // Pedido de fora do layout: o "Descartar" do aviso de falha de gravação.
+    window.addEventListener("fluxo:sincronizar", sincronizarSilencioso);
     const id = window.setInterval(sincronizarSilencioso, 60_000);
     return () => {
       cancelado = true;
       document.removeEventListener("visibilitychange", aoFocar);
       window.removeEventListener("focus", aoFocar);
+      window.removeEventListener("fluxo:sincronizar", sincronizarSilencioso);
       window.clearInterval(id);
     };
   }, [isAuthenticated]);
@@ -980,11 +1064,8 @@ export function FluxoLayout({
                         <li key={n.id}>
                           <button
                             onClick={() => {
-                              markNotifRead(n.id);
                               setNotifOpen(false);
-                              if (n.taskId) openTask(n.taskId);
-                              if (n.roomName)
-                                navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
+                              abrirAviso(n);
                             }}
                             className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-secondary/60 ${
                               n.read ? "opacity-70" : ""

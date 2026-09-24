@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, Flame, Send, Sparkles, Trash2, Users, Layers, ArrowLeftRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { loadPackDone, savePackDone } from "@/lib/pack";
+import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import type { PackTemplateScope } from "@/lib/fluxo-types";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -45,6 +45,7 @@ type Tab = "meu" | "outro" | "concluir" | "modelos";
 function PackPage() {
   const {
     createTask,
+    updateTask,
     tasks,
     users,
     currentUser,
@@ -54,28 +55,24 @@ function PackPage() {
     applyPackTemplate,
     transferPack,
   } = useFluxo();
-  const initialMyPack = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
+  const initialMyPack = tasks.filter((t) => noPackDeHoje(t, currentUser.id));
   const [tab, setTab] = useState<Tab>(initialMyPack.length > 0 ? "concluir" : "meu");
   const [meuText, setMeuText] = useState("");
   const [outroText, setOutroText] = useState("");
   const [targetId, setTargetId] = useState<string>("");
-  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
 
-  useEffect(() => {
-    setPackDone(loadPackDone(currentUser.id));
-  }, [currentUser.id]);
-
+  // O pack de hoje e o que falta nele — ver `noPackDeHoje` e `concluidaHoje`.
   const myPack = useMemo(
-    () => tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack),
+    () => tasks.filter((t) => noPackDeHoje(t, currentUser.id)),
     [tasks, currentUser.id],
   );
-  const pending = myPack.filter((t) => !packDone.has(t.id));
+  const pending = myPack.filter((t) => !concluidaHoje(t));
 
   const teamPacks = useMemo(() => {
     const map = new Map<string, typeof tasks>();
     for (const u of users) {
       if (u.id === currentUser.id) continue;
-      const list = tasks.filter((t) => t.assigneeId === u.id && t.inPack);
+      const list = tasks.filter((t) => noPackDeHoje(t, u.id));
       if (list.length > 0) map.set(u.id, list);
     }
     return map;
@@ -83,7 +80,7 @@ function PackPage() {
 
   const targetUser = users.find((u) => u.id === targetId);
   const targetPack = useMemo(
-    () => (targetId ? tasks.filter((t) => t.assigneeId === targetId && t.inPack) : []),
+    () => (targetId ? tasks.filter((t) => noPackDeHoje(t, targetId)) : []),
     [tasks, targetId],
   );
   const [lastSent, setLastSent] = useState<{ to: string; items: string[]; at: number } | null>(null);
@@ -122,16 +119,10 @@ function PackPage() {
     }
   };
 
-  const toggleDone = (id: string) => {
-    setPackDone((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      savePackDone(currentUser.id, next);
-      window.dispatchEvent(new CustomEvent("fluxo:pack-updated"));
-      return next;
-    });
-  };
+  /* Concluir no pack é concluir a tarefa. Desfazer é pelo aviso que a
+     conclusão abre (o mesmo de qualquer outra tela), não por um segundo
+     clique aqui: o item concluído hoje fica travado, riscado, até amanhã. */
+  const concluir = (id: string) => updateTask(id, { status: "concluida" });
 
   const meuCount = parsePackLines(meuText).length;
   const outroCount = parsePackLines(outroText).length;
@@ -230,7 +221,7 @@ function PackPage() {
                   .filter((u) => u.id !== currentUser.id)
                   .map((u) => {
                     const active = targetId === u.id;
-                    const count = tasks.filter((t) => t.assigneeId === u.id && t.inPack).length;
+                    const count = tasks.filter((t) => noPackDeHoje(t, u.id)).length;
                     return (
                       <button
                         key={u.id}
@@ -381,7 +372,7 @@ function PackPage() {
           <section className="rounded-xl border border-border bg-card p-4">
             <h2 className="text-sm font-semibold">Concluir meu pack de hoje</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Marque o que já foi feito. Reseta automaticamente amanhã.
+              Marque o que já foi feito. O que você concluir hoje fica riscado até amanhã.
             </p>
             {myPack.length === 0 ? (
               <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
@@ -391,7 +382,7 @@ function PackPage() {
               <>
                 <ul className="mt-3 space-y-1">
                   {myPack.map((t) => {
-                    const done = packDone.has(t.id);
+                    const done = concluidaHoje(t);
                     return (
                       <li key={t.id}>
                         <div
@@ -403,24 +394,35 @@ function PackPage() {
                         >
                           <button
                             type="button"
-                            onClick={() => toggleDone(t.id)}
-                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            onClick={() => concluir(t.id)}
+                            disabled={done}
+                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border disabled:cursor-default ${
                               done
                                 ? "border-emerald-500 bg-emerald-500 text-white"
                                 : "border-border bg-background"
                             }`}
-                            title={done ? "Desmarcar" : "Concluir"}
+                            title={done ? "Concluída hoje" : "Concluir"}
                           >
                             {done && <Check className="h-3 w-3" />}
                           </button>
                           <button
                             type="button"
-                            onClick={() => toggleDone(t.id)}
-                            className={`flex-1 text-left ${done ? "line-through" : ""}`}
+                            onClick={() => concluir(t.id)}
+                            disabled={done}
+                            className={`flex-1 text-left disabled:cursor-default ${done ? "line-through" : ""}`}
                           >
                             {t.title}
                           </button>
-                          <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
+                          {done ? (
+                            <span className="shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              Concluída hoje
+                            </span>
+                          ) : (
+                            <TaskTimerControls
+                              taskId={t.id}
+                              estimatedMinutes={t.estimatedMinutes}
+                            />
+                          )}
                         </div>
                       </li>
                     );
@@ -430,18 +432,17 @@ function PackPage() {
                   <span>
                     {myPack.length - pending.length}/{myPack.length} feitos
                   </span>
-                  <button
-                    onClick={() => {
-                      const all = new Set(myPack.map((t) => t.id));
-                      setPackDone(all);
-                      savePackDone(currentUser.id, all);
-                      window.dispatchEvent(new CustomEvent("fluxo:pack-updated"));
-                      toast.success("Pack concluído — bom trabalho!");
-                    }}
-                    className="font-semibold text-primary hover:underline"
-                  >
-                    Marcar tudo
-                  </button>
+                  {pending.length > 0 && (
+                    <button
+                      onClick={() => {
+                        pending.forEach((t) => concluir(t.id));
+                        toast.success("Pack concluído — bom trabalho!");
+                      }}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      Marcar tudo
+                    </button>
+                  )}
                 </div>
               </>
             )}

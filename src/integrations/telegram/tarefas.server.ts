@@ -295,6 +295,7 @@ export async function tarefasDoDia(pessoaId: number): Promise<LinhaDoDia[]> {
          FROM gestor.tarefas
         WHERE responsavel_id=@eu
           AND arquivada_em IS NULL
+          AND criada_em <= SYSDATETIMEOFFSET() -- ocorrência que ainda não nasceu
           AND situacao <> 'concluida'
           AND ${dataBr("prazo")} <= ${HOJE_BR}
         ORDER BY prazo, ordem`,

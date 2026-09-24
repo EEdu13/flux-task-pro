@@ -241,6 +241,14 @@ export const salvarProjeto = createServerFn({ method: "POST" })
            com metade do código. O dono entra sempre, mesmo que a interface
            esqueça de incluí-lo. */
         const membros = [...new Set([dono, ...d.membros])];
+        // Quem já estava, lido antes do apaga-e-regrava: é a diferença que avisa.
+        const antes = await pool
+          .request()
+          .input("pid", sql.UniqueIdentifier, id)
+          .query(`SELECT pessoa_id FROM gestor.projeto_membros WHERE projeto_id=@pid`);
+        const jaEram = new Set(
+          (antes.recordset as { pessoa_id: number }[]).map((m) => m.pessoa_id),
+        );
         await pool
           .request()
           .input("pid", sql.UniqueIdentifier, id)
@@ -252,6 +260,26 @@ export const salvarProjeto = createServerFn({ method: "POST" })
             .input("pessoa", sql.Int, p)
             .query(
               `INSERT INTO gestor.projeto_membros (projeto_id, pessoa_id) VALUES (@pid, @pessoa)`,
+            );
+        }
+
+        /* Quem entrou agora fica sabendo. Ser incluído num projeto não mudava
+           nada na tela de ninguém: a pessoa só descobria ao abrir Projetos por
+           acaso, ou quando a primeira subtarefa chegasse. Só os novos — como
+           esta função roda a cada edição do projeto (o nome é gravado enquanto
+           se digita), avisar a lista inteira repetiria o aviso a cada tecla.
+           Quem salva não se avisa. */
+        for (const p of membros.filter((m) => m !== eu && !jaEram.has(m))) {
+          await pool
+            .request()
+            .input("para", sql.Int, p)
+            .input("de", sql.Int, eu)
+            .input("nome", sql.NVarChar(400), d.nome)
+            .input("pid", sql.UniqueIdentifier, id)
+            .query(
+              `INSERT INTO gestor.notificacoes
+                 (destinatario_id, de_pessoa_id, tipo, titulo, descricao, projeto_id)
+               VALUES (@para, @de, 'projeto', N'te adicionou a um projeto', @nome, @pid)`,
             );
         }
 

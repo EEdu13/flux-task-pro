@@ -116,6 +116,7 @@ async function minhasTarefas(pessoaId: number, recorte: Recorte) {
          FROM gestor.tarefas
         WHERE responsavel_id=@eu
           AND arquivada_em IS NULL
+          AND criada_em <= SYSDATETIMEOFFSET() -- ocorrência que ainda não nasceu
           AND ${RECORTES[recorte].onde}
         ORDER BY prazo, ordem`,
     );
@@ -139,6 +140,7 @@ async function pessoasDoMeuEscopo(pessoaId: number) {
             (SELECT COUNT(*) FROM gestor.tarefas t
               WHERE t.responsavel_id=p.pessoa_id
                 AND t.arquivada_em IS NULL
+                AND t.criada_em <= SYSDATETIMEOFFSET()
                 AND t.situacao <> 'concluida') AS abertas
        FROM gestor.perfis p
       WHERE ${onde}
@@ -160,6 +162,7 @@ async function tarefasDe(solicitante: number, alvo: number) {
        FROM gestor.tarefas
       WHERE responsavel_id=@alvo
         AND arquivada_em IS NULL
+        AND criada_em <= SYSDATETIMEOFFSET() -- ocorrência que ainda não nasceu
         AND situacao <> 'concluida'
         AND ${filtro}
       ORDER BY prazo, ordem`,

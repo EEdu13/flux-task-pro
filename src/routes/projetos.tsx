@@ -42,6 +42,7 @@ import {
   type RiskLevel,
 } from "@/lib/project-forecast";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
+import { etiquetasDoProjeto } from "@/lib/etiquetas-do-projeto";
 import { reduzirFoto } from "@/lib/foto-reduzida";
 import { SeletorDeCor } from "@/components/seletor-de-cor";
 
@@ -58,6 +59,11 @@ const riskBadge: Record<RiskLevel, string> = {
 };
 
 export const Route = createFileRoute("/projetos")({
+  /* `?projeto=<id>`: o aviso "te adicionou a um projeto" abre direto nele. */
+  validateSearch: (s: Record<string, unknown>): { projeto?: string } =>
+    typeof s.projeto === "string" && /^[0-9a-f-]{36}$/i.test(s.projeto)
+      ? { projeto: s.projeto }
+      : {},
   head: () => ({
     meta: [
       { title: "Projetos — Fluxo" },
@@ -137,6 +143,7 @@ function ProjetosPage() {
     deleteProject,
     createTask,
     updateTask,
+    openTask,
     users,
     currentUser,
     completions,
@@ -151,11 +158,29 @@ function ProjetosPage() {
   const projects = visibleProjects();
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id ?? null);
   const [topView, setTopView] = useState<"portfolio" | "detalhe">("portfolio");
+
+  /* Veio de um aviso de projeto: abre ele. Pelo efeito, e não só no estado
+     inicial, por dois motivos — clicar no aviso com a tela de Projetos já
+     aberta não remonta a página, e o projeto pode chegar um instante depois,
+     quando a releitura disparada pelo aviso responde. */
+  const { projeto: projetoDaUrl } = Route.useSearch();
+  const projetoPedido = projetoDaUrl
+    ? projects.find((p) => p.id.toLowerCase() === projetoDaUrl.toLowerCase())?.id
+    : undefined;
+  useEffect(() => {
+    if (!projetoPedido) return;
+    setSelectedId(projetoPedido);
+    setTopView("detalhe");
+  }, [projetoPedido]);
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "todos">("todos");
   const [view, setView] = useState<ProjectView>("lista");
   const [quickTitle, setQuickTitle] = useState("");
+  /* A observação nasce junto com a subtarefa. Sem este campo ela só podia ser
+     escrita depois, abrindo a tarefa em "Minhas tarefas" — a criação no projeto
+     não tinha onde digitá-la. */
+  const [quickDescription, setQuickDescription] = useState("");
   const [quickAssignee, setQuickAssignee] = useState(currentUser.id);
   const [quickDate, setQuickDate] = useState("");
   const [quickMentions, setQuickMentions] = useState<string[]>([]);
@@ -198,6 +223,7 @@ function ProjetosPage() {
     mentionSet.delete(currentUser.id);
     createTask({
       title: quickTitle.trim(),
+      description: quickDescription.trim() || undefined,
       sector: assignee.sector,
       createdBy: currentUser.id,
       assigneeId: assignee.id,
@@ -208,10 +234,12 @@ function ProjetosPage() {
       dueDate: due.toISOString(),
       recurring: false,
       priority: "media",
-      tags: ["projeto", selected.name],
+      // A mesma regra que o servidor aplica — ver `etiquetasDoProjeto`.
+      tags: etiquetasDoProjeto(selected.name),
       projectId: selected.id,
     });
     setQuickTitle("");
+    setQuickDescription("");
     setQuickDate("");
     setQuickMentions([]);
     quickInputRef.current?.focus();
@@ -421,12 +449,15 @@ function ProjetosPage() {
                 completions={completions}
                 updateProject={updateProject}
                 updateTask={updateTask}
+                openTask={openTask}
                 deleteProject={(id) => {
                   deleteProject(id);
                   setSelectedId(null);
                 }}
                 quickTitle={quickTitle}
                 setQuickTitle={setQuickTitle}
+                quickDescription={quickDescription}
+                setQuickDescription={setQuickDescription}
                 quickAssignee={quickAssignee}
                 setQuickAssignee={setQuickAssignee}
                 quickDate={quickDate}
@@ -480,9 +511,12 @@ interface ProjectDetailProps {
   completions: CompletionEntry[];
   updateProject: ReturnType<typeof useFluxo>["updateProject"];
   updateTask: ReturnType<typeof useFluxo>["updateTask"];
+  openTask: ReturnType<typeof useFluxo>["openTask"];
   deleteProject: (id: string) => void;
   quickTitle: string;
   setQuickTitle: (v: string) => void;
+  quickDescription: string;
+  setQuickDescription: (v: string) => void;
   quickAssignee: string;
   setQuickAssignee: (v: string) => void;
   quickDate: string;
@@ -506,9 +540,12 @@ function ProjectDetail({
   completions,
   updateProject,
   updateTask,
+  openTask,
   deleteProject,
   quickTitle,
   setQuickTitle,
+  quickDescription,
+  setQuickDescription,
   quickAssignee,
   setQuickAssignee,
   quickDate,
@@ -772,6 +809,23 @@ function ProjectDetail({
           >
             Adicionar
           </button>
+          {/* Linha própria (`basis-full`): a observação costuma ter mais de uma
+              frase, e espremida ao lado do título não daria para ler. Enter
+              aqui quebra a linha, como em qualquer texto longo; Ctrl+Enter
+              adiciona, como o Enter do título. */}
+          <textarea
+            value={quickDescription}
+            onChange={(e) => setQuickDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                onQuickAdd();
+              }
+            }}
+            placeholder="Observação (opcional) — Ctrl+Enter para salvar"
+            rows={1}
+            className="basis-full resize-y rounded-md border border-border bg-background px-2 py-1 text-[12px] outline-none placeholder:text-muted-foreground focus:border-primary"
+          />
         </div>
         )}
 
@@ -820,14 +874,26 @@ function ProjectDetail({
                         <Circle className="h-4 w-4" />
                       )}
                     </button>
-                    <div className="min-w-0">
-                      <div className={`truncate font-medium ${done ? "text-muted-foreground line-through" : ""}`}>
+                    {/* Abre o painel da tarefa aqui mesmo: editar a observação
+                        (ou qualquer outro campo) de uma subtarefa exigia ir até
+                        "Minhas tarefas" e procurá-la lá. */}
+                    <button
+                      type="button"
+                      onClick={() => openTask(t.id)}
+                      className="min-w-0 text-left"
+                      title="Abrir a tarefa"
+                    >
+                      <div
+                        className={`truncate font-medium hover:text-primary ${
+                          done ? "text-muted-foreground line-through" : ""
+                        }`}
+                      >
                         {t.title}
                       </div>
                       {t.description && (
                         <div className="truncate text-[11px] text-muted-foreground">{t.description}</div>
                       )}
-                    </div>
+                    </button>
                     <select
                       value={t.assigneeId}
                       onChange={(e) => updateTask(t.id, { assigneeId: e.target.value })}
@@ -938,13 +1004,16 @@ function ProjectDetail({
                                 <Circle className="h-3.5 w-3.5" />
                               )}
                             </button>
-                            <div
-                              className={`flex-1 text-[13px] font-medium leading-snug ${
+                            <button
+                              type="button"
+                              onClick={() => openTask(t.id)}
+                              title="Abrir a tarefa"
+                              className={`flex-1 text-left text-[13px] font-medium leading-snug hover:text-primary ${
                                 t.status === "concluida" ? "text-muted-foreground line-through" : ""
                               }`}
                             >
                               {t.title}
-                            </div>
+                            </button>
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                             <span className={overdue ? "font-semibold text-destructive" : ""}>

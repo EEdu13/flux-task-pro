@@ -1,6 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { AtSign, Bell, Check, CheckCircle2, Clock, Inbox as InboxIcon, PhoneMissed } from "lucide-react";
+import {
+  AtSign,
+  Bell,
+  Check,
+  CheckCircle2,
+  Clock,
+  FolderKanban,
+  Inbox as InboxIcon,
+  PhoneMissed,
+} from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
@@ -43,6 +52,7 @@ function InboxPage() {
     if (type === "mencao") return AtSign;
     if (type === "concluida") return CheckCircle2;
     if (type === "chamada_perdida") return PhoneMissed;
+    if (type === "projeto") return FolderKanban;
     return Bell;
   };
 
@@ -101,6 +111,11 @@ function InboxPage() {
                     if (n.taskId) openTask(n.taskId);
                     if (n.roomName)
                       navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
+                    if (n.type === "projeto")
+                      navigate({
+                        to: "/projetos",
+                        search: n.projectId ? { projeto: n.projectId } : {},
+                      });
                   }}
                   className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-secondary/50 ${
                     n.read ? "opacity-70" : ""

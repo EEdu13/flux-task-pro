@@ -36,6 +36,10 @@ export type TarefaDoBanco = {
   order: number;
   createdAt: string;
   projectId?: string;
+  /** Quando foi marcada como concluída — o clique, pelo relógio do banco. */
+  completedAt?: string | null;
+  /** O dia em que de fato terminou, quando a pessoa informou ("yyyy-MM-dd"). */
+  actualCompletionDate?: string | null;
 };
 
 const FREQUENCIAS = ["diaria", "semanal", "mensal", "anual"] as const;
@@ -103,10 +107,14 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
     /* Os parênteses no filtro acima não são enfeite: sem eles, o `OR` interno
        se misturaria com o `AND arquivada_em IS NULL` abaixo, e uma tarefa
        arquivada de outra pessoa voltaria a aparecer. É o tipo de erro que
-       nenhum teste de tela pega. */
+       nenhum teste de tela pega.
+
+       `criada_em` no futuro é a próxima ocorrência de uma recorrente que ainda
+       não chegou ao dia dela — ver `nasceEm` em `salvarTarefa`. Ela existe no
+       banco, mas só aparece quando nasce. */
     const r = await req.query(
       `SELECT ${COLUNAS_TAREFA} FROM gestor.tarefas
-        WHERE ${filtro} AND arquivada_em IS NULL
+        WHERE ${filtro} AND arquivada_em IS NULL AND criada_em <= SYSDATETIMEOFFSET()
         ORDER BY ordem, criada_em DESC`,
     );
 
@@ -118,7 +126,7 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
 export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
                                frequencia, situacao, prioridade, pontos, prazo, recorrente,
                                recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
-                               no_pack, ordem, criada_em`;
+                               no_pack, ordem, criada_em, concluida_em, data_real_de_conclusao`;
 
 export type LinhaTarefa = {
   id: string;
@@ -141,6 +149,9 @@ export type LinhaTarefa = {
   no_pack: boolean;
   ordem: number;
   criada_em: Date;
+  concluida_em: Date | null;
+  /** DATE: o driver entrega meia-noite UTC do dia (useUTC, o padrão do mssql). */
+  data_real_de_conclusao: Date | null;
 };
 
 /** Do formato do banco para o que a interface já espera. */
@@ -171,6 +182,10 @@ export function paraApp(t: LinhaTarefa): TarefaDoBanco {
     order: t.ordem,
     createdAt: t.criada_em.toISOString(),
     projectId: t.projeto_id ?? undefined,
+    completedAt: t.concluida_em ? t.concluida_em.toISOString() : null,
+    actualCompletionDate: t.data_real_de_conclusao
+      ? t.data_real_de_conclusao.toISOString().slice(0, 10)
+      : null,
   };
 }
 
@@ -196,6 +211,20 @@ type EntradaTarefa = {
   ordem: number;
   /** Texto da linha "criou" no histórico. Só vale quando a tarefa é nova. */
   origem: string | null;
+  /** "yyyy-MM-dd" do dia em que a tarefa de fato terminou, quando informado. */
+  dataReal: string | null;
+  /** Quando a próxima ocorrência de uma recorrente passa a existir na tela. */
+  nasceEm: Date | null;
+};
+
+type GravacaoDaTarefa = {
+  id: string;
+  nova: boolean;
+  /**
+   * Próxima ocorrência que já existia (mesmo título, responsável e prazo) e por
+   * isso não foi criada de novo. Quem chamou não tem o que completar nela.
+   */
+  ignorada?: boolean;
 };
 
 export const salvarTarefa = createServerFn({ method: "POST" })
@@ -222,6 +251,10 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         order?: number;
         /** De onde a tarefa veio: "criou pelo modelo de pack …", "… a partir da ata …". */
         origin?: string;
+        /** "yyyy-MM-dd": o dia em que de fato terminou, se não foi o do clique. */
+        actualCompletionDate?: string | null;
+        /** ISO. Só na próxima ocorrência de uma recorrente: quando ela nasce. */
+        availableFrom?: string | null;
       }): EntradaTarefa => {
         const titulo = texto(e?.title, 200);
         if (!titulo) throw new Error("A tarefa precisa de um título");
@@ -273,12 +306,29 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           noPack: e?.inPack === true,
           ordem: Math.max(0, Math.trunc(Number(e?.order) || 0)),
           origem: texto(e?.origin, 500) || null,
+          /* Só o formato aqui; o "não pode ser no futuro" é conferido no SQL,
+             contra o dia de hoje em Brasília e não o relógio de quem mandou. */
+          dataReal:
+            typeof e?.actualCompletionDate === "string" &&
+            /^\d{4}-\d{2}-\d{2}$/.test(e.actualCompletionDate) &&
+            !Number.isNaN(Date.parse(`${e.actualCompletionDate}T00:00:00Z`))
+              ? e.actualCompletionDate
+              : null,
+          /* No futuro e perto: é "amanhã, à meia-noite". Passado ou agora não
+             muda nada (nasce já), e o teto de 48h impede que um valor torto
+             esconda uma tarefa por semanas. */
+          nasceEm: (() => {
+            const quando =
+              typeof e?.availableFrom === "string" ? new Date(e.availableFrom) : new Date(NaN);
+            const falta = quando.getTime() - Date.now();
+            return falta > 0 && falta <= 48 * 3600e3 ? quando : null;
+          })(),
         };
       },
     ),
   )
   .handler(
-    comSessao(async (eu, d: EntradaTarefa): Promise<{ id: string; nova: boolean }> => {
+    comSessao(async (eu, d: EntradaTarefa): Promise<GravacaoDaTarefa> => {
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
 
@@ -303,6 +353,9 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         .input("no_pack", sql.Bit, d.noPack)
         .input("ordem", sql.Int, d.ordem)
         .input("origem", sql.NVarChar(500), d.origem)
+        // Texto, convertido no SQL: um DATE vindo de Date do JS passaria pelo fuso.
+        .input("data_real", sql.NVarChar(10), d.dataReal)
+        .input("nasce_em", sql.DateTimeOffset, d.nasceEm)
         .input("por", sql.Int, eu);
 
       /* `concluida_em` é derivado da situação, não recebido.
@@ -318,9 +371,23 @@ export const salvarTarefa = createServerFn({ method: "POST" })
 
          O bloco de baixo então usa esse antes-e-depois para escrever a conclusão
          e os avisos. Tudo num comando só: ou a tarefa muda e a pontuação existe,
-         ou nada aconteceu. */
-      const r = await req.query(
-        `DECLARE @efeito TABLE (
+         ou nada aconteceu.
+
+         A data de finalização informada (`data_real_de_conclusao`) é outra
+         coisa e mora em outra coluna: o dia em que o trabalho de fato acabou,
+         para quem esqueceu de marcar na hora. A Timeline mostra essa data, mas
+         conclusão, prazo e pontos continuam pelo clique — decisão do usuário
+         em 24/09/2026, enquanto o placar é revisto. */
+      const gravacao = req.query(
+        `/* Só com a tarefa concluída, e nunca no futuro — o "hoje" é o de
+            Brasília, não o do relógio de quem mandou. */
+         DECLARE @dia_real DATE = CASE
+           WHEN @situacao = 'concluida'
+            AND TRY_CONVERT(DATE, @data_real, 23)
+                <= CAST(SYSDATETIMEOFFSET() AT TIME ZONE N'E. South America Standard Time' AS DATE)
+           THEN TRY_CONVERT(DATE, @data_real, 23) END;
+
+         DECLARE @efeito TABLE (
            tarefa             UNIQUEIDENTIFIER,
            criador            INT,
            nova               BIT,
@@ -335,7 +402,9 @@ export const salvarTarefa = createServerFn({ method: "POST" })
            prioridade         NVARCHAR(10),
            prazo_antes        DATETIMEOFFSET(3),
            prazo              DATETIMEOFFSET(3),
-           no_pack            BIT
+           no_pack            BIT,
+           dia_real_antes     DATE,
+           dia_real_depois    DATE
          );
 
          IF @id IS NOT NULL AND EXISTS (SELECT 1 FROM gestor.tarefas WHERE id=@id)
@@ -348,6 +417,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                   recorre_ate=@recorre_ate, dia_do_mes=@dia_do_mes,
                   minutos_estimados=@minutos, exige_comprovante=@comprovante,
                   no_pack=@no_pack, ordem=@ordem,
+                  data_real_de_conclusao=@dia_real,
                   concluida_em = CASE
                     WHEN @situacao = 'concluida' AND concluida_em IS NULL
                       THEN SYSDATETIMEOFFSET()
@@ -359,44 +429,82 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                   deleted.concluida_em, inserted.concluida_em,
                   inserted.titulo, inserted.pontos, inserted.prioridade,
                   deleted.prazo, inserted.prazo,
-                  inserted.no_pack
+                  inserted.no_pack,
+                  deleted.data_real_de_conclusao, inserted.data_real_de_conclusao
              INTO @efeito (tarefa, criador, nova,
                            responsavel_antes, responsavel_depois,
                            situacao_antes, situacao_depois,
                            concluida_antes, concluida_depois,
                            titulo, pontos, prioridade,
                            prazo_antes, prazo,
-                           no_pack)
+                           no_pack,
+                           dia_real_antes, dia_real_depois)
             WHERE id=@id;
          END
          ELSE
          BEGIN
+           /* A próxima ocorrência de uma recorrente nasce no dia dela (@nasce_em,
+              "amanhã à meia-noite"): é gravada agora, junto com a conclusão, mas
+              com criada_em no futuro — e toda leitura filtra criada_em <= agora.
+              Antes ela aparecia em "A fazer" no mesmo instante, com o prazo de
+              amanhã, e concluir essa gerava a de depois de amanhã: em minutos a
+              pessoa tinha concluído a semana inteira.
+
+              E não entra duas vezes. Mesmo título, responsável e prazo, ainda
+              ativa, é a mesma ocorrência — a do clique duplo, ou a de quem
+              concluiu, reabriu noutra aba e concluiu de novo. O UPDLOCK e o
+              HOLDLOCK fazem a conferência e a inserção valerem juntas: duas
+              gravações simultâneas não passam as duas pelo "ainda não existe". */
            INSERT INTO gestor.tarefas
              (id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
               frequencia, situacao, prioridade, pontos, prazo, recorrente,
               recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
-              no_pack, ordem, concluida_em)
+              no_pack, ordem, concluida_em, data_real_de_conclusao, criada_em)
            OUTPUT inserted.id, inserted.criado_por, CAST(1 AS BIT),
                   CAST(NULL AS INT), inserted.responsavel_id,
                   CAST(NULL AS NVARCHAR(12)), inserted.situacao,
                   CAST(NULL AS DATETIMEOFFSET(3)), inserted.concluida_em,
                   inserted.titulo, inserted.pontos, inserted.prioridade,
                   CAST(NULL AS DATETIMEOFFSET(3)), inserted.prazo,
-                  inserted.no_pack
+                  inserted.no_pack,
+                  CAST(NULL AS DATE), inserted.data_real_de_conclusao
              INTO @efeito (tarefa, criador, nova,
                            responsavel_antes, responsavel_depois,
                            situacao_antes, situacao_depois,
                            concluida_antes, concluida_depois,
                            titulo, pontos, prioridade,
                            prazo_antes, prazo,
-                           no_pack)
-           VALUES
-             (COALESCE(@id, NEWID()), @titulo, @descricao, @setor, @por, @responsavel, @projeto,
-              @frequencia, @situacao, @prioridade, @pontos, @prazo, @recorrente,
-              @recorre_ate, @dia_do_mes, @minutos, @comprovante,
-              @no_pack, @ordem,
-              CASE WHEN @situacao = 'concluida' THEN SYSDATETIMEOFFSET() ELSE NULL END);
+                           no_pack,
+                           dia_real_antes, dia_real_depois)
+           SELECT COALESCE(@id, NEWID()), @titulo, @descricao, @setor, @por, @responsavel, @projeto,
+                  @frequencia, @situacao, @prioridade, @pontos, @prazo, @recorrente,
+                  @recorre_ate, @dia_do_mes, @minutos, @comprovante,
+                  @no_pack, @ordem,
+                  CASE WHEN @situacao = 'concluida' THEN SYSDATETIMEOFFSET() ELSE NULL END,
+                  @dia_real,
+                  COALESCE(@nasce_em, SYSDATETIMEOFFSET())
+            WHERE NOT EXISTS (
+                    SELECT 1 FROM gestor.tarefas x WITH (UPDLOCK, HOLDLOCK)
+                     WHERE @nasce_em IS NOT NULL
+                       AND x.recorrente = 1
+                       AND x.titulo = @titulo AND x.responsavel_id = @responsavel
+                       AND x.prazo = @prazo AND x.arquivada_em IS NULL);
          END
+
+         /* Reabriu: a próxima ocorrência que ainda não nasceu sai junto.
+            Ela foi gravada pela conclusão que acabou de ser desfeita; se ficasse,
+            apareceria amanhã ao lado da que a nova conclusão vai gerar. */
+         UPDATE f
+            SET arquivada_em = SYSDATETIMEOFFSET()
+           FROM gestor.tarefas f
+           JOIN @efeito e
+             ON f.titulo = e.titulo
+            AND f.responsavel_id IN (e.responsavel_antes, e.responsavel_depois)
+          WHERE e.concluida_antes IS NOT NULL AND e.concluida_depois IS NULL
+            AND f.id <> e.tarefa
+            AND f.recorrente = 1
+            AND f.arquivada_em IS NULL
+            AND f.criada_em > SYSDATETIMEOFFSET();
 
          /* A conclusão, quando a tarefa ACABOU de ser concluída.
             A fórmula é a mesma que a tela usava (computeScore): os pontos da
@@ -429,7 +537,10 @@ export const salvarTarefa = createServerFn({ method: "POST" })
             O no_pack = 0 é o que evita a avalanche. Um pack são oito, dez
             tarefas atribuídas de uma vez; sem esta linha, quem recebe o pack de
             segunda-feira encontraria dez linhas iguais na sineta. O pack avisa
-            uma vez, por fora, com o resumo. */
+            uma vez, por fora, com o resumo.
+
+            A ocorrência que ainda não nasceu também não avisa: seria um aviso de
+            uma tarefa que a pessoa não consegue abrir até amanhã. */
          INSERT INTO gestor.notificacoes
            (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
          SELECT e.responsavel_depois, @por, 'atribuida',
@@ -439,6 +550,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
            FROM @efeito e
           WHERE e.responsavel_depois <> @por
             AND e.no_pack = 0
+            AND @nasce_em IS NULL
             AND (e.responsavel_antes IS NULL
                  OR e.responsavel_antes <> e.responsavel_depois);
 
@@ -529,17 +641,90 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                      CASE WHEN e.prazo >= e.concluida_depois
                           THEN N'concluiu a tarefa no prazo'
                           ELSE N'concluiu a tarefa com atraso' END
+                     /* Marcada hoje, terminada antes: a data que importa vai
+                        junto, e a Timeline deixa de dizer só o dia do clique. */
+                     + CASE WHEN e.dia_real_depois IS NOT NULL
+                             AND e.dia_real_depois <> CAST(e.concluida_depois AT TIME ZONE @fuso AS DATE)
+                            THEN N' · finalizada de fato em '
+                                 + CONVERT(NVARCHAR(10), e.dia_real_depois, 103)
+                            ELSE N'' END
                WHERE e.concluida_depois IS NOT NULL AND e.concluida_antes IS NULL
+              UNION ALL
+              /* A data de finalização informada ou corrigida depois, com a
+                 tarefa já concluída. Linha própria porque não é conclusão
+                 nova: nada muda no placar, só o registro de quando acabou. */
+              SELECT 5, N'editada',
+                     CASE WHEN e.dia_real_depois IS NULL
+                          THEN N'removeu a data de finalização informada'
+                          ELSE N'informou que a tarefa foi finalizada em '
+                               + CONVERT(NVARCHAR(10), e.dia_real_depois, 103) END
+               WHERE e.concluida_antes IS NOT NULL AND e.concluida_depois IS NOT NULL
+                 AND (e.dia_real_antes <> e.dia_real_depois
+                      OR (e.dia_real_antes IS NULL AND e.dia_real_depois IS NOT NULL)
+                      OR (e.dia_real_antes IS NOT NULL AND e.dia_real_depois IS NULL))
             ) h;
          END TRY
          BEGIN CATCH
            DECLARE @falha_no_historico NVARCHAR(4000) = ERROR_MESSAGE();
          END CATCH
 
+         /* As etiquetas do projeto: toda subtarefa carrega "projeto" e o nome
+            dele, cortado no tamanho da coluna. Mesma regra de
+            etiquetasDoProjeto, do lado que não depende de a tela lembrar.
+
+            Aqui porque toda gravação passa por aqui — inclusive a que não
+            manda satélites (tarefa ainda não aberta), que é a que conserta as
+            subtarefas antigas que ficaram sem uma das duas. Só acrescenta o que
+            falta; nunca tira nada.
+
+            TRY/CATCH pelo mesmo motivo do histórico. Se duas gravações criarem
+            a mesma etiqueta nova no mesmo instante, a segunda bate no UNIQUE do
+            nome — e isso não pode virar "não foi possível salvar". A próxima
+            gravação, ou salvarSatelites logo em seguida, completa. */
+         BEGIN TRY
+           IF @projeto IS NOT NULL
+           BEGIN
+             DECLARE @etiquetas_do_projeto TABLE (nome NVARCHAR(40));
+             INSERT INTO @etiquetas_do_projeto (nome)
+             SELECT DISTINCT v.nome
+               FROM gestor.projetos p
+              CROSS APPLY (VALUES (CAST(N'projeto' AS NVARCHAR(40))),
+                                  (RTRIM(LEFT(LTRIM(RTRIM(p.nome)), 40)))) v(nome)
+              WHERE p.id = @projeto AND v.nome <> N'';
+
+             INSERT INTO gestor.etiquetas (nome, criada_por)
+             SELECT x.nome, @por FROM @etiquetas_do_projeto x
+              WHERE NOT EXISTS (SELECT 1 FROM gestor.etiquetas g WHERE g.nome = x.nome);
+
+             INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id)
+             SELECT DISTINCT e.tarefa, g.id
+               FROM @efeito e
+              CROSS JOIN @etiquetas_do_projeto x
+               JOIN gestor.etiquetas g ON g.nome = x.nome
+              WHERE NOT EXISTS (SELECT 1 FROM gestor.tarefa_etiquetas te
+                                 WHERE te.tarefa_id = e.tarefa AND te.etiqueta_id = g.id);
+           END
+         END TRY
+         BEGIN CATCH
+           DECLARE @falha_nas_etiquetas NVARCHAR(4000) = ERROR_MESSAGE();
+         END CATCH
+
          SELECT tarefa AS id, nova FROM @efeito;`,
       );
+      /* No log do servidor, com a tarefa e quem gravava. O motivo também chega
+         ao aviso na tela, mas lá fica no computador de quem clicou. */
+      const r = await gravacao.catch((e: unknown) => {
+        console.error("[tarefas] gravação falhou:", {
+          tarefa: d.id,
+          por: eu,
+          erro: (e as Error)?.message,
+        });
+        throw e;
+      });
 
-      const linha = r.recordset[0] as { id: string; nova: boolean };
+      const linha = r.recordset[0] as { id: string; nova: boolean } | undefined;
+      // Nada gravado: era a próxima ocorrência, e ela já existia. Ver o INSERT.
+      if (!linha) return { id: d.id ?? "", nova: false, ignorada: true };
       /* `nova` diz a quem chamou se esta gravação CRIOU a tarefa. Quem grava o
          checklist em seguida precisa saber: os itens com que a tarefa nasceu
          fazem parte da criação, não são "adicionou" um por um. */

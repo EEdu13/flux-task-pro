@@ -369,6 +369,11 @@ export function CommandPalette() {
                     onSelect={() =>
                       go(() => {
                         if (n.taskId) openTask(n.taskId);
+                        else if (n.type === "projeto")
+                          navigate({
+                            to: "/projetos",
+                            search: n.projectId ? { projeto: n.projectId } : {},
+                          });
                         else navigate({ to: "/inbox" });
                       })
                     }

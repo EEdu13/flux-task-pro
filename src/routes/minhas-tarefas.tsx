@@ -31,7 +31,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 
 import { MyView } from "@/components/my-view";
 import { formatDueBucket } from "@/lib/use-theme";
-import { loadPackDone, savePackDone } from "@/lib/pack";
+import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
 import { startFocus } from "@/components/focus-overlay";
 import { TaskTimerControls } from "@/components/task-timer-controls";
@@ -169,20 +169,6 @@ function MinhasTarefas() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [search, setSearch] = useState(initialQ ?? "");
-  // Per-day pack completion (kept in localStorage, resets daily).
-  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
-  useEffect(() => {
-    setPackDone(loadPackDone(currentUser.id));
-  }, [currentUser.id]);
-  const togglePackDone = (id: string) => {
-    setPackDone((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      savePackDone(currentUser.id, next);
-      return next;
-    });
-  };
   /* Chegou por link, favorito ou botão de voltar: o `q` da URL manda.
      `?? ""` porque sair do `q` também é um comando — antes, apagar a busca lá
      em cima tirava o termo do endereço e deixava o filtro ligado na tela, com
@@ -237,8 +223,8 @@ function MinhasTarefas() {
       if (scope === "criadas" && t.createdBy !== currentUser.id) return false;
       if (scope === "mencionadas" && !t.mentions.includes(currentUser.id)) return false;
       if (scope === "pack") {
-        // Pack items are permanent daily commitments — show regardless of task status.
-        if (!(t.assigneeId === currentUser.id && t.inPack)) return false;
+        // O que falta e o que foi concluído hoje — ver `noPackDeHoje`.
+        if (!noPackDeHoje(t, currentUser.id)) return false;
       }
       if (sector !== "todos" && t.sector !== sector) return false;
       if (freq !== "todas" && t.frequency !== freq) return false;
@@ -292,13 +278,10 @@ function MinhasTarefas() {
       pack: active.filter((t) => t.assigneeId === currentUser.id && t.inPack).length,
     } as Record<Scope, number>;
   }, [tasks, users, currentUser]);
-  // Override pack count with today's remaining (not yet checked today).
+  // O número da aba do pack é o que ainda falta hoje.
   const packRemainingToday = useMemo(
-    () =>
-      tasks.filter(
-        (t) => t.assigneeId === currentUser.id && t.inPack && !packDone.has(t.id),
-      ).length,
-    [tasks, currentUser.id, packDone],
+    () => tasks.filter((t) => noPackDeHoje(t, currentUser.id) && !concluidaHoje(t)).length,
+    [tasks, currentUser.id],
   );
   scopeCounts.pack = packRemainingToday;
 
@@ -505,8 +488,6 @@ function MinhasTarefas() {
                 ) || due.getTime() < now.setHours(0, 0, 0, 0); // hoje ou atrasadas
               })}
               onEdit={openTask}
-              packDone={packDone}
-              onToggleDone={togglePackDone}
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
               onCompleteExternal={(id) => updateTask(id, { status: "concluida" })}
               currentUserId={currentUser.id}
@@ -1290,8 +1271,6 @@ function PackView({
   tasks,
   externalTasks,
   onEdit,
-  packDone,
-  onToggleDone,
   onTogglePack,
   onCompleteExternal,
   currentUserId,
@@ -1300,8 +1279,6 @@ function PackView({
   tasks: Task[];
   externalTasks: Task[];
   onEdit: (id: string) => void;
-  packDone: Set<string>;
-  onToggleDone: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
   onCompleteExternal: (id: string) => void;
   currentUserId: string;
@@ -1420,8 +1397,6 @@ function PackView({
                       onEdit={onEdit}
                       onMove={onMove}
                       onTogglePack={onTogglePack}
-                      onToggleDone={onToggleDone}
-                      packDone={packDone}
                     />
                   ))}
                   {items.length === 0 && (
@@ -1648,18 +1623,18 @@ function PackKanbanCard({
   onEdit,
   onMove,
   onTogglePack,
-  onToggleDone,
-  packDone,
 }: {
   task: Task;
   onEdit: (id: string) => void;
   onMove: (id: string, status: Status) => void;
   onTogglePack: (id: string, v: boolean) => void;
-  onToggleDone: (id: string) => void;
-  packDone: Set<string>;
 }) {
   const done = task.status === "concluida";
-  const doneToday = packDone.has(task.id);
+  /* A caixinha e a coluna diziam coisas diferentes: a coluna seguia a
+     situação da tarefa, a caixinha uma marca guardada no navegador. Tarefa na
+     coluna Concluída aparecia com a caixinha vazia. Agora as duas leem o
+     banco — ver `concluidaHoje`. */
+  const doneToday = concluidaHoje(task);
   return (
     <div
       draggable
@@ -1673,12 +1648,15 @@ function PackKanbanCard({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onToggleDone(task.id);
+            if (!doneToday) onMove(task.id, "concluida");
           }}
-          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-            doneToday ? "border-emerald-500 bg-emerald-500 text-white" : "border-border bg-background"
+          disabled={doneToday}
+          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border disabled:cursor-default ${
+            doneToday
+              ? "border-emerald-500 bg-emerald-500 text-white"
+              : "border-border bg-background"
           }`}
-          title={doneToday ? "Desmarcar hoje" : "Marcar concluída hoje"}
+          title={doneToday ? "Concluída hoje" : "Marcar concluída hoje"}
         >
           {doneToday && <CheckCircle2 className="h-3 w-3" />}
         </button>

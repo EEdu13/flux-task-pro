@@ -32,6 +32,7 @@ import { iamLogout, iamMe } from "@/integrations/iam/auth.functions";
 // com iniciais diferentes dependendo da tela.
 import { iniciaisDoNome } from "@/integrations/iam/types";
 import type { PessoaDoQuadro } from "@/lib/perfil.functions";
+import type { ProjetoDoBanco } from "@/lib/projetos.functions";
 import { toast } from "sonner";
 import { empilharDesfazer } from "@/lib/undo-stack";
 import { proximaOcorrencia } from "./recorrencia";
@@ -68,6 +69,19 @@ export interface IamUsuarioBasico {
 function taskHasProof(t: Task): boolean {
   if ((t.attachments?.length ?? 0) > 0) return true;
   return t.comments.some((c) => (c.attachments?.length ?? 0) > 0);
+}
+
+/**
+ * Acerta o "quando concluiu" numa troca de situação, como o servidor faz com
+ * `concluida_em`: nasce no clique que conclui e some quando a tarefa volta
+ * atrás, levando junto a data de finalização informada. É com isto que o pack
+ * sabe, sem esperar a sincronização, o que já foi feito hoje.
+ */
+function comConclusao(situacaoAnterior: Status | undefined, t: Task): Task {
+  if (t.status !== "concluida") return { ...t, completedAt: null, actualCompletionDate: null };
+  // Já estava concluída: o clique que vale é o de antes.
+  if (situacaoAnterior === "concluida" && t.completedAt) return t;
+  return { ...t, completedAt: new Date().toISOString() };
 }
 
 function blockIfMissingProof(t: Task, targetStatus: Status): boolean {
@@ -141,6 +155,10 @@ interface Store {
   updateCurrentUser: (patch: Partial<User>) => void;
   /** Rebusca o quadro de pessoas. Ver o uso em `fluxo-layout`. */
   recarregarPessoas: () => Promise<void>;
+  /** Relê os projetos — ver o uso no layout, ao chegar um aviso de projeto. */
+  recarregarProjetos: () => Promise<void>;
+  /** Só a sineta: o que a sincronização lê quando a janela está oculta. */
+  sincronizarAvisos: () => Promise<void>;
   /** Relê do servidor o que outra pessoa pode ter mudado. Ver a implementação. */
   sincronizar: () => Promise<void>;
   // metas
@@ -344,6 +362,27 @@ const rid = (prefix = "id") =>
 const ehGuid = (id: string) => /^[0-9a-f-]{36}$/i.test(id);
 
 /**
+ * Id novo, no formato em que o banco o devolve: MAIÚSCULAS.
+ *
+ * O SQL Server entrega `uniqueidentifier` em maiúsculas e o `randomUUID` gera
+ * em minúsculas. Enquanto o id nascia minúsculo, a cópia desta tela e a que
+ * voltava na sincronização (a cada minuto) eram o mesmo registro com ids
+ * diferentes para qualquer `===`. O caso visível: projeto criado e subtarefa
+ * adicionada na mesma sessão — a sincronização trazia o `projectId` em
+ * maiúsculas, o projeto continuava em minúsculas, e a subtarefa sumia do
+ * projeto enquanto seguia em "Minhas tarefas". O mesmo descasamento tirava a
+ * marcação do pack e fazia o painel aberto perder a tarefa que editava.
+ */
+const novoId = () => crypto.randomUUID().toUpperCase();
+
+/**
+ * Compara ids sem caixa. Para o que pode ter vindo dos dois lados — o que já
+ * estava gravado no navegador antes de `novoId` existir nasceu em minúsculas.
+ */
+const mesmoId = (a: string | null | undefined, b: string | null | undefined) =>
+  !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
  * Mescla o quadro de pessoas do banco na lista local.
  *
  * Mescla, não substitui. Quem veio do banco entra completo; quem só existe
@@ -444,10 +483,40 @@ async function tentarNovamente(): Promise<void> {
   // Se ainda houver falha, `avisarFalha` já reabriu o aviso de erro.
 }
 
-function avisarFalha(t: Task): void {
-  gravacoesFalhadas.set(t.id, t);
+/**
+ * Desiste do que falhou e devolve a tela ao que o banco tem.
+ *
+ * Existia só o "Tentar novamente", e o aviso não fecha sozinho. Quando a falha
+ * se repetia, a pessoa ficava presa: o reenvio falhava, o aviso voltava, e não
+ * havia outro jeito de tirá-lo da tela — foi o caso relatado em 24/09/2026,
+ * com o aviso de uma tarefa aparecendo sem parar.
+ */
+function descartarFalhas(): void {
+  gravacoesFalhadas.clear();
+  toastDeFalhaAberto = false;
+  toast.dismiss("gravacao-tarefa");
+  // Fora da lista de pendências, a próxima leitura traz a versão do banco.
+  window.dispatchEvent(new CustomEvent("fluxo:sincronizar"));
+}
+
+/**
+ * O motivo que o servidor deu, curto o bastante para caber no aviso.
+ *
+ * Sem ele, o aviso dizia só que falhou, e o console onde o motivo ficava é o
+ * da máquina de quem clicou — não havia como saber, de longe, se era sessão,
+ * rede ou dado recusado pelo banco.
+ */
+function motivoDaFalha(erro: unknown): string {
+  const texto = erro instanceof Error ? erro.message : typeof erro === "string" ? erro : "";
+  const limpo = texto.replace(/\s+/g, " ").trim();
+  return limpo.length > 140 ? `${limpo.slice(0, 140)}…` : limpo;
+}
+
+function avisarFalha(t: Task, erro?: unknown): void {
+  gravacoesFalhadas.set(t.id.toLowerCase(), t);
   const n = gravacoesFalhadas.size;
   toastDeFalhaAberto = true;
+  const motivo = motivoDaFalha(erro);
   toast.error(
     n === 1
       ? `Não foi possível salvar "${t.title.slice(0, 40)}".`
@@ -464,8 +533,10 @@ function avisarFalha(t: Task): void {
          tela (a estrela do pack, o campo que editou), não pelo botão. */
       description:
         "A alteração está só nesta tela — se sair agora, ela se perde. " +
-        "O botão reenvia como estava quando falhou; se você mexeu depois, refaça pela tela.",
+        "O botão reenvia como estava quando falhou; se você mexeu depois, refaça pela tela." +
+        (motivo ? ` Motivo: ${motivo}` : ""),
       action: { label: "Tentar novamente", onClick: () => void tentarNovamente() },
+      cancel: { label: "Descartar", onClick: descartarFalhas },
     },
   );
 }
@@ -544,22 +615,100 @@ export function descartarPendencias(taskId: string): void {
   gravacoesAdiadas.delete(taskId);
 }
 
-/**
- * Manda a tarefa inteira para o banco, e os satélites junto (ver abaixo).
+/* ————— Uma gravação por tarefa de cada vez —————
  *
- * O histórico — a aba Timeline — não é escrito aqui. Quem grava é o servidor, a
- * partir do que cada gravação mudou; ver `historico.server.ts`. Este lado só
- * avisa que gravou, e a Timeline aberta vai buscar a versão nova.
+ * `gravarTarefa` sai de dentro dos `setState` — é lá que a tarefa já com a
+ * mudança existe —, e o React pode rodar a mesma função de atualização mais de
+ * uma vez; um clique duplo faz o mesmo. Duas gravações da MESMA tarefa no ar
+ * corriam uma contra a outra no servidor: `salvarSatelites` apaga e regrava as
+ * listas, e a segunda batia na chave primária da primeira. O resultado era "Não
+ * foi possível salvar" numa tarefa que o banco tinha acabado de gravar — com o
+ * aviso preso na tela.
+ *
+ * Em fila, por tarefa: enquanto uma está no ar, só a versão mais nova espera.
+ * As do meio não precisam ir, porque cada gravação manda a tarefa inteira. As
+ * chaves são o id em minúsculas, para a fila valer qualquer que seja a caixa
+ * com que a tarefa chegou. */
+type GravacaoNaFila = { tarefa: Task; origem?: string; avisar: (() => void)[] };
+const filasDeTarefa = new Map<string, { atual: GravacaoNaFila; proxima: GravacaoNaFila | null }>();
+
+/** Quando o banco confirmou a última gravação de cada tarefa. Ver `sincronizar`. */
+const confirmadaEm = new Map<string, number>();
+
+/**
+ * Põe a tarefa na fila de gravação. Resolve quando esta versão, ou uma mais
+ * nova que a substituiu na fila, terminou — com sucesso ou com o aviso de falha.
  *
  * @param origem  Texto da linha "criou" quando esta gravação cria a tarefa:
  *                "criou pelo modelo de pack …", "… a partir da ata …". Numa
  *                tarefa que já existe, o servidor ignora.
  */
-async function gravarTarefa(t: Task, origem?: string): Promise<void> {
-  if (!ehGuid(t.id)) return; // tarefa do formato antigo fica local
+function gravarTarefa(t: Task, origem?: string): Promise<void> {
+  if (!ehGuid(t.id)) return Promise.resolve(); // tarefa do formato antigo fica local
+  const chave = t.id.toLowerCase();
+  return new Promise((resolve) => {
+    const fila = filasDeTarefa.get(chave);
+    if (fila) {
+      fila.proxima = {
+        tarefa: t,
+        // A origem só vale na criação, que é sempre a primeira da fila.
+        origem: origem ?? fila.proxima?.origem,
+        avisar: [...(fila.proxima?.avisar ?? []), resolve],
+      };
+      return;
+    }
+    const entrada: { atual: GravacaoNaFila; proxima: GravacaoNaFila | null } = {
+      atual: { tarefa: t, origem, avisar: [resolve] },
+      proxima: null,
+    };
+    filasDeTarefa.set(chave, entrada);
+    void (async () => {
+      for (;;) {
+        await enviarTarefa(entrada.atual.tarefa, entrada.atual.origem);
+        entrada.atual.avisar.forEach((avisar) => avisar());
+        if (!entrada.proxima) break;
+        entrada.atual = entrada.proxima;
+        entrada.proxima = null;
+      }
+      filasDeTarefa.delete(chave);
+    })();
+  });
+}
+
+/**
+ * Tarefas cuja versão nesta tela o banco ainda não tem — no ar, na fila, ou
+ * que falharam —, mais as confirmadas depois de `desde`.
+ *
+ * A sincronização troca a lista inteira pelo que o banco devolveu, e o banco
+ * não sabe dessas: a tarefa recém-criada sumia da tela até a leitura seguinte,
+ * um minuto depois, e a alteração que falhou era apagada por baixo do aviso que
+ * dizia "a alteração está só nesta tela". As confirmadas depois de `desde`
+ * cobrem a corrida: a consulta pode ter saído antes do INSERT chegar.
+ */
+function tarefasSemConfirmacao(desde: number): Set<string> {
+  const ids = new Set([...filasDeTarefa.keys(), ...gravacoesFalhadas.keys()]);
+  for (const [id, quando] of confirmadaEm) {
+    if (quando >= desde) ids.add(id);
+    // Guarda-chuva contra crescer sem fim: passados cinco minutos, várias
+    // sincronizações já trouxeram a versão confirmada.
+    else if (Date.now() - quando > 5 * 60_000) confirmadaEm.delete(id);
+  }
+  return ids;
+}
+
+/**
+ * Manda a tarefa inteira para o banco, e os satélites junto (ver abaixo). Só a
+ * fila de `gravarTarefa` chama esta função.
+ *
+ * O histórico — a aba Timeline — não é escrito aqui. Quem grava é o servidor, a
+ * partir do que cada gravação mudou; ver `historico.server.ts`. Este lado só
+ * avisa que gravou, e a Timeline aberta vai buscar a versão nova.
+ */
+async function enviarTarefa(t: Task, origem?: string): Promise<void> {
+  const chave = t.id.toLowerCase();
   try {
     const api = await import("@/lib/tarefas.functions");
-    const { nova } = await api.salvarTarefa({
+    const { nova, ignorada } = await api.salvarTarefa({
       data: {
         id: t.id,
         title: t.title,
@@ -580,6 +729,8 @@ async function gravarTarefa(t: Task, origem?: string): Promise<void> {
         inPack: t.inPack,
         order: t.order,
         origin: origem,
+        actualCompletionDate: t.actualCompletionDate ?? null,
+        availableFrom: t.availableFrom ?? null,
       },
     });
     /* Os satélites acompanham a tarefa, na mesma gravação.
@@ -597,8 +748,11 @@ async function gravarTarefa(t: Task, origem?: string): Promise<void> {
        coluna que ninguém tivesse aberto — em silêncio, com "Salvo." na tela.
 
        O servidor também se protege (campo ausente = não mexe), o que basta
-       sozinho. Este lado evita a viagem inútil e deixa a intenção explícita. */
-    if (t.satellitesLoaded) {
+       sozinho. Este lado evita a viagem inútil e deixa a intenção explícita.
+
+       `ignorada`: era a próxima ocorrência e ela já existia — não há tarefa com
+       este id para receber lista nenhuma. */
+    if (t.satellitesLoaded && !ignorada) {
       const sat = await import("@/lib/tarefa-satelites.functions");
       await sat.salvarSatelites({
         data: {
@@ -626,12 +780,17 @@ async function gravarTarefa(t: Task, origem?: string): Promise<void> {
        O `id` compartilhado é o que evita a torre de avisos: arrastar um cartão
        dispara várias gravações seguidas, e cada uma substitui a anterior em vez
        de empilhar. 1,2s é o bastante para ser visto sem atrapalhar. */
-    gravacoesFalhadas.delete(t.id);
+    gravacoesFalhadas.delete(chave);
+    confirmadaEm.set(chave, Date.now());
     if (toastDeFalhaAberto && gravacoesFalhadas.size === 0) toastDeFalhaAberto = false;
-    toast.success("Salvo.", { id: "gravacao-tarefa", duration: 1200 });
+    // Com outra falha ainda pendente, o "Salvo." tomaria o lugar do aviso de
+    // erro (mesmo `id`) e esconderia justamente o que falta salvar.
+    if (gravacoesFalhadas.size === 0) {
+      toast.success("Salvo.", { id: "gravacao-tarefa", duration: 1200 });
+    }
   } catch (e) {
     console.warn("[fluxo] tarefa não gravou:", (e as Error)?.message);
-    avisarFalha(t);
+    avisarFalha(t, e);
   }
 }
 
@@ -659,6 +818,27 @@ function computeScore(base: number, priority: Task["priority"], onTime: boolean)
   const mult = priorityMultiplier[priority];
   const modifier = onTime ? 1.1 : 0.8;
   return Math.round(base * mult * modifier);
+}
+
+/** Do formato de `listarProjetos` para o da tela. */
+function paraProjeto(p: ProjetoDoBanco): Project {
+  return {
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    status: p.status,
+    ownerId: p.ownerId,
+    memberIds: p.memberIds,
+    sector: p.sector,
+    dueDate: p.dueDate,
+    createdAt: p.createdAt,
+    createdBy: p.createdBy,
+    color: p.color,
+    photoUrl: p.photoUrl,
+    // Anexos vêm por `listarAnexos` quando o projeto é aberto — a
+    // lista não carrega arquivo de todos os projetos de uma vez.
+    attachments: [],
+  };
 }
 
 /* O que é do Fluxo, lido do banco depois que se sabe quem é a pessoa.
@@ -767,23 +947,7 @@ async function carregarDoBanco(
         })),
         ...s.tasks.filter((t) => !ehGuid(t.id)),
       ],
-      projects: proj.projetos.map((p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        status: p.status,
-        ownerId: p.ownerId,
-        memberIds: p.memberIds,
-        sector: p.sector,
-        dueDate: p.dueDate,
-        createdAt: p.createdAt,
-        createdBy: p.createdBy,
-        color: p.color,
-        photoUrl: p.photoUrl,
-        // Anexos vêm por `listarAnexos` quando o projeto é aberto — a
-        // lista não carrega arquivo de todos os projetos de uma vez.
-        attachments: [],
-      })),
+      projects: proj.projetos.map(paraProjeto),
       packTemplates: pk.packs,
     }));
 
@@ -1096,12 +1260,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
              então o ponto voltava no login seguinte. Quem apaga a conclusão é o
              próprio servidor, ao ver `concluida_em` voltar a ser nula. */
           const atual = s.tasks.find((t) => t.id === anterior.id);
-          if (atual) void gravarTarefa({ ...atual, status: voltarPara });
+          if (atual) void gravarTarefa(comConclusao("concluida", { ...atual, status: voltarPara }));
 
           return {
             ...s,
             tasks: s.tasks.map((t) =>
-              t.id === anterior.id ? { ...t, status: voltarPara } : t,
+              t.id === anterior.id ? comConclusao("concluida", { ...t, status: voltarPara }) : t,
             ),
             completions: entrada ? s.completions.filter((_, k) => k !== i) : s.completions,
             users: entrada
@@ -1171,14 +1335,29 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
        Ela nascia com `rid("t")` — formato antigo — e `gravarTarefa` recusa esse
        formato em silêncio. O resultado era uma tarefa recorrente que voltava só
        neste navegador: quem concluísse a de segunda no computador de casa não
-       teria a de terça no do trabalho. */
+       teria a de terça no do trabalho.
+
+       Ela é gravada agora, mas só NASCE amanhã, à meia-noite — e não entra
+       nesta tela hoje. Entrava na hora, pendente e com o prazo de amanhã: quem
+       concluía a de hoje via a de amanhã em "A fazer", concluía também, e cada
+       conclusão gerava a do dia seguinte. Em 24/09/2026 isso produziu quatro
+       ocorrências em sete minutos. A sincronização a traz quando o dia chega.
+
+       E continua no pack se a de hoje estava: a obrigação diária que se repete
+       é justamente a que deve voltar ao pack no dia seguinte. Antes ela saía,
+       porque aparecer já no pack de hoje seria pior. */
+    const amanha = new Date();
+    amanha.setHours(24, 0, 0, 0);
     const seguinte: Task | null = proxima
       ? {
           ...next,
-          id: crypto.randomUUID(),
-          createdAt: nowIso(),
+          id: novoId(),
+          createdAt: amanha.toISOString(),
+          availableFrom: amanha.toISOString(),
           dueDate: proxima.toISOString(),
           status: "pendente" as Status,
+          completedAt: null,
+          actualCompletionDate: null,
           // A nova ocorrência começa limpa: histórico, conversa e provas são
           // da vez que passou. O checklist volta desmarcado, que é o ponto de
           // ter checklist numa tarefa que se repete.
@@ -1186,17 +1365,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           activity: [],
           checklist: next.checklist.map((c) => ({ ...c, id: rid("c"), done: false })),
           attachments: undefined,
-          inPack: false,
+          inPack: next.inPack,
         }
       : null;
     if (seguinte) void gravarTarefa(seguinte, "criou pela recorrência, ao concluir a anterior");
 
-    return {
-      ...s,
-      tasks: seguinte ? [...tasks, seguinte] : tasks,
-      users,
-      completions,
-    };
+    return { ...s, tasks, users, completions };
   };
 
   const store: Store = {
@@ -1276,10 +1450,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            É o que permite a tarefa entrar em `gestor.tarefas` — e, de quebra,
            é o que destrava o anexo de tarefa e de comentário, que precisavam
            de um dono com id de banco. */
-        const id = crypto.randomUUID();
+        const id = novoId();
         const maxOrder =
           Math.max(0, ...s.tasks.filter((x) => x.status === t.status).map((x) => x.order)) + 1;
-        const task: Task = {
+        // `comConclusao`: o painel deixa criar a tarefa já como concluída.
+        const task: Task = comConclusao(undefined, {
           ...t,
           id,
           createdAt: nowIso(),
@@ -1291,7 +1466,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           satellitesLoaded: true,
           // O "criou" é escrito pelo servidor, ao inserir a tarefa.
           activity: [],
-        };
+        });
         /* A gravação sai daqui de dentro, onde a tarefa montada existe.
            É ela que faz a delegação chegar: até hoje isto terminava aqui, com
            a tarefa no navegador de quem criou, e quem recebeu nunca soube.
@@ -1347,7 +1522,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         ) {
           return s;
         }
-        const next = { ...prev, ...patch } as Task;
+        const next = comConclusao(prev.status, { ...prev, ...patch } as Task);
 
         /* Os avisos de menção e de repasse eram montados aqui, com o mesmo
            destino de sempre: o `localStorage` de quem editou. O servidor agora
@@ -1435,7 +1610,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         const others = s.tasks.filter((t) => t.id !== id);
         const col = others.filter((t) => t.status === status).sort((a, b) => a.order - b.order);
         const idx = targetIndex ?? col.length;
-        const nextTask: Task = { ...prev, status };
+        const nextTask: Task = comConclusao(prev.status, { ...prev, status });
         col.splice(idx, 0, nextTask);
         const reordered = col.map((t, i) => ({ ...t, order: i }));
         const rest = others.filter((t) => t.status !== status);
@@ -1659,6 +1834,43 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setState((s) => mesclarQuadro(s, pessoas));
     },
 
+    /* Projetos são lidos no login e não entram na sincronização (ver a nota
+       em `sincronizar`). Quem é incluído num projeto depois de entrar recebe
+       o aviso, clica — e o projeto não estava na lista. Esta releitura sai
+       quando chega um aviso de projeto.
+
+       O que já está na tela e o banco ainda não tem continua: o projeto
+       recém-criado cuja gravação está na fila, a foto ainda subindo. */
+    recarregarProjetos: async () => {
+      const { listarProjetos } = await import("@/lib/projetos.functions");
+      const { projetos } = await listarProjetos();
+      setState((s) => {
+        const locais = new Map(s.projects.map((p) => [p.id.toLowerCase(), p]));
+        const doBanco = projetos.map((p) => {
+          const local = locais.get(p.id.toLowerCase());
+          const projeto = paraProjeto(p);
+          return local
+            ? {
+                ...projeto,
+                attachments: local.attachments,
+                photoUrl: local.photoUrl?.startsWith("data:") ? local.photoUrl : projeto.photoUrl,
+              }
+            : projeto;
+        });
+        const vistos = new Set(projetos.map((p) => p.id.toLowerCase()));
+        return {
+          ...s,
+          projects: [...doBanco, ...s.projects.filter((p) => !vistos.has(p.id.toLowerCase()))],
+        };
+      });
+    },
+
+    sincronizarAvisos: async () => {
+      const { listarNotificacoes } = await import("@/lib/notificacoes.functions");
+      const { notificacoes } = await listarNotificacoes();
+      setState((s) => ({ ...s, notifications: notificacoes }));
+    },
+
     /* Tarefas, sineta e conclusões só eram lidas no login.
        Quer dizer: um supervisor criava uma tarefa para alguém e ela não
        aparecia — nem depois de horas — até a pessoa sair e entrar de novo. Do
@@ -1674,6 +1886,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
        avisar em vez de o navegador perguntar (SSE). Isto aqui fecha a lacuna que
        machuca hoje, sem depender daquilo. */
     sincronizar: async () => {
+      const inicio = Date.now();
       const [tarefas, notif, conc] = await Promise.all([
         import("@/lib/tarefas.functions"),
         import("@/lib/notificacoes.functions"),
@@ -1686,12 +1899,19 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       ]);
 
       setState((s) => {
-        const emMemoria = new Map(s.tasks.map((t) => [t.id, t]));
+        // Chave sem caixa: ver `novoId`.
+        const emMemoria = new Map(s.tasks.map((t) => [t.id.toLowerCase(), t]));
+        /* O que o banco ainda não confirmou fica como está nesta tela — a
+           tarefa acabada de criar, a alteração no ar, a que falhou. Ver
+           `tarefasSemConfirmacao`. */
+        const semConfirmacao = tarefasSemConfirmacao(inicio);
+        const doBanco = new Set(tf.tarefas.map((t) => t.id.toLowerCase()));
         return {
           ...s,
           tasks: [
             ...tf.tarefas.map((t) => {
-              const anterior = emMemoria.get(t.id);
+              const anterior = emMemoria.get(t.id.toLowerCase());
+              if (anterior && semConfirmacao.has(t.id.toLowerCase())) return anterior;
               /* Os satélites não vêm nesta consulta — como no login, chegariam
                  vazios. Para uma tarefa que já foi aberta, o que está na memória
                  é mais completo que esse vazio, e sobrescrever apagaria da tela
@@ -1717,6 +1937,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                     activity: [],
                   };
             }),
+            // Criadas aqui e que a consulta ainda não enxergou.
+            ...s.tasks.filter(
+              (t) =>
+                ehGuid(t.id) &&
+                semConfirmacao.has(t.id.toLowerCase()) &&
+                !doBanco.has(t.id.toLowerCase()),
+            ),
             // As locais que ainda não subiram continuam onde estão, como no login.
             ...s.tasks.filter((t) => !ehGuid(t.id)),
           ],
@@ -2036,10 +2263,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          gravação evita depender de quem chama lembrar do formato. */
       const minute: MeetingMinute = {
         ...m,
-        id: crypto.randomUUID(),
+        id: novoId(),
         createdAt: nowIso(),
         createdBy: currentUser.id,
-        topics: m.topics.map((t) => ({ ...t, id: ehGuid(t.id) ? t.id : crypto.randomUUID() })),
+        topics: m.topics.map((t) => ({ ...t, id: ehGuid(t.id) ? t.id.toUpperCase() : novoId() })),
       };
       setState((s) => ({ ...s, minutes: [minute, ...(s.minutes ?? [])] }));
 
@@ -2099,7 +2326,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          silêncio — o tópico virava uma tarefa que só existia nesta máquina, o
          que é especialmente ruim numa ata, onde o "vira tarefa" é a promessa
          de que a reunião produziu alguma coisa. */
-      const newTaskId = crypto.randomUUID();
+      const newTaskId = novoId();
       setState((s) => {
         const maxOrder =
           Math.max(0, ...s.tasks.filter((x) => x.status === "pendente").map((x) => x.order)) + 1;
@@ -2168,7 +2395,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          de um id AGORA — quem clica em "criar" já é levado para o projeto,
          antes de a rede responder. Gerar no cliente permite as duas coisas.
          O banco aceita o id que mandamos em vez de gerar o dele. */
-      const id = crypto.randomUUID();
+      const id = novoId();
       setState((s) => ({
         ...s,
         projects: [
@@ -2309,12 +2536,14 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     },
     deleteProject: (id) => {
       const removido = state.projects.find((p) => p.id === id);
-      const subtarefas = new Set(state.tasks.filter((t) => t.projectId === id).map((t) => t.id));
+      const subtarefas = new Set(
+        state.tasks.filter((t) => mesmoId(t.projectId, id)).map((t) => t.id),
+      );
       setState((s) => ({
         ...s,
         projects: s.projects.filter((p) => p.id !== id),
         // Desliga as subtarefas do projeto (elas continuam como tarefa normal)
-        tasks: s.tasks.map((t) => (t.projectId === id ? { ...t, projectId: undefined } : t)),
+        tasks: s.tasks.map((t) => (mesmoId(t.projectId, id) ? { ...t, projectId: undefined } : t)),
       }));
 
       /* O banco faz o mesmo sozinho: a chave estrangeira de `tarefas` para
@@ -2365,13 +2594,16 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         (p) => p.ownerId === currentUser.id || p.memberIds.includes(currentUser.id),
       );
     },
-    projectTasks: (projectId) => state.tasks.filter((t) => t.projectId === projectId),
+    /* Sem caixa, como `useProjetoDaTarefa`. `novoId` resolve o que nasce daqui
+       em diante; isto cobre o projeto que ficou gravado no navegador com o id
+       minúsculo de antes. */
+    projectTasks: (projectId) => state.tasks.filter((t) => mesmoId(t.projectId, projectId)),
 
     // === Pack templates ===
     createPackTemplate: (p) => {
       // UUID pelo mesmo motivo do projeto: cabe na coluna, e a tela precisa do
       // id antes de a rede responder.
-      const id = crypto.randomUUID();
+      const id = novoId();
       const modelo: PackTemplate = {
         ...p,
         id,
@@ -2418,7 +2650,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         // `gravarTarefa` recusa em silêncio: aplicar um pack em outra pessoa
         // enchia o quadro de quem aplicou e não chegava a ninguém — o mesmo
         // defeito que `createTask` tinha, no caminho que ninguém tinha olhado.
-        id: crypto.randomUUID(),
+        id: novoId(),
         title: item.title,
         sector: target.sector,
         createdBy: currentUser.id,

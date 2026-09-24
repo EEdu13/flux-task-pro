@@ -20,6 +20,8 @@ import {
 import { paraEstado, type EstadoDoChat, type SituacaoNoChat } from "@/lib/estado-do-chat";
 import { tocarMensagemNova } from "@/lib/sons";
 import { desktopFlashTaskbar, desktopTempoOcioso, isTauri } from "@/lib/desktop";
+import { avisarNoSistema } from "@/lib/aviso-do-sistema";
+import { nomeCurto } from "@/lib/nome-curto";
 
 /** Parado por este tempo, quem está Disponível vira Ausente sozinho. */
 const AUSENTE_APOS_S = 5 * 60;
@@ -121,7 +123,11 @@ const Ctx = createContext<ChatCtx | null>(null);
 const ONLINE_WINDOW_MS = 45_000;
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { currentUser, isAuthenticated } = useFluxo();
+  const { currentUser, isAuthenticated, users } = useFluxo();
+  /* Nomes para a notificação do Windows. Em ref pelo mesmo motivo dos outros
+     abaixo: nas dependências do laço, reiniciariam o intervalo calibrado. */
+  const pessoasRef = useRef(users);
+  pessoasRef.current = users;
   const [presence, setPresence] = useState<Record<string, number>>({});
   const [estados, setEstados] = useState<Record<string, EstadoDoChat>>({});
   const [meuEstado, setMeuEstado] = useState<EstadoDoChat>("disponivel");
@@ -145,6 +151,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
      serve só para comparar com o próximo e decidir se toca o som. Em estado,
      causaria um render a cada 3 segundos sem nada mudar na tela. */
   const totalNaoLidasRef = useRef<number | null>(null);
+  /* A mesma base, por conversa: o total diz que chegou mensagem, este diz de
+     QUEM — que é o que a notificação do Windows precisa mostrar. */
+  const naoLidasPorPessoaRef = useRef<Map<string, number> | null>(null);
 
   /* Conversas desenhadas na tela agora, com contagem.
      Vale para as duas portas do chat — a janela do dock e a página /chat. Antes
@@ -272,6 +281,25 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           if (meuEstadoRef.current !== "ocupado") tocarMensagemNova();
           // Só o botão da barra, não a janela: ver a nota em `desktopFlashTaskbar`.
           void desktopFlashTaskbar("informativo");
+        }
+
+        /* Notificação do Windows, por conversa que ganhou mensagem — só com o
+           app fora de foco (ver `avisarNoSistema`). Ocupado cala, como o som:
+           uma notificação na tela interrompe tanto quanto ele. A `tag` por
+           pessoa faz a segunda mensagem substituir a primeira, em vez de
+           empilhar uma notificação por mensagem. */
+        const porPessoaAntes = naoLidasPorPessoaRef.current;
+        naoLidasPorPessoaRef.current = new Map(lista.map((t) => [t.peer, t.unread || 0]));
+        if (porPessoaAntes && meuEstadoRef.current !== "ocupado") {
+          const comNovas = lista.filter((t) => (t.unread || 0) > (porPessoaAntes.get(t.peer) ?? 0));
+          for (const t of comNovas.slice(0, 3)) {
+            const nome = pessoasRef.current.find((u) => u.id === t.peer)?.name;
+            void avisarNoSistema({
+              titulo: nome ? `Mensagem de ${nomeCurto(nome)}` : "Nova mensagem",
+              corpo: t.body || (t.att_type ? "📎 Anexo" : ""),
+              tag: `chat-${t.peer}`,
+            });
+          }
         }
       } catch {
         /* ignore */

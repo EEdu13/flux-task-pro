@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { comSessao, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import { etiquetasDoProjeto, juntarEtiquetas } from "@/lib/etiquetas-do-projeto";
 import type { LinhaDeHistorico } from "@/lib/historico.server";
 
 /* Bloco D — o que pende da tarefa.
@@ -270,8 +271,9 @@ export const salvarSatelites = createServerFn({ method: "POST" })
                 ),
               ]
             : undefined,
+          // Sem repetir e sem caixa, como o banco compara — ver `juntarEtiquetas`.
           tags: Array.isArray(e?.tags)
-            ? [...new Set(e.tags.map((t) => texto(t, 40)).filter(Boolean))]
+            ? juntarEtiquetas(e.tags.filter((t): t is string => typeof t === "string"))
             : undefined,
           // 0 = domingo … 6 = sábado. É o que o CHECK da tabela aceita.
           recurringWeekdays: Array.isArray(e?.recurringWeekdays)
@@ -305,7 +307,62 @@ export const salvarSatelites = createServerFn({ method: "POST" })
         const { mudancasNoChecklist, pessoaNoTexto, registrarNoHistorico } =
           await import("@/lib/historico.server");
         const pool = await getPool();
-        const comTarefa = () => pool.request().input("t", sql.UniqueIdentifier, d.tarefaId);
+
+        /* --- Etiquetas: quais, e garantir que existam ---
+           A etiqueta é COMPARTILHADA: "Urgente" é a mesma para todo mundo, e a
+           tabela guarda uma linha por nome, não uma por tarefa. Por isso o
+           padrão aqui é diferente — cria se não existir, e só então liga.
+           Sem isso, cada tarefa criaria a sua "Urgente" e a lista de etiquetas
+           viraria uma lista de repetições.
+
+           Subtarefa de projeto leva sempre "projeto" e o nome dele, mesmo que a
+           lista enviada não traga — ver `etiquetasDoProjeto`. Quem as tira na
+           tela vê as duas voltarem; é o preço de a regra valer sempre.
+
+           A criação fica FORA da transação de baixo, e tolera corrida. Aplicar
+           um modelo de pack grava dez tarefas ao mesmo tempo com a mesma
+           etiqueta nova: todas viam "não existe", todas inseriam, e as que
+           chegavam depois batiam no UNIQUE do nome e falhavam. Criar fora da
+           transação também evita que duas gravações de tarefas diferentes se
+           travem esperando uma pela etiqueta da outra. Uma etiqueta criada para
+           uma gravação que depois falha fica sem uso — o que já acontecia. */
+        const etiquetaPorNome = new Map<string, string>();
+        let tags = d.tags;
+        if (tags) {
+          const projeto = await pool
+            .request()
+            .input("t", sql.UniqueIdentifier, d.tarefaId)
+            .query(
+              `SELECT p.nome FROM gestor.tarefas t
+                 JOIN gestor.projetos p ON p.id = t.projeto_id
+                WHERE t.id=@t`,
+            );
+          const nomeDoProjeto = (projeto.recordset[0] as { nome: string } | undefined)?.nome;
+          if (nomeDoProjeto) tags = juntarEtiquetas(tags, etiquetasDoProjeto(nomeDoProjeto));
+
+          for (const nome of tags) {
+            const r = await pool
+              .request()
+              .input("nome", sql.NVarChar, nome)
+              .input("por", sql.Int, eu)
+              .query(
+                `BEGIN TRY
+                   INSERT INTO gestor.etiquetas (nome, criada_por)
+                   SELECT @nome, @por
+                    WHERE NOT EXISTS (SELECT 1 FROM gestor.etiquetas WHERE nome=@nome);
+                 END TRY
+                 BEGIN CATCH
+                   -- 2601/2627: outra gravação criou a mesma etiqueta neste
+                   -- instante. Ela existe, que é tudo o que importa aqui.
+                   IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
+                 END CATCH
+
+                 SELECT id FROM gestor.etiquetas WHERE nome=@nome;`,
+              );
+            const id = (r.recordset[0] as { id: string } | undefined)?.id;
+            if (id) etiquetaPorNome.set(nome, id);
+          }
+        }
 
         /* O que vai para a Timeline, juntado ao longo da função e gravado no fim.
            Em tarefa recém-criada fica vazio: os itens e as menções com que ela
@@ -313,139 +370,154 @@ export const salvarSatelites = createServerFn({ method: "POST" })
            encheria a Timeline de uma tarefa que acabou de existir. */
         const paraOHistorico: LinhaDeHistorico[] = [];
 
-        // --- Checklist ---
-        if (d.checklist) {
-          /* Lido ANTES do apaga-e-regrava, pelo mesmo motivo das menções abaixo:
-             é a diferença entre as duas listas que vira linha na Timeline. */
-          if (!d.tarefaNova) {
-            const antes = await comTarefa().query(
-              `SELECT texto, feito FROM gestor.itens_de_checklist
-                WHERE tarefa_id=@t ORDER BY ordem`,
-            );
-            paraOHistorico.push(
-              ...mudancasNoChecklist(
-                (antes.recordset as { texto: string; feito: boolean }[]).map((a) => ({
-                  texto: a.texto,
-                  feito: !!a.feito,
-                })),
-                d.checklist.map((i) => ({ texto: i.text, feito: i.done })),
-              ),
-            );
-          }
-
-          await comTarefa().query(`DELETE FROM gestor.itens_de_checklist WHERE tarefa_id=@t`);
-          for (const [ordem, item] of d.checklist.entries()) {
-            await comTarefa()
-              .input("texto", sql.NVarChar, item.text)
-              .input("feito", sql.Bit, item.done)
-              .input("ordem", sql.Int, ordem)
-              .query(
-                `INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
-                 VALUES (@t, @texto, @feito, @ordem)`,
-              );
-          }
-        }
-
-        /* --- Menções ---
-           Quem já estava mencionado, lido ANTES do apaga-e-regrava. É a
-           diferença entre os dois conjuntos que vira aviso: sem essa leitura,
-           toda gravação da tarefa avisaria de novo as mesmas pessoas, e
-           mencionar alguém uma vez renderia uma notificação por clique em
-           salvar — que é mais ou menos a definição de sineta ignorada. */
-        const mencoes = d.mentions;
-        if (mencoes) {
-          const antes = await comTarefa().query(
-            `SELECT pessoa_id FROM gestor.mencoes WHERE tarefa_id=@t`,
-          );
-          const jaMencionados = new Set(
-            (antes.recordset as { pessoa_id: number }[]).map((m) => m.pessoa_id),
+        /* Numa transação, e com a linha da tarefa travada.
+           Cada lista abaixo é apaga-e-regrava. Duas gravações da mesma tarefa
+           ao mesmo tempo (clique duplo, duas abas) intercalavam os passos: uma
+           apagava o que a outra acabara de inserir, e a segunda inserção batia
+           na chave primária — "Não foi possível salvar". Pior, a falha no meio
+           deixava a lista pela metade, já apagada e só em parte regravada.
+           Travada, a segunda espera a primeira terminar; na transação, ou tudo
+           entra ou nada muda. */
+        const tx = new sql.Transaction(pool);
+        await tx.begin();
+        const comTarefa = () => tx.request().input("t", sql.UniqueIdentifier, d.tarefaId);
+        try {
+          await comTarefa().query(
+            `SELECT id FROM gestor.tarefas WITH (UPDLOCK, HOLDLOCK) WHERE id=@t`,
           );
 
-          await comTarefa().query(`DELETE FROM gestor.mencoes WHERE tarefa_id=@t`);
-          for (const p of mencoes) {
-            await comTarefa()
-              .input("p", sql.Int, p)
-              .query(`INSERT INTO gestor.mencoes (tarefa_id, pessoa_id) VALUES (@t, @p)`);
-          }
-
-          /* O aviso da menção nasce aqui porque é aqui que a menção existe —
-             `salvarTarefa` grava a tarefa e não enxerga esta lista. Quem se
-             menciona não recebe nada, e o texto do aviso vem do título gravado
-             na tabela, não de um campo que o navegador mandaria junto.
-
-             O `responsavel_id <> @p` evita o aviso em dobro. Criar uma tarefa
-             para o João e mencionar o João são a mesma intenção, e sem esta
-             linha ele receberia "Nova tarefa" e "Você foi mencionado" pela mesma
-             coisa. É também o que segura o pack: cada tarefa dele menciona o
-             destinatário, então dez tarefas virariam dez menções e a supressão
-             por `no_pack` do lado de `salvarTarefa` não teria servido para nada.
-
-             O preço é estreito e conhecido: mencionar alguém numa tarefa que já
-             é dela deixa de avisar. Quem é dono da tarefa já a vê no quadro. */
-          for (const p of mencoes.filter((x) => x !== eu && !jaMencionados.has(x))) {
-            await comTarefa()
-              .input("p", sql.Int, p)
-              .input("de", sql.Int, eu)
-              .query(
-                `INSERT INTO gestor.notificacoes
-                   (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
-                 SELECT @p, @de, 'mencao', N'Você foi mencionado', t.titulo, t.id
-                   FROM gestor.tarefas t
-                  WHERE t.id=@t AND t.responsavel_id <> @p`,
+          // --- Checklist ---
+          if (d.checklist) {
+            /* Lido ANTES do apaga-e-regrava, pelo mesmo motivo das menções
+               abaixo: é a diferença entre as duas listas que vira linha na
+               Timeline. */
+            if (!d.tarefaNova) {
+              const antes = await comTarefa().query(
+                `SELECT texto, feito FROM gestor.itens_de_checklist
+                  WHERE tarefa_id=@t ORDER BY ordem`,
               );
-          }
+              paraOHistorico.push(
+                ...mudancasNoChecklist(
+                  (antes.recordset as { texto: string; feito: boolean }[]).map((a) => ({
+                    texto: a.texto,
+                    feito: !!a.feito,
+                  })),
+                  d.checklist.map((i) => ({ texto: i.text, feito: i.done })),
+                ),
+              );
+            }
 
-          /* Na Timeline entra toda menção nova, inclusive a de quem já é dono
-             da tarefa — o filtro acima é sobre não avisar em dobro, e aqui não
-             há aviso nenhum, só o registro de que a pessoa foi chamada. */
-          if (!d.tarefaNova) {
-            for (const p of mencoes.filter((x) => !jaMencionados.has(x))) {
-              paraOHistorico.push({ tipo: "mencao", texto: `mencionou ${pessoaNoTexto(p)}` });
+            await comTarefa().query(`DELETE FROM gestor.itens_de_checklist WHERE tarefa_id=@t`);
+            for (const [ordem, item] of d.checklist.entries()) {
+              await comTarefa()
+                .input("texto", sql.NVarChar, item.text)
+                .input("feito", sql.Bit, item.done)
+                .input("ordem", sql.Int, ordem)
+                .query(
+                  `INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
+                   VALUES (@t, @texto, @feito, @ordem)`,
+                );
             }
           }
-        }
 
-        // --- Dias de recorrência ---
-        if (d.recurringWeekdays) {
-          await comTarefa().query(`DELETE FROM gestor.dias_de_recorrencia WHERE tarefa_id=@t`);
-          for (const dia of d.recurringWeekdays) {
-            await comTarefa()
-              .input("d", sql.TinyInt, dia)
-              .query(
-                `INSERT INTO gestor.dias_de_recorrencia (tarefa_id, dia_da_semana) VALUES (@t, @d)`,
-              );
+          /* --- Menções ---
+             Quem já estava mencionado, lido ANTES do apaga-e-regrava. É a
+             diferença entre os dois conjuntos que vira aviso: sem essa leitura,
+             toda gravação da tarefa avisaria de novo as mesmas pessoas, e
+             mencionar alguém uma vez renderia uma notificação por clique em
+             salvar — que é mais ou menos a definição de sineta ignorada. */
+          const mencoes = d.mentions;
+          if (mencoes) {
+            const antes = await comTarefa().query(
+              `SELECT pessoa_id FROM gestor.mencoes WHERE tarefa_id=@t`,
+            );
+            const jaMencionados = new Set(
+              (antes.recordset as { pessoa_id: number }[]).map((m) => m.pessoa_id),
+            );
+
+            await comTarefa().query(`DELETE FROM gestor.mencoes WHERE tarefa_id=@t`);
+            for (const p of mencoes) {
+              await comTarefa()
+                .input("p", sql.Int, p)
+                .query(`INSERT INTO gestor.mencoes (tarefa_id, pessoa_id) VALUES (@t, @p)`);
+            }
+
+            /* O aviso da menção nasce aqui porque é aqui que a menção existe —
+               `salvarTarefa` grava a tarefa e não enxerga esta lista. Quem se
+               menciona não recebe nada, e o texto do aviso vem do título gravado
+               na tabela, não de um campo que o navegador mandaria junto.
+
+               O `responsavel_id <> @p` evita o aviso em dobro. Criar uma tarefa
+               para o João e mencionar o João são a mesma intenção, e sem esta
+               linha ele receberia "Nova tarefa" e "Você foi mencionado" pela mesma
+               coisa. É também o que segura o pack: cada tarefa dele menciona o
+               destinatário, então dez tarefas virariam dez menções e a supressão
+               por `no_pack` do lado de `salvarTarefa` não teria servido para nada.
+
+               O preço é estreito e conhecido: mencionar alguém numa tarefa que já
+               é dela deixa de avisar. Quem é dono da tarefa já a vê no quadro. */
+            for (const p of mencoes.filter((x) => x !== eu && !jaMencionados.has(x))) {
+              await comTarefa()
+                .input("p", sql.Int, p)
+                .input("de", sql.Int, eu)
+                .query(
+                  `INSERT INTO gestor.notificacoes
+                     (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
+                   SELECT @p, @de, 'mencao', N'Você foi mencionado', t.titulo, t.id
+                     FROM gestor.tarefas t
+                    WHERE t.id=@t AND t.responsavel_id <> @p`,
+                );
+            }
+
+            /* Na Timeline entra toda menção nova, inclusive a de quem já é dono
+               da tarefa — o filtro acima é sobre não avisar em dobro, e aqui não
+               há aviso nenhum, só o registro de que a pessoa foi chamada. */
+            if (!d.tarefaNova) {
+              for (const p of mencoes.filter((x) => !jaMencionados.has(x))) {
+                paraOHistorico.push({ tipo: "mencao", texto: `mencionou ${pessoaNoTexto(p)}` });
+              }
+            }
           }
-        }
 
-        /* --- Etiquetas ---
-           A etiqueta é COMPARTILHADA: "Urgente" é a mesma para todo mundo, e a
-           tabela guarda uma linha por nome, não uma por tarefa. Por isso o
-           padrão aqui é diferente — cria se não existir, e só então liga.
-           Sem isso, cada tarefa criaria a sua "Urgente" e a lista de etiquetas
-           viraria uma lista de repetições. */
-        if (d.tags) {
-          await comTarefa().query(`DELETE FROM gestor.tarefa_etiquetas WHERE tarefa_id=@t`);
-          for (const nome of d.tags) {
-            const r = await pool
-              .request()
-              .input("nome", sql.NVarChar, nome)
-              .input("por", sql.Int, eu)
-              .query(
-                `INSERT INTO gestor.etiquetas (nome, criada_por)
-                 SELECT @nome, @por
-                  WHERE NOT EXISTS (SELECT 1 FROM gestor.etiquetas WHERE nome=@nome);
-
-                 SELECT id FROM gestor.etiquetas WHERE nome=@nome;`,
-              );
-            const etiquetaId = (r.recordset[0] as { id: string } | undefined)?.id;
-            if (!etiquetaId) continue;
-
-            await comTarefa()
-              .input("e", sql.UniqueIdentifier, etiquetaId)
-              .query(
-                `INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id) VALUES (@t, @e)`,
-              );
+          // --- Dias de recorrência ---
+          if (d.recurringWeekdays) {
+            await comTarefa().query(`DELETE FROM gestor.dias_de_recorrencia WHERE tarefa_id=@t`);
+            for (const dia of d.recurringWeekdays) {
+              await comTarefa()
+                .input("d", sql.TinyInt, dia)
+                .query(
+                  `INSERT INTO gestor.dias_de_recorrencia (tarefa_id, dia_da_semana) VALUES (@t, @d)`,
+                );
+            }
           }
+
+          // --- Etiquetas: a ligação, com as que já existem garantidas acima ---
+          if (tags) {
+            await comTarefa().query(`DELETE FROM gestor.tarefa_etiquetas WHERE tarefa_id=@t`);
+            for (const id of new Set(etiquetaPorNome.values())) {
+              await comTarefa()
+                .input("e", sql.UniqueIdentifier, id)
+                .query(
+                  `INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id)
+                   SELECT @t, @e
+                    WHERE NOT EXISTS (SELECT 1 FROM gestor.tarefa_etiquetas
+                                       WHERE tarefa_id=@t AND etiqueta_id=@e)`,
+                );
+            }
+          }
+
+          await tx.commit();
+        } catch (e) {
+          await tx.rollback().catch(() => {});
+          /* No log do servidor, com a tarefa e quem gravava. O motivo também
+             chega ao aviso na tela, mas lá ele fica no computador de quem
+             clicou; aqui dá para achá-lo depois. */
+          console.error("[satelites] gravação falhou:", {
+            tarefa: d.tarefaId,
+            por: eu,
+            erro: (e as Error)?.message,
+          });
+          throw e;
         }
 
         // Por último: só depois de as listas estarem gravadas.

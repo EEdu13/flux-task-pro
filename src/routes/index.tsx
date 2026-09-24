@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useMemo } from "react";
 import {
   AtSign,
   Bell,
@@ -20,7 +20,7 @@ import { userScorePct, scoreTextClass } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
 import { UserAvatar } from "@/components/user-avatar";
 import { BlocoEntrada } from "@/components/stagger";
-import { loadPackDone, savePackDone } from "@/lib/pack";
+import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { openTaskContext } from "@/components/task-context-menu";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
 
@@ -35,28 +35,19 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-  const { currentUser, tasks, users, notifications, completions, openTask } = useFluxo();
+  const { currentUser, tasks, users, notifications, completions, openTask, updateTask } =
+    useFluxo();
+  const navigate = useNavigate();
 
-  // ---- Meu pack (today) ------------------------------------------------
+  // ---- Meu pack (hoje) — ver `noPackDeHoje` -----------------------------
   const packTasks = useMemo(
-    () => tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack),
+    () => tasks.filter((t) => noPackDeHoje(t, currentUser.id)),
     [tasks, currentUser.id],
   );
-  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
-  useEffect(() => {
-    setPackDone(loadPackDone(currentUser.id));
-  }, [currentUser.id]);
-  const togglePackDone = (id: string) => {
-    setPackDone((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      savePackDone(currentUser.id, next);
-      return next;
-    });
-  };
+  // Concluir aqui é concluir a tarefa, como no Pack diário.
+  const concluirDoPack = (id: string) => updateTask(id, { status: "concluida" });
   const packTotal = packTasks.length;
-  const packDoneCount = packTasks.filter((t) => packDone.has(t.id)).length;
+  const packDoneCount = packTasks.filter((t) => concluidaHoje(t)).length;
   const packPct = packTotal === 0 ? 0 : Math.round((packDoneCount / packTotal) * 100);
   /* Quem conta como "time" nesta tela.
      O ranking e os packs listavam a empresa INTEIRA, então quem é da TI via
@@ -82,7 +73,7 @@ function Home() {
   const teamPack = useMemo(() => {
     return pessoasDoTime
       .map((u) => {
-        const items = tasks.filter((t) => t.assigneeId === u.id && t.inPack);
+        const items = tasks.filter((t) => noPackDeHoje(t, u.id));
         return { user: u, total: items.length };
       })
       .filter((x) => x.total > 0)
@@ -275,7 +266,7 @@ function Home() {
                   </li>
                 )}
                 {packTasks.slice(0, 5).map((t) => {
-                  const done = packDone.has(t.id);
+                  const done = concluidaHoje(t);
                   const sec = sectors.find((s) => s.id === t.sector);
                   return (
                     <li
@@ -287,9 +278,11 @@ function Home() {
                       className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-amber-500/5"
                     >
                       <button
-                        onClick={() => togglePackDone(t.id)}
-                        aria-label={done ? "Desmarcar" : "Concluir hoje"}
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                        onClick={() => concluirDoPack(t.id)}
+                        disabled={done}
+                        aria-label={done ? "Concluída hoje" : "Concluir hoje"}
+                        title={done ? "Concluída hoje" : "Concluir hoje"}
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition disabled:cursor-default ${
                           done
                             ? "border-amber-500 bg-amber-500 text-white"
                             : "border-amber-500/50 bg-transparent hover:border-amber-500"
@@ -520,7 +513,14 @@ function Home() {
               {recentNotifs.map((n) => (
                 <li key={n.id}>
                   <button
-                    onClick={() => n.taskId && openTask(n.taskId)}
+                    onClick={() => {
+                      if (n.taskId) openTask(n.taskId);
+                      else if (n.type === "projeto")
+                        void navigate({
+                          to: "/projetos",
+                          search: n.projectId ? { projeto: n.projectId } : {},
+                        });
+                    }}
                     className="flex w-full gap-3 py-3 text-left hover:bg-secondary/40"
                   >
                     <AtSign className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />

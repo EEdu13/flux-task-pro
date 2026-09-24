@@ -26,7 +26,7 @@ import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/ia
 export type NotificacaoDoBanco = {
   id: string;
   userId: string;
-  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida";
+  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto";
   title: string;
   desc: string;
   at: string;
@@ -35,9 +35,11 @@ export type NotificacaoDoBanco = {
   roomName?: string;
   roomLabel?: string;
   fromUserId?: string;
+  /** Aviso de "te adicionou a um projeto": qual projeto abrir. */
+  projectId?: string;
 };
 
-const TIPOS = ["mencao", "atribuida", "prazo", "concluida", "chamada_perdida"] as const;
+const TIPOS = ["mencao", "atribuida", "prazo", "concluida", "chamada_perdida", "projeto"] as const;
 
 /**
  * Os tipos que o navegador pode pedir.
@@ -70,6 +72,7 @@ type LinhaNotificacao = {
   tarefa_id: string | null;
   sala: string | null;
   titulo_da_sala: string | null;
+  projeto_id: string | null;
   lida: boolean;
   em: Date;
 };
@@ -89,6 +92,7 @@ function paraApp(n: LinhaNotificacao): NotificacaoDoBanco {
     roomName: n.sala ?? undefined,
     roomLabel: n.titulo_da_sala ?? undefined,
     fromUserId: n.de_pessoa_id === null ? undefined : String(n.de_pessoa_id),
+    projectId: n.projeto_id ?? undefined,
   };
 }
 
@@ -111,7 +115,7 @@ export const listarNotificacoes = createServerFn({ method: "POST" }).handler(
       .input("eu", sql.Int, eu)
       .query(
         `SELECT TOP (200) id, destinatario_id, de_pessoa_id, tipo, titulo, descricao,
-                tarefa_id, sala, titulo_da_sala, lida, em
+                tarefa_id, sala, titulo_da_sala, projeto_id, lida, em
            FROM gestor.notificacoes
           WHERE destinatario_id=@eu
           ORDER BY em DESC`,
@@ -150,6 +154,8 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
           WHERE t.responsavel_id = @eu
             AND t.situacao <> 'concluida'
             AND t.arquivada_em IS NULL
+            -- A próxima ocorrência que ainda não nasceu — ver salvarTarefa.
+            AND t.criada_em <= SYSDATETIMEOFFSET()
             AND t.prazo < DATEADD(DAY, 1, SYSDATETIMEOFFSET())
             AND NOT EXISTS (
                   SELECT 1 FROM gestor.notificacoes n

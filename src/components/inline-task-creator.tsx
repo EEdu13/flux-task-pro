@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Trash2, ChevronDown, ChevronRight, Sparkles, Paperclip, X, FileText, UploadCloud, ShieldCheck, Search, Check, ListPlus } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
-import { type Status, type Priority, type Frequency } from "@/lib/fluxo-types";
+import { SEM_RECORRENCIA, type Status, type Priority, type Frequency } from "@/lib/fluxo-types";
 import type { Attachment, ChecklistItem } from "@/lib/fluxo-types";
 import {
   DIAS_SEMANA,
@@ -1105,6 +1105,11 @@ export function InlineTaskCreator({
             <select
               value={row.frequency}
               onChange={(e) => {
+                // A opção explícita de não repetir: desmarca a caixa acima.
+                if (!e.target.value) {
+                  update(row.id, { recurring: false });
+                  return;
+                }
                 const frequency = e.target.value as Frequency;
                 // Com um dia já escolhido, o prazo volta a seguir a regra na nova frequência.
                 update(row.id, {
@@ -1117,6 +1122,7 @@ export function InlineTaskCreator({
               }}
               className={SELECT_PEQUENO}
             >
+              <option value="">{SEM_RECORRENCIA}</option>
               <option value="diaria">Todo dia</option>
               <option value="semanal">Toda semana</option>
               <option value="mensal">Todo mês</option>

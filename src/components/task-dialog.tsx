@@ -26,6 +26,7 @@ import {
   sectors,
   freqLabels,
   statusLabels,
+  SEM_RECORRENCIA,
   type Frequency,
   type Priority,
   type Status,
@@ -72,6 +73,10 @@ export function TaskDialog() {
   const [recurringMonthDay, setRecurringMonthDay] = useState<number | null>(null);
   const [requireProof, setRequireProof] = useState(false);
   const [estimateHM, setEstimateHM] = useState("");
+  /* O dia em que a tarefa de fato terminou ("yyyy-MM-dd"). Vazio = não
+     informado, e aí vale o dia do clique. Só aparece com o status Concluída. */
+  const [dataReal, setDataReal] = useState("");
+  const [destacarFinalizacao, setDestacarFinalizacao] = useState(false);
   const [tags, setTags] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -111,6 +116,7 @@ export function TaskDialog() {
     recurringMonthDay: number | null;
     requireProof: boolean;
     estimateHM: string;
+    dataReal: string;
     tags: string;
     mentions: string[];
     checklist: ChecklistItem[];
@@ -130,6 +136,7 @@ export function TaskDialog() {
       v.recurringMonthDay,
       v.requireProof,
       v.estimateHM,
+      v.dataReal,
       v.tags,
       v.mentions,
       // Texto e estado, não o id: um item recém-adicionado tem id local
@@ -187,6 +194,7 @@ export function TaskDialog() {
           estimateHM: editing.estimatedMinutes
             ? `${Math.floor(editing.estimatedMinutes / 60)}:${String(editing.estimatedMinutes % 60).padStart(2, "0")}`
             : "",
+          dataReal: editing.actualCompletionDate ?? "",
           tags: editing.tags.join(", "),
           mentions: editing.mentions,
           checklist: editing.checklist,
@@ -206,6 +214,7 @@ export function TaskDialog() {
           recurringMonthDay: null,
           requireProof: false,
           estimateHM: "",
+          dataReal: "",
           tags: "",
           mentions: [] as string[],
           checklist: [] as ChecklistItem[],
@@ -225,6 +234,7 @@ export function TaskDialog() {
     setRecurringMonthDay(v.recurringMonthDay);
     setRequireProof(v.requireProof);
     setEstimateHM(v.estimateHM);
+    setDataReal(v.dataReal);
     setTags(v.tags);
     setMentions(v.mentions);
     setChecklistLocal(v.checklist);
@@ -332,6 +342,7 @@ export function TaskDialog() {
       recurringMonthDay,
       requireProof,
       estimateHM,
+      dataReal,
       tags,
       mentions,
       checklist: checklistLocal,
@@ -499,6 +510,11 @@ export function TaskDialog() {
 
   const handleSubmit = () => {
     if (!title.trim()) return;
+    // O servidor também recusa, mas em silêncio; aqui a pessoa fica sabendo.
+    if (status === "concluida" && dataReal && dataReal > dataParaIso(new Date())) {
+      toast.error("A data de finalização não pode ser no futuro.");
+      return;
+    }
     /* Descarta a gravação adiada do checklist ANTES de salvar. Ela carrega a
        tarefa como estava no clique do item; disparando depois desta gravação,
        devolveria o título antigo. Salvar já escreve a tarefa inteira, checklist
@@ -512,10 +528,20 @@ export function TaskDialog() {
        atalho por 17:00 — e concluir às 18h passava a contar como atraso. */
     const mesmoDia = (iso: string | null | undefined, dia: string) =>
       !!iso && dataParaIso(new Date(iso)) === dia;
+    /* Sem prazo escolhido, vence hoje. O campo deixa limpar a data, e
+       `new Date("T17:00:00")` é data inválida: o `toISOString` lançava e o
+       Salvar não fazia nada, sem aviso nenhum. */
+    const hoje = dataParaIso(new Date());
+    const diaDoPrazo = dueDate || hoje;
+    /* Para hoje, e já depois das 17h, o prazo é o fim do dia. Às 17h a tarefa
+       pontual criada no fim da tarde nascia atrasada — e vencer no próprio dia
+       em que nasce é justamente o que ela promete. */
+    const prazoNovo = new Date(diaDoPrazo + "T17:00:00");
+    if (diaDoPrazo === hoje && prazoNovo.getTime() < Date.now()) prazoNovo.setHours(23, 59, 0, 0);
     const prazoIso =
-      editing && mesmoDia(editing.dueDate, dueDate)
+      editing && mesmoDia(editing.dueDate, diaDoPrazo)
         ? editing.dueDate
-        : new Date(dueDate + "T17:00:00").toISOString();
+        : prazoNovo.toISOString();
     const recorreAteIso = !(recurring && recurringUntil)
       ? null
       : editing && mesmoDia(editing.recurringUntil, recurringUntil)
@@ -543,6 +569,7 @@ export function TaskDialog() {
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       requireProof: isCreator ? requireProof : !!editing?.requireProof,
       estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
+      actualCompletionDate: status === "concluida" && dataReal ? dataReal : null,
     };
     /* O checklist sobe junto, nos dois caminhos. Era o que faltava na tarefa
        existente: `updateTask` recebia só os campos do formulário, e a lista
@@ -729,19 +756,84 @@ export function TaskDialog() {
                     ))}
                   </select>
                 </Field>
+                {/* "Sem recorrência" é a primeira opção, e o padrão. O campo
+                    mostrava "Diária" em toda tarefa nova, repetisse ela ou não:
+                    quem decide é a caixa "Tarefa recorrente" lá embaixo, e os
+                    dois controles diziam coisas diferentes. Agora são o mesmo,
+                    visto de dois lugares — mudar um muda o outro. */}
                 <Field label="Frequência">
-                  <select value={frequency} onChange={(e) => setFrequency(e.target.value as Frequency)} className="input">
+                  <select
+                    value={recurring ? frequency : ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!v) {
+                        setRecurring(false);
+                        setRecurringUntil("");
+                        return;
+                      }
+                      setFrequency(v as Frequency);
+                      setRecurring(true);
+                    }}
+                    className="input"
+                  >
+                    <option value="">{SEM_RECORRENCIA}</option>
                     {Object.entries(freqLabels).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
                 </Field>
                 <Field label="Status">
-                  <select value={status} onChange={(e) => setStatus(e.target.value as Status)} className="input">
+                  <select
+                    value={status}
+                    onChange={(e) => {
+                      const novo = e.target.value as Status;
+                      // Chama o olho para o campo que acabou de ser liberado.
+                      if (novo === "concluida" && status !== "concluida") {
+                        setDestacarFinalizacao(true);
+                        window.setTimeout(() => setDestacarFinalizacao(false), 1600);
+                      }
+                      setStatus(novo);
+                    }}
+                    className="input"
+                  >
                     {Object.entries(statusLabels).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
+                </Field>
+                {/* A data de conclusão era sempre a do clique: quem esquecia de
+                    marcar no dia via a Timeline dizer outro dia. Aqui a pessoa
+                    informa quando de fato terminou. É registro — pontos e
+                    prazo continuam pelo clique.
+
+                    Fixo, e não só com o status Concluída: surgindo do nada ao
+                    trocar o status, o campo passava despercebido. Fora de
+                    Concluída fica desabilitado e diz por quê; ao concluir,
+                    acende por um instante. */}
+                <Field label="Data de finalização">
+                  <CampoData
+                    value={status === "concluida" ? dataReal : ""}
+                    onChange={setDataReal}
+                    disabled={status !== "concluida"}
+                    formato="longo"
+                    placeholder={
+                      status !== "concluida"
+                        ? "Disponível ao concluir"
+                        : `Igual à conclusão (${(editing?.status === "concluida" && editing.completedAt
+                            ? new Date(editing.completedAt)
+                            : new Date()
+                          ).toLocaleDateString("pt-BR")})`
+                    }
+                    title="Dia em que a tarefa foi de fato finalizada"
+                    className={`w-full px-3 py-2 text-sm transition-[box-shadow,border-color] duration-500 ${
+                      destacarFinalizacao ? "border-primary ring-2 ring-primary/50" : ""
+                    }`}
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {status === "concluida"
+                      ? "Só preencha se terminou em outro dia. Não pode ser no futuro."
+                      : "Mude o status para Concluída para informar."}
+                  </p>
                 </Field>
                 <Field label="Prazo">
                   <CampoData
@@ -1301,6 +1393,17 @@ export function TaskDialog() {
             }
 
             items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+
+            /* A conclusão que vale é a mais recente. Com o dia em que a tarefa
+               de fato terminou informado, é ele que a linha mostra primeiro; o
+               clique fica ao lado, porque é quando o registro foi feito. */
+            const diaInformado =
+              editing.status === "concluida" && editing.actualCompletionDate
+                ? isoParaData(editing.actualCompletionDate)?.toLocaleDateString("pt-BR")
+                : undefined;
+            const conclusaoVigente = diaInformado
+              ? items.find((i) => i.kind === "activity" && i.tipo === "concluida")?.id
+              : undefined;
             /* Rede de proteção: com a linha de criação acima, chegar aqui
                significa tarefa sem `createdAt` — raro, mas melhor do que o que
                havia antes, que era um <ol> vazio com só o risco da borda. Quem
@@ -1325,6 +1428,9 @@ export function TaskDialog() {
                 {items.map((it) => {
                   const u = users.find((x) => x.id === it.userId);
                   const isComment = it.kind === "comment";
+                  const vigente = it.id === conclusaoVigente;
+                  // A data já vai ao lado; no texto gravado ela apareceria duas vezes.
+                  const texto = vigente ? it.text.replace(/ · finalizada de fato em \S+$/, "") : it.text;
                   return (
                     <li key={`${it.kind}-${it.id}`} className="relative">
                       <span
@@ -1341,10 +1447,15 @@ export function TaskDialog() {
                       <div className="flex items-center gap-2 text-xs">
                         <span className="font-medium">{u?.name ?? "—"}</span>
                         {!isComment && (
-                          <span className="text-muted-foreground">{it.text}</span>
+                          <span className="text-muted-foreground">{texto}</span>
+                        )}
+                        {vigente && (
+                          <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                            finalizada em {diaInformado}
+                          </span>
                         )}
                         <span className="text-muted-foreground/70">
-                          · {formatRelative(it.at)}
+                          · {vigente ? `marcada ${formatRelative(it.at)}` : formatRelative(it.at)}
                         </span>
                       </div>
                       {isComment && (

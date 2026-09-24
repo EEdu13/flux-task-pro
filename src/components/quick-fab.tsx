@@ -18,7 +18,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
 import { toast } from "sonner";
 import type { Priority } from "@/lib/fluxo-types";
-import { loadPackDone, savePackDone } from "@/lib/pack";
+import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { sendNudge } from "@/components/attention-overlay";
 import { AnimatePresence, motion } from "framer-motion";
 import { alternarLancadores, useLancadoresRecolhidos } from "@/lib/lancadores";
@@ -35,7 +35,8 @@ function todayEnd() {
 }
 
 export function QuickFab() {
-  const { createTask, tasks, users, currentUser, isAuthenticated, openQuickCreate } = useFluxo();
+  const { createTask, updateTask, tasks, users, currentUser, isAuthenticated, openQuickCreate } =
+    useFluxo();
   const recolhido = useLancadoresRecolhidos();
   /* Recolher fecha o painel aberto junto. Sem isto, um painel de 340px ficava
      na tela depois de o botão que o abriu ter sumido — e não haveria mais como
@@ -50,7 +51,6 @@ export function QuickFab() {
   const [priority, setPriority] = useState<Priority>("media");
   const [mentionUser, setMentionUser] = useState<string>("");
   const [mentionText, setMentionText] = useState("");
-  const [packDone, setPackDone] = useState<Set<string>>(() => loadPackDone(currentUser.id));
   const [packTab, setPackTab] = useState<PackTab>("concluir");
   const [packBulk, setPackBulk] = useState("");
   /** Texto da faixa do trator. Vazio = cutucada comum. */
@@ -61,10 +61,6 @@ export function QuickFab() {
      não pode fechar ela junto. */
   const [vozAberta, setVozAberta] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setPackDone(loadPackDone(currentUser.id));
-  }, [currentUser.id, mode]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -93,8 +89,9 @@ export function QuickFab() {
     setMode("menu");
   };
 
-  const packItems = tasks.filter((t) => t.assigneeId === currentUser.id && t.inPack);
-  const packPending = packItems.filter((t) => !packDone.has(t.id));
+  // O pack de hoje e o que falta nele — ver `noPackDeHoje` e `concluidaHoje`.
+  const packItems = tasks.filter((t) => noPackDeHoje(t, currentUser.id));
+  const packPending = packItems.filter((t) => !concluidaHoje(t));
 
   const parsePackLines = (text: string) =>
     text
@@ -135,16 +132,8 @@ export function QuickFab() {
     setPackTab("concluir");
   };
 
-  const togglePackDone = (id: string) => {
-    setPackDone((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      savePackDone(currentUser.id, next);
-      window.dispatchEvent(new CustomEvent("fluxo:pack-updated"));
-      return next;
-    });
-  };
+  // Concluir no pack é concluir a tarefa, como no Pack diário.
+  const concluirDoPack = (id: string) => updateTask(id, { status: "concluida" });
 
   const nudgeUser = async (uid: string) => {
     const target = users.find((u) => u.id === uid);
@@ -379,7 +368,7 @@ export function QuickFab() {
           {packTab === "concluir" && (
           <>
           <p className="mb-2 text-[10px] text-muted-foreground">
-            Marque o que você já fez hoje. Reseta automaticamente amanhã.
+            Marque o que você já fez hoje. O que concluir fica riscado até amanhã.
           </p>
           {packItems.length === 0 && (
             <div className="rounded-md border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground">
@@ -388,12 +377,14 @@ export function QuickFab() {
           )}
           <ul className="max-h-72 space-y-1 overflow-y-auto">
             {packItems.map((t) => {
-              const done = packDone.has(t.id);
+              const done = concluidaHoje(t);
               return (
                 <li key={t.id}>
                   <button
-                    onClick={() => togglePackDone(t.id)}
-                    className={`flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition ${
+                    onClick={() => concluirDoPack(t.id)}
+                    disabled={done}
+                    title={done ? "Concluída hoje" : "Concluir"}
+                    className={`flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition disabled:cursor-default ${
                       done
                         ? "border-emerald-500/40 bg-emerald-500/10 text-muted-foreground"
                         : "border-border hover:bg-secondary"
@@ -419,18 +410,17 @@ export function QuickFab() {
               <span>
                 {packItems.length - packPending.length}/{packItems.length} feitos
               </span>
-              <button
-                onClick={() => {
-                  const all = new Set(packItems.map((t) => t.id));
-                  setPackDone(all);
-                  savePackDone(currentUser.id, all);
-                  window.dispatchEvent(new CustomEvent("fluxo:pack-updated"));
-                  toast.success("Pack concluído — bom trabalho!");
-                }}
-                className="font-semibold text-primary hover:underline"
-              >
-                Marcar tudo
-              </button>
+              {packPending.length > 0 && (
+                <button
+                  onClick={() => {
+                    packPending.forEach((t) => concluirDoPack(t.id));
+                    toast.success("Pack concluído — bom trabalho!");
+                  }}
+                  className="font-semibold text-primary hover:underline"
+                >
+                  Marcar tudo
+                </button>
+              )}
             </div>
           )}
           </>

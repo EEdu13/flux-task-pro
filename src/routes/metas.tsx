@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
-import { freqLabels, sectors, type Task, type User } from "@/lib/fluxo-types";
+import { rotuloDaFrequencia, sectors, type Task, type User } from "@/lib/fluxo-types";
 import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -860,7 +860,8 @@ function ExportarPeriodo({
           [
             escapeCsv(u.name),
             escapeCsv(u.sector),
-            t.frequency,
+            // Chave, como as outras colunas; a pontual não é "diaria".
+            t.recurring ? t.frequency : "sem_recorrencia",
             escapeCsv(t.title),
             new Date(t.dueDate).toLocaleDateString("pt-BR"),
             b.state,
@@ -1149,7 +1150,7 @@ function ExportarPeriodo({
               ? [[{ content: "Nenhuma tarefa atribuída no período.", colSpan: 4, styles: { halign: "center", textColor: muted } }]]
               : row.breakdown.map((x) => [
                   x.task.title,
-                  freqLabels[x.task.frequency] ?? "Diária",
+                  rotuloDaFrequencia(x.task),
                   new Date(x.task.dueDate).toLocaleDateString("pt-BR"),
                   stateLabel[x.state],
                 ]),

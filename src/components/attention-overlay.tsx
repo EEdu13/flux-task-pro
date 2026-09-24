@@ -5,6 +5,7 @@ import { listNudgesFn, sendNudgeFn, type TipoAviso } from "@/lib/attention.funct
 import { triggerTractor } from "@/components/tractor-banner";
 import { primeiroNome } from "@/integrations/iam/types";
 import { tocarNudge } from "@/lib/sons";
+import { avisarNoSistema } from "@/lib/aviso-do-sistema";
 
 interface AttnEvent {
   fromName: string;
@@ -94,6 +95,20 @@ export function AttentionOverlay() {
           if (seenRef.current.has(id)) continue;
           seenRef.current.add(id);
           if (apenasAnotar) continue;
+
+          /* Notificação do Windows, com o app fora de foco — antes do "trazer
+             para frente" logo abaixo, que dá o foco à janela e faria
+             `avisarNoSistema` achar que a pessoa já estava olhando. No
+             navegador, onde nada traz a aba para frente, é o único aviso que
+             chega a quem está em outra aba. */
+          void avisarNoSistema({
+            titulo:
+              n.kind === "trator"
+                ? `🚜 ${primeiroNome(n.from_name)} mandou um trator`
+                : `🔔 ${primeiroNome(n.from_name)} chamou sua atenção`,
+            corpo: n.kind === "trator" ? (n.message ?? "") : "",
+            tag: `atencao-${id}`,
+          });
 
           // Mesma sondagem serve aos dois avisos: o tipo decide o que aparece.
           if (n.kind === "trator" && n.message) {
