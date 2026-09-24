@@ -1403,11 +1403,24 @@ html.fluxo-nudge-shake body {
    O hotspot é dado em pixels da imagem JÁ redimensionada: a ponta fica em
    (4, 2.5) no viewBox de 34/36 unidades, que renderizado a 25/26px cai em
    ~(3, 2). Errar isso faz o clique acontecer alguns pixels fora de onde a
-   seta aponta — sintoma difícil de diagnosticar depois. */
+   seta aponta — sintoma difícil de diagnosticar depois.
+
+   Duas versões, escolhidas pelo tema. A clara (corpo branco) sumia nos temas
+   claros: no rosa claro, passar por cima de uma tarefa deixava só um vulto
+   branco e translúcido. Nos claros vai a escura, de contorno branco — que
+   continua visível na barra lateral, escura em todas as paletas. Pelas
+   variáveis, cada regra abaixo continua uma só, com a especificidade de
+   sempre; só o arquivo muda. */
+:root {
+  --cursor-seta: url("/cursor-arrow.svg") 3 2;
+  --cursor-mao: url("/cursor-pointer.svg") 10 2;
+}
+:root:not(.dark) {
+  --cursor-seta: url("/cursor-arrow-escuro.svg") 3 2;
+  --cursor-mao: url("/cursor-pointer-escuro.svg") 10 2;
+}
 body {
-  cursor:
-    url("/cursor-arrow.svg") 3 2,
-    auto;
+  cursor: var(--cursor-seta), auto;
 }
 /* Clicáveis: mão com o indicador apontando.
    O hotspot é (10, 2) e não (3, 2) da seta — a ponta do dedo fica no meio da
@@ -1423,9 +1436,7 @@ select,
 summary,
 label,
 .cursor-pointer {
-  cursor:
-    url("/cursor-pointer.svg") 10 2,
-    pointer;
+  cursor: var(--cursor-mao), pointer;
 }
 input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]),
 textarea,
