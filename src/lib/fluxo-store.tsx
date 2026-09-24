@@ -995,6 +995,10 @@ async function carregarDoBanco(
 
 export function FluxoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Persisted>(() => load());
+  /* As tarefas como estão AGORA, inclusive as criadas nesta mesma volta, antes
+     de a tela renderizar de novo. Ver `createTask`. */
+  const tarefasAgoraRef = useRef(state.tasks);
+  tarefasAgoraRef.current = state.tasks;
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ open: false });
   const [quickCreate, setQuickCreate] = useState<{ open: boolean; status?: Status; dueDate?: string; assigneeId?: string }>({ open: false });
 
@@ -1445,66 +1449,81 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     currentUser,
 
     createTask: (t) => {
-      setState((s) => {
-        /* UUID, e não mais `t-mf3k2a-x9d1`.
-           É o que permite a tarefa entrar em `gestor.tarefas` — e, de quebra,
-           é o que destrava o anexo de tarefa e de comentário, que precisavam
-           de um dono com id de banco. */
-        const id = novoId();
-        const maxOrder =
-          Math.max(0, ...s.tasks.filter((x) => x.status === t.status).map((x) => x.order)) + 1;
-        // `comConclusao`: o painel deixa criar a tarefa já como concluída.
-        const task: Task = comConclusao(undefined, {
-          ...t,
-          id,
-          createdAt: nowIso(),
-          order: maxOrder,
-          comments: [],
-          checklist: t.checklist ?? [],
-          // Nasce completa: checklist, menções e etiquetas vieram do formulário,
-          // então estas listas são a verdade e podem ser gravadas.
-          satellitesLoaded: true,
-          // O "criou" é escrito pelo servidor, ao inserir a tarefa.
-          activity: [],
-        });
-        /* A gravação sai daqui de dentro, onde a tarefa montada existe.
-           É ela que faz a delegação chegar: até hoje isto terminava aqui, com
-           a tarefa no navegador de quem criou, e quem recebeu nunca soube.
+      /* Tudo o que sai da tela — o id, a gravação, o envio do anexo — acontece
+         aqui fora, e o `setState` lá embaixo só acrescenta a tarefa pronta.
 
-           Os avisos de "nova tarefa" e de menção também saíam daqui, montados
-           corretamente e endereçados a outras pessoas — para ficar guardados
-           nesta máquina, onde a sineta de ninguém os leria. Quem os escreve
-           agora é o servidor: a atribuição em `salvarTarefa`, a menção em
-           `salvarSatelites`, cada um no comando que cria o fato. */
-        void gravarTarefa(task);
+         Estava tudo dentro da função de atualização, e o React pode executar
+         essa função mais de uma vez: sempre em desenvolvimento (StrictMode) e,
+         em produção, quando a criação coincide com outra atualização — a
+         sincronização de 60s, por exemplo. Cada execução gerava um id novo e
+         gravava: em 24/09 uma tarefa criada uma vez virou duas no banco, 7ms
+         uma da outra, e a segunda apareceu em "A fazer" na sincronização
+         seguinte. Com o id fixado aqui, repetir a atualização não cria nada.
 
-        /* Anexo escolhido antes da tarefa existir.
-           A grade de criação em massa deixa anexar arquivo numa linha que ainda
-           não é tarefa, e o dono do anexo precisa de um id de banco — que só
-           nasce aqui em cima. Por isso o envio acontece depois, e o estado é
-           corrigido quando volta: o que fica guardado é o endereço, nunca o
-           base64.
-
-           A tarefa entra na lista com `attachments` vazio de propósito. Guardar
-           o base64 "só até subir" era o suficiente para estourar a cota do
-           localStorage, que é gravado a cada mudança de estado. */
-        const pendentes = task.attachments ?? [];
-        if (pendentes.length && ehGuid(id)) {
-          void (async () => {
-            const { subirAnexos } = await import("@/lib/anexo-upload");
-            const enviados = await subirAnexos("tarefa", id, pendentes);
-            if (!enviados.length) return;
-            setState((s2) => ({
-              ...s2,
-              tasks: s2.tasks.map((t2) =>
-                t2.id === id ? { ...t2, attachments: enviados } : t2,
-              ),
-            }));
-          })();
-        }
-
-        return { ...s, tasks: [{ ...task, attachments: [] }, ...s.tasks] };
+         A ordem sai de `tarefasAgoraRef`, e não do `state` desta renderização,
+         porque a grade e o pack criam várias de uma vez, antes de a tela
+         renderizar de novo: cada chamada precisa ver as anteriores, como via
+         quando a conta era feita dentro do `setState`. */
+      /* UUID, e não mais `t-mf3k2a-x9d1`.
+         É o que permite a tarefa entrar em `gestor.tarefas` — e, de quebra,
+         é o que destrava o anexo de tarefa e de comentário, que precisavam
+         de um dono com id de banco. */
+      const id = novoId();
+      const antes = tarefasAgoraRef.current;
+      const maxOrder =
+        Math.max(0, ...antes.filter((x) => x.status === t.status).map((x) => x.order)) + 1;
+      // `comConclusao`: o painel deixa criar a tarefa já como concluída.
+      const task: Task = comConclusao(undefined, {
+        ...t,
+        id,
+        createdAt: nowIso(),
+        order: maxOrder,
+        comments: [],
+        checklist: t.checklist ?? [],
+        // Nasce completa: checklist, menções e etiquetas vieram do formulário,
+        // então estas listas são a verdade e podem ser gravadas.
+        satellitesLoaded: true,
+        // O "criou" é escrito pelo servidor, ao inserir a tarefa.
+        activity: [],
       });
+      tarefasAgoraRef.current = [task, ...antes];
+
+      /* É a gravação que faz a delegação chegar: até hoje isto terminava no
+         `setState`, com a tarefa no navegador de quem criou, e quem recebeu
+         nunca soube.
+
+         Os avisos de "nova tarefa" e de menção também saíam daqui, montados
+         corretamente e endereçados a outras pessoas — para ficar guardados
+         nesta máquina, onde a sineta de ninguém os leria. Quem os escreve
+         agora é o servidor: a atribuição em `salvarTarefa`, a menção em
+         `salvarSatelites`, cada um no comando que cria o fato. */
+      void gravarTarefa(task);
+
+      /* Anexo escolhido antes da tarefa existir.
+         A grade de criação em massa deixa anexar arquivo numa linha que ainda
+         não é tarefa, e o dono do anexo precisa de um id de banco — que só
+         nasce aqui em cima. Por isso o envio acontece depois, e o estado é
+         corrigido quando volta: o que fica guardado é o endereço, nunca o
+         base64.
+
+         A tarefa entra na lista com `attachments` vazio de propósito. Guardar
+         o base64 "só até subir" era o suficiente para estourar a cota do
+         localStorage, que é gravado a cada mudança de estado. */
+      const pendentes = task.attachments ?? [];
+      if (pendentes.length && ehGuid(id)) {
+        void (async () => {
+          const { subirAnexos } = await import("@/lib/anexo-upload");
+          const enviados = await subirAnexos("tarefa", id, pendentes);
+          if (!enviados.length) return;
+          setState((s2) => ({
+            ...s2,
+            tasks: s2.tasks.map((t2) => (t2.id === id ? { ...t2, attachments: enviados } : t2)),
+          }));
+        })();
+      }
+
+      // Repetida pelo React, esta atualização acrescenta a MESMA tarefa.
+      setState((s) => ({ ...s, tasks: [{ ...task, attachments: [] }, ...s.tasks] }));
     },
 
     updateTask: (id, patch) => {
@@ -1634,90 +1653,90 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     addComment: (taskId, text, attachments) => {
       if (!text.trim() && !(attachments && attachments.length)) return;
-      setState((s) => {
-        const t = s.tasks.find((x) => x.id === taskId);
-        if (!t) return s;
-        // UUID: o comentário é dono de anexo em `gestor.anexos`, e aquela
-        // coluna é `uniqueidentifier`.
-        const c = {
-          id: crypto.randomUUID(),
-          userId: currentUser.id,
-          text: text.trim(),
-          at: nowIso(),
-          attachments: attachments && attachments.length ? attachments : undefined,
-        };
+      /* Fora do `setState`, pelo mesmo motivo de `createTask`: dentro da
+         função de atualização, que o React pode repetir, cada repetição
+         gravava o comentário de novo no banco. */
+      if (!tarefasAgoraRef.current.some((x) => x.id === taskId)) return;
+      // UUID: o comentário é dono de anexo em `gestor.anexos`, e aquela
+      // coluna é `uniqueidentifier`.
+      const c = {
+        id: crypto.randomUUID(),
+        userId: currentUser.id,
+        text: text.trim(),
+        at: nowIso(),
+        attachments: attachments && attachments.length ? attachments : undefined,
+      };
 
-        /* O comentário vai ao banco por função própria, e não junto com a
-           tarefa. O motivo é a autoria: `comentarNaTarefa` grava o autor a
-           partir da SESSÃO de quem escreveu. Se ele viajasse dentro de
-           `salvarTarefa`, o autor seria quem salvou a tarefa por último — e um
-           comentário assinado pela pessoa errada é pior que comentário nenhum.
+      /* O comentário vai ao banco por função própria, e não junto com a
+         tarefa. O motivo é a autoria: `comentarNaTarefa` grava o autor a
+         partir da SESSÃO de quem escreveu. Se ele viajasse dentro de
+         `salvarTarefa`, o autor seria quem salvou a tarefa por último — e um
+         comentário assinado pela pessoa errada é pior que comentário nenhum.
 
-           Não há linha "comentou" no histórico: a Timeline mostra o próprio
-           comentário, e a linha extra fazia cada um aparecer duas vezes. */
-        if (ehGuid(taskId)) {
-          void (async () => {
-            try {
-              const api = await import("@/lib/tarefa-satelites.functions");
-              const gravado = await api.comentarNaTarefa({
-                data: { tarefaId: taskId, texto: c.text },
-              });
+         Não há linha "comentou" no histórico: a Timeline mostra o próprio
+         comentário, e a linha extra fazia cada um aparecer duas vezes. */
+      if (ehGuid(taskId)) {
+        void (async () => {
+          try {
+            const api = await import("@/lib/tarefa-satelites.functions");
+            const gravado = await api.comentarNaTarefa({
+              data: { tarefaId: taskId, texto: c.text },
+            });
 
-              /* O anexo do comentário sobe AQUI, e só aqui é possível.
-                 Ele precisa do id de banco do comentário como dono, e esse id
-                 nasce no INSERT acima — o `crypto.randomUUID()` de cima é o da
-                 cópia em tela, e não é o que a tabela guardou. Enquanto isto
-                 não existia, o arquivo escolhido no painel virava base64 no
-                 estado e nunca saía desta máquina.
+            /* O anexo do comentário sobe AQUI, e só aqui é possível.
+               Ele precisa do id de banco do comentário como dono, e esse id
+               nasce no INSERT acima — o `crypto.randomUUID()` de cima é o da
+               cópia em tela, e não é o que a tabela guardou. Enquanto isto
+               não existia, o arquivo escolhido no painel virava base64 no
+               estado e nunca saía desta máquina.
 
-                 Trocamos também o id local pelo do banco: sem isso, reabrir a
-                 tarefa traria o mesmo comentário duas vezes — o do banco e o
-                 fantasma local. */
-              const arquivos = c.attachments ?? [];
-              const enviados = arquivos.length
-                ? await (await import("@/lib/anexo-upload")).subirAnexos(
-                    "comentario",
-                    gravado.id,
-                    arquivos,
-                  )
-                : [];
+               Trocamos também o id local pelo do banco: sem isso, reabrir a
+               tarefa traria o mesmo comentário duas vezes — o do banco e o
+               fantasma local. */
+            const arquivos = c.attachments ?? [];
+            const enviados = arquivos.length
+              ? await (await import("@/lib/anexo-upload")).subirAnexos(
+                  "comentario",
+                  gravado.id,
+                  arquivos,
+                )
+              : [];
 
-              setState((s2) => ({
-                ...s2,
-                tasks: s2.tasks.map((t2) =>
-                  t2.id !== taskId
-                    ? t2
-                    : {
-                        ...t2,
-                        comments: t2.comments.map((x) =>
-                          x.id === c.id
-                            ? {
-                                ...x,
-                                id: gravado.id,
-                                at: gravado.at,
-                                attachments: enviados.length ? enviados : undefined,
-                              }
-                            : x,
-                        ),
-                      },
-                ),
-              }));
-            } catch (e) {
-              console.warn("[fluxo] comentário não gravou:", (e as Error)?.message);
-            }
-          })();
-        }
-        const updated = { ...t, comments: [...t.comments, c] };
-        /* O aviso do comentário vai junto com o comentário, no servidor.
-           A lista de quem precisa saber — responsável, quem pediu a tarefa e
-           quem está mencionado — sai da tarefa gravada, não da cópia em tela:
-           uma menção acrescentada por outra pessoa hoje de manhã existe lá e
-           pode não existir aqui. */
-        return {
-          ...s,
-          tasks: s.tasks.map((x) => (x.id === taskId ? updated : x)),
-        };
-      });
+            setState((s2) => ({
+              ...s2,
+              tasks: s2.tasks.map((t2) =>
+                t2.id !== taskId
+                  ? t2
+                  : {
+                      ...t2,
+                      comments: t2.comments.map((x) =>
+                        x.id === c.id
+                          ? {
+                              ...x,
+                              id: gravado.id,
+                              at: gravado.at,
+                              attachments: enviados.length ? enviados : undefined,
+                            }
+                          : x,
+                      ),
+                    },
+              ),
+            }));
+          } catch (e) {
+            console.warn("[fluxo] comentário não gravou:", (e as Error)?.message);
+          }
+        })();
+      }
+
+      /* O aviso do comentário vai junto com o comentário, no servidor.
+         A lista de quem precisa saber — responsável, quem pediu a tarefa e
+         quem está mencionado — sai da tarefa gravada, não da cópia em tela:
+         uma menção acrescentada por outra pessoa hoje de manhã existe lá e
+         pode não existir aqui. */
+      setState((s) => ({
+        ...s,
+        tasks: s.tasks.map((x) => (x.id === taskId ? { ...x, comments: [...x.comments, c] } : x)),
+      }));
     },
 
     addTaskAttachments: (taskId, atts) => {
