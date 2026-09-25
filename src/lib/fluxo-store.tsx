@@ -35,7 +35,7 @@ import type { PessoaDoQuadro } from "@/lib/perfil.functions";
 import type { ProjetoDoBanco } from "@/lib/projetos.functions";
 import { toast } from "sonner";
 import { empilharDesfazer } from "@/lib/undo-stack";
-import { proximaOcorrencia } from "./recorrencia";
+import { RECORRENCIA_DO_PACK, proximaOcorrencia, quandoVoltaNoPack } from "./recorrencia";
 import {
   avisarHistoricoMudou,
   EVENTO_HISTORICO,
@@ -721,6 +721,7 @@ async function enviarTarefa(t: Task, origem?: string): Promise<void> {
         priority: t.priority,
         score: t.score,
         dueDate: t.dueDate,
+        dueTime: t.dueDate ? (t.dueTime ?? null) : null,
         recurring: t.recurring,
         recurringUntil: t.recurringUntil,
         recurringMonthDay: t.recurringMonthDay,
@@ -731,6 +732,7 @@ async function enviarTarefa(t: Task, origem?: string): Promise<void> {
         origin: origem,
         actualCompletionDate: t.actualCompletionDate ?? null,
         availableFrom: t.availableFrom ?? null,
+        previousId: t.previousOccurrenceId ?? null,
       },
     });
     /* Os satélites acompanham a tarefa, na mesma gravação.
@@ -814,9 +816,10 @@ async function gravarPack(p: PackTemplate): Promise<void> {
   }
 }
 
-function computeScore(base: number, priority: Task["priority"], onTime: boolean): number {
+/** `onTime` nulo é a tarefa sem prazo: pontos cheios, sem bônus nem desconto. */
+function computeScore(base: number, priority: Task["priority"], onTime: boolean | null): number {
   const mult = priorityMultiplier[priority];
-  const modifier = onTime ? 1.1 : 0.8;
+  const modifier = onTime === null ? 1 : onTime ? 1.1 : 0.8;
   return Math.round(base * mult * modifier);
 }
 
@@ -1249,8 +1252,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     // Não anunciar o que vai ser barrado: sem comprovante a conclusão não passa.
     if (anterior.requireProof && !taskHasProof(anterior)) return;
     const voltarPara = anterior.status;
+    // Compromisso do pack que se repete: o aviso diz quando ele volta.
+    const volta = anterior.inPack ? proximaOcorrencia(anterior) : null;
     empilharDesfazer({
       label: `Concluída: ${anterior.title}`,
+      descricao: volta ? quandoVoltaNoPack(volta) : undefined,
       undo: () =>
         setState((s) => {
           // Desfazer honesto: concluir também creditou pontos e gravou uma
@@ -1291,7 +1297,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         void import("@/components/celebration").then((m) => m.celebrate());
       });
     }
-    const onTime = new Date(next.dueDate).getTime() >= Date.now();
+    // Sem prazo: neutra nos pontos e nunca atrasada — igual ao servidor.
+    const onTime = next.dueDate ? new Date(next.dueDate).getTime() >= Date.now() : null;
     const points = computeScore(next.score, next.priority, onTime);
 
     // users score + streak recompute (simple: latest completion day)
@@ -1315,7 +1322,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         userId: next.assigneeId,
         points,
         priority: next.priority,
-        onTime,
+        onTime: onTime ?? true,
         at: nowIso(),
       },
     ];
@@ -1356,6 +1363,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       ? {
           ...next,
           id: novoId(),
+          previousOccurrenceId: next.id,
           createdAt: amanha.toISOString(),
           availableFrom: amanha.toISOString(),
           dueDate: proxima.toISOString(),
@@ -2675,11 +2683,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         createdBy: currentUser.id,
         assigneeId: targetUserId,
         mentions: targetUserId !== currentUser.id ? [targetUserId] : [],
-        frequency: "diaria",
         status: "pendente",
         score: 10,
         dueDate: dueISO,
-        recurring: false,
+        // Compromisso do pack volta todo dia útil — ver RECORRENCIA_DO_PACK.
+        ...RECORRENCIA_DO_PACK,
         priority: "media",
         tags: ["pack", `modelo:${tpl.name}`],
         createdAt: nowIso(),

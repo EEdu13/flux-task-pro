@@ -22,10 +22,10 @@ import { COLOR_PALETTE, useMyView, type ColumnType } from "@/lib/my-view-store";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
+import { rotuloDoPrazo } from "@/lib/prazo";
 
-function fmtDue(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+function fmtDue(t: Pick<Task, "dueDate" | "dueTime">) {
+  return rotuloDoPrazo(t, { day: "2-digit", month: "short" });
 }
 
 const COLUMN_TYPE_LABEL: Record<ColumnType, string> = {
@@ -136,6 +136,7 @@ export function MyView({
       status: "pendente",
       score: t.score,
       dueDate: t.dueDate,
+      dueTime: t.dueTime,
       recurring: t.recurring,
       priority: t.priority,
       tags: t.tags,
@@ -405,7 +406,7 @@ export function MyView({
                       {statusLabels[t.status]}
                     </span>
                   </td>
-                  <td className="py-2 pr-3 text-xs text-muted-foreground">{fmtDue(t.dueDate)}</td>
+                  <td className="py-2 pr-3 text-xs text-muted-foreground">{fmtDue(t)}</td>
                   <td className="py-2 pr-3 text-xs">{assignee?.name ?? "—"}</td>
                   {view.columns.map((c) => (
                     <td key={c.id} className="py-1.5 pr-3">

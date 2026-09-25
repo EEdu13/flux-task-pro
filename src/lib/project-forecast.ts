@@ -10,6 +10,7 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { CompletionEntry, Project, Task } from "./fluxo-types";
+import { prazoVencido } from "./prazo";
 
 export type Granularity = "dia" | "semana" | "mes";
 
@@ -105,7 +106,8 @@ function completionDates(tasks: Task[], completions: CompletionEntry[]): Date[] 
     .filter((t) => t.status === "concluida")
     .map((t) => {
       const entry = [...t.activity].reverse().find((a) => a.kind === "concluida");
-      return new Date(entry?.at ?? t.dueDate);
+      // Por último o momento em que foi marcada; sem prazo, é o único que sobra.
+      return new Date(entry?.at ?? t.dueDate ?? t.completedAt ?? t.createdAt);
     })
     .sort((a, b) => a.getTime() - b.getTime());
 }
@@ -121,7 +123,7 @@ export function forecastProject(
   const remaining = total - done;
   const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
   const overdue = tasks.filter(
-    (t) => t.status !== "concluida" && new Date(t.dueDate).getTime() < now.getTime(),
+    (t) => t.status !== "concluida" && prazoVencido(t.dueDate, now.getTime()),
   ).length;
 
   const dueDate = prazoDoProjeto(project.dueDate);

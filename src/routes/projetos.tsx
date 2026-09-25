@@ -45,6 +45,7 @@ import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { etiquetasDoProjeto } from "@/lib/etiquetas-do-projeto";
 import { reduzirFoto } from "@/lib/foto-reduzida";
 import { SeletorDeCor } from "@/components/seletor-de-cor";
+import { prazoVencido, rotuloDoPrazo } from "@/lib/prazo";
 
 type ProjectView = "lista" | "board" | "acompanhamento";
 
@@ -853,7 +854,7 @@ function ProjectDetail({
               subtasks.map((t) => {
                 const assignee = users.find((u) => u.id === t.assigneeId);
                 const done = t.status === "concluida";
-                const overdue = !done && new Date(t.dueDate).getTime() < Date.now();
+                const overdue = !done && prazoVencido(t.dueDate);
                 return (
                   <div
                     key={t.id}
@@ -912,7 +913,7 @@ function ProjectDetail({
                       ))}
                     </select>
                     <div className={`text-[11px] ${overdue ? "font-semibold text-destructive" : "text-muted-foreground"}`}>
-                      {new Date(t.dueDate).toLocaleDateString("pt-BR")}
+                      {rotuloDoPrazo(t)}
                     </div>
                     <div className="text-muted-foreground">
                       {assignee && (
@@ -970,8 +971,7 @@ function ProjectDetail({
                     )}
                     {items.map((t) => {
                       const assignee = users.find((u) => u.id === t.assigneeId);
-                      const overdue =
-                        t.status !== "concluida" && new Date(t.dueDate).getTime() < Date.now();
+                      const overdue = t.status !== "concluida" && prazoVencido(t.dueDate);
                       return (
                         <div
                           key={t.id}
@@ -1017,10 +1017,7 @@ function ProjectDetail({
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
                             <span className={overdue ? "font-semibold text-destructive" : ""}>
-                              {new Date(t.dueDate).toLocaleDateString("pt-BR", {
-                                day: "2-digit",
-                                month: "short",
-                              })}
+                              {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
                             </span>
                             {assignee && (
                               <UserAvatar

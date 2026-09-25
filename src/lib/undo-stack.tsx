@@ -8,7 +8,12 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-export type UndoAction = { label: string; undo: () => void };
+export type UndoAction = {
+  label: string;
+  /** Linha de baixo do aviso, para o que a pessoa precisa saber além do título. */
+  descricao?: string;
+  undo: () => void;
+};
 
 interface UndoCtx {
   push: (a: UndoAction) => void;
@@ -39,6 +44,7 @@ export function UndoProvider({ children }: { children: ReactNode }) {
     stackRef.current.push(a);
     if (stackRef.current.length > 30) stackRef.current.shift();
     toast(a.label, {
+      description: a.descricao,
       duration: 8000,
       action: {
         label: "Desfazer",

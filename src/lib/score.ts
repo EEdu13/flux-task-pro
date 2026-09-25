@@ -1,13 +1,12 @@
 import type { CompletionEntry, Task } from "./fluxo-types";
 
 export function scoreTaskPoints(task: Task, completionAt: string | null): number {
+  if (task.status !== "concluida") return 0;
+  // Sem prazo não há atraso: concluída vale inteira.
+  if (!task.dueDate) return 1;
   const due = new Date(task.dueDate).getTime();
-  const now = Date.now();
-  if (task.status === "concluida") {
-    const done = completionAt ? new Date(completionAt).getTime() : now;
-    return done <= due ? 1 : 0.5;
-  }
-  return 0;
+  const done = completionAt ? new Date(completionAt).getTime() : Date.now();
+  return done <= due ? 1 : 0.5;
 }
 
 export function monthRange(ref = new Date()): { start: number; end: number } {
@@ -24,7 +23,8 @@ export function userScorePct(
 ): { pct: number; points: number; assigned: number; done: number } {
   const { start, end } = monthRange(ref);
   const assigned = tasks.filter((t) => {
-    if (t.assigneeId !== userId) return false;
+    // O mês é o do prazo; tarefa sem prazo não pertence a mês nenhum.
+    if (t.assigneeId !== userId || !t.dueDate) return false;
     const d = new Date(t.dueDate).getTime();
     return d >= start && d < end;
   });

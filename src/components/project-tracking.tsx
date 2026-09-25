@@ -80,8 +80,9 @@ export function ProjectTracking({
   // O que está puxando o projeto para trás, em ordem de atraso.
   const emRisco = useMemo(() => {
     const now = Date.now();
+    // Sem prazo não fica para trás de nada: nem entra na conta.
     return tasks
-      .filter((t) => t.status !== "concluida")
+      .filter((t): t is typeof t & { dueDate: string } => t.status !== "concluida" && !!t.dueDate)
       .map((t) => ({ t, atraso: Math.floor((now - new Date(t.dueDate).getTime()) / 86400000) }))
       .filter((x) => x.atraso >= -2)
       .sort((a, b) => b.atraso - a.atraso)

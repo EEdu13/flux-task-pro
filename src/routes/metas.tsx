@@ -20,6 +20,7 @@ import { rotuloDaFrequencia, sectors, type Task, type User } from "@/lib/fluxo-t
 import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
 import { TravaScroll } from "@/components/trava-scroll";
+import { SEM_PRAZO, rotuloDoPrazo } from "@/lib/prazo";
 
 export const Route = createFileRoute("/metas")({
   head: () => ({
@@ -110,8 +111,16 @@ function periodRange(
   return { start, end, label: start.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
 }
 
+/** O prazo cai no período? Sem prazo não cai em período nenhum. */
+function prazoNoPeriodo(t: Task, range: { start: Date; end: Date }): boolean {
+  if (!t.dueDate) return false;
+  const due = new Date(t.dueDate).getTime();
+  return due >= range.start.getTime() && due < range.end.getTime();
+}
+
 function scoreTask(task: Task, completionAt: string | null): TaskScore {
-  const due = new Date(task.dueDate).getTime();
+  // Sem prazo: não há atraso possível. Concluída vale inteira; aberta, pendente.
+  const due = task.dueDate ? new Date(task.dueDate).getTime() : Number.POSITIVE_INFINITY;
   const now = Date.now();
   if (task.status === "concluida") {
     const done = completionAt ? new Date(completionAt).getTime() : now;
@@ -255,9 +264,7 @@ function MetasPage() {
       // recorrência da tarefa. Ver a nota no tipo `Period`.
       const assigned = tasks.filter(
         (t) =>
-          t.assigneeId === u.id &&
-          new Date(t.dueDate).getTime() >= range.start.getTime() &&
-          new Date(t.dueDate).getTime() < range.end.getTime(),
+          t.assigneeId === u.id && prazoNoPeriodo(t, range),
       );
       const breakdown = assigned.map((t) => {
         const c = completions.find((x) => x.taskId === t.id);
@@ -679,7 +686,9 @@ function UserBreakdown({
               <div className="min-w-0 flex-1 truncate">
                 <span className="font-medium">{b.task.title}</span>
                 <span className="ml-2 text-muted-foreground">
-                  prazo {new Date(b.task.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                  {b.task.dueDate
+                    ? `prazo ${rotuloDoPrazo(b.task, { day: "2-digit", month: "2-digit" })}`
+                    : SEM_PRAZO.toLowerCase()}
                 </span>
               </div>
               <StateBadge state={b.state} points={b.points} />
@@ -782,9 +791,7 @@ function ExportarPeriodo({
          entra é o prazo cair no período. */
       const uTasks = tasks.filter(
         (t) =>
-          t.assigneeId === u.id &&
-          new Date(t.dueDate).getTime() >= range.start.getTime() &&
-          new Date(t.dueDate).getTime() < range.end.getTime(),
+          t.assigneeId === u.id && prazoNoPeriodo(t, range),
       );
       const breakdown: TaskScore[] = uTasks.map((t) => {
         const c = completions.find((x) => x.taskId === t.id);
@@ -839,9 +846,7 @@ function ExportarPeriodo({
       // Mesma correção do PDF: semanal não pode sumir do CSV em silêncio.
       const uTasks = tasks.filter(
         (t) =>
-          t.assigneeId === u.id &&
-          new Date(t.dueDate).getTime() >= range.start.getTime() &&
-          new Date(t.dueDate).getTime() < range.end.getTime(),
+          t.assigneeId === u.id && prazoNoPeriodo(t, range),
       );
       const breakdown: TaskScore[] = [];
       const userTotals = logs[u.id]?.totals ?? {};
@@ -863,7 +868,7 @@ function ExportarPeriodo({
             // Chave, como as outras colunas; a pontual não é "diaria".
             t.recurring ? t.frequency : "sem_recorrencia",
             escapeCsv(t.title),
-            new Date(t.dueDate).toLocaleDateString("pt-BR"),
+            rotuloDoPrazo(t),
             b.state,
             est || "",
             workedMin || "",
@@ -1151,7 +1156,7 @@ function ExportarPeriodo({
               : row.breakdown.map((x) => [
                   x.task.title,
                   rotuloDaFrequencia(x.task),
-                  new Date(x.task.dueDate).toLocaleDateString("pt-BR"),
+                  rotuloDoPrazo(x.task),
                   stateLabel[x.state],
                 ]),
           styles: { font: "helvetica", fontSize: 9, cellPadding: 5, textColor: dark },

@@ -5,6 +5,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusLabels } from "@/lib/fluxo-types";
 import { toast } from "sonner";
 import { TravaScroll } from "@/components/trava-scroll";
+import { porPrazo, rotuloDoPrazo } from "@/lib/prazo";
 import { UserAvatar } from "@/components/user-avatar";
 
 /**
@@ -139,7 +140,7 @@ export function TeamDelegatePanel() {
         if (status !== "todos" && t.status !== status) return false;
         return true;
       })
-      .sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate));
+      .sort((a, b) => a.order - b.order || porPrazo(a, b));
 
   const delegate = (taskId: string, toUserId: string, insertIndex?: number) => {
     const task = tasks.find((t) => t.id === taskId);
@@ -149,7 +150,7 @@ export function TeamDelegatePanel() {
     // Rebuild target user's ordered list with the dragged task inserted at position
     const target = tasks
       .filter((t) => t.assigneeId === toUserId && t.status !== "concluida" && t.id !== taskId)
-      .sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate));
+      .sort((a, b) => a.order - b.order || porPrazo(a, b));
     const idx = insertIndex == null ? target.length : Math.min(insertIndex, target.length);
     const nextIds = [
       ...target.slice(0, idx).map((t) => t.id),
@@ -342,10 +343,7 @@ export function TeamDelegatePanel() {
                                   <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
                                     <span>{statusLabels[t.status]}</span>
                                     <span>
-                                      {new Date(t.dueDate).toLocaleDateString("pt-BR", {
-                                        day: "2-digit",
-                                        month: "2-digit",
-                                      })}
+                                      {rotuloDoPrazo(t, { day: "2-digit", month: "2-digit" })}
                                     </span>
                                   </div>
                                 </div>
@@ -381,7 +379,13 @@ function TaskChip({
   onDragEnd,
   onClick,
 }: {
-  task: { id: string; title: string; status: keyof typeof statusLabels; dueDate: string };
+  task: {
+    id: string;
+    title: string;
+    status: keyof typeof statusLabels;
+    dueDate: string | null;
+    dueTime?: string | null;
+  };
   onDragStart: () => void;
   onDragEnd: () => void;
   onClick: () => void;
@@ -401,12 +405,7 @@ function TaskChip({
       <div className="truncate font-medium">{task.title}</div>
       <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <span>{statusLabels[task.status]}</span>
-        <span>
-          {new Date(task.dueDate).toLocaleDateString("pt-BR", {
-            day: "2-digit",
-            month: "2-digit",
-          })}
-        </span>
+        <span>{rotuloDoPrazo(task, { day: "2-digit", month: "2-digit" })}</span>
       </div>
     </li>
   );

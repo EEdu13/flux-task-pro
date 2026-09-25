@@ -22,6 +22,7 @@ import {
   primeiraDataDaRegra,
 } from "@/lib/recorrencia";
 import { toast } from "sonner";
+import { HORARIO_VALIDO } from "@/lib/prazo";
 import {
   sectors,
   freqLabels,
@@ -67,6 +68,11 @@ export function TaskDialog() {
   const [status, setStatus] = useState<Status>("pendente");
   const [priority, setPriority] = useState<Priority>("media");
   const [dueDate, setDueDate] = useState(() => dataParaIso(new Date()));
+  /* Sem prazo guarda a data que estava no campo: desmarcar devolve o prazo de
+     antes, em vez de obrigar a escolher de novo. */
+  const [semPrazo, setSemPrazo] = useState(false);
+  /** "HH:mm" ou vazio. Com horário, o prazo vence nessa hora. */
+  const [horario, setHorario] = useState("");
   const [recurring, setRecurring] = useState(false);
   const [recurringUntil, setRecurringUntil] = useState<string>("");
   const [recurringWeekdays, setRecurringWeekdays] = useState<number[]>([]);
@@ -96,6 +102,14 @@ export function TaskDialog() {
   const descRef = useRef<HTMLTextAreaElement>(null);
   const taskAttInputRef = useRef<HTMLInputElement>(null);
   const commentAttInputRef = useRef<HTMLInputElement>(null);
+  /* O corpo do painel é uma página só: Detalhes, Checklist, Comentários e
+     Timeline em sequência. As abas viraram índice — o clique rola até a seção,
+     e a rolagem acende a aba da seção que está à vista. */
+  const corpoRef = useRef<HTMLDivElement>(null);
+  const secoesRef = useRef<Partial<Record<Tab, HTMLElement | null>>>({});
+  /** Rolagem pedida por um clique em andamento: nela, rolar não troca a aba. */
+  const indoParaRef = useRef<Tab | null>(null);
+  const soltarTravaRef = useRef<number | undefined>(undefined);
 
   /* A "impressão digital" do formulário, usada para saber se há edição pendente.
      Uma função só, alimentada tanto pelos valores iniciais quanto pelos atuais —
@@ -110,6 +124,8 @@ export function TaskDialog() {
     status: Status;
     priority: Priority;
     dueDate: string;
+    semPrazo: boolean;
+    horario: string;
     recurring: boolean;
     recurringUntil: string;
     recurringWeekdays: number[];
@@ -130,6 +146,8 @@ export function TaskDialog() {
       v.status,
       v.priority,
       v.dueDate,
+      v.semPrazo,
+      v.horario,
       v.recurring,
       v.recurringUntil,
       v.recurringWeekdays,
@@ -168,6 +186,9 @@ export function TaskDialog() {
   useEffect(() => {
     if (!open) return;
     setTab("detalhes");
+    // Trocar de tarefa com o painel aberto não pode abrir a nova no meio.
+    corpoRef.current?.scrollTo({ top: 0 });
+    indoParaRef.current = null;
     setPendingCommentAtts([]);
 
     const v = editing
@@ -182,8 +203,11 @@ export function TaskDialog() {
           /* O dia no fuso de quem vê, nunca recortado do ISO. O ISO é UTC:
              "hoje às 23:59" no Brasil é 02:59Z de amanhã, e `slice(0, 10)`
              abria o campo em amanhã — salvar qualquer outra coisa (a
-             prioridade, por exemplo) empurrava o prazo um dia. */
-          dueDate: dataParaIso(new Date(editing.dueDate)),
+             prioridade, por exemplo) empurrava o prazo um dia.
+             Sem prazo, o campo abre em hoje, pronto para quem desmarcar. */
+          dueDate: dataParaIso(editing.dueDate ? new Date(editing.dueDate) : new Date()),
+          semPrazo: !editing.dueDate,
+          horario: editing.dueTime ?? "",
           recurring: editing.recurring,
           recurringUntil: editing.recurringUntil
             ? dataParaIso(new Date(editing.recurringUntil))
@@ -208,6 +232,8 @@ export function TaskDialog() {
           status: (taskDialog.initialStatus ?? "pendente") as Status,
           priority: "media" as Priority,
           dueDate: taskDialog.initialDueDate ?? dataParaIso(new Date()),
+          semPrazo: false,
+          horario: "",
           recurring: false,
           recurringUntil: "",
           recurringWeekdays: [] as number[],
@@ -228,6 +254,8 @@ export function TaskDialog() {
     setStatus(v.status);
     setPriority(v.priority);
     setDueDate(v.dueDate);
+    setSemPrazo(v.semPrazo);
+    setHorario(v.horario);
     setRecurring(v.recurring);
     setRecurringUntil(v.recurringUntil);
     setRecurringWeekdays(v.recurringWeekdays);
@@ -336,6 +364,8 @@ export function TaskDialog() {
       status,
       priority,
       dueDate,
+      semPrazo,
+      horario,
       recurring,
       recurringUntil,
       recurringWeekdays,
@@ -409,6 +439,80 @@ export function TaskDialog() {
   };
 
   if (!open) return null;
+
+  /* Ao criar, só Detalhes e Checklist. Comentários e Timeline dependem de uma
+     tarefa que já existe; checklist não — montar os passos faz parte de pensar
+     a tarefa, e obrigava a criar, salvar e reabrir. */
+  const secoes: Tab[] = editing
+    ? ["detalhes", "checklist", "comentarios", "timeline"]
+    : ["detalhes", "checklist"];
+
+  /** Onde a seção está agora, medido a partir do topo visível do corpo. */
+  const topoDaSecao = (id: Tab) => {
+    const corpo = corpoRef.current;
+    const el = secoesRef.current[id];
+    if (!corpo || !el) return null;
+    return el.getBoundingClientRect().top - corpo.getBoundingClientRect().top;
+  };
+
+  const irParaSecao = (id: Tab) => {
+    setTab(id);
+    const corpo = corpoRef.current;
+    const topo = topoDaSecao(id);
+    if (!corpo || topo === null) return;
+    /* A rolagem animada passa pelas seções do meio, e o acompanhamento
+       acenderia cada uma no caminho. Trava até ela terminar; o tempo é a rede
+       para quando não há o que rolar e o `scrollend` nunca vem. */
+    indoParaRef.current = id;
+    window.clearTimeout(soltarTravaRef.current);
+    soltarTravaRef.current = window.setTimeout(() => (indoParaRef.current = null), 1000);
+    corpo.scrollTo({ top: corpo.scrollTop + topo, behavior: "smooth" });
+  };
+
+  const soltarTrava = () => {
+    window.clearTimeout(soltarTravaRef.current);
+    indoParaRef.current = null;
+  };
+
+  const acompanharRolagem = () => {
+    if (indoParaRef.current) return;
+    const corpo = corpoRef.current;
+    if (!corpo) return;
+    /* No fim da rolagem vale a última seção. A Timeline curta nunca chega ao
+       alto do corpo, e sem isto a aba dela não acenderia nunca. */
+    if (corpo.scrollTop > 0 && corpo.scrollTop + corpo.clientHeight >= corpo.scrollHeight - 4) {
+      setTab(secoes[secoes.length - 1]!);
+      return;
+    }
+    // Vale a última seção cujo início já subiu até o primeiro terço do corpo.
+    const linha = corpo.clientHeight / 3;
+    let atual = secoes[0]!;
+    for (const id of secoes) {
+      const topo = topoDaSecao(id);
+      if (topo !== null && topo <= linha) atual = id;
+    }
+    setTab(atual);
+  };
+
+  /* Sem prazo e recorrência se excluem: a próxima ocorrência é contada a
+     partir do prazo. Ligar um desliga o outro, e o aviso diz por quê — mudar
+     um campo que a pessoa não tocou, calado, pareceria defeito. */
+  const alternarSemPrazo = (marcar: boolean) => {
+    setSemPrazo(marcar);
+    if (marcar && recurring) {
+      setRecurring(false);
+      setRecurringUntil("");
+      toast.info("Recorrência desligada: ela repete a partir do prazo.");
+    }
+    if (!marcar && !dueDate) setDueDate(dataParaIso(new Date()));
+  };
+  const ligarRecorrencia = () => {
+    setRecurring(true);
+    if (semPrazo) {
+      setSemPrazo(false);
+      toast.info("Prazo de volta: a recorrência repete a partir dele.");
+    }
+  };
 
   const assignables = visibleUsersForAssign();
   const canEditContent = !editing || editing.createdBy === currentUser.id;
@@ -533,16 +637,24 @@ export function TaskDialog() {
        Salvar não fazia nada, sem aviso nenhum. */
     const hoje = dataParaIso(new Date());
     const diaDoPrazo = dueDate || hoje;
-    /* Para hoje, e já depois das 17h, o prazo é o fim do dia. Às 17h a tarefa
-       pontual criada no fim da tarde nascia atrasada — e vencer no próprio dia
-       em que nasce é justamente o que ela promete. */
-    const prazoNovo = new Date(diaDoPrazo + "T17:00:00");
-    if (diaDoPrazo === hoje && prazoNovo.getTime() < Date.now()) prazoNovo.setHours(23, 59, 0, 0);
-    const prazoIso =
-      editing && mesmoDia(editing.dueDate, diaDoPrazo)
+    const horaEscolhida = HORARIO_VALIDO.test(horario) ? horario : "";
+    /* Com horário escolhido, vence nele. Sem, às 17h — e, para hoje e já
+       depois das 17h, no fim do dia. Às 17h a tarefa pontual criada no fim da
+       tarde nascia atrasada, e vencer no próprio dia em que nasce é justamente
+       o que ela promete. */
+    const prazoNovo = new Date(`${diaDoPrazo}T${horaEscolhida || "17:00"}:00`);
+    if (!horaEscolhida && diaDoPrazo === hoje && prazoNovo.getTime() < Date.now())
+      prazoNovo.setHours(23, 59, 0, 0);
+    const prazoIso = semPrazo
+      ? null
+      : editing &&
+          mesmoDia(editing.dueDate, diaDoPrazo) &&
+          horaEscolhida === (editing.dueTime ?? "")
         ? editing.dueDate
         : prazoNovo.toISOString();
-    const recorreAteIso = !(recurring && recurringUntil)
+    // Recorrência conta a partir do prazo; sem prazo, não repete.
+    const repete = recurring && !semPrazo;
+    const recorreAteIso = !(repete && recurringUntil)
       ? null
       : editing && mesmoDia(editing.recurringUntil, recurringUntil)
         ? editing.recurringUntil!
@@ -558,13 +670,14 @@ export function TaskDialog() {
       status,
       score: editing?.score ?? 20,
       dueDate: prazoIso,
-      recurring,
+      dueTime: prazoIso && horaEscolhida ? horaEscolhida : null,
+      recurring: repete,
       recurringUntil: recorreAteIso,
       // Guardar só o que vale para a frequência escolhida: trocar de semanal
       // para mensal não pode deixar dias da semana órfãos decidindo a série.
-      recurringWeekdays: recurring && frequency === "semanal" ? recurringWeekdays : null,
+      recurringWeekdays: repete && frequency === "semanal" ? recurringWeekdays : null,
       recurringMonthDay:
-        recurring && (frequency === "mensal" || frequency === "anual") ? recurringMonthDay : null,
+        repete && (frequency === "mensal" || frequency === "anual") ? recurringMonthDay : null,
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
       requireProof: isCreator ? requireProof : !!editing?.requireProof,
@@ -624,9 +737,7 @@ export function TaskDialog() {
           </button>
         </div>
 
-        {/* Ao criar, só Detalhes e Checklist. Comentários e Timeline dependem de
-            uma tarefa que já existe; checklist não — montar os passos faz parte
-            de pensar a tarefa, e obrigava a criar, salvar e reabrir. */}
+        {/* Índice das seções — ver `secoes`. */}
         <div className="flex gap-1 border-b border-border px-5">
             {(
               [
@@ -653,7 +764,7 @@ export function TaskDialog() {
             ).map((t) => (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => irParaSecao(t.id)}
                 className={`relative inline-flex items-center gap-1.5 px-3 py-2 text-sm ${
                   tab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -665,551 +776,618 @@ export function TaskDialog() {
             ))}
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto p-5">
-          {tab === "detalhes" && (
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Título
-                  {!canEditContent && (
-                    <span className="ml-2 text-[10px] text-muted-foreground/70">(somente o criador pode editar)</span>
-                  )}
-                </label>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="O que precisa ser feito?"
-                  autoFocus
-                  readOnly={!canEditContent}
-                  className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
-                />
-              </div>
-
-              <div className="relative">
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                  Descrição <span className="text-muted-foreground/60">(use @ para mencionar)</span>
-                </label>
-                <textarea
-                  ref={descRef}
-                  value={description}
-                  onChange={(e) => handleDescChange(e.target.value)}
-                  rows={3}
-                  readOnly={!canEditContent}
-                  className={`w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
-                />
-                {mentionQuery !== null && filteredMentions.length > 0 && (
-                  <div className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
-                    {filteredMentions.map((u) => (
-                      <button
-                        key={u.id}
-                        onClick={() => insertMention(u)}
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
-                      >
-                        <UserAvatar nome={u.name} iniciais={u.avatar} className="h-6 w-6 text-[10px]" />
-                        {u.name}
-                        <span className="ml-auto text-[10px] text-muted-foreground">{u.jobTitle}</span>
-                      </button>
-                    ))}
-                  </div>
+        <div
+          ref={corpoRef}
+          onScroll={acompanharRolagem}
+          onScrollEnd={soltarTrava}
+          className="max-h-[70vh] overflow-y-auto p-5"
+        >
+          <section
+            ref={(el) => {
+              secoesRef.current.detalhes = el;
+            }}
+            aria-label="Detalhes"
+            className="space-y-4"
+          >
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Título
+                {!canEditContent && (
+                  <span className="ml-2 text-[10px] text-muted-foreground/70">(somente o criador pode editar)</span>
                 )}
-                {mentions.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {mentions.map((mid) => {
-                      const u = users.find((x) => x.id === mid);
-                      if (!u) return null;
-                      return (
-                        <span
-                          key={mid}
-                          className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px]"
-                        >
-                          <AtSign className="h-2.5 w-2.5" />
-                          {u.name}
-                          <button onClick={() => removeMention(mid)} className="ml-1 text-muted-foreground hover:text-foreground">
-                            <X className="h-2.5 w-2.5" />
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              </label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="O que precisa ser feito?"
+                autoFocus
+                readOnly={!canEditContent}
+                className={`w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
+              />
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Responsável">
-                  <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="input">
-                    {assignables.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} {u.id === currentUser.id ? "(eu)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {currentUser.role === "adm" && (
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      Como ADM, você só cria tarefas para si mesmo. Use @ para mencionar colegas.
-                    </p>
-                  )}
-                </Field>
-                <Field label="Setor">
-                  <select value={sector} onChange={(e) => setSector(e.target.value)} className="input">
-                    {sectors.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                </Field>
-                {/* "Sem recorrência" é a primeira opção, e o padrão. O campo
-                    mostrava "Diária" em toda tarefa nova, repetisse ela ou não:
-                    quem decide é a caixa "Tarefa recorrente" lá embaixo, e os
-                    dois controles diziam coisas diferentes. Agora são o mesmo,
-                    visto de dois lugares — mudar um muda o outro. */}
-                <Field label="Frequência">
-                  <select
-                    value={recurring ? frequency : ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (!v) {
-                        setRecurring(false);
-                        setRecurringUntil("");
-                        return;
-                      }
-                      setFrequency(v as Frequency);
-                      setRecurring(true);
-                    }}
-                    className="input"
-                  >
-                    <option value="">{SEM_RECORRENCIA}</option>
-                    {Object.entries(freqLabels).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Status">
-                  <select
-                    value={status}
-                    onChange={(e) => {
-                      const novo = e.target.value as Status;
-                      // Chama o olho para o campo que acabou de ser liberado.
-                      if (novo === "concluida" && status !== "concluida") {
-                        setDestacarFinalizacao(true);
-                        window.setTimeout(() => setDestacarFinalizacao(false), 1600);
-                      }
-                      setStatus(novo);
-                    }}
-                    className="input"
-                  >
-                    {Object.entries(statusLabels).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
-                </Field>
-                {/* A data de conclusão era sempre a do clique: quem esquecia de
-                    marcar no dia via a Timeline dizer outro dia. Aqui a pessoa
-                    informa quando de fato terminou. É registro — pontos e
-                    prazo continuam pelo clique.
-
-                    Fixo, e não só com o status Concluída: surgindo do nada ao
-                    trocar o status, o campo passava despercebido. Fora de
-                    Concluída fica desabilitado e diz por quê; ao concluir,
-                    acende por um instante. */}
-                <Field label="Data de finalização">
-                  <CampoData
-                    value={status === "concluida" ? dataReal : ""}
-                    onChange={setDataReal}
-                    disabled={status !== "concluida"}
-                    formato="longo"
-                    placeholder={
-                      status !== "concluida"
-                        ? "Disponível ao concluir"
-                        : `Igual à conclusão (${(editing?.status === "concluida" && editing.completedAt
-                            ? new Date(editing.completedAt)
-                            : new Date()
-                          ).toLocaleDateString("pt-BR")})`
-                    }
-                    title="Dia em que a tarefa foi de fato finalizada"
-                    className={`w-full px-3 py-2 text-sm transition-[box-shadow,border-color] duration-500 ${
-                      destacarFinalizacao ? "border-primary ring-2 ring-primary/50" : ""
-                    }`}
-                  />
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    {status === "concluida"
-                      ? "Só preencha se terminou em outro dia. Não pode ser no futuro."
-                      : "Mude o status para Concluída para informar."}
-                  </p>
-                </Field>
-                <Field label="Prazo">
-                  <CampoData
-                    value={dueDate}
-                    onChange={setDueDate}
-                    formato="longo"
-                    placeholder="Sem prazo"
-                    className="w-full px-3 py-2 text-sm"
-                  />
-                </Field>
-                <Field label="Tags (separadas por vírgula)">
-                  <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
-                </Field>
-                <Field label="Tempo estimado (hh:mm)">
-                  <input
-                    value={estimateHM}
-                    onChange={(e) => setEstimateHM(e.target.value)}
-                    placeholder="Ex.: 00:30, 1:15, 45m"
-                    className="input font-mono"
-                  />
-                  {estimateHM && parseHM(estimateHM) !== null && (
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      = {formatHM((parseHM(estimateHM) ?? 0) * 60)}
-                    </p>
-                  )}
-                </Field>
-              </div>
-
-              {editing && (
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
-                  <div className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Pomodoro / tempo trabalhado</span>
-                    <br />
-                    Use play / pause / stop para medir quanto tempo essa tarefa está consumindo.
-                  </div>
-                  <TaskTimerControls
-                    taskId={editing.id}
-                    estimatedMinutes={editing.estimatedMinutes}
-                    size="md"
-                  />
+            <div className="relative">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Descrição <span className="text-muted-foreground/60">(use @ para mencionar)</span>
+              </label>
+              <textarea
+                ref={descRef}
+                value={description}
+                onChange={(e) => handleDescChange(e.target.value)}
+                rows={3}
+                readOnly={!canEditContent}
+                className={`w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
+              />
+              {mentionQuery !== null && filteredMentions.length > 0 && (
+                <div className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                  {filteredMentions.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => insertMention(u)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-secondary"
+                    >
+                      <UserAvatar nome={u.name} iniciais={u.avatar} className="h-6 w-6 text-[10px]" />
+                      {u.name}
+                      <span className="ml-auto text-[10px] text-muted-foreground">{u.jobTitle}</span>
+                    </button>
+                  ))}
                 </div>
               )}
-
-              <div className="rounded-md border border-border bg-secondary/40 p-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
-                  Tarefa recorrente (repete automaticamente ao concluir)
-                </label>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] text-muted-foreground">Atalhos:</span>
-                  {([
-                    { label: "Diária", freq: "diaria" as Frequency, days: 30 },
-                    { label: "Semanal", freq: "semanal" as Frequency, days: 90 },
-                    { label: "Mensal", freq: "mensal" as Frequency, days: 365 },
-                    { label: "Dias úteis", freq: "diaria" as Frequency, days: 30, weekdays: true },
-                  ] as { label: string; freq: Frequency; days: number; weekdays?: boolean }[]).map((p) => {
-                    const active = recurring && frequency === p.freq;
+              {mentions.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {mentions.map((mid) => {
+                    const u = users.find((x) => x.id === mid);
+                    if (!u) return null;
                     return (
-                      <button
-                        key={p.label}
-                        type="button"
-                        onClick={() => {
-                          setRecurring(true);
-                          setFrequency(p.freq);
-                          const end = new Date();
-                          end.setDate(end.getDate() + p.days);
-                          setRecurringUntil(dataParaIso(end));
-                          if (p.weekdays) {
-                            // `new Date("2026-09-13")` é meia-noite UTC — sábado
-                            // às 21h no Brasil, e o domingo não era pulado.
-                            const d = isoParaData(dueDate) ?? new Date();
-                            const dow = d.getDay();
-                            if (dow === 0) d.setDate(d.getDate() + 1);
-                            if (dow === 6) d.setDate(d.getDate() + 2);
-                            setDueDate(dataParaIso(d));
-                          }
-                        }}
-                        className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
-                          active
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border bg-card hover:border-primary/50"
-                        }`}
+                      <span
+                        key={mid}
+                        className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px]"
                       >
-                        {p.label}
-                      </button>
+                        <AtSign className="h-2.5 w-2.5" />
+                        {u.name}
+                        <button onClick={() => removeMention(mid)} className="ml-1 text-muted-foreground hover:text-foreground">
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
                     );
                   })}
-                  {recurring && (
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Responsável">
+                <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className="input">
+                  {assignables.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} {u.id === currentUser.id ? "(eu)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {currentUser.role === "adm" && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Como ADM, você só cria tarefas para si mesmo. Use @ para mencionar colegas.
+                  </p>
+                )}
+              </Field>
+              <Field label="Setor">
+                <select value={sector} onChange={(e) => setSector(e.target.value)} className="input">
+                  {sectors.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </Field>
+              {/* "Sem recorrência" é a primeira opção, e o padrão. O campo
+                  mostrava "Diária" em toda tarefa nova, repetisse ela ou não:
+                  quem decide é a caixa "Tarefa recorrente" lá embaixo, e os
+                  dois controles diziam coisas diferentes. Agora são o mesmo,
+                  visto de dois lugares — mudar um muda o outro. */}
+              <Field label="Frequência">
+                <select
+                  value={recurring ? frequency : ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) {
+                      setRecurring(false);
+                      setRecurringUntil("");
+                      return;
+                    }
+                    setFrequency(v as Frequency);
+                    ligarRecorrencia();
+                  }}
+                  className="input"
+                >
+                  <option value="">{SEM_RECORRENCIA}</option>
+                  {Object.entries(freqLabels).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Status">
+                <select
+                  value={status}
+                  onChange={(e) => {
+                    const novo = e.target.value as Status;
+                    // Chama o olho para o campo que acabou de ser liberado.
+                    if (novo === "concluida" && status !== "concluida") {
+                      setDestacarFinalizacao(true);
+                      window.setTimeout(() => setDestacarFinalizacao(false), 1600);
+                    }
+                    setStatus(novo);
+                  }}
+                  className="input"
+                >
+                  {Object.entries(statusLabels).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </Field>
+              {/* A data de conclusão era sempre a do clique: quem esquecia de
+                  marcar no dia via a Timeline dizer outro dia. Aqui a pessoa
+                  informa quando de fato terminou. É registro — pontos e
+                  prazo continuam pelo clique.
+
+                  Fixo, e não só com o status Concluída: surgindo do nada ao
+                  trocar o status, o campo passava despercebido. Fora de
+                  Concluída fica desabilitado e diz por quê; ao concluir,
+                  acende por um instante. */}
+              <Field label="Data de finalização">
+                <CampoData
+                  value={status === "concluida" ? dataReal : ""}
+                  onChange={setDataReal}
+                  disabled={status !== "concluida"}
+                  formato="longo"
+                  placeholder={
+                    status !== "concluida"
+                      ? "Disponível ao concluir"
+                      : `Igual à conclusão (${(editing?.status === "concluida" && editing.completedAt
+                          ? new Date(editing.completedAt)
+                          : new Date()
+                        ).toLocaleDateString("pt-BR")})`
+                  }
+                  title="Dia em que a tarefa foi de fato finalizada"
+                  className={`w-full px-3 py-2 text-sm transition-[box-shadow,border-color] duration-500 ${
+                    destacarFinalizacao ? "border-primary ring-2 ring-primary/50" : ""
+                  }`}
+                />
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  {status === "concluida"
+                    ? "Só preencha se terminou em outro dia. Não pode ser no futuro."
+                    : "Mude o status para Concluída para informar."}
+                </p>
+              </Field>
+              <Field label="Prazo">
+                <div className="flex gap-2">
+                  <CampoData
+                    value={semPrazo ? "" : dueDate}
+                    // Limpar a data é marcar "Sem prazo" — o campo vazio já dizia isso.
+                    onChange={(v) => (v ? setDueDate(v) : alternarSemPrazo(true))}
+                    disabled={semPrazo}
+                    formato="longo"
+                    placeholder="Sem prazo"
+                    className="min-w-0 flex-1 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="time"
+                    value={semPrazo ? "" : horario}
+                    onChange={(e) => setHorario(e.target.value)}
+                    disabled={semPrazo}
+                    aria-label="Horário do prazo"
+                    title="Horário (opcional). Com ele, o prazo vence nessa hora."
+                    className="input w-28 shrink-0 font-mono disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                </div>
+                <div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={semPrazo}
+                      onChange={(e) => alternarSemPrazo(e.target.checked)}
+                    />
+                    Sem prazo
+                  </label>
+                  {!semPrazo && horario && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setRecurring(false);
-                        setRecurringUntil("");
-                      }}
-                      className="ml-auto text-[11px] text-muted-foreground hover:text-destructive"
+                      onClick={() => setHorario("")}
+                      className="hover:text-foreground"
                     >
-                      remover recorrência
+                      tirar horário
                     </button>
                   )}
                 </div>
-                {/* Especificação fina, só do tipo escolhido. Antes "mensal" não
-                    dizia qual dia e "semanal" não dizia quais dias — a série
-                    caía sempre no mesmo dia do prazo original. */}
-                {recurring && frequency === "semanal" && (
-                  <div className="mt-3 border-t border-border/60 pt-2.5">
-                    <span className="text-[11px] font-medium text-foreground">
-                      Repete nestes dias:
-                    </span>
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {DIAS_SEMANA.map((nome, dia) => {
-                        const marcado = recurringWeekdays.includes(dia);
-                        return (
-                          <button
-                            key={nome}
-                            type="button"
-                            onClick={() =>
-                              setRecurringWeekdays((atual) =>
-                                atual.includes(dia)
-                                  ? atual.filter((d) => d !== dia)
-                                  : [...atual, dia].sort((a, b) => a - b),
-                              )
-                            }
-                            aria-pressed={marcado}
-                            className={`h-7 w-9 rounded-md border text-[11px] font-semibold transition ${
-                              marcado
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                            }`}
-                          >
-                            {nome}
-                          </button>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        onClick={() => setRecurringWeekdays([1, 2, 3, 4, 5])}
-                        className="ml-1 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
-                      >
-                        Dias úteis
-                      </button>
-                    </div>
-                    {recurringWeekdays.length === 0 && (
-                      <p className="mt-1.5 text-[10px] text-muted-foreground">
-                        Sem nenhum marcado, repete no mesmo dia da semana do prazo.
-                      </p>
-                    )}
-                  </div>
+              </Field>
+              <Field label="Tags (separadas por vírgula)">
+                <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
+              </Field>
+              <Field label="Tempo estimado (hh:mm)">
+                <input
+                  value={estimateHM}
+                  onChange={(e) => setEstimateHM(e.target.value)}
+                  placeholder="Ex.: 00:30, 1:15, 45m"
+                  className="input font-mono"
+                />
+                {estimateHM && parseHM(estimateHM) !== null && (
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    = {formatHM((parseHM(estimateHM) ?? 0) * 60)}
+                  </p>
                 )}
+              </Field>
+            </div>
 
-                {recurring && (frequency === "mensal" || frequency === "anual") && (
-                  <div className="mt-3 border-t border-border/60 pt-2.5">
-                    <span className="text-[11px] font-medium text-foreground">
-                      {frequency === "anual" ? "Repete todo ano em:" : "Repete no dia:"}
-                    </span>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      {frequency === "anual" && (
-                        <select
-                          value={(isoParaData(dueDate) ?? new Date()).getMonth()}
-                          onChange={(e) => {
-                            const mes = Number(e.target.value);
-                            const atual = isoParaData(dueDate) ?? new Date();
-                            setDueDate(
-                              dataParaIso(
-                                primeiraDataDaRegra("anual", recurringMonthDay ?? atual.getDate(), mes),
-                              ),
-                            );
-                          }}
-                          className="input max-w-40 py-1 text-xs capitalize"
-                          aria-label="Mês"
-                        >
-                          {MESES.map((nome, i) => (
-                            <option key={nome} value={i}>
-                              {nome}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <select
-                        value={recurringMonthDay ?? ""}
-                        onChange={(e) => {
-                          const dia = e.target.value === "" ? null : Number(e.target.value);
-                          setRecurringMonthDay(dia);
-                          // O prazo acompanha a regra: escolher "último dia útil"
-                          // com o prazo em hoje criaria a primeira no dia errado.
-                          if (dia !== null) {
-                            const mes = (isoParaData(dueDate) ?? new Date()).getMonth();
-                            setDueDate(
-                              dataParaIso(
-                                primeiraDataDaRegra(frequency === "anual" ? "anual" : "mensal", dia, mes),
-                              ),
-                            );
-                          }
-                        }}
-                        className="input max-w-[13rem] py-1 text-xs"
-                        aria-label="Dia"
-                      >
-                        <option value="">Mesmo dia do prazo</option>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                          <option key={d} value={d}>
-                            Dia {d}
-                          </option>
-                        ))}
-                        <option value={ULTIMO_DIA_DO_MES}>Último dia do mês</option>
-                        <option value={ULTIMO_DIA_UTIL}>Último dia útil do mês</option>
-                      </select>
-                      {recurringMonthDay !== null && recurringMonthDay > 28 && (
-                        <span className="text-[10px] text-warning">
-                          Meses mais curtos usam o último dia disponível.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
+            {editing && (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Pomodoro / tempo trabalhado</span>
+                  <br />
+                  Use play / pause / stop para medir quanto tempo essa tarefa está consumindo.
+                </div>
+                <TaskTimerControls
+                  taskId={editing.id}
+                  estimatedMinutes={editing.estimatedMinutes}
+                  size="md"
+                />
+              </div>
+            )}
 
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={recurring}
+                  onChange={(e) => (e.target.checked ? ligarRecorrencia() : setRecurring(false))}
+                />
+                Tarefa recorrente (repete automaticamente ao concluir)
+              </label>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">Atalhos:</span>
+                {([
+                  { label: "Diária", freq: "diaria" as Frequency, days: 30 },
+                  { label: "Semanal", freq: "semanal" as Frequency, days: 90 },
+                  { label: "Mensal", freq: "mensal" as Frequency, days: 365 },
+                  { label: "Dias úteis", freq: "diaria" as Frequency, days: 30, weekdays: true },
+                ] as { label: string; freq: Frequency; days: number; weekdays?: boolean }[]).map((p) => {
+                  const active = recurring && frequency === p.freq;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        ligarRecorrencia();
+                        setFrequency(p.freq);
+                        const end = new Date();
+                        end.setDate(end.getDate() + p.days);
+                        setRecurringUntil(dataParaIso(end));
+                        if (p.weekdays) {
+                          // `new Date("2026-09-13")` é meia-noite UTC — sábado
+                          // às 21h no Brasil, e o domingo não era pulado.
+                          const d = isoParaData(dueDate) ?? new Date();
+                          const dow = d.getDay();
+                          if (dow === 0) d.setDate(d.getDate() + 1);
+                          if (dow === 6) d.setDate(d.getDate() + 2);
+                          setDueDate(dataParaIso(d));
+                        }
+                      }}
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
+                        active
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-card hover:border-primary/50"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
                 {recurring && (
-                  <div className="mt-2 flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Repetir até (opcional):</span>
-                    <CampoData
-                      value={recurringUntil}
-                      onChange={setRecurringUntil}
-                      placeholder="Sem limite"
-                      title="Repetir até"
-                      className="max-w-40 py-1 text-xs"
-                    />
-                    {recurringUntil && (
-                      <button
-                        type="button"
-                        onClick={() => setRecurringUntil("")}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        limpar
-                      </button>
-                    )}
-                    {/* A regra por extenso vale mais que o rótulo da frequência:
-                        "Mensal" não conta que cai no dia 15. */}
-                    <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                      {descreverRecorrencia({
-                        recurring,
-                        frequency,
-                        recurringWeekdays,
-                        recurringMonthDay,
-                        dueDate,
-                      })}
-                    </span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecurring(false);
+                      setRecurringUntil("");
+                    }}
+                    className="ml-auto text-[11px] text-muted-foreground hover:text-destructive"
+                  >
+                    remover recorrência
+                  </button>
                 )}
               </div>
-
-              {(!editing || editing.createdBy === currentUser.id) && (
-              <div className="rounded-md border border-border bg-secondary/40 p-3">
-                <label className="flex cursor-pointer items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={requireProof}
-                    onChange={(e) => setRequireProof(e.target.checked)}
-                  />
-                  <span>
-                    <span className="font-medium">Exigir comprovante para concluir</span>
-                    <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                      flag do gestor
-                    </span>
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                      Só permite marcar como concluída se tiver pelo menos 1 anexo (recibo, print, PDF). Ex: conciliação bancária, pagamento, envio de relatório.
-                    </span>
+              {/* Especificação fina, só do tipo escolhido. Antes "mensal" não
+                  dizia qual dia e "semanal" não dizia quais dias — a série
+                  caía sempre no mesmo dia do prazo original. */}
+              {recurring && frequency === "semanal" && (
+                <div className="mt-3 border-t border-border/60 pt-2.5">
+                  <span className="text-[11px] font-medium text-foreground">
+                    Repete nestes dias:
                   </span>
-                </label>
-              </div>
-              )}
-
-              {editing && (
-                <div className="rounded-md border border-border bg-secondary/40 p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <Paperclip className="h-3.5 w-3.5" />
-                      Anexos
-                      <span className="text-[11px] text-muted-foreground">
-                        ({editing.attachments?.length ?? 0})
-                      </span>
-                    </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {DIAS_SEMANA.map((nome, dia) => {
+                      const marcado = recurringWeekdays.includes(dia);
+                      return (
+                        <button
+                          key={nome}
+                          type="button"
+                          onClick={() =>
+                            setRecurringWeekdays((atual) =>
+                              atual.includes(dia)
+                                ? atual.filter((d) => d !== dia)
+                                : [...atual, dia].sort((a, b) => a - b),
+                            )
+                          }
+                          aria-pressed={marcado}
+                          className={`h-7 w-9 rounded-md border text-[11px] font-semibold transition ${
+                            marcado
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                          }`}
+                        >
+                          {nome}
+                        </button>
+                      );
+                    })}
                     <button
                       type="button"
-                      onClick={() => taskAttInputRef.current?.click()}
-                      className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-primary/50"
+                      onClick={() => setRecurringWeekdays([1, 2, 3, 4, 5])}
+                      className="ml-1 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
                     >
-                      <Plus className="h-3 w-3" /> Adicionar arquivo
+                      Dias úteis
                     </button>
-                    <input
-                      ref={taskAttInputRef}
-                      type="file"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        handleTaskFilePick(e.target.files);
-                        e.target.value = "";
-                      }}
-                    />
                   </div>
-                  {editing.attachments && editing.attachments.length > 0 ? (
-                    <AttachmentList
-                      items={editing.attachments}
-                      onRemove={(id) => removeTaskAttachment(editing.id, id)}
-                    />
-                  ) : (
-                    <p className="text-center text-[11px] text-muted-foreground">
-                      Nenhum anexo. Envie imagens, PDFs, documentos (até 3 MB cada).
+                  {recurringWeekdays.length === 0 && (
+                    <p className="mt-1.5 text-[10px] text-muted-foreground">
+                      Sem nenhum marcado, repete no mesmo dia da semana do prazo.
                     </p>
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {tab === "checklist" && (
-            <div className="space-y-3">
-              {!editing && (
-                <p className="text-xs text-muted-foreground">
-                  Os itens são salvos junto com a tarefa.
-                </p>
+              {recurring && (frequency === "mensal" || frequency === "anual") && (
+                <div className="mt-3 border-t border-border/60 pt-2.5">
+                  <span className="text-[11px] font-medium text-foreground">
+                    {frequency === "anual" ? "Repete todo ano em:" : "Repete no dia:"}
+                  </span>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    {frequency === "anual" && (
+                      <select
+                        value={(isoParaData(dueDate) ?? new Date()).getMonth()}
+                        onChange={(e) => {
+                          const mes = Number(e.target.value);
+                          const atual = isoParaData(dueDate) ?? new Date();
+                          setDueDate(
+                            dataParaIso(
+                              primeiraDataDaRegra("anual", recurringMonthDay ?? atual.getDate(), mes),
+                            ),
+                          );
+                        }}
+                        className="input max-w-40 py-1 text-xs capitalize"
+                        aria-label="Mês"
+                      >
+                        {MESES.map((nome, i) => (
+                          <option key={nome} value={i}>
+                            {nome}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <select
+                      value={recurringMonthDay ?? ""}
+                      onChange={(e) => {
+                        const dia = e.target.value === "" ? null : Number(e.target.value);
+                        setRecurringMonthDay(dia);
+                        // O prazo acompanha a regra: escolher "último dia útil"
+                        // com o prazo em hoje criaria a primeira no dia errado.
+                        if (dia !== null) {
+                          const mes = (isoParaData(dueDate) ?? new Date()).getMonth();
+                          setDueDate(
+                            dataParaIso(
+                              primeiraDataDaRegra(frequency === "anual" ? "anual" : "mensal", dia, mes),
+                            ),
+                          );
+                        }
+                      }}
+                      className="input max-w-[13rem] py-1 text-xs"
+                      aria-label="Dia"
+                    >
+                      <option value="">Mesmo dia do prazo</option>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>
+                          Dia {d}
+                        </option>
+                      ))}
+                      <option value={ULTIMO_DIA_DO_MES}>Último dia do mês</option>
+                      <option value={ULTIMO_DIA_UTIL}>Último dia útil do mês</option>
+                    </select>
+                    {recurringMonthDay !== null && recurringMonthDay > 28 && (
+                      <span className="text-[10px] text-warning">
+                        Meses mais curtos usam o último dia disponível.
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
-              <div className="flex gap-2">
-                <input
-                  value={newChecklist}
-                  onChange={(e) => setNewChecklist(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      adicionarItemChecklist();
-                    }
-                  }}
-                  placeholder="Adicionar item…"
-                  className="input flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={adicionarItemChecklist}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground transition hover:brightness-110"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Adicionar
-                </button>
-              </div>
-              <ul className="space-y-1">
-                {itensChecklist.length === 0 && (
-                  <li className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-                    Nenhum item ainda. Quebre a tarefa em passos objetivos.
-                  </li>
-                )}
-                {itensChecklist.map((c) => (
-                  <li key={c.id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/50">
-                    <button
-                      type="button"
-                      onClick={() => alternarItemChecklist(c.id)}
-                      className={`flex h-4 w-4 items-center justify-center rounded border ${
-                        c.done ? "border-primary bg-primary text-primary-foreground" : "border-border"
-                      }`}
-                    >
-                      {c.done && <Check className="h-3 w-3" />}
-                    </button>
-                    <span className={`flex-1 text-sm ${c.done ? "text-muted-foreground line-through" : ""}`}>
-                      {c.text}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removerItemChecklist(c.id)}
-                      className="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
-          {tab === "comentarios" && editing && (
-            <div className="space-y-4">
+              {recurring && (
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Repetir até (opcional):</span>
+                  <CampoData
+                    value={recurringUntil}
+                    onChange={setRecurringUntil}
+                    placeholder="Sem limite"
+                    title="Repetir até"
+                    className="max-w-40 py-1 text-xs"
+                  />
+                  {recurringUntil && (
+                    <button
+                      type="button"
+                      onClick={() => setRecurringUntil("")}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      limpar
+                    </button>
+                  )}
+                  {/* A regra por extenso vale mais que o rótulo da frequência:
+                      "Mensal" não conta que cai no dia 15. */}
+                  <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                    {descreverRecorrencia({
+                      recurring,
+                      frequency,
+                      recurringWeekdays,
+                      recurringMonthDay,
+                      dueDate,
+                    })}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {(!editing || editing.createdBy === currentUser.id) && (
+            <div className="rounded-md border border-border bg-secondary/40 p-3">
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={requireProof}
+                  onChange={(e) => setRequireProof(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">Exigir comprovante para concluir</span>
+                  <span className="ml-2 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                    flag do gestor
+                  </span>
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                    Só permite marcar como concluída se tiver pelo menos 1 anexo (recibo, print, PDF). Ex: conciliação bancária, pagamento, envio de relatório.
+                  </span>
+                </span>
+              </label>
+            </div>
+            )}
+
+            {editing && (
+              <div className="rounded-md border border-border bg-secondary/40 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Paperclip className="h-3.5 w-3.5" />
+                    Anexos
+                    <span className="text-[11px] text-muted-foreground">
+                      ({editing.attachments?.length ?? 0})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => taskAttInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-primary/50"
+                  >
+                    <Plus className="h-3 w-3" /> Adicionar arquivo
+                  </button>
+                  <input
+                    ref={taskAttInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      handleTaskFilePick(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+                {editing.attachments && editing.attachments.length > 0 ? (
+                  <AttachmentList
+                    items={editing.attachments}
+                    onRemove={(id) => removeTaskAttachment(editing.id, id)}
+                  />
+                ) : (
+                  <p className="text-center text-[11px] text-muted-foreground">
+                    Nenhum anexo. Envie imagens, PDFs, documentos (até 3 MB cada).
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section
+            ref={(el) => {
+              secoesRef.current.checklist = el;
+            }}
+            className="mt-6 space-y-3 border-t border-border pt-5"
+          >
+            <TituloDaSecao
+              icone={ListChecks}
+              titulo="Checklist"
+              detalhe={
+                checklistLocal.length
+                  ? `${checklistLocal.filter((c) => c.done).length}/${checklistLocal.length}`
+                  : undefined
+              }
+            />
+            {!editing && (
+              <p className="text-xs text-muted-foreground">
+                Os itens são salvos junto com a tarefa.
+              </p>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={newChecklist}
+                onChange={(e) => setNewChecklist(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    adicionarItemChecklist();
+                  }
+                }}
+                placeholder="Adicionar item…"
+                className="input flex-1"
+              />
+              <button
+                type="button"
+                onClick={adicionarItemChecklist}
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground transition hover:brightness-110"
+              >
+                <Plus className="h-3.5 w-3.5" /> Adicionar
+              </button>
+            </div>
+            <ul className="space-y-1">
+              {itensChecklist.length === 0 && (
+                <li className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                  Nenhum item ainda. Quebre a tarefa em passos objetivos.
+                </li>
+              )}
+              {itensChecklist.map((c) => (
+                <li key={c.id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/50">
+                  <button
+                    type="button"
+                    onClick={() => alternarItemChecklist(c.id)}
+                    className={`flex h-4 w-4 items-center justify-center rounded border ${
+                      c.done ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                    }`}
+                  >
+                    {c.done && <Check className="h-3 w-3" />}
+                  </button>
+                  <span className={`flex-1 text-sm ${c.done ? "text-muted-foreground line-through" : ""}`}>
+                    {c.text}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removerItemChecklist(c.id)}
+                    className="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {editing && (
+            <section
+              ref={(el) => {
+                secoesRef.current.comentarios = el;
+              }}
+              className="mt-6 space-y-4 border-t border-border pt-5"
+            >
+              <TituloDaSecao
+                icone={MessageSquare}
+                titulo="Comentários"
+                detalhe={editing.comments.length ? String(editing.comments.length) : undefined}
+              />
               <div className="space-y-2 rounded-md border border-border bg-secondary/40 p-3">
                 <textarea
                   value={newComment}
@@ -1293,187 +1471,197 @@ export function TaskDialog() {
                   );
                 })}
               </ul>
-            </div>
+            </section>
           )}
 
-          {tab === "timeline" && editing && (() => {
-            type Item =
-              | {
-                  kind: "activity";
-                  tipo: ActivityKind;
-                  id: string;
-                  at: string;
-                  userId: string;
-                  text: string;
+          {editing && (
+            <section
+              ref={(el) => {
+                secoesRef.current.timeline = el;
+              }}
+              className="mt-6 space-y-3 border-t border-border pt-5"
+            >
+              <TituloDaSecao icone={Activity} titulo="Timeline" />
+              {(() => {
+                type Item =
+                  | {
+                      kind: "activity";
+                      tipo: ActivityKind;
+                      id: string;
+                      at: string;
+                      userId: string;
+                      text: string;
+                    }
+                  | {
+                      kind: "comment";
+                      id: string;
+                      at: string;
+                      userId: string;
+                      text: string;
+                      attachments?: Attachment[];
+                    };
+                /* O servidor escreve `{pessoa:<id>}` no lugar do nome — ver
+                   `historico.server.ts`. Trocado aqui pelo nome de hoje. */
+                const comNomes = (texto: string) =>
+                  texto.replace(
+                    /\{pessoa:(\d+)\}/g,
+                    (_, id: string) => users.find((u) => u.id === id)?.name ?? "outra pessoa",
+                  );
+                const items: Item[] = [
+                  /* "comentou" ficou para trás: a Timeline já mostra o próprio
+                     comentário, e a linha extra fazia cada um aparecer duas vezes.
+                     As que já estavam no banco são escondidas aqui. */
+                  ...editing.activity
+                    .filter((a) => a.kind !== "comentario")
+                    .map((a) => ({
+                      kind: "activity" as const,
+                      /* Antes a conclusão era gravada como mudança de status. Contar
+                         essas linhas como conclusão impede que a linha montada
+                         abaixo repita o mesmo fato. */
+                      tipo:
+                        a.kind === "status" && a.text === "mudou o status para Concluída"
+                          ? ("concluida" as const)
+                          : a.kind,
+                      id: a.id,
+                      at: a.at,
+                      userId: a.userId,
+                      text: comNomes(a.text),
+                    })),
+                  ...editing.comments.map((c) => ({
+                    kind: "comment" as const,
+                    id: c.id,
+                    at: c.at,
+                    userId: c.userId,
+                    text: c.text,
+                    attachments: c.attachments,
+                  })),
+                ];
+
+                /* A criação das tarefas ANTIGAS. O servidor passou a gravar o
+                   "criou" ao inserir a tarefa, mas tudo o que já existia nasceu sem
+                   ele. A data e o autor estão na própria linha da tarefa, em
+                   `createdAt`/`createdBy`, então a linha é montada aqui — sem
+                   escrever nada em `historico_da_tarefa` para corrigir o passado.
+
+                   Só entra se já não houver uma: a gravada pelo servidor diz mais,
+                   porque traz a origem (pack, ata, recorrência). */
+                if (editing.createdAt && !items.some((i) => i.kind === "activity" && i.tipo === "criada")) {
+                  items.push({
+                    kind: "activity",
+                    tipo: "criada",
+                    id: `criada-${editing.id}`,
+                    at: editing.createdAt,
+                    userId: editing.createdBy,
+                    text: "criou esta tarefa",
+                  });
                 }
-              | {
-                  kind: "comment";
-                  id: string;
-                  at: string;
-                  userId: string;
-                  text: string;
-                  attachments?: Attachment[];
-                };
-            /* O servidor escreve `{pessoa:<id>}` no lugar do nome — ver
-               `historico.server.ts`. Trocado aqui pelo nome de hoje. */
-            const comNomes = (texto: string) =>
-              texto.replace(
-                /\{pessoa:(\d+)\}/g,
-                (_, id: string) => users.find((u) => u.id === id)?.name ?? "outra pessoa",
-              );
-            const items: Item[] = [
-              /* "comentou" ficou para trás: a Timeline já mostra o próprio
-                 comentário, e a linha extra fazia cada um aparecer duas vezes.
-                 As que já estavam no banco são escondidas aqui. */
-              ...editing.activity
-                .filter((a) => a.kind !== "comentario")
-                .map((a) => ({
-                  kind: "activity" as const,
-                  /* Antes a conclusão era gravada como mudança de status. Contar
-                     essas linhas como conclusão impede que a linha montada
-                     abaixo repita o mesmo fato. */
-                  tipo:
-                    a.kind === "status" && a.text === "mudou o status para Concluída"
-                      ? ("concluida" as const)
-                      : a.kind,
-                  id: a.id,
-                  at: a.at,
-                  userId: a.userId,
-                  text: comNomes(a.text),
-                })),
-              ...editing.comments.map((c) => ({
-                kind: "comment" as const,
-                id: c.id,
-                at: c.at,
-                userId: c.userId,
-                text: c.text,
-                attachments: c.attachments,
-              })),
-            ];
 
-            /* A criação das tarefas ANTIGAS. O servidor passou a gravar o
-               "criou" ao inserir a tarefa, mas tudo o que já existia nasceu sem
-               ele. A data e o autor estão na própria linha da tarefa, em
-               `createdAt`/`createdBy`, então a linha é montada aqui — sem
-               escrever nada em `historico_da_tarefa` para corrigir o passado.
+                /* A conclusão, pelo mesmo motivo, para tarefa concluída antes de o
+                   servidor escrever o histórico. A data vem de `completions`
+                   (`gestor.conclusoes`), a mesma que o placar usa — e essa linha
+                   some quando a tarefa é reaberta, então só existe para a conclusão
+                   que ainda vale. Quem aparece é o responsável, que é quem pontuou. */
+                if (
+                  editing.status === "concluida" &&
+                  !items.some((i) => i.kind === "activity" && i.tipo === "concluida")
+                ) {
+                  const c = [...completions].reverse().find((x) => x.taskId === editing.id);
+                  if (c) {
+                    items.push({
+                      kind: "activity",
+                      tipo: "concluida",
+                      id: `concluida-${editing.id}`,
+                      at: c.at,
+                      userId: c.userId,
+                      text: c.onTime ? "concluiu a tarefa no prazo" : "concluiu a tarefa com atraso",
+                    });
+                  }
+                }
 
-               Só entra se já não houver uma: a gravada pelo servidor diz mais,
-               porque traz a origem (pack, ata, recorrência). */
-            if (editing.createdAt && !items.some((i) => i.kind === "activity" && i.tipo === "criada")) {
-              items.push({
-                kind: "activity",
-                tipo: "criada",
-                id: `criada-${editing.id}`,
-                at: editing.createdAt,
-                userId: editing.createdBy,
-                text: "criou esta tarefa",
-              });
-            }
+                items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
-            /* A conclusão, pelo mesmo motivo, para tarefa concluída antes de o
-               servidor escrever o histórico. A data vem de `completions`
-               (`gestor.conclusoes`), a mesma que o placar usa — e essa linha
-               some quando a tarefa é reaberta, então só existe para a conclusão
-               que ainda vale. Quem aparece é o responsável, que é quem pontuou. */
-            if (
-              editing.status === "concluida" &&
-              !items.some((i) => i.kind === "activity" && i.tipo === "concluida")
-            ) {
-              const c = [...completions].reverse().find((x) => x.taskId === editing.id);
-              if (c) {
-                items.push({
-                  kind: "activity",
-                  tipo: "concluida",
-                  id: `concluida-${editing.id}`,
-                  at: c.at,
-                  userId: c.userId,
-                  text: c.onTime ? "concluiu a tarefa no prazo" : "concluiu a tarefa com atraso",
-                });
-              }
-            }
-
-            items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-
-            /* A conclusão que vale é a mais recente. Com o dia em que a tarefa
-               de fato terminou informado, é ele que a linha mostra primeiro; o
-               clique fica ao lado, porque é quando o registro foi feito. */
-            const diaInformado =
-              editing.status === "concluida" && editing.actualCompletionDate
-                ? isoParaData(editing.actualCompletionDate)?.toLocaleDateString("pt-BR")
-                : undefined;
-            const conclusaoVigente = diaInformado
-              ? items.find((i) => i.kind === "activity" && i.tipo === "concluida")?.id
-              : undefined;
-            /* Rede de proteção: com a linha de criação acima, chegar aqui
-               significa tarefa sem `createdAt` — raro, mas melhor do que o que
-               havia antes, que era um <ol> vazio com só o risco da borda. Quem
-               abria não distinguia "nada aconteceu" de "isto quebrou", e a
-               segunda leitura era a óbvia. */
-            if (items.length === 0) {
-              return (
-                <div className="flex flex-col items-center gap-2 py-10 text-center">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary">
-                    <Activity className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                  <p className="text-sm font-medium">Nada aconteceu nesta tarefa ainda.</p>
-                  <p className="max-w-xs text-xs text-muted-foreground">
-                    Criação, status, responsável, prazo, checklist, anexos, comentários e a
-                    conclusão aparecem aqui, em ordem.
-                  </p>
-                </div>
-              );
-            }
-            return (
-              <ol className="relative space-y-4 border-l border-border pl-5">
-                {items.map((it) => {
-                  const u = users.find((x) => x.id === it.userId);
-                  const isComment = it.kind === "comment";
-                  const vigente = it.id === conclusaoVigente;
-                  // A data já vai ao lado; no texto gravado ela apareceria duas vezes.
-                  const texto = vigente ? it.text.replace(/ · finalizada de fato em \S+$/, "") : it.text;
+                /* A conclusão que vale é a mais recente. Com o dia em que a tarefa
+                   de fato terminou informado, é ele que a linha mostra primeiro; o
+                   clique fica ao lado, porque é quando o registro foi feito. */
+                const diaInformado =
+                  editing.status === "concluida" && editing.actualCompletionDate
+                    ? isoParaData(editing.actualCompletionDate)?.toLocaleDateString("pt-BR")
+                    : undefined;
+                const conclusaoVigente = diaInformado
+                  ? items.find((i) => i.kind === "activity" && i.tipo === "concluida")?.id
+                  : undefined;
+                /* Rede de proteção: com a linha de criação acima, chegar aqui
+                   significa tarefa sem `createdAt` — raro, mas melhor do que o que
+                   havia antes, que era um <ol> vazio com só o risco da borda. Quem
+                   abria não distinguia "nada aconteceu" de "isto quebrou", e a
+                   segunda leitura era a óbvia. */
+                if (items.length === 0) {
                   return (
-                    <li key={`${it.kind}-${it.id}`} className="relative">
-                      <span
-                        className={`absolute -left-[26px] flex h-4 w-4 items-center justify-center rounded-full ring-2 ring-card ${
-                          isComment ? "bg-primary text-primary-foreground" : "bg-secondary"
-                        }`}
-                      >
-                        {isComment ? (
-                          <MessageSquare className="h-2.5 w-2.5" />
-                        ) : (
-                          <Activity className="h-2.5 w-2.5 text-muted-foreground" />
-                        )}
+                    <div className="flex flex-col items-center gap-2 py-10 text-center">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary">
+                        <Activity className="h-4 w-4 text-muted-foreground" />
                       </span>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-medium">{u?.name ?? "—"}</span>
-                        {!isComment && (
-                          <span className="text-muted-foreground">{texto}</span>
-                        )}
-                        {vigente && (
-                          <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                            finalizada em {diaInformado}
+                      <p className="text-sm font-medium">Nada aconteceu nesta tarefa ainda.</p>
+                      <p className="max-w-xs text-xs text-muted-foreground">
+                        Criação, status, responsável, prazo, checklist, anexos, comentários e a
+                        conclusão aparecem aqui, em ordem.
+                      </p>
+                    </div>
+                  );
+                }
+                return (
+                  <ol className="relative space-y-4 border-l border-border pl-5">
+                    {items.map((it) => {
+                      const u = users.find((x) => x.id === it.userId);
+                      const isComment = it.kind === "comment";
+                      const vigente = it.id === conclusaoVigente;
+                      // A data já vai ao lado; no texto gravado ela apareceria duas vezes.
+                      const texto = vigente ? it.text.replace(/ · finalizada de fato em \S+$/, "") : it.text;
+                      return (
+                        <li key={`${it.kind}-${it.id}`} className="relative">
+                          <span
+                            className={`absolute -left-[26px] flex h-4 w-4 items-center justify-center rounded-full ring-2 ring-card ${
+                              isComment ? "bg-primary text-primary-foreground" : "bg-secondary"
+                            }`}
+                          >
+                            {isComment ? (
+                              <MessageSquare className="h-2.5 w-2.5" />
+                            ) : (
+                              <Activity className="h-2.5 w-2.5 text-muted-foreground" />
+                            )}
                           </span>
-                        )}
-                        <span className="text-muted-foreground/70">
-                          · {vigente ? `marcada ${formatRelative(it.at)}` : formatRelative(it.at)}
-                        </span>
-                      </div>
-                      {isComment && (
-                        <div className="mt-1 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
-                          {it.text && <div className="whitespace-pre-wrap">{it.text}</div>}
-                          {it.attachments && it.attachments.length > 0 && (
-                            <div className="mt-2">
-                              <AttachmentList items={it.attachments} />
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-medium">{u?.name ?? "—"}</span>
+                            {!isComment && (
+                              <span className="text-muted-foreground">{texto}</span>
+                            )}
+                            {vigente && (
+                              <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                finalizada em {diaInformado}
+                              </span>
+                            )}
+                            <span className="text-muted-foreground/70">
+                              · {vigente ? `marcada ${formatRelative(it.at)}` : formatRelative(it.at)}
+                            </span>
+                          </div>
+                          {isComment && (
+                            <div className="mt-1 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
+                              {it.text && <div className="whitespace-pre-wrap">{it.text}</div>}
+                              {it.attachments && it.attachments.length > 0 && (
+                                <div className="mt-2">
+                                  <AttachmentList items={it.attachments} />
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            );
-          })()}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                );
+              })()}
+            </section>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-5 py-3">
@@ -1510,6 +1698,25 @@ export function TaskDialog() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Cabeçalho de cada seção abaixo de Detalhes, no corpo que rola inteiro. */
+function TituloDaSecao({
+  icone: Icone,
+  titulo,
+  detalhe,
+}: {
+  icone: typeof Activity;
+  titulo: string;
+  detalhe?: string;
+}) {
+  return (
+    <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+      <Icone className="h-4 w-4 text-primary" />
+      {titulo}
+      {detalhe && <span className="text-xs font-normal text-muted-foreground">({detalhe})</span>}
+    </h3>
   );
 }
 

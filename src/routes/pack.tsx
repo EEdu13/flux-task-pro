@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Check, Flame, Send, Sparkles, Trash2, Users, Layers, ArrowLeftRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
+import { RECORRENCIA_DO_PACK } from "@/lib/recorrencia";
 import { confirmar } from "@/components/confirm-dialog";
 import { motion } from "framer-motion";
 
@@ -99,11 +100,13 @@ function PackPage() {
         createdBy: currentUser.id,
         assigneeId,
         mentions: assigneeId !== currentUser.id ? [assigneeId] : [],
-        frequency: "diaria",
         status: "pendente",
         score: 10,
         dueDate: todayEnd(),
-        recurring: false,
+        /* O pack é de compromissos que voltam: nascia sem recorrência, e o
+           item concluído num dia sumia do pack no seguinte (o do João, em
+           25/09). Agora volta todo dia útil — ver RECORRENCIA_DO_PACK. */
+        ...RECORRENCIA_DO_PACK,
         priority: "media",
         tags: ["pack"],
         inPack: true,

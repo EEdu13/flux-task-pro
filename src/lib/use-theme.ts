@@ -376,7 +376,10 @@ export function formatRelative(iso: string): string {
   return `há ${Math.floor(d / 365)} ano(s)`;
 }
 
-export function formatDueBucket(iso: string): "atrasada" | "hoje" | "semana" | "depois" {
+export function formatDueBucket(
+  iso: string | null,
+): "atrasada" | "hoje" | "semana" | "depois" | "sem_prazo" {
+  if (!iso) return "sem_prazo";
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const due = new Date(iso);

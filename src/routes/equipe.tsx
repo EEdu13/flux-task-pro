@@ -17,6 +17,7 @@ import { ScoreBar } from "@/components/score-bar";
 import { UserAvatar } from "@/components/user-avatar";
 import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
+import { SEM_PRAZO, porPrazo, rotuloDoPrazo } from "@/lib/prazo";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/equipe")({
@@ -133,6 +134,8 @@ function EquipePage() {
 
   const inRange = (t: Task) => {
     if (!range) return true;
+    // Período é sobre o prazo; sem prazo, fora de qualquer período.
+    if (!t.dueDate) return false;
     const due = new Date(t.dueDate).getTime();
     return due >= range[0] && due <= range[1];
   };
@@ -438,10 +441,7 @@ function UserTasksDrawer({
                     <ul className="space-y-1.5">
                       {list
                         .slice()
-                        .sort(
-                          (a, b) =>
-                            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
-                        )
+                        .sort(porPrazo)
                         .map((t) => (
                           <li key={t.id}>
                             <button
@@ -454,11 +454,9 @@ function UserTasksDrawer({
                                 <div className="truncate font-medium">{t.title}</div>
                                 <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
                                   <span>
-                                    Prazo{" "}
-                                    {new Date(t.dueDate).toLocaleDateString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "short",
-                                    })}
+                                    {t.dueDate
+                                      ? `Prazo ${rotuloDoPrazo(t, { day: "2-digit", month: "short" })}`
+                                      : SEM_PRAZO}
                                   </span>
                                   {t.tags.length > 0 && (
                                     <span className="truncate">· {t.tags.join(", ")}</span>

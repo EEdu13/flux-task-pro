@@ -41,11 +41,15 @@ export function TaskContextMenu() {
   if (!task) return null;
 
   const snooze = (label: string, when: Date) => {
-    const prev = task.dueDate;
-    updateTask(task.id, { dueDate: when.toISOString() });
+    const prev = { dueDate: task.dueDate, dueTime: task.dueTime ?? null };
+    /* Adiar escolhe dia E hora, e a hora vira o horário do prazo. Sem isto, numa
+       tarefa com horário o servidor trocaria as 9h do adiamento pelo horário
+       antigo — ele acerta a hora do prazo para bater com o horário. */
+    const hora = `${String(when.getHours()).padStart(2, "0")}:${String(when.getMinutes()).padStart(2, "0")}`;
+    updateTask(task.id, { dueDate: when.toISOString(), dueTime: hora });
     pushUndo({
       label: `Tarefa adiada para ${label}`,
-      undo: () => updateTask(task.id, { dueDate: prev }),
+      undo: () => updateTask(task.id, prev),
     });
   };
   const tomorrow9 = () => {
@@ -152,6 +156,7 @@ export function TaskContextMenu() {
             status: "pendente",
             score: task.score,
             dueDate: task.dueDate,
+            dueTime: task.dueTime,
             recurring: task.recurring,
             priority: task.priority,
             tags: task.tags,
@@ -180,6 +185,7 @@ export function TaskContextMenu() {
                   status: snapshot.status,
                   score: snapshot.score,
                   dueDate: snapshot.dueDate,
+                  dueTime: snapshot.dueTime,
                   recurring: snapshot.recurring,
                   priority: snapshot.priority,
                   tags: snapshot.tags,

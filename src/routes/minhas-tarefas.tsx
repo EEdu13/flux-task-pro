@@ -52,6 +52,7 @@ import {
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
 import { estiloDoCartaoDoProjeto, useProjetoDaTarefa } from "@/lib/projeto-da-tarefa";
 import { semAcento } from "@/lib/texto-busca";
+import { SEM_PRAZO, porPrazo, prazoMs, prazoVencido, rotuloDoPrazo } from "@/lib/prazo";
 
 export const Route = createFileRoute("/minhas-tarefas")({
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
@@ -232,6 +233,8 @@ function MinhasTarefas() {
       if (assignee !== "todos" && t.assigneeId !== assignee) return false;
       if (tag !== "todas" && !t.tags.includes(tag)) return false;
       if (range && scope !== "pack") {
+        // Filtro de período é sobre o prazo; sem prazo, fora do período.
+        if (!t.dueDate) return false;
         const due = new Date(t.dueDate).getTime();
         if (due < range[0] || due > range[1]) return false;
       }
@@ -479,6 +482,7 @@ function MinhasTarefas() {
                   return false;
                 if (t.inPack && t.assigneeId === currentUser.id) return false; // já está no pack
                 if (t.status === "concluida") return false;
+                if (!t.dueDate) return false; // sem prazo não é "de hoje" nem atrasada
                 const due = new Date(t.dueDate);
                 const now = new Date();
                 return (
@@ -567,6 +571,7 @@ function TaskList({
     { key: "hoje", label: "Hoje", items: [] },
     { key: "semana", label: "Esta semana", items: [] },
     { key: "depois", label: "Depois", items: [] },
+    { key: "sem_prazo", label: "Sem prazo", items: [] },
     { key: "concluida", label: "Concluídas", items: [] },
   ];
   /* Concluída sai da régua do prazo antes de tudo.
@@ -582,8 +587,9 @@ function TaskList({
       ? // A ordem do arraste é prioridade de trabalho, que não existe mais
         // aqui. Prazo mais recente primeiro: o que acabou de sair é o que se
         // procura.
-        g.items.sort((a, b) => b.dueDate.localeCompare(a.dueDate))
-      : g.items.sort((a, b) => a.order - b.order || a.dueDate.localeCompare(b.dueDate)),
+        // (sem prazo por último também aqui)
+        g.items.sort((a, b) => Number(!a.dueDate) - Number(!b.dueDate) || porPrazo(b, a))
+      : g.items.sort((a, b) => a.order - b.order || porPrazo(a, b)),
   );
 
   const handleDrop = (groupKey: string, insertIndex: number) => {
@@ -738,7 +744,7 @@ function TaskList({
                         </div>
                       </td>
                       <td className="py-2.5 pr-4 text-xs text-muted-foreground">
-                        {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                        {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
                       </td>
                       <td className="py-2.5 pr-4">
                         <Badge label={statusLabels[t.status]} color={statusColor[t.status]} />
@@ -884,8 +890,10 @@ function KanbanBoard({
         const items = [...daColuna].sort((a, b) => {
           // Sem ordenação escolhida, vale a ordem do arraste.
           if (ordem === "manual") return a.order - b.order;
-          const da = new Date(a.dueDate).getTime();
-          const db = new Date(b.dueDate).getTime();
+          // Sem prazo fica por último nos dois sentidos: não vence nem cedo nem tarde.
+          if (!a.dueDate !== !b.dueDate) return a.dueDate ? -1 : 1;
+          const da = prazoMs(a.dueDate);
+          const db = prazoMs(b.dueDate);
           if (da !== db) return ordem === "asc" ? da - db : db - da;
           // Empate de prazo cai na prioridade, para a lista não embaralhar
           // sozinha a cada render.
@@ -1099,7 +1107,7 @@ function KanbanBoard({
                       <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1.5 whitespace-nowrap">
                           <Clock className="h-3 w-3" />
-                          {new Date(t.dueDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                          {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
                         </span>
                       </div>
                       <div className="ml-auto flex items-center gap-2">
@@ -1463,10 +1471,9 @@ function ExternalRow({
   const isMention =
     task.mentions.includes(currentUserId) && task.assigneeId !== currentUserId;
   const isMine = task.assigneeId === currentUserId;
-  const dueMs = new Date(task.dueDate).getTime();
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
-  const isLate = dueMs < startOfToday.getTime();
+  const isLate = prazoVencido(task.dueDate, startOfToday.getTime());
   const origin = isMention ? "Mencionaram você" : isMine ? "Atribuída a você" : "Criada por você";
   const projeto = useProjetoDaTarefa(task.projectId);
   return (
@@ -1507,11 +1514,9 @@ function ExternalRow({
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>
-            Prazo{" "}
-            {new Date(task.dueDate).toLocaleDateString("pt-BR", {
-              day: "2-digit",
-              month: "short",
-            })}
+            {task.dueDate
+              ? `Prazo ${rotuloDoPrazo(task, { day: "2-digit", month: "short" })}`
+              : SEM_PRAZO}
           </span>
           {task.recurring && (
             <span className="inline-flex items-center gap-0.5">
@@ -1583,11 +1588,9 @@ function PackRow({
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>
-            Prazo{" "}
-            {new Date(task.dueDate).toLocaleDateString("pt-BR", {
-              day: "2-digit",
-              month: "short",
-            })}
+            {task.dueDate
+              ? `Prazo ${rotuloDoPrazo(task, { day: "2-digit", month: "short" })}`
+              : SEM_PRAZO}
           </span>
           {task.recurring && (
             <span className="inline-flex items-center gap-0.5">

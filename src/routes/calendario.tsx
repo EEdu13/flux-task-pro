@@ -415,6 +415,7 @@ function MonthGrid({
       const dayEnd = new Date(d);
       dayEnd.setDate(d.getDate() + 1);
       const dayTasks = filtered.filter((t) => {
+        if (!t.dueDate) return false; // sem prazo não tem dia no calendário
         const dt = new Date(t.dueDate).getTime();
         return dt >= d.getTime() && dt < dayEnd.getTime();
       });
@@ -520,6 +521,7 @@ function WeekGrid({
       e.setDate(d.getDate() + 1);
       const dayTasks = filtered
         .filter((t) => {
+          if (!t.dueDate) return false; // sem prazo não tem dia no calendário
           const dt = new Date(t.dueDate).getTime();
           return dt >= d.getTime() && dt < e.getTime();
         })
@@ -600,6 +602,7 @@ function DayView({
     const e = s + 24 * 60 * 60 * 1000;
     return filtered
       .filter((t) => {
+        if (!t.dueDate) return false; // sem prazo não tem dia no calendário
         const dt = new Date(t.dueDate).getTime();
         return dt >= s && dt < e;
       })
@@ -781,6 +784,7 @@ function ListView({
     const end = start + 60 * 24 * 60 * 60 * 1000; // 60 days window
     const list = filtered
       .filter((t) => {
+        if (!t.dueDate) return false; // sem prazo não tem dia no calendário
         const dt = new Date(t.dueDate).getTime();
         return dt >= start && dt < end;
       })

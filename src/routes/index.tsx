@@ -23,6 +23,7 @@ import { BlocoEntrada } from "@/components/stagger";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { openTaskContext } from "@/components/task-context-menu";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
+import { porPrazo } from "@/lib/prazo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -82,9 +83,13 @@ function Home() {
 
   const myTasks = tasks.filter((t) => t.assigneeId === currentUser.id);
   const openTasks = myTasks.filter((t) => t.status !== "concluida");
+  // O foco é o que vence até o fim da semana; sem prazo não entra.
   const todayFocus = openTasks
-    .filter((t) => formatDueBucket(t.dueDate) !== "depois")
-    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .filter((t) => {
+      const b = formatDueBucket(t.dueDate);
+      return b !== "depois" && b !== "sem_prazo";
+    })
+    .sort(porPrazo)
     .slice(0, 6);
 
   const doneToday = useMemo(() => {
@@ -420,6 +425,7 @@ function Home() {
                             }`}
                           >
                             {bucket === "atrasada" ? "Atrasada" : bucket === "hoje" ? "Hoje" : "Esta semana"}
+                            {t.dueTime && ` · ${t.dueTime}`}
                           </span>
                         </div>
                       </div>

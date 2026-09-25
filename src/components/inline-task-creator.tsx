@@ -22,6 +22,18 @@ import { iniciaisDoNome } from "@/integrations/iam/types";
 import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
 import { toast } from "sonner";
 import { TravaScroll } from "@/components/trava-scroll";
+import { HORARIO_VALIDO, SEM_PRAZO } from "@/lib/prazo";
+
+/**
+ * O Esc veio de dentro de um painel aberto por cima da grade — o calendário do
+ * prazo (Popover, role="dialog") ou a lista de responsável (role="listbox")?
+ * A escuta do modal é em captura na janela e roda ANTES do painel: sem esta
+ * conferência, Esc para fechar o calendário fechava o modal inteiro.
+ */
+export function escDeUmPainel(e: KeyboardEvent): boolean {
+  const alvo = e.target instanceof Element ? e.target : null;
+  return !!alvo?.closest('[role="dialog"], [role="listbox"]');
+}
 
 /** Chave da dica de primeira vez (responsável × @). */
 const DICA_KEY = "fluxo.grade.dica-mencao";
@@ -102,13 +114,20 @@ function SeletorResponsavel({
       setAberto(false);
     };
     const fechar = () => setAberto(false);
+    /* O modal da grade rola; sem isto o painel ficaria flutuando fora do campo.
+       Mas a escuta é em captura, e captura recebe a rolagem de QUALQUER
+       elemento — inclusive a da própria lista. A primeira volta da roda fechava
+       o painel, e na prática a lista não rolava. */
+    const aoRolar = (e: Event) => {
+      if (painelRef.current?.contains(e.target as Node)) return;
+      fechar();
+    };
     document.addEventListener("mousedown", foraDaqui);
-    // O modal da grade rola; sem isto o painel ficaria flutuando fora do campo.
-    window.addEventListener("scroll", fechar, true);
+    window.addEventListener("scroll", aoRolar, true);
     window.addEventListener("resize", fechar);
     return () => {
       document.removeEventListener("mousedown", foraDaqui);
-      window.removeEventListener("scroll", fechar, true);
+      window.removeEventListener("scroll", aoRolar, true);
       window.removeEventListener("resize", fechar);
     };
   }, [aberto]);
@@ -246,6 +265,10 @@ interface DraftRow {
   title: string;
   description: string;
   dueDate: string; // yyyy-mm-dd
+  /** A data acima fica guardada: desmarcar devolve o prazo que estava. */
+  semPrazo: boolean;
+  /** "HH:mm" ou vazio — o horário do prazo. */
+  horario: string;
   assigneeId: string;
   sector: string;
   attachments: Attachment[];
@@ -279,6 +302,8 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     title: "",
     description: "",
     dueDate: defaults.dueDate ?? todayStr(),
+    semPrazo: defaults.semPrazo ?? false,
+    horario: "",
     assigneeId: defaults.assigneeId ?? "",
     sector: defaults.sector ?? "",
     attachments: [],
@@ -317,6 +342,7 @@ export function InlineTaskCreator({
   defaultDueDate,
   defaultAssigneeId,
   emPagina = false,
+  aoFechar,
 }: {
   defaultStatus?: Status;
   compact?: boolean;
@@ -324,8 +350,17 @@ export function InlineTaskCreator({
   defaultAssigneeId?: string;
   /** Na aba dedicada a grade é a própria página: não recolhe. */
   emPagina?: boolean;
+  /**
+   * Fecha o modal em que a grade está. Sem ele, a grade é a do "criar
+   * rapidamente" (`quickCreate`) ou a da aba, que não fecha.
+   */
+  aoFechar?: () => void;
 }) {
   const { currentUser, visibleUsersForAssign, createTask, quickCreate, closeQuickCreate } = useFluxo();
+  /* Esta grade responde ao Esc e ao pedido de fechar? A da aba nunca: com o
+     "criar rapidamente" aberto por cima dela, as duas fechariam juntas. */
+  const ativa = aoFechar ? true : quickCreate.open && !emPagina;
+  const fecharModal = aoFechar ?? closeQuickCreate;
   const assignees = visibleUsersForAssign();
   const [open, setOpen] = useState(true);
   /* Recolher a grade só faz sentido dentro do modal, onde ela divide espaço
@@ -437,6 +472,8 @@ export function InlineTaskCreator({
       assigneeId: source?.assigneeId || defaultAssigneeId || currentUser.id,
       sector: source?.sector || currentUser.sector,
       dueDate: source?.dueDate,
+      // Uma leva de tarefas sem prazo é comum; herdar poupa desmarcar linha a linha.
+      semPrazo: source?.semPrazo,
     });
     setRows((rs) => {
       if (!afterId) return [...rs, draft];
@@ -456,7 +493,12 @@ export function InlineTaskCreator({
     // setHours abaixo então marcava o prazo para 30/08 23:59, um dia antes
     // do que a pessoa escolheu.
     const due = isoParaData(row.dueDate) ?? isoParaData(todayStr()) ?? new Date();
-    due.setHours(23, 59, 0, 0);
+    // Com horário, vence nele; sem, no fim do dia, como sempre foi na grade.
+    const horario = !row.semPrazo && HORARIO_VALIDO.test(row.horario) ? row.horario : null;
+    const [h, m] = (horario ?? "23:59").split(":").map(Number);
+    due.setHours(h ?? 23, m ?? 59, 0, 0);
+    // Recorrência conta a partir do prazo; sem prazo, não repete.
+    const repete = row.recurring && !row.semPrazo;
     const est = parseHM(row.estimateHM);
     createTask({
       title: row.title.trim(),
@@ -468,14 +510,14 @@ export function InlineTaskCreator({
       frequency: row.frequency,
       status: defaultStatus,
       score: 10,
-      dueDate: due.toISOString(),
-      recurring: row.recurring,
+      dueDate: row.semPrazo ? null : due.toISOString(),
+      dueTime: horario,
+      recurring: repete,
       // Só o campo da frequência escolhida: trocar de semanal para mensal não
       // pode deixar dias da semana órfãos decidindo a série.
-      recurringWeekdays:
-        row.recurring && row.frequency === "semanal" ? row.recurringWeekdays : null,
+      recurringWeekdays: repete && row.frequency === "semanal" ? row.recurringWeekdays : null,
       recurringMonthDay:
-        row.recurring && (row.frequency === "mensal" || row.frequency === "anual")
+        repete && (row.frequency === "mensal" || row.frequency === "anual")
           ? row.recurringMonthDay
           : null,
       priority: row.priority,
@@ -545,8 +587,11 @@ export function InlineTaskCreator({
     setRows((rs) => (rs.length === 1 ? [makeDraft({ assigneeId: currentUser.id, sector: currentUser.sector })] : rs.filter((r) => r.id !== id)));
   };
 
+  /* Esc, clique fora e o X passam todos por aqui: com linha preenchida,
+     pergunta antes; vazia, fecha. Um clique errado fora do modal não pode
+     levar embora vinte linhas digitadas. */
   const handleEscape = () => {
-    if (!quickCreate.open) return;
+    if (!ativa) return;
     if (confirmOpen || discardOpen) return;
     if (mention) {
       setMention(null);
@@ -556,14 +601,16 @@ export function InlineTaskCreator({
     if (hasContent) {
       setDiscardOpen(true);
     } else {
-      closeQuickCreate();
+      fecharModal();
     }
   };
 
   useEffect(() => {
-    if (!quickCreate.open) return;
+    if (!ativa) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // Esc num painel aberto (calendário, lista de responsável) fecha só ele.
+      if (escDeUmPainel(e)) return;
       e.preventDefault();
       e.stopPropagation();
       handleEscape();
@@ -581,7 +628,7 @@ export function InlineTaskCreator({
     const valid = rows.filter((r) => r.title.trim());
     if (valid.length === 0) {
       setDiscardOpen(false);
-      closeQuickCreate();
+      fecharModal();
       return;
     }
     valid.forEach(commitRow);
@@ -589,12 +636,12 @@ export function InlineTaskCreator({
       `${valid.length} tarefa${valid.length > 1 ? "s" : ""} criada${valid.length > 1 ? "s" : ""}`,
     );
     setDiscardOpen(false);
-    closeQuickCreate();
+    fecharModal();
   };
 
   const discardAndClose = () => {
     setDiscardOpen(false);
-    closeQuickCreate();
+    fecharModal();
   };
 
   const update = (id: string, patch: Partial<DraftRow>) =>
@@ -1096,10 +1143,21 @@ export function InlineTaskCreator({
           <input
             type="checkbox"
             checked={row.recurring}
-            onChange={(e) => update(row.id, { recurring: e.target.checked })}
+            onChange={(e) =>
+              // A recorrência repete a partir do prazo: ligar traz o prazo de volta.
+              update(
+                row.id,
+                e.target.checked ? { recurring: true, semPrazo: false } : { recurring: false },
+              )
+            }
           />
           Repete ao concluir
         </label>
+        {row.semPrazo && !row.recurring && (
+          <p className="mt-1 text-[10px] text-foreground/55">
+            Marcar liga o prazo de novo: a repetição conta a partir dele.
+          </p>
+        )}
         {row.recurring && (
           <div className="mt-1.5 space-y-1.5">
             <select
@@ -1510,23 +1568,24 @@ export function InlineTaskCreator({
                     `min-w-*`: numa tela larga a sobra vai para os dois campos de
                     texto, em vez de ser repartida com Prazo e Prioridade, que
                     não ficam melhores maiores. */}
-                <table className="w-full min-w-260 border-collapse text-xs">
+                <table className="w-full min-w-315 border-collapse text-xs">
                   <thead>
                     {/* Gruda logo abaixo do cabeçalho da aba (h-16). Com muitas
                         linhas, o nome da coluna é o que diz o que você está
                         preenchendo — some ele e a planilha vira campo anônimo. */}
                     <tr className={`bg-secondary text-left ${cabecalhoGrudento}`}>
                       <th className={`${TH} w-9 text-center`}>#</th>
-                      <th className={`${TH} w-[30%] min-w-56`}>
+                      <th className={`${TH} w-[30%] min-w-48`}>
                         Tarefa <span className="text-destructive">*</span>
                       </th>
-                      <th className={`${TH} w-[24%] min-w-44`}>
+                      <th className={`${TH} w-[24%] min-w-36`}>
                         Descrição{" "}
                         <span className="font-medium normal-case tracking-normal text-foreground/50">
                           (opcional)
                         </span>
                       </th>
-                      <th className={`${TH} w-34`}>Prazo</th>
+                      <th className={`${TH} w-46`}>Prazo</th>
+                      <th className={`${TH} w-24`}>Horário</th>
                       {!compact && <th className={`${TH} w-44`}>Responsável</th>}
                       <th className={`${TH} w-24`}>Prioridade</th>
                       <th className={`${TH} w-22`}>Estimativa</th>
@@ -1554,13 +1613,55 @@ export function InlineTaskCreator({
                             {campoDescricao(row, idx, CELULA)}
                           </td>
                           <td className={`${TD} px-1`}>
-                            <CampoData
-                              value={row.dueDate}
-                              onChange={(v) => update(row.id, { dueDate: v })}
-                              limpavel={false}
-                              placeholder="Escolher"
-                              title="Prazo da tarefa"
-                              className="h-7 w-full border-transparent bg-transparent text-[11px] font-medium text-foreground hover:border-foreground/30"
+                            {/* Largura mínima e sem quebra: no modal a tabela
+                                aperta as colunas fixas, e esta encolhia até o
+                                "Sem prazo" partir em duas linhas por cima da
+                                caixinha. Marcada, fica só ela — a data some. */}
+                            <div className="flex min-w-44 items-center gap-1 whitespace-nowrap">
+                              {!row.semPrazo && (
+                                <CampoData
+                                  value={row.dueDate}
+                                  onChange={(v) => update(row.id, { dueDate: v })}
+                                  limpavel={false}
+                                  placeholder="Escolher"
+                                  title="Prazo da tarefa"
+                                  className="h-7 min-w-0 flex-1 border-transparent bg-transparent text-[11px] font-medium text-foreground hover:border-foreground/30"
+                                />
+                              )}
+                              {/* A recorrência conta a partir do prazo: marcar
+                                  "sem prazo" desliga a repetição da linha. */}
+                              <label
+                                className={`flex shrink-0 cursor-pointer items-center gap-1 px-1 text-[10px] font-medium ${
+                                  row.semPrazo ? "text-foreground/85" : "text-foreground/60"
+                                }`}
+                                title="Tarefa sem prazo: não vence e não atrasa"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={row.semPrazo}
+                                  onChange={(e) =>
+                                    update(
+                                      row.id,
+                                      e.target.checked
+                                        ? { semPrazo: true, recurring: false }
+                                        : { semPrazo: false },
+                                    )
+                                  }
+                                  aria-label="Sem prazo"
+                                />
+                                Sem prazo
+                              </label>
+                            </div>
+                          </td>
+                          <td className={`${TD} p-0`}>
+                            <input
+                              type="time"
+                              value={row.semPrazo ? "" : row.horario}
+                              onChange={(e) => update(row.id, { horario: e.target.value })}
+                              disabled={row.semPrazo}
+                              aria-label="Horário do prazo"
+                              title="Horário (opcional). Com ele, o prazo vence nessa hora."
+                              className={`${CELULA} min-w-22 font-mono disabled:cursor-not-allowed disabled:opacity-40`}
                             />
                           </td>
                           {!compact && (
@@ -1619,7 +1720,7 @@ export function InlineTaskCreator({
                         </tr>
                         {linhaAberta === row.id && (
                           <tr>
-                            <td colSpan={compact ? 8 : 9} className="border-b border-foreground/20 bg-secondary/20 p-2">
+                            <td colSpan={compact ? 9 : 10} className="border-b border-foreground/20 bg-secondary/20 p-2">
                               {painelExtras(row, "")}
                             </td>
                           </tr>
@@ -1711,7 +1812,10 @@ export function InlineTaskCreator({
                   <span className="text-[10px] text-muted-foreground">{i + 1}.</span>
                   <span className="flex-1 truncate font-medium">{r.title}</span>
                   <span className="text-[10px] text-muted-foreground">
-                    {new Date(r.dueDate + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                    {r.semPrazo
+                      ? SEM_PRAZO
+                      : new Date(r.dueDate + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) +
+                        (r.horario ? ` · ${r.horario}` : "")}
                   </span>
                 </li>
               ))}

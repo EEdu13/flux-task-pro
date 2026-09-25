@@ -43,10 +43,16 @@ function urlDoApp(): string {
 interface TarefaResumo {
   id: string;
   titulo: string;
-  prazo: Date;
+  /** Nulo = tarefa sem prazo. */
+  prazo: Date | null;
   situacao: string;
   prioridade: string;
 }
+
+/* Sem prazo por último. No SQL Server o nulo vem PRIMEIRO num ORDER BY
+   crescente — a tarefa sem prazo encabeçaria a lista, na frente da que vence
+   hoje. */
+const POR_PRAZO = "CASE WHEN prazo IS NULL THEN 1 ELSE 0 END, prazo, ordem";
 
 /**
  * O MESMO recorte de `listarTarefas`, reescrito aqui porque aquela é uma server
@@ -118,7 +124,7 @@ async function minhasTarefas(pessoaId: number, recorte: Recorte) {
           AND arquivada_em IS NULL
           AND criada_em <= SYSDATETIMEOFFSET() -- ocorrência que ainda não nasceu
           AND ${RECORTES[recorte].onde}
-        ORDER BY prazo, ordem`,
+        ORDER BY ${POR_PRAZO}`,
     );
   return r.recordset as TarefaResumo[];
 }
@@ -165,7 +171,7 @@ async function tarefasDe(solicitante: number, alvo: number) {
         AND criada_em <= SYSDATETIMEOFFSET() -- ocorrência que ainda não nasceu
         AND situacao <> 'concluida'
         AND ${filtro}
-      ORDER BY prazo, ordem`,
+      ORDER BY ${POR_PRAZO}`,
   );
   return r.recordset as TarefaResumo[];
 }
@@ -226,9 +232,9 @@ const dia = diaBr;
 const atrasoEmDias = atrasoEmDiasBr;
 
 function linhaDaTarefa(t: TarefaResumo): string {
-  const atraso = atrasoEmDias(t.prazo);
+  const atraso = t.prazo ? atrasoEmDias(t.prazo) : 0;
   const marca = atraso > 0 ? ` \\| ⚠️ ${atraso}d de atraso` : "";
-  return `${EMOJI_PRIORIDADE[t.prioridade] ?? "⚪"} *${escaparMd(t.titulo)}*\n   ${escaparMd(dia(t.prazo))}${marca}`;
+  return `${EMOJI_PRIORIDADE[t.prioridade] ?? "⚪"} *${escaparMd(t.titulo)}*\n   ${escaparMd(t.prazo ? dia(t.prazo) : "Sem prazo")}${marca}`;
 }
 
 const MENU: TecladoEmLinha = {
@@ -321,11 +327,11 @@ function tecladoDaTarefa(t: TarefaResumo): TecladoEmLinha {
 }
 
 function textoDaTarefa(t: TarefaResumo): string {
-  const atraso = atrasoEmDias(t.prazo);
+  const atraso = t.prazo ? atrasoEmDias(t.prazo) : 0;
   return [
     `*${escaparMd(t.titulo)}*`,
     "",
-    `Prazo: ${escaparMd(dia(t.prazo))}${atraso > 0 ? escaparMd(` (${atraso} dias de atraso)`) : ""}`,
+    `Prazo: ${escaparMd(t.prazo ? dia(t.prazo) : "sem prazo")}${atraso > 0 ? escaparMd(` (${atraso} dias de atraso)`) : ""}`,
     `Situação: ${escaparMd(t.situacao)}`,
     `Prioridade: ${EMOJI_PRIORIDADE[t.prioridade] ?? "⚪"} ${escaparMd(NOME_PRIORIDADE[t.prioridade] ?? t.prioridade)}`,
     "",

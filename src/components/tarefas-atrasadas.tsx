@@ -71,9 +71,11 @@ export function TarefasAtrasadas() {
     if (!currentUser.id) return [];
     const hoje = hojeLocal().getTime();
     return tasks
-      .filter((t) => {
+      .filter((t): t is typeof t & { dueDate: string } => {
         if (t.assigneeId !== currentUser.id) return false;
         if (t.status === "concluida") return false;
+        // Sem prazo nunca atrasa.
+        if (!t.dueDate) return false;
         const prazo = new Date(t.dueDate);
         if (Number.isNaN(prazo.getTime())) return false;
         prazo.setHours(0, 0, 0, 0);

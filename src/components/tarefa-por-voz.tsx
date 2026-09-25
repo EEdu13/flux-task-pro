@@ -35,6 +35,7 @@ import { ALTURA_DA_FAIXA, FaixaDeVoz } from "@/components/faixa-de-voz";
 import { UserAvatar } from "@/components/user-avatar";
 import { TravaScroll } from "@/components/trava-scroll";
 import { confirmar } from "@/components/confirm-dialog";
+import { HORARIO_VALIDO } from "@/lib/prazo";
 
 /**
  * Tarefa por voz.
@@ -473,6 +474,8 @@ function VozAberta({ aoFechar }: { aoFechar: () => void }) {
         status: "pendente",
         score: 20,
         dueDate: prazo.toISOString(),
+        // A hora dita vira o horário do prazo, e aparece no cartão.
+        dueTime: t.hora && HORARIO_VALIDO.test(t.hora) ? t.hora : null,
         recurring: false,
         priority: t.prioridade,
         tags: ["voz"],

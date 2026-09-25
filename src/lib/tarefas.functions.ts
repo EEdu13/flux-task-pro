@@ -26,10 +26,15 @@ export type TarefaDoBanco = {
   status: "pendente" | "andamento" | "concluida";
   priority: "baixa" | "media" | "alta";
   score: number;
-  dueDate: string;
+  /** ISO; `null` = sem prazo. */
+  dueDate: string | null;
+  /** "HH:mm" quando a pessoa escolheu o horário do prazo. */
+  dueTime: string | null;
   recurring: boolean;
   recurringUntil?: string | null;
   recurringMonthDay?: number | null;
+  /** 0 = domingo … 6 = sábado. Ver `dias` em `COLUNAS_TAREFA`. */
+  recurringWeekdays: number[];
   estimatedMinutes?: number;
   requireProof?: boolean;
   inPack?: boolean;
@@ -113,7 +118,7 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
        não chegou ao dia dela — ver `nasceEm` em `salvarTarefa`. Ela existe no
        banco, mas só aparece quando nasce. */
     const r = await req.query(
-      `SELECT ${COLUNAS_TAREFA} FROM gestor.tarefas
+      `SELECT ${COLUNAS_TAREFA} FROM gestor.tarefas t
         WHERE ${filtro} AND arquivada_em IS NULL AND criada_em <= SYSDATETIMEOFFSET()
         ORDER BY ordem, criada_em DESC`,
     );
@@ -122,11 +127,21 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
   }),
 );
 
-/** As colunas de `gestor.tarefas` que `paraApp` sabe converter. */
+/** As colunas de `gestor.tarefas` que `paraApp` sabe converter. A tabela
+ *  precisa vir com o apelido `t`.
+ *  O horário sai como texto "HH:mm": um TIME viraria Date do JS e passaria
+ *  pelo fuso no caminho.
+ *  Os dias da semana da recorrência vêm junto, embora morem em outra tabela:
+ *  sem eles, concluir uma semanal "de segunda a sexta" sem abrir a tarefa —
+ *  como se faz no pack — calculava a próxima para dali a sete dias. */
 export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
                                frequencia, situacao, prioridade, pontos, prazo, recorrente,
                                recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
-                               no_pack, ordem, criada_em, concluida_em, data_real_de_conclusao`;
+                               no_pack, ordem, criada_em, concluida_em, data_real_de_conclusao,
+                               CONVERT(CHAR(5), horario, 108) AS horario,
+                               (SELECT STRING_AGG(CAST(d.dia_da_semana AS VARCHAR(1)), ',')
+                                  FROM gestor.dias_de_recorrencia d
+                                 WHERE d.tarefa_id = t.id) AS dias`;
 
 export type LinhaTarefa = {
   id: string;
@@ -140,7 +155,7 @@ export type LinhaTarefa = {
   situacao: string;
   prioridade: string;
   pontos: number;
-  prazo: Date;
+  prazo: Date | null;
   recorrente: boolean;
   recorre_ate: Date | null;
   dia_do_mes: number | null;
@@ -152,6 +167,10 @@ export type LinhaTarefa = {
   concluida_em: Date | null;
   /** DATE: o driver entrega meia-noite UTC do dia (useUTC, o padrão do mssql). */
   data_real_de_conclusao: Date | null;
+  /** "HH:mm" — ver `COLUNAS_TAREFA`. */
+  horario: string | null;
+  /** "1,2,3,4,5" — ver `COLUNAS_TAREFA`. */
+  dias: string | null;
 };
 
 /** Do formato do banco para o que a interface já espera. */
@@ -172,10 +191,17 @@ export function paraApp(t: LinhaTarefa): TarefaDoBanco {
     status: emLista(SITUACOES, t.situacao, "pendente"),
     priority: emLista(PRIORIDADES, t.prioridade, "media"),
     score: t.pontos,
-    dueDate: t.prazo.toISOString(),
+    dueDate: t.prazo ? t.prazo.toISOString() : null,
+    dueTime: t.prazo && t.horario ? t.horario : null,
     recurring: !!t.recorrente,
     recurringUntil: t.recorre_ate ? t.recorre_ate.toISOString() : null,
     recurringMonthDay: t.dia_do_mes,
+    recurringWeekdays: (t.dias ?? "")
+      .split(",")
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+      .sort((a, b) => a - b),
     estimatedMinutes: t.minutos_estimados ?? undefined,
     requireProof: !!t.exige_comprovante,
     inPack: !!t.no_pack,
@@ -201,7 +227,10 @@ type EntradaTarefa = {
   situacao: string;
   prioridade: string;
   pontos: number;
-  prazo: Date;
+  /** `null` = sem prazo. */
+  prazo: Date | null;
+  /** "HH:mm". Com ele, o SQL acerta a hora do prazo para bater. */
+  horario: string | null;
   recorrente: boolean;
   recorreAte: Date | null;
   diaDoMes: number | null;
@@ -215,6 +244,8 @@ type EntradaTarefa = {
   dataReal: string | null;
   /** Quando a próxima ocorrência de uma recorrente passa a existir na tela. */
   nasceEm: Date | null;
+  /** A ocorrência que gerou esta — de onde vêm dias, etiquetas e checklist. */
+  anteriorId: string | null;
 };
 
 type GravacaoDaTarefa = {
@@ -241,7 +272,10 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         status?: string;
         priority?: string;
         score?: number;
-        dueDate: string;
+        /** ISO; `null` = sem prazo. */
+        dueDate: string | null;
+        /** "HH:mm", o horário escolhido para o prazo. */
+        dueTime?: string | null;
         recurring?: boolean;
         recurringUntil?: string | null;
         recurringMonthDay?: number | null;
@@ -255,12 +289,23 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         actualCompletionDate?: string | null;
         /** ISO. Só na próxima ocorrência de uma recorrente: quando ela nasce. */
         availableFrom?: string | null;
+        /** Também só na próxima ocorrência: o id da que foi concluída. */
+        previousId?: string | null;
       }): EntradaTarefa => {
         const titulo = texto(e?.title, 200);
         if (!titulo) throw new Error("A tarefa precisa de um título");
 
-        const prazo = typeof e?.dueDate === "string" ? new Date(e.dueDate) : new Date(NaN);
-        if (Number.isNaN(prazo.getTime())) throw new Error("Prazo inválido");
+        /* Nulo é "sem prazo", uma escolha. Texto que não vira data continua
+           sendo erro — não pode virar "sem prazo" por acidente. */
+        const prazo =
+          e?.dueDate === null || e?.dueDate === undefined || e?.dueDate === ""
+            ? null
+            : new Date(typeof e.dueDate === "string" ? e.dueDate : NaN);
+        if (prazo && Number.isNaN(prazo.getTime())) throw new Error("Prazo inválido");
+        const horario =
+          prazo && typeof e?.dueTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(e.dueTime)
+            ? e.dueTime
+            : null;
 
         const numero = (v: unknown, teto: number): number | null => {
           const n = Number(v);
@@ -295,6 +340,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
             : "media",
           pontos: Math.max(0, Math.min(10_000, Math.trunc(Number(e?.score) || 0))),
           prazo,
+          horario,
           recorrente: e?.recurring === true,
           recorreAte:
             typeof e?.recurringUntil === "string" && !Number.isNaN(Date.parse(e.recurringUntil))
@@ -323,6 +369,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
             const falta = quando.getTime() - Date.now();
             return falta > 0 && falta <= 48 * 3600e3 ? quando : null;
           })(),
+          anteriorId: guid(e?.previousId),
         };
       },
     ),
@@ -345,6 +392,8 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         .input("prioridade", sql.NVarChar, d.prioridade)
         .input("pontos", sql.Int, d.pontos)
         .input("prazo", sql.DateTimeOffset, d.prazo)
+        // Texto, pelo mesmo motivo da data real: um TIME vindo do JS passaria pelo fuso.
+        .input("horario", sql.NVarChar(5), d.horario)
         .input("recorrente", sql.Bit, d.recorrente)
         .input("recorre_ate", sql.DateTimeOffset, d.recorreAte)
         .input("dia_do_mes", sql.SmallInt, d.diaDoMes)
@@ -356,6 +405,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         // Texto, convertido no SQL: um DATE vindo de Date do JS passaria pelo fuso.
         .input("data_real", sql.NVarChar(10), d.dataReal)
         .input("nasce_em", sql.DateTimeOffset, d.nasceEm)
+        .input("anterior", sql.UniqueIdentifier, d.anteriorId)
         .input("por", sql.Int, eu);
 
       /* `concluida_em` é derivado da situação, não recebido.
@@ -387,6 +437,24 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                 <= CAST(SYSDATETIMEOFFSET() AT TIME ZONE N'E. South America Standard Time' AS DATE)
            THEN TRY_CONVERT(DATE, @data_real, 23) END;
 
+         /* Com horário escolhido, o prazo vence nessa hora do dia dele, em
+            Brasília. Acertado aqui, e não só na tela, porque nem todo caminho
+            que mexe no prazo sabe do horário: "adiar para amanhã" pelo menu
+            manda o dia seguinte às 23:59, e a próxima ocorrência da recorrente
+            leva a hora da anterior. Sem prazo, não há horário.
+
+            Gravado em +00:00, como todo prazo do banco: há leitura que conta
+            com isso (ver dataBr, na integração do Telegram). */
+         DECLARE @hora TIME(0) = CASE WHEN @prazo IS NOT NULL
+                                      THEN TRY_CONVERT(TIME(0), @horario) END;
+         IF @hora IS NOT NULL
+           SET @prazo = SWITCHOFFSET(
+                          DATEADD(MINUTE, DATEDIFF(MINUTE, CAST('00:00' AS TIME(0)), @hora),
+                            CAST(CAST(@prazo AT TIME ZONE N'E. South America Standard Time' AS DATE)
+                                 AS DATETIME2(3)))
+                          AT TIME ZONE N'E. South America Standard Time',
+                          '+00:00');
+
          DECLARE @efeito TABLE (
            tarefa             UNIQUEIDENTIFIER,
            criador            INT,
@@ -413,7 +481,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
               SET titulo=@titulo, descricao=@descricao, setor=@setor,
                   responsavel_id=@responsavel, projeto_id=@projeto,
                   frequencia=@frequencia, situacao=@situacao, prioridade=@prioridade,
-                  pontos=@pontos, prazo=@prazo, recorrente=@recorrente,
+                  pontos=@pontos, prazo=@prazo, horario=@hora, recorrente=@recorrente,
                   recorre_ate=@recorre_ate, dia_do_mes=@dia_do_mes,
                   minutos_estimados=@minutos, exige_comprovante=@comprovante,
                   no_pack=@no_pack, ordem=@ordem,
@@ -457,7 +525,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
               gravações simultâneas não passam as duas pelo "ainda não existe". */
            INSERT INTO gestor.tarefas
              (id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
-              frequencia, situacao, prioridade, pontos, prazo, recorrente,
+              frequencia, situacao, prioridade, pontos, prazo, horario, recorrente,
               recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
               no_pack, ordem, concluida_em, data_real_de_conclusao, criada_em)
            OUTPUT inserted.id, inserted.criado_por, CAST(1 AS BIT),
@@ -477,7 +545,7 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                            no_pack,
                            dia_real_antes, dia_real_depois)
            SELECT COALESCE(@id, NEWID()), @titulo, @descricao, @setor, @por, @responsavel, @projeto,
-                  @frequencia, @situacao, @prioridade, @pontos, @prazo, @recorrente,
+                  @frequencia, @situacao, @prioridade, @pontos, @prazo, @hora, @recorrente,
                   @recorre_ate, @dia_do_mes, @minutos, @comprovante,
                   @no_pack, @ordem,
                   CASE WHEN @situacao = 'concluida' THEN SYSDATETIMEOFFSET() ELSE NULL END,
@@ -510,14 +578,19 @@ export const salvarTarefa = createServerFn({ method: "POST" })
             A fórmula é a mesma que a tela usava (computeScore): os pontos da
             tarefa, 10% a mais no prazo, 20% a menos com atraso. Ela mudou de
             lado porque estava do lado errado — quem ganha ponto não pode ser
-            quem conta o ponto. */
+            quem conta o ponto.
+
+            Sem prazo é neutra (decisão do usuário, 25/09/2026): pontos cheios,
+            sem os 10% de quem cumpre prazo — senão não ter prazo valeria mais
+            que ter — e nunca conta como atraso. */
          INSERT INTO gestor.conclusoes
            (tarefa_id, pessoa_id, pontos, prioridade, no_prazo, em)
          SELECT e.tarefa, e.responsavel_depois,
-                CAST(ROUND(e.pontos * CASE WHEN e.prazo >= e.concluida_depois
-                                           THEN 1.1 ELSE 0.8 END, 0) AS INT),
+                CAST(ROUND(e.pontos * CASE WHEN e.prazo IS NULL THEN 1.0
+                                           WHEN e.prazo >= e.concluida_depois THEN 1.1
+                                           ELSE 0.8 END, 0) AS INT),
                 e.prioridade,
-                CASE WHEN e.prazo >= e.concluida_depois THEN 1 ELSE 0 END,
+                CASE WHEN e.prazo IS NULL OR e.prazo >= e.concluida_depois THEN 1 ELSE 0 END,
                 e.concluida_depois
            FROM @efeito e
           WHERE e.concluida_depois IS NOT NULL AND e.concluida_antes IS NULL;
@@ -625,6 +698,17 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                  AND (CAST(p.antes AS DATE) <> CAST(p.depois AS DATE)
                       OR f.hora_antes <> f.hora_depois)
               UNION ALL
+              /* Tirar ou pôr o prazo. A linha de cima não pega nenhum dos dois
+                 (comparar com nulo não dá verdadeiro), e o texto dela, montado
+                 com um lado nulo, sairia nulo — e a coluna não aceita. */
+              SELECT 2, N'editada',
+                     CASE WHEN e.prazo IS NULL
+                          THEN N'removeu o prazo, que era ' + f.dia_antes
+                          ELSE N'definiu o prazo para ' + f.dia_depois END
+               WHERE e.nova = 0
+                 AND ((e.prazo_antes IS NULL AND e.prazo IS NOT NULL)
+                      OR (e.prazo_antes IS NOT NULL AND e.prazo IS NULL))
+              UNION ALL
               /* A conclusão tem linha própria, e é a única: "mudou o status
                  para Concluída" e "concluiu" diziam a mesma coisa duas vezes. */
               SELECT 3, N'status',
@@ -638,7 +722,8 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                  AND e.situacao_depois <> N'concluida'
               UNION ALL
               SELECT 4, N'concluida',
-                     CASE WHEN e.prazo >= e.concluida_depois
+                     CASE WHEN e.prazo IS NULL THEN N'concluiu a tarefa'
+                          WHEN e.prazo >= e.concluida_depois
                           THEN N'concluiu a tarefa no prazo'
                           ELSE N'concluiu a tarefa com atraso' END
                      /* Marcada hoje, terminada antes: a data que importa vai
@@ -666,6 +751,66 @@ export const salvarTarefa = createServerFn({ method: "POST" })
          END TRY
          BEGIN CATCH
            DECLARE @falha_no_historico NVARCHAR(4000) = ERROR_MESSAGE();
+         END CATCH
+
+         /* A próxima ocorrência leva da anterior o que mora fora desta tabela:
+            os dias da semana, as etiquetas, as menções e o checklist, este
+            desmarcado. A tela só conhece essas listas se a tarefa foi aberta,
+            e o compromisso do pack é concluído sem abrir — a ocorrência nova
+            nascia sem os dias, e "segunda a sexta" virava "a cada sete dias"
+            já na volta seguinte.
+
+            Só completa o que a nova ainda não tem. Quando a tela conhece as
+            listas, ela as manda logo depois (salvarSatelites), e elas
+            substituem estas. Mesmo TRY/CATCH do histórico: é complemento, não
+            pode virar "não foi possível salvar".
+
+            O id da anterior vem da tela, então é conferido: tem de ser a mesma
+            tarefa — título e responsável iguais. Sem isso, qualquer id de
+            tarefa alheia copiaria o checklist dela para uma tarefa minha. */
+         BEGIN TRY
+           IF @anterior IS NOT NULL AND @nasce_em IS NOT NULL
+              AND EXISTS (SELECT 1 FROM gestor.tarefas a
+                            JOIN @efeito e ON e.nova = 1
+                                          AND a.titulo = e.titulo
+                                          AND a.responsavel_id = e.responsavel_depois
+                           WHERE a.id = @anterior)
+           BEGIN
+             INSERT INTO gestor.dias_de_recorrencia (tarefa_id, dia_da_semana)
+             SELECT e.tarefa, d.dia_da_semana
+               FROM @efeito e
+               JOIN gestor.dias_de_recorrencia d ON d.tarefa_id = @anterior
+              WHERE e.nova = 1
+                AND NOT EXISTS (SELECT 1 FROM gestor.dias_de_recorrencia x
+                                 WHERE x.tarefa_id = e.tarefa);
+
+             INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id)
+             SELECT e.tarefa, te.etiqueta_id
+               FROM @efeito e
+               JOIN gestor.tarefa_etiquetas te ON te.tarefa_id = @anterior
+              WHERE e.nova = 1
+                AND NOT EXISTS (SELECT 1 FROM gestor.tarefa_etiquetas x
+                                 WHERE x.tarefa_id = e.tarefa AND x.etiqueta_id = te.etiqueta_id);
+
+             INSERT INTO gestor.mencoes (tarefa_id, pessoa_id)
+             SELECT e.tarefa, m.pessoa_id
+               FROM @efeito e
+               JOIN gestor.mencoes m ON m.tarefa_id = @anterior
+              WHERE e.nova = 1
+                AND NOT EXISTS (SELECT 1 FROM gestor.mencoes x
+                                 WHERE x.tarefa_id = e.tarefa AND x.pessoa_id = m.pessoa_id);
+
+             INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
+             SELECT e.tarefa, c.texto, 0, c.ordem
+               FROM @efeito e
+               JOIN gestor.itens_de_checklist c ON c.tarefa_id = @anterior
+              WHERE e.nova = 1
+                AND NOT EXISTS (SELECT 1 FROM gestor.itens_de_checklist x
+                                 WHERE x.tarefa_id = e.tarefa);
+           END
+         END TRY
+         BEGIN CATCH
+           DECLARE @falha_na_copia NVARCHAR(4000) = ERROR_MESSAGE();
          END CATCH
 
          /* As etiquetas do projeto: toda subtarefa carrega "projeto" e o nome

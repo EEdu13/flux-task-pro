@@ -126,6 +126,9 @@ export function FluxoLayout({
   const [notifOpen, setNotifOpen] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  const cliqueNoFundoRef = useRef(false);
+  /** O mesmo evento do Esc: a grade decide se fecha ou pergunta antes. */
+  const pedirFecharGrade = () => window.dispatchEvent(new CustomEvent("fluxo:quickcreate-esc"));
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("fluxo:sidebar-collapsed") === "1";
@@ -1348,10 +1351,21 @@ export function FluxoLayout({
           fixed com z-index acima deste modal, então sem isso o card desliza por
           baixo dela. E o card ganha teto de altura com rolagem interna, em vez
           de crescer até encostar na barra. */}
+      {/* Clique fora, Esc e o X pedem para fechar pela grade, que confere se
+          há linha preenchida antes — ver `handleEscape` em InlineTaskCreator.
+          O clique só conta se começou E terminou no fundo: selecionar texto
+          numa célula e soltar o mouse fora não fecha nada. */}
       {gridOpen && (
         <div
           className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/60 px-2 pb-6 backdrop-blur-sm sm:px-4"
           style={{ paddingTop: "calc(var(--titlebar-h) + 1.5rem)" }}
+          onMouseDown={(e) => {
+            cliqueNoFundoRef.current = e.target === e.currentTarget;
+          }}
+          onClick={(e) => {
+            if (cliqueNoFundoRef.current && e.target === e.currentTarget) pedirFecharGrade();
+            cliqueNoFundoRef.current = false;
+          }}
         >
           <TravaScroll />
           {/* A tabela tem uma coluna por campo: ganha a largura que precisa. */}
@@ -1378,7 +1392,7 @@ export function FluxoLayout({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setGridOpen(false)}
+                  onClick={pedirFecharGrade}
                   className="rounded p-1 text-muted-foreground hover:bg-muted"
                   title="Fechar"
                 >
@@ -1387,7 +1401,7 @@ export function FluxoLayout({
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-              <InlineTaskCreator />
+              <InlineTaskCreator aoFechar={() => setGridOpen(false)} />
             </div>
           </div>
         </div>

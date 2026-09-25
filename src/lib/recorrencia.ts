@@ -21,6 +21,37 @@ export const ULTIMO_DIA_DO_MES = -1;
 /** Marcador de "último dia útil do mês" em `recurringMonthDay`. */
 export const ULTIMO_DIA_UTIL = -2;
 
+/**
+ * A repetição de um compromisso do pack: semanal, de segunda a sexta.
+ * "Diária" incluiria sábado e domingo — o item de sábado ficaria pendente e
+ * apareceria atrasado na segunda, descontando pontos de um dia sem expediente.
+ * Decisão do usuário, 25/09/2026. Dá para mudar item a item na tarefa.
+ */
+export const RECORRENCIA_DO_PACK = {
+  recurring: true,
+  frequency: "semanal" as Frequency,
+  recurringWeekdays: [1, 2, 3, 4, 5],
+};
+
+/**
+ * Quando volta um compromisso do pack concluído, para o aviso da conclusão:
+ * "amanhã" no meio da semana, o dia por extenso quando há fim de semana no
+ * caminho — "concluí na sexta, cadê?" é a pergunta que ele responde.
+ */
+export function quandoVoltaNoPack(proxima: Date, agora: Date = new Date()): string {
+  const amanha = new Date(agora);
+  amanha.setDate(amanha.getDate() + 1);
+  if (proxima.toDateString() === amanha.toDateString()) {
+    return "Compromisso do pack: o próximo aparece amanhã.";
+  }
+  const dia = proxima.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+  });
+  return `Compromisso do pack: o próximo é para ${dia}.`;
+}
+
 export const MESES = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -137,7 +168,8 @@ export function proximaOcorrencia(
   >,
   apartirDe: Date = new Date(),
 ): Date | null {
-  if (!tarefa.recurring) return null;
+  // Sem prazo não há de onde contar a próxima; a tela nem deixa combinar os dois.
+  if (!tarefa.recurring || !tarefa.dueDate) return null;
 
   const prazo = new Date(tarefa.dueDate);
   if (Number.isNaN(prazo.getTime())) return null;

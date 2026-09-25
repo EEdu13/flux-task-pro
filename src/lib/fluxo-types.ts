@@ -71,7 +71,18 @@ export interface Task {
   frequency: Frequency;
   status: Status;
   score: number;
-  dueDate: string; // ISO
+  /**
+   * ISO. `null` = tarefa sem prazo: nunca fica atrasada, vai para o fim das
+   * listas e conta neutra no placar. Recorrência exige prazo — é dele que sai a
+   * próxima data.
+   */
+  dueDate: string | null;
+  /**
+   * Horário escolhido para o prazo, "HH:mm". Com ele o prazo vence nessa hora
+   * (o servidor acerta a hora de `dueDate` para bater); sem ele o prazo segue a
+   * regra de sempre, fim da tarde ou fim do dia, e a hora não é mostrada.
+   */
+  dueTime?: string | null;
   recurring: boolean;
   recurringUntil?: string | null;
   /**
@@ -147,6 +158,12 @@ export interface Task {
    * ela passa a existir na tela (ISO, "amanhã à meia-noite"). Ver `salvarTarefa`.
    */
   availableFrom?: string | null;
+  /**
+   * Também só na próxima ocorrência: a ocorrência que a gerou. O servidor copia
+   * dela o que mora fora da tarefa (dias da semana, etiquetas, menções,
+   * checklist), que esta tela só conhece se a tarefa tiver sido aberta.
+   */
+  previousOccurrenceId?: string;
 }
 
 export type ProjectStatus = "ativo" | "pausado" | "concluido";

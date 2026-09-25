@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
 import { useFluxo } from "@/lib/fluxo-store";
-import { InlineTaskCreator } from "@/components/inline-task-creator";
+import { InlineTaskCreator, escDeUmPainel } from "@/components/inline-task-creator";
 import { TravaScroll } from "@/components/trava-scroll";
 
 export function QuickTaskModal() {
@@ -10,6 +10,7 @@ export function QuickTaskModal() {
     if (!quickCreate.open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (escDeUmPainel(e)) return; // o Esc é do calendário ou da lista, não do modal
       e.preventDefault();
       e.stopPropagation();
       // Let the creator decide (discard confirm if there's a draft).
