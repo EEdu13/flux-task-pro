@@ -322,6 +322,35 @@ function CalendarioPage() {
 
 type DayCell = { date: Date; inMonth: boolean; tasks: any[] };
 
+/**
+ * O clique no vazio do dia (nova tarefa nele; no mês, duplo clique abre o dia).
+ *
+ * Fica POR TRÁS do conteúdo, cobrindo a célula, e não em volta dele. Antes a
+ * célula inteira era um <button> com as pílulas de tarefa e de reserva — botões
+ * também — dentro: botão dentro de botão é HTML inválido, o React acusava no
+ * console e o leitor de tela não chegava nas pílulas. O conteúdo por cima deixa
+ * o mouse passar (`pointer-events-none`) e só as pílulas o recebem de volta.
+ */
+function BotaoDoDia({
+  rotulo,
+  onClick,
+  onDoubleClick,
+}: {
+  rotulo: string;
+  onClick: () => void;
+  onDoubleClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={rotulo}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      className="absolute inset-0 rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+    />
+  );
+}
+
 function TaskPill({
   t,
   users,
@@ -346,7 +375,7 @@ function TaskPill({
         e.stopPropagation();
         onContext(e.clientX, e.clientY);
       }}
-      className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition hover:bg-secondary"
+      className="pointer-events-auto flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition hover:bg-secondary"
       style={{ background: `color-mix(in oklab, ${statusColor[t.status as keyof typeof statusColor]} 12%, transparent)` }}
       title={`${t.title} · ${u?.name}`}
     >
@@ -373,7 +402,7 @@ function ReservaPill({ r, onClick }: { r: ReservaDeSala; onClick: () => void }) 
         onClick();
       }}
       title={`${r.sala} · ${r.inicio}–${r.fim} · ${r.motivo} · ${r.responsavel}`}
-      className="flex w-full items-center gap-1 rounded border border-primary/40 px-1 py-0.5 text-left text-[10px] transition hover:bg-primary/10"
+      className="pointer-events-auto flex w-full items-center gap-1 rounded border border-primary/40 px-1 py-0.5 text-left text-[10px] transition hover:bg-primary/10"
     >
       <DoorOpen className="h-2.5 w-2.5 shrink-0 text-primary" />
       <span className="shrink-0 font-semibold tabular-nums">{r.inicio}</span>
@@ -440,29 +469,35 @@ function MonthGrid({
            que um prazo, que a pessoa remaneja. */
         const cabemTarefas = salas.length > 0 ? 2 : 3;
         return (
-          <button
-            type="button"
+          <div
             key={i}
-            onClick={() => onDayClick(iso)}
-            onDoubleClick={() => onSwitchDay(iso)}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
               onDayContext(e.clientX, e.clientY, iso, cell.tasks.length);
             }}
-            className={`min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
+            className={`relative min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
           >
-            <div className="flex items-center justify-between">
+            <BotaoDoDia
+              rotulo={`Nova tarefa em ${cell.date.toLocaleDateString("pt-BR")}`}
+              onClick={() => onDayClick(iso)}
+              onDoubleClick={() => onSwitchDay(iso)}
+            />
+            <div className="pointer-events-none relative flex items-center justify-between">
               <span
                 className={`text-[11px] font-semibold ${
-                  today ? "rounded-full bg-primary px-1.5 text-primary-foreground" : "text-muted-foreground"
+                  today
+                    ? "rounded-full bg-primary px-1.5 text-primary-foreground"
+                    : "text-muted-foreground"
                 }`}
               >
                 {cell.date.getDate()}
               </span>
-              {cell.tasks.length > 0 && <span className="text-[10px] text-muted-foreground">{cell.tasks.length}</span>}
+              {cell.tasks.length > 0 && (
+                <span className="text-[10px] text-muted-foreground">{cell.tasks.length}</span>
+              )}
             </div>
-            <div className="mt-1 space-y-0.5">
+            <div className="pointer-events-none relative mt-1 space-y-0.5">
               {salas.slice(0, 2).map((r) => (
                 <ReservaPill key={r.id} r={r} onClick={() => onReservaClick(iso)} />
               ))}
@@ -484,7 +519,7 @@ function MonthGrid({
                 </div>
               )}
             </div>
-          </button>
+          </div>
         );
       })}
     </div>
@@ -544,33 +579,40 @@ function WeekGrid({
               <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {day.date.toLocaleDateString("pt-BR", { weekday: "short" })}
               </div>
-              <div className={`text-lg font-semibold ${today ? "text-primary" : ""}`}>{day.date.getDate()}</div>
+              <div className={`text-lg font-semibold ${today ? "text-primary" : ""}`}>
+                {day.date.getDate()}
+              </div>
             </button>
-            <button
-              onClick={() => onDayClick(iso)}
+            <div
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 onDayContext(e.clientX, e.clientY, iso, day.tasks.length);
               }}
-              className="flex-1 space-y-1 p-1.5 text-left hover:bg-secondary/30"
+              className="relative flex-1 p-1.5 text-left hover:bg-secondary/30"
             >
-              {(reservasPorDia.get(iso) ?? []).map((r) => (
-                <ReservaPill key={r.id} r={r} onClick={() => onReservaClick(iso)} />
-              ))}
-              {day.tasks.length === 0 && (reservasPorDia.get(iso) ?? []).length === 0 && (
-                <div className="text-[10px] text-muted-foreground/60">—</div>
-              )}
-              {day.tasks.map((t: any) => (
-                <TaskPill
-                  key={t.id}
-                  t={t}
-                  users={users}
-                  onClick={() => onTaskClick(t.id)}
-                  onContext={(x, y) => openTaskContext(t.id, x, y)}
-                />
-              ))}
-            </button>
+              <BotaoDoDia
+                rotulo={`Nova tarefa em ${day.date.toLocaleDateString("pt-BR")}`}
+                onClick={() => onDayClick(iso)}
+              />
+              <div className="pointer-events-none relative space-y-1">
+                {(reservasPorDia.get(iso) ?? []).map((r) => (
+                  <ReservaPill key={r.id} r={r} onClick={() => onReservaClick(iso)} />
+                ))}
+                {day.tasks.length === 0 && (reservasPorDia.get(iso) ?? []).length === 0 && (
+                  <div className="text-[10px] text-muted-foreground/60">—</div>
+                )}
+                {day.tasks.map((t: any) => (
+                  <TaskPill
+                    key={t.id}
+                    t={t}
+                    users={users}
+                    onClick={() => onTaskClick(t.id)}
+                    onContext={(x, y) => openTaskContext(t.id, x, y)}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         );
       })}
