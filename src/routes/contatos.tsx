@@ -39,7 +39,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/contatos")({
   head: () => ({
     meta: [
-      { title: "Contatos · Fluxo" },
+      { title: "Contatos · SGL - CONECTA" },
       {
         name: "description",
         content:

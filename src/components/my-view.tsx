@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -18,11 +18,27 @@ import {
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { statusColor, statusLabels, type Task } from "@/lib/fluxo-types";
-import { COLOR_PALETTE, useMyView, type ColumnType } from "@/lib/my-view-store";
+import {
+  COLOR_PALETTE,
+  useMyView,
+  type ColumnType,
+  type MyViewColumn,
+  type MyViewMeta,
+} from "@/lib/my-view-store";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
 import { rotuloDoPrazo } from "@/lib/prazo";
+import { DndContext, type UniqueIdentifier } from "@dnd-kit/core";
+import { arrayMove, SortableContext } from "@dnd-kit/sortable";
+import {
+  acessibilidadeDoArraste,
+  LinhaArrastavel,
+  LinhaNaMao,
+  semDeslocar,
+  useAcoesEstaveis,
+  useArrasteDeLinhas,
+} from "@/components/arraste";
 
 function fmtDue(t: Pick<Task, "dueDate" | "dueTime">) {
   return rotuloDoPrazo(t, { day: "2-digit", month: "short" });
@@ -56,12 +72,20 @@ export function MyView({
   });
   const [noteOpen, setNoteOpen] = useState<string | null>(null);
   const [colorOpen, setColorOpen] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropId, setDropId] = useState<string | null>(null);
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const ordered = useMemo(() => view.sortByOrder(tasks), [tasks, view]);
   const visibleIds = useMemo(() => ordered.map((t) => t.id), [ordered]);
+
+  /* `reorderRow` põe a linha ANTES da outra. Descendo, a linha arrastada toma
+     o lugar da de baixo e fica depois dela — então a âncora é quem vem logo
+     depois na ordem nova ("" quando fica em último: vai para o fim). */
+  const arraste = useArrasteDeLinhas((id, sobre) => {
+    const nova = arrayMove(visibleIds, visibleIds.indexOf(id), visibleIds.indexOf(sobre));
+    view.reorderRow(visibleIds, id, nova[nova.indexOf(id) + 1] ?? "");
+  });
+  const nomeDe = (id: UniqueIdentifier) =>
+    `"${ordered.find((t) => t.id === String(id))?.title ?? "a tarefa"}"`;
 
   // Column resize (pointer drag on right edge of each th)
   const [resizing, setResizing] = useState<{ id: string; startX: number; startW: number } | null>(null);
@@ -117,6 +141,18 @@ export function MyView({
     e.stopPropagation();
     setRowMenu({ id, x: e.clientX, y: e.clientY });
   };
+
+  // Funções que não mudam de um desenho para o outro — ver `LinhaDaVisao`.
+  const acoesDaLinha = useAcoesEstaveis<AcoesDaLinha>({
+    abrir: onEdit,
+    menu: openRowMenu,
+    alternarCor: (id) => setColorOpen((v) => (v === id ? null : id)),
+    fecharCor: () => setColorOpen(null),
+    alternarNota: (id) => setNoteOpen((v) => (v === id ? null : id)),
+    fecharNota: () => setNoteOpen(null),
+    setMeta: view.setMetaFor,
+    setCelula: view.setCell,
+  });
 
   const clearRow = (id: string) => {
     view.setMetaFor(id, { color: undefined, note: undefined });
@@ -268,235 +304,77 @@ export function MyView({
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-border bg-secondary/50 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <th className="w-10 py-2 pl-3"></th>
-              <th className="w-6 py-2"></th>
-              <th className="py-2 pr-3">Título</th>
-              <th className="w-28 py-2 pr-3">Status</th>
-              <th className="w-24 py-2 pr-3">Prazo</th>
-              <th className="w-40 py-2 pr-3">Responsável</th>
-              {view.columns.map((c) => (
-                <th
-                  key={c.id}
-                  style={{ width: c.width ?? DEFAULT_COL_WIDTH }}
-                  className="relative py-2 pr-3 select-none"
-                >
-                  {c.name}
-                  <span
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      setResizing({ id: c.id, startX: e.clientX, startW: c.width ?? DEFAULT_COL_WIDTH });
-                    }}
-                    className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
-                    title="Arraste para redimensionar"
-                  />
-                </th>
-              ))}
-              <th className="w-24 py-2 pr-3 text-right">Nota</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ordered.map((t) => {
-              const m = view.meta[t.id] ?? {};
-              const rowCells = view.cells[t.id] ?? {};
-              const assignee = users.find((u) => u.id === t.assigneeId);
-              const isDone = t.status === "concluida";
-              return (
-                <tr
-                  key={t.id}
-                  draggable
-                  onDragStart={(e) => {
-                    setDragId(t.id);
-                    e.dataTransfer.effectAllowed = "move";
-                    try {
-                      e.dataTransfer.setData("text/plain", t.id);
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                  onDragOver={(e) => {
-                    if (!dragId || dragId === t.id) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                    setDropId(t.id);
-                  }}
-                  onDragLeave={() => {
-                    setDropId((d) => (d === t.id ? null : d));
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragId && dragId !== t.id) view.reorderRow(visibleIds, dragId, t.id);
-                    setDragId(null);
-                    setDropId(null);
-                  }}
-                  onDragEnd={() => {
-                    setDragId(null);
-                    setDropId(null);
-                  }}
-                  onDoubleClick={(e) => openRowMenu(t.id, e)}
-                  className={`group border-b border-border/60 align-top transition-colors last:border-0 hover:bg-primary/5 ${
-                    dragId === t.id ? "opacity-60" : ""
-                  } ${dropId === t.id ? "ring-2 ring-primary/50 ring-inset" : ""}`}
-                  style={
-                    m.color
-                      ? {
-                          background: `color-mix(in oklab, ${m.color} 18%, transparent)`,
-                          boxShadow: `inset 4px 0 0 ${m.color}`,
-                        }
-                      : undefined
-                  }
-                >
-                  <td className="py-2 pl-3 text-muted-foreground">
+      <DndContext {...arraste} accessibility={acessibilidadeDoArraste(nomeDe)}>
+        <LinhaNaMao
+          linha={(id) => {
+            const t = ordered.find((x) => x.id === id);
+            return (
+              t && {
+                titulo: t.title,
+                detalhe: (
+                  <span className="shrink-0 text-xs text-muted-foreground">{fmtDue(t)}</span>
+                ),
+              }
+            );
+          }}
+        />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-border bg-secondary/50 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <th className="w-10 py-2 pl-3"></th>
+                <th className="w-6 py-2"></th>
+                <th className="py-2 pr-3">Título</th>
+                <th className="w-28 py-2 pr-3">Status</th>
+                <th className="w-24 py-2 pr-3">Prazo</th>
+                <th className="w-40 py-2 pr-3">Responsável</th>
+                {view.columns.map((c) => (
+                  <th
+                    key={c.id}
+                    style={{ width: c.width ?? DEFAULT_COL_WIDTH }}
+                    className="relative py-2 pr-3 select-none"
+                  >
+                    {c.name}
                     <span
-                      className="inline-flex cursor-grab items-center rounded p-1 hover:bg-secondary active:cursor-grabbing"
-                      title="Arraste para reordenar"
-                    >
-                      <GripVertical className="h-3.5 w-3.5" />
-                    </span>
-                  </td>
-                  <td className="relative py-2 pl-3">
-                    <button
-                      onClick={() => setColorOpen((v) => (v === t.id ? null : t.id))}
-                      className="rounded p-1 text-muted-foreground hover:bg-secondary"
-                      title="Cor da linha"
-                    >
-                      <Palette className="h-3.5 w-3.5" style={m.color ? { color: m.color } : undefined} />
-                    </button>
-                    {colorOpen === t.id && (
-                      <div
-                        className="absolute left-0 top-8 z-20 flex flex-wrap gap-1 rounded-md border border-border bg-popover p-2 shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {COLOR_PALETTE.map((c) => (
-                          <button
-                            key={c.id}
-                            onClick={() => {
-                              view.setMetaFor(t.id, { color: c.value || undefined });
-                              setColorOpen(null);
-                            }}
-                            title={c.label}
-                            className="h-5 w-5 rounded-full border border-border"
-                            style={{ background: c.value || "transparent" }}
-                          >
-                            {!c.value && <X className="h-3 w-3" />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <button
-                      onClick={() => onEdit(t.id)}
-                      className={`text-left text-sm font-medium hover:text-primary ${
-                        isDone ? "text-muted-foreground line-through" : ""
-                      }`}
-                    >
-                      <SeloDoProjeto projectId={t.projectId} />
-                      {t.title}
-                    </button>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <span
-                      className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
-                      style={{ background: statusColor[t.status] }}
-                    >
-                      {statusLabels[t.status]}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 text-xs text-muted-foreground">{fmtDue(t)}</td>
-                  <td className="py-2 pr-3 text-xs">{assignee?.name ?? "—"}</td>
-                  {view.columns.map((c) => (
-                    <td key={c.id} className="py-1.5 pr-3">
-                      {c.type === "select" ? (
-                        <select
-                          value={rowCells[c.id] ?? ""}
-                          onChange={(e) => view.setCell(t.id, c.id, e.target.value)}
-                          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
-                        >
-                          <option value="">—</option>
-                          {(c.options ?? []).map((o) => (
-                            <option key={o} value={o}>
-                              {o}
-                            </option>
-                          ))}
-                        </select>
-                      ) : c.type === "date" || c.type === "time" || c.type === "datetime" ? (
-                        <input
-                          type={c.type === "datetime" ? "datetime-local" : c.type}
-                          value={rowCells[c.id] ?? ""}
-                          onChange={(e) => view.setCell(t.id, c.id, e.target.value)}
-                          className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
-                        />
-                      ) : (
-                        <input
-                          value={rowCells[c.id] ?? ""}
-                          onChange={(e) => view.setCell(t.id, c.id, e.target.value)}
-                          inputMode={c.type === "number" ? "numeric" : undefined}
-                          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-xs outline-none hover:border-border focus:border-primary focus:bg-background"
-                          placeholder="—"
-                        />
-                      )}
-                    </td>
-                  ))}
-                  <td className="relative py-2 pr-3 text-right">
-                    <button
-                      onClick={() => setNoteOpen((v) => (v === t.id ? null : t.id))}
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
-                        m.note
-                          ? "border-primary/40 bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:border-primary/40"
-                      }`}
-                    >
-                      <StickyNote className="h-3 w-3" />
-                      {m.note ? "Nota" : "Anotar"}
-                    </button>
-                    {noteOpen === t.id && (
-                      <div
-                        className="absolute right-3 top-9 z-20 w-72 rounded-md border border-border bg-popover p-2 shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <textarea
-                          value={m.note ?? ""}
-                          onChange={(e) => view.setMetaFor(t.id, { note: e.target.value })}
-                          placeholder="Anotação pessoal…"
-                          className="h-24 w-full resize-none rounded-md border border-border bg-background p-2 text-xs outline-none focus:border-primary"
-                        />
-                        <div className="mt-1 flex justify-end gap-1">
-                          <button
-                            onClick={() => {
-                              view.setMetaFor(t.id, { note: undefined });
-                              setNoteOpen(null);
-                            }}
-                            className="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-secondary"
-                          >
-                            Limpar
-                          </button>
-                          <button
-                            onClick={() => setNoteOpen(null)}
-                            className="inline-flex items-center gap-1 rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground hover:brightness-110"
-                          >
-                            <Check className="h-3 w-3" /> Ok
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {ordered.length === 0 && (
-              <tr>
-                <td colSpan={6 + view.columns.length + 1} className="py-8 text-center text-xs text-muted-foreground">
-                  Nenhuma tarefa no filtro atual.
-                </td>
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        setResizing({ id: c.id, startX: e.clientX, startW: c.width ?? DEFAULT_COL_WIDTH });
+                      }}
+                      className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
+                      title="Arraste para redimensionar"
+                    />
+                  </th>
+                ))}
+                <th className="w-24 py-2 pr-3 text-right">Nota</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <SortableContext items={visibleIds} strategy={semDeslocar}>
+              <tbody>
+                {ordered.map((t) => (
+                  <LinhaDaVisao
+                    key={t.id}
+                    task={t}
+                    meta={view.meta[t.id]}
+                    celulas={view.cells[t.id]}
+                    colunas={view.columns}
+                    responsavel={users.find((u) => u.id === t.assigneeId)?.name}
+                    corAberta={colorOpen === t.id}
+                    notaAberta={noteOpen === t.id}
+                    acoes={acoesDaLinha}
+                  />
+                ))}
+                {ordered.length === 0 && (
+                  <tr>
+                    <td colSpan={6 + view.columns.length + 1} className="py-8 text-center text-xs text-muted-foreground">
+                      Nenhuma tarefa no filtro atual.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </SortableContext>
+          </table>
+        </div>
+      </DndContext>
 
       {rowMenu && (() => {
         const t = ordered.find((x) => x.id === rowMenu.id);
@@ -600,3 +478,202 @@ export function MyView({
     </div>
   );
 }
+
+/** O que uma linha da Minha visão pode fazer. Ver `useAcoesEstaveis`. */
+type AcoesDaLinha = {
+  abrir: (id: string) => void;
+  menu: (id: string, e: React.MouseEvent) => void;
+  alternarCor: (id: string) => void;
+  fecharCor: () => void;
+  alternarNota: (id: string) => void;
+  fecharNota: () => void;
+  setMeta: (id: string, patch: Partial<MyViewMeta>) => void;
+  setCelula: (id: string, colunaId: string, valor: string) => void;
+};
+
+/**
+ * Uma linha da Minha visão, em `memo`.
+ *
+ * Escrita direto no `map` da tabela, a linha se redesenhava sempre que a
+ * tabela se redesenhava — e trocar a ordem ao soltar um arraste redesenhava
+ * todas, com todos os campos, o que engasgava o gesto com a lista cheia.
+ * Assim, reordenar só muda a posição das linhas, e digitar numa célula
+ * redesenha só a linha dela. O que chega por props é o que é da linha:
+ * `meta` e `celulas` são o pedaço dela nas tabelas da visão.
+ */
+const LinhaDaVisao = memo(function LinhaDaVisao({
+  task: t,
+  meta,
+  celulas,
+  colunas,
+  responsavel,
+  corAberta,
+  notaAberta,
+  acoes,
+}: {
+  task: Task;
+  meta: MyViewMeta | undefined;
+  celulas: Record<string, string> | undefined;
+  colunas: MyViewColumn[];
+  responsavel: string | undefined;
+  corAberta: boolean;
+  notaAberta: boolean;
+  acoes: AcoesDaLinha;
+}) {
+  const m = meta ?? {};
+  const rowCells = celulas ?? {};
+  const isDone = t.status === "concluida";
+  return (
+    <LinhaArrastavel
+      id={t.id}
+      marcarDestino
+      aoAbrir={() => acoes.abrir(t.id)}
+      onDoubleClick={(e) => acoes.menu(t.id, e)}
+      className="group border-b border-border/60 align-top transition-colors last:border-0 hover:bg-primary/5"
+      style={
+        m.color
+          ? {
+              background: `color-mix(in oklab, ${m.color} 18%, transparent)`,
+              boxShadow: `inset 4px 0 0 ${m.color}`,
+            }
+          : undefined
+      }
+    >
+      <td className="py-2 pl-3 text-muted-foreground">
+        <span
+          className="inline-flex cursor-grab items-center rounded p-1 hover:bg-secondary active:cursor-grabbing"
+          title="Arraste para reordenar"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+      </td>
+      <td className="relative py-2 pl-3">
+        <button
+          onClick={() => acoes.alternarCor(t.id)}
+          className="rounded p-1 text-muted-foreground hover:bg-secondary"
+          title="Cor da linha"
+        >
+          <Palette className="h-3.5 w-3.5" style={m.color ? { color: m.color } : undefined} />
+        </button>
+        {corAberta && (
+          <div
+            className="absolute left-0 top-8 z-20 flex flex-wrap gap-1 rounded-md border border-border bg-popover p-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {COLOR_PALETTE.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => {
+                  acoes.setMeta(t.id, { color: c.value || undefined });
+                  acoes.fecharCor();
+                }}
+                title={c.label}
+                className="h-5 w-5 rounded-full border border-border"
+                style={{ background: c.value || "transparent" }}
+              >
+                {!c.value && <X className="h-3 w-3" />}
+              </button>
+            ))}
+          </div>
+        )}
+      </td>
+      <td className="py-2 pr-3">
+        <button
+          onClick={() => acoes.abrir(t.id)}
+          className={`text-left text-sm font-medium hover:text-primary ${
+            isDone ? "text-muted-foreground line-through" : ""
+          }`}
+        >
+          <SeloDoProjeto projectId={t.projectId} />
+          {t.title}
+        </button>
+      </td>
+      <td className="py-2 pr-3">
+        <span
+          className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+          style={{ background: statusColor[t.status] }}
+        >
+          {statusLabels[t.status]}
+        </span>
+      </td>
+      <td className="py-2 pr-3 text-xs text-muted-foreground">{fmtDue(t)}</td>
+      <td className="py-2 pr-3 text-xs">{responsavel ?? "—"}</td>
+      {colunas.map((c) => (
+        <td key={c.id} className="py-1.5 pr-3">
+          {c.type === "select" ? (
+            <select
+              value={rowCells[c.id] ?? ""}
+              onChange={(e) => acoes.setCelula(t.id, c.id, e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+            >
+              <option value="">—</option>
+              {(c.options ?? []).map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ) : c.type === "date" || c.type === "time" || c.type === "datetime" ? (
+            <input
+              type={c.type === "datetime" ? "datetime-local" : c.type}
+              value={rowCells[c.id] ?? ""}
+              onChange={(e) => acoes.setCelula(t.id, c.id, e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
+            />
+          ) : (
+            <input
+              value={rowCells[c.id] ?? ""}
+              onChange={(e) => acoes.setCelula(t.id, c.id, e.target.value)}
+              inputMode={c.type === "number" ? "numeric" : undefined}
+              className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-xs outline-none hover:border-border focus:border-primary focus:bg-background"
+              placeholder="—"
+            />
+          )}
+        </td>
+      ))}
+      <td className="relative py-2 pr-3 text-right">
+        <button
+          onClick={() => acoes.alternarNota(t.id)}
+          className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+            m.note
+              ? "border-primary/40 bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:border-primary/40"
+          }`}
+        >
+          <StickyNote className="h-3 w-3" />
+          {m.note ? "Nota" : "Anotar"}
+        </button>
+        {notaAberta && (
+          <div
+            className="absolute right-3 top-9 z-20 w-72 rounded-md border border-border bg-popover p-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <textarea
+              value={m.note ?? ""}
+              onChange={(e) => acoes.setMeta(t.id, { note: e.target.value })}
+              placeholder="Anotação pessoal…"
+              className="h-24 w-full resize-none rounded-md border border-border bg-background p-2 text-xs outline-none focus:border-primary"
+            />
+            <div className="mt-1 flex justify-end gap-1">
+              <button
+                onClick={() => {
+                  acoes.setMeta(t.id, { note: undefined });
+                  acoes.fecharNota();
+                }}
+                className="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-secondary"
+              >
+                Limpar
+              </button>
+              <button
+                onClick={acoes.fecharNota}
+                className="inline-flex items-center gap-1 rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground hover:brightness-110"
+              >
+                <Check className="h-3 w-3" /> Ok
+              </button>
+            </div>
+          </div>
+        )}
+      </td>
+    </LinhaArrastavel>
+  );
+});

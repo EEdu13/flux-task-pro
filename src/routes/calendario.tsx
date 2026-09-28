@@ -13,7 +13,7 @@ import { listarAgendaDeSalas, type ReservaDeSala } from "@/lib/reservas-sala.fun
 export const Route = createFileRoute("/calendario")({
   head: () => ({
     meta: [
-      { title: "Calendário · Fluxo" },
+      { title: "Calendário · SGL - CONECTA" },
       { name: "description", content: "Visão mensal, semanal, diária e lista de todas as tarefas por prazo." },
     ],
   }),

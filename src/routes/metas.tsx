@@ -25,7 +25,7 @@ import { SEM_PRAZO, rotuloDoPrazo } from "@/lib/prazo";
 export const Route = createFileRoute("/metas")({
   head: () => ({
     meta: [
-      { title: "Painel gestor · Metas & Score · Fluxo" },
+      { title: "Painel gestor · Metas & Score · SGL - CONECTA" },
       { name: "description", content: "Painel apresentativo do gestor: resultados individuais e do time com filtro por colaborador e exportação em PDF." },
     ],
   }),

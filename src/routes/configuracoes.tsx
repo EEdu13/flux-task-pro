@@ -44,7 +44,7 @@ import { motion } from "framer-motion";
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
     meta: [
-      { title: "Configurações · Fluxo" },
+      { title: "Configurações · SGL - CONECTA" },
       { name: "description", content: "Ajuste seu perfil, contato, aparência e preferências do painel." },
     ],
   }),

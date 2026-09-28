@@ -61,7 +61,7 @@ const TOOLTIP = {
 export const Route = createFileRoute("/relatorios")({
   head: () => ({
     meta: [
-      { title: "Relatórios · Fluxo" },
+      { title: "Relatórios · SGL - CONECTA" },
       { name: "description", content: "Desempenho por pessoa, setor e evolução ao longo do tempo." },
     ],
   }),

@@ -32,7 +32,7 @@ import { transicionar } from "@/components/transition-veil";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Entrar · Fluxo" },
+      { title: "Entrar · SGL - CONECTA" },
       {
         name: "description",
         content:

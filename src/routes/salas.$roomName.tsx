@@ -22,8 +22,8 @@ export const Route = createFileRoute("/salas/$roomName")({
   component: RoomPage,
   head: ({ params }) => ({
     meta: [
-      { title: `Sala ${params.roomName} · Fluxo` },
-      { name: "description", content: "Sala de voz e vídeo do Fluxo." },
+      { title: `Sala ${params.roomName} · SGL - CONECTA` },
+      { name: "description", content: "Sala de voz e vídeo do SGL - CONECTA." },
     ],
   }),
 });

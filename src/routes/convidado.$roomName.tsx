@@ -16,7 +16,7 @@ export const Route = createFileRoute("/convidado/$roomName")({
   head: ({ params }) => ({
     meta: [
       { title: `Entrar como convidado · ${params.roomName}` },
-      { name: "description", content: "Você foi convidado para uma reunião no Fluxo." },
+      { name: "description", content: "Você foi convidado para uma reunião no SGL - CONECTA." },
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),

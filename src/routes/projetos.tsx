@@ -67,7 +67,7 @@ export const Route = createFileRoute("/projetos")({
       : {},
   head: () => ({
     meta: [
-      { title: "Projetos — Fluxo" },
+      { title: "Projetos · SGL - CONECTA" },
       {
         name: "description",
         content:

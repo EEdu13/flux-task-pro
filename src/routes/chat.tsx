@@ -14,7 +14,7 @@ import {
 } from "@/components/chat-ui";
 
 export const Route = createFileRoute("/chat")({
-  head: () => ({ meta: [{ title: "Chat · Fluxo" }] }),
+  head: () => ({ meta: [{ title: "Chat · SGL - CONECTA" }] }),
   component: ChatPage,
 });
 

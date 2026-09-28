@@ -5,7 +5,7 @@ import { InlineTaskCreator } from "@/components/inline-task-creator";
 export const Route = createFileRoute("/criar-tarefa")({
   head: () => ({
     meta: [
-      { title: "Criar tarefa — Fluxo" },
+      { title: "Criar tarefa · SGL - CONECTA" },
       {
         name: "description",
         content:

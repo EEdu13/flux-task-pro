@@ -18,7 +18,7 @@ import { tituloDoAviso } from "@/lib/aviso";
 export const Route = createFileRoute("/inbox")({
   head: () => ({
     meta: [
-      { title: "Caixa de entrada · Fluxo" },
+      { title: "Caixa de entrada · SGL - CONECTA" },
       { name: "description", content: "Todas as menções, atribuições, prazos e conclusões em um só lugar." },
     ],
   }),

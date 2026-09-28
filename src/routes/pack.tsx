@@ -17,7 +17,7 @@ import { UserAvatar } from "@/components/user-avatar";
 export const Route = createFileRoute("/pack")({
   head: () => ({
     meta: [
-      { title: "Pack diário — Fluxo" },
+      { title: "Pack diário · SGL - CONECTA" },
       {
         name: "description",
         content:

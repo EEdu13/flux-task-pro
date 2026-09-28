@@ -8,7 +8,6 @@ import {
   Clock,
   Flame,
   Target,
-  TrendingUp,
   Trophy,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
@@ -18,6 +17,7 @@ import { formatDueBucket, formatRelative } from "@/lib/use-theme";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { userScorePct, scoreTextClass } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
+import { SemanaDoTime } from "@/components/semana-do-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { BlocoEntrada } from "@/components/stagger";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
@@ -28,7 +28,7 @@ import { porPrazo } from "@/lib/prazo";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Fluxo · Painel de desempenho" },
+      { title: "SGL - CONECTA · Painel de desempenho" },
       { name: "description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
     ],
   }),
@@ -100,27 +100,6 @@ function Home() {
     );
   }, [completions, currentUser.id]);
 
-  const last7 = useMemo(() => {
-    const days: { label: string; done: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      const end = new Date(d);
-      end.setDate(d.getDate() + 1);
-      const items = completions.filter((c) => {
-        const t = new Date(c.at).getTime();
-        return t >= d.getTime() && t < end.getTime();
-      });
-      days.push({
-        label: d.toLocaleDateString("pt-BR", { weekday: "short" }).slice(0, 3),
-        done: items.length,
-      });
-    }
-    return days;
-  }, [completions]);
-
-  const maxDone = Math.max(1, ...last7.map((d) => d.done));
 
   const myScore = useMemo(
     () => userScorePct(currentUser.id, tasks, completions),
@@ -436,29 +415,7 @@ function Home() {
             </ul>
           </section>
 
-          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">Últimos 7 dias · time</h2>
-            </div>
-            <div className="mt-4 flex items-end gap-2">
-              {last7.map((d) => (
-                <div key={d.label} className="flex-1">
-                  <div className="flex h-32 items-end">
-                    <div
-                      className="w-full rounded-t-md bg-primary/80 transition-all"
-                      style={{ height: `${Math.max(6, (d.done / maxDone) * 100)}%` }}
-                      title={`${d.done} ${d.done === 1 ? "tarefa" : "tarefas"}`}
-                    />
-                  </div>
-                  <div className="mt-1 text-center text-[10px] text-muted-foreground">{d.label}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              {last7.reduce((s, d) => s + d.done, 0)} tarefas concluídas
-            </div>
-          </section>
+          <SemanaDoTime />
         </BlocoEntrada>
 
         <BlocoEntrada indice={4} className="grid gap-6 lg:grid-cols-[1fr_1fr]">

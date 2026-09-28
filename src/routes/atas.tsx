@@ -21,7 +21,7 @@ export const Route = createFileRoute("/atas")({
   component: AtasPage,
   head: () => ({
     meta: [
-      { title: "Atas & Planos — Fluxo" },
+      { title: "Atas & Planos · SGL - CONECTA" },
       {
         name: "description",
         content:

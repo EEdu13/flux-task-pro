@@ -98,6 +98,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+/** Endereço de produção, para o que precisa de URL completa (prévia de link). */
+const ENDERECO_PUBLICO = "https://gestor-larsil.up.railway.app";
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -109,12 +112,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "SGL - CONECTA · Painel de desempenho" },
       { property: "og:description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "SGL - CONECTA" },
+      { property: "og:locale", content: "pt_BR" },
+      /* A prévia que aparece ao colar um link do sistema no WhatsApp, Teams etc.
+         Era uma captura de tela do Lovable. A imagem é nossa (public/og-sgl.png)
+         e o endereço tem de ser completo — quem monta a prévia busca de fora,
+         sem saber em que site o link estava. É o endereço de produção, o mesmo
+         que o app de desktop abre; se o domínio mudar, muda aqui também. */
+      { property: "og:image", content: `${ENDERECO_PUBLICO}/og-sgl.png` },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { property: "og:image:alt", content: "SGL - CONECTA, da Larsil" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
       { name: "twitter:title", content: "SGL - CONECTA · Painel de desempenho" },
       { name: "twitter:description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/74be6d4c-d20a-4ea5-b031-c61481212a47/id-preview-01378b6a--16ea518b-6e0d-4dec-904f-0cfdb1a55070.lovable.app-1783543670810.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/74be6d4c-d20a-4ea5-b031-c61481212a47/id-preview-01378b6a--16ea518b-6e0d-4dec-904f-0cfdb1a55070.lovable.app-1783543670810.png" },
+      { name: "twitter:image", content: `${ENDERECO_PUBLICO}/og-sgl.png` },
     ],
     links: [
       // Antes do stylesheet de propósito: o navegador dispara o download das
@@ -139,7 +151,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      // O símbolo da Larsil, o mesmo do app de desktop (src-tauri/icons). O
+      // `?v=` força o navegador a buscar de novo: ele guarda o ícone da aba por
+      // muito tempo e seguiria mostrando o antigo, que era o do Lovable.
+      { rel: "icon", href: "/favicon.ico?v=sgl", type: "image/x-icon" },
     ],
   }),
   shellComponent: RootShell,

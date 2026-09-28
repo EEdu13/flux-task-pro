@@ -22,7 +22,7 @@ export const Route = createFileRoute("/salas/")({
   component: SalasPage,
   head: () => ({
     meta: [
-      { title: "Salas Online · Fluxo" },
+      { title: "Salas Online · SGL - CONECTA" },
       {
         name: "description",
         content: "Salas de voz e vídeo do time por departamento — estilo Discord.",

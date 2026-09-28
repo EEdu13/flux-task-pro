@@ -19,7 +19,7 @@ import { AlertTriangle, Database, HardDrive } from "lucide-react";
  */
 export const Route = createFileRoute("/conferir-dados-antigos")({
   head: () => ({
-    meta: [{ title: "Dados antigos · Fluxo" }],
+    meta: [{ title: "Dados antigos · SGL - CONECTA" }],
   }),
   component: ConferirDadosAntigos,
 });

@@ -23,7 +23,7 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/equipe")({
   head: () => ({
     meta: [
-      { title: "Equipe · Fluxo" },
+      { title: "Equipe · SGL - CONECTA" },
       { name: "description", content: "Gerencie colaboradores, cargos, setores e supervisores." },
     ],
   }),

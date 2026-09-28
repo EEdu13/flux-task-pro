@@ -24,7 +24,6 @@ import {
   Target,
   Users,
   CheckSquare,
-  Trophy,
   Headphones,
   FileText,
   StickyNote,
@@ -55,7 +54,7 @@ import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
 import { UndoProvider } from "@/lib/undo-stack";
 import { X, Lock, Loader2 } from "lucide-react";
-import { userScorePct, scoreBgClass, scoreBarColor } from "@/lib/score";
+import { PlacarDoTopo } from "@/components/placar-do-topo";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
 import { IncomingCall } from "@/components/incoming-call";
@@ -108,7 +107,6 @@ export function FluxoLayout({
     markAllNotifsRead,
     openTask,
     tasks,
-    completions,
     isAuthenticated,
     restaurandoSessao,
     logout,
@@ -210,7 +208,6 @@ export function FluxoLayout({
   const myNotifs = notifications.filter((n) => n.userId === currentUser.id);
   const unread = myNotifs.filter((n) => !n.read).length;
 
-  const myScore = userScorePct(currentUser.id, tasks, completions);
   const totalOnline = Object.values(presence).reduce((a, b) => a + b.length, 0);
 
   /* A sineta ganhou som e piscada.
@@ -1109,31 +1106,7 @@ export function FluxoLayout({
                 </>
               )}
             </div>
-            <div
-              className="hidden items-center gap-2 rounded-full border border-border bg-secondary/50 py-0.5 pl-0.5 pr-2 text-xs sm:flex"
-              title={`${myScore.done} de ${myScore.assigned} tarefas do mês`}
-            >
-              <UserAvatar
-                nome={currentUser.name}
-                iniciais={currentUser.avatar}
-                className="h-6 w-6 text-[10px]"
-              />
-              <span className="hidden font-medium sm:block">{currentUser.name.split(" ")[0]}</span>
-              <div className="hidden h-1 w-16 overflow-hidden rounded-full bg-secondary sm:block">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, Math.max(myScore.assigned === 0 ? 0 : 6, myScore.pct))}%`,
-                    background: scoreBarColor(myScore.pct, myScore.assigned),
-                  }}
-                />
-              </div>
-              <span
-                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${scoreBgClass(myScore.pct, myScore.assigned)}`}
-              >
-                <Trophy className="h-2.5 w-2.5" /> {myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
-              </span>
-            </div>
+            <PlacarDoTopo />
           </div>
         </header>
         <main className="min-w-0 flex-1 p-3 pb-24 sm:p-4 md:p-6 lg:pb-4">

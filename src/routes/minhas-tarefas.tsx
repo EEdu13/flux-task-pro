@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AtSign,
   Check,
@@ -24,8 +24,34 @@ import {
   ArrowRight,
   Undo2,
   GripVertical,
+  CalendarCheck,
+  X,
 } from "lucide-react";
-import { LayoutGroup, motion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import {
+  DndContext,
+  DragOverlay,
+  useDraggable,
+  useDroppable,
+  type DraggableAttributes,
+  type DraggableSyntheticListeners,
+  type UniqueIdentifier,
+} from "@dnd-kit/core";
+import { arrayMove, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  acessibilidadeDoArraste,
+  idDaColuna,
+  Levantado,
+  LinhaArrastavel,
+  LinhaNaMao,
+  NoTopo,
+  POUSO,
+  RemedirAoMudar,
+  useAcoesEstaveis,
+  useArrasteDeLinhas,
+  useArrasteEntreColunas,
+  type Arranjo,
+} from "@/components/arraste";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 
@@ -37,6 +63,9 @@ import { startFocus } from "@/components/focus-overlay";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import { UserAvatar } from "@/components/user-avatar";
 import { CampoData } from "@/components/campo-data";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { FiltroPessoa } from "@/components/filtro-pessoa";
 import { toast } from "sonner";
 import {
@@ -60,7 +89,7 @@ export const Route = createFileRoute("/minhas-tarefas")({
   }),
   head: () => ({
     meta: [
-      { title: "Minhas tarefas · Fluxo" },
+      { title: "Minhas tarefas · SGL - CONECTA" },
       { name: "description", content: "Kanban e lista de tarefas com filtros por responsável, prioridade e prazo." },
     ],
   }),
@@ -564,8 +593,6 @@ function TaskList({
   onTogglePack: (id: string, v: boolean) => void;
 }) {
   const { users, reorderTasks } = useFluxo();
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ group: string; index: number } | null>(null);
   const groups: { key: string; label: string; items: Task[] }[] = [
     { key: "atrasada", label: "Atrasadas", items: [] },
     { key: "hoje", label: "Hoje", items: [] },
@@ -592,203 +619,234 @@ function TaskList({
       : g.items.sort((a, b) => a.order - b.order || porPrazo(a, b)),
   );
 
-  const handleDrop = (groupKey: string, insertIndex: number) => {
-    // Soltar entre as concluídas reordenaria uma fila que não existe mais.
-    if (!dragId || groupKey === "concluida") return;
-    const g = groups.find((x) => x.key === groupKey);
-    if (!g) return;
-    const filtered = g.items.filter((t) => t.id !== dragId);
-    const clampedIdx = Math.min(insertIndex, filtered.length);
-    const nextIds = [
-      ...filtered.slice(0, clampedIdx).map((t) => t.id),
-      dragId,
-      ...filtered.slice(clampedIdx).map((t) => t.id),
-    ];
-    reorderTasks(nextIds);
-    setDragId(null);
-    setDropTarget(null);
-  };
+  /* Um contexto de arraste para a lista toda, e cada grupo é uma fila à parte:
+     soltar noutro grupo não vale, porque o grupo sai do prazo e a tarefa
+     voltaria para o dela. Nem entre as concluídas, que reordenaria uma fila
+     que não existe mais — lá as linhas nem se pegam. */
+  const contexto = useArrasteDeLinhas((id, sobre) => {
+    const g = groups.find((x) => x.key !== "concluida" && x.items.some((t) => t.id === id));
+    if (!g || !g.items.some((t) => t.id === sobre)) return;
+    const ids = g.items.map((t) => t.id);
+    reorderTasks(arrayMove(ids, ids.indexOf(id), ids.indexOf(sobre)));
+  });
+  const nomeDe = (id: UniqueIdentifier) =>
+    `"${tasks.find((t) => t.id === String(id))?.title ?? "a tarefa"}"`;
 
   return (
-    <div className="space-y-6">
-      {groups.map((g) => {
-        if (g.items.length === 0) return null;
-        const priorizavel = g.key !== "concluida";
-        return (
-        <div key={g.key}>
-          <div className="mb-1 flex items-center gap-2">
-            <h3 className={`text-xs font-semibold uppercase tracking-wider ${g.key === "atrasada" ? "text-destructive" : g.key === "hoje" ? "text-warning" : g.key === "concluida" ? "text-success" : "text-muted-foreground"}`}>
-              {g.label}
-            </h3>
-            <span className="text-[10px] text-muted-foreground">({g.items.length})</span>
-            {priorizavel && (
-              <span className="text-[10px] text-muted-foreground/70">
-                · arraste ⋮⋮ para priorizar
-              </span>
-            )}
-          </div>
-          <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
-            <table className="w-full min-w-[860px] text-left">
-              <thead>
-                <tr className="border-b border-border bg-secondary/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <th className="py-2 pl-4 pr-2 w-8"></th>
-                  <th className="py-2 pr-2 w-8">#</th>
-                  <th className="py-2 pr-4">Tarefa</th>
-                  <th className="py-2 pr-4">Responsável</th>
-                  <th className="py-2 pr-4">Prazo</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Setor</th>
-                  <th className="py-2 pr-4 w-8"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.items.map((t, index) => {
-                  const assignee = users.find((u) => u.id === t.assigneeId);
-                  const sec = sectors.find((s) => s.id === t.sector);
-                  const showBefore =
-                    dropTarget?.group === g.key && dropTarget.index === index && dragId && dragId !== t.id;
-                  return (
-                    <tr
-                      key={t.id}
-                      draggable={priorizavel}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/plain", t.id);
-                        e.dataTransfer.effectAllowed = "move";
-                        setDragId(t.id);
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null);
-                        setDropTarget(null);
-                      }}
-                      onDragOver={(e) => {
-                        // Sem `preventDefault` o navegador recusa o soltar
-                        // aqui e mostra o cursor de proibido — que é a
-                        // resposta certa para as concluídas.
-                        if (!priorizavel) return;
-                        e.preventDefault();
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        const before = e.clientY < rect.top + rect.height / 2;
-                        setDropTarget({ group: g.key, index: before ? index : index + 1 });
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        handleDrop(g.key, dropTarget?.index ?? index);
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        window.dispatchEvent(
-                          new CustomEvent("fluxo:task-context", {
-                            detail: { id: t.id, x: e.clientX, y: e.clientY },
-                          }),
-                        );
-                      }}
-                      className={`group border-b border-border last:border-0 hover:bg-secondary/40 ${
-                        priorizavel ? "cursor-grab active:cursor-grabbing" : ""
-                      } ${showBefore ? "border-t-2 border-t-primary" : ""}`}
-                    >
-                      <td className="py-2.5 pl-4 pr-2">
-                        {t.status !== "concluida" && (
-                          <button
-                            onClick={() => onComplete(t.id)}
-                            className="flex h-4 w-4 items-center justify-center rounded border border-border hover:border-primary hover:bg-primary/10"
-                            title="Marcar concluída"
-                          />
-                        )}
-                      </td>
-                      <td className="py-2.5 pr-2">
-                        {/* O número é a posição na fila de trabalho — numa
-                            tarefa entregue ele afirmaria uma prioridade que
-                            não existe mais. */}
-                        {priorizavel && (
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                            {index + 1}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <button onClick={() => onEdit(t.id)} className="flex items-start gap-2 text-left">
-                          <CheckSquare className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <div className="text-sm font-medium">
-                              <SeloDoProjeto projectId={t.projectId} />
-                              {t.title}
-                            </div>
-                            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                              {t.recurring && (
-                                <span className="inline-flex items-center gap-1">
-                                  <Repeat className="h-2.5 w-2.5" /> Recorrente
-                                </span>
-                              )}
-                              {t.checklist.length > 0 && (
-                                <span>
-                                  ✓ {t.checklist.filter((c) => c.done).length}/{t.checklist.length}
-                                </span>
-                              )}
-                              {t.mentions.length > 0 && (
-                                <span className="inline-flex items-center gap-0.5">
-                                  <AtSign className="h-2.5 w-2.5" /> {t.mentions.length}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <div className="flex items-center gap-2">
-                          <UserAvatar
-                            nome={assignee?.name ?? ""}
-                            iniciais={assignee?.avatar ?? ""}
-                            className="h-6 w-6 text-[10px]"
-                          />
-                          <span className="text-xs">{assignee?.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 pr-4 text-xs text-muted-foreground">
-                        {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <Badge label={statusLabels[t.status]} color={statusColor[t.status]} />
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
-                      </td>
-                      <td className="py-2.5 pr-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
-                          <button
-                            onClick={() => onTogglePack(t.id, !t.inPack)}
-                            title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
-                            className={`rounded p-1 transition ${
-                              t.inPack
-                                ? "text-amber-500 hover:bg-amber-500/10"
-                                : "text-muted-foreground hover:bg-secondary hover:text-amber-500"
-                            }`}
-                          >
-                            <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
-                          </button>
-                          <button
-                            onClick={() => onEdit(t.id)}
-                            className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
+    <DndContext {...contexto} accessibility={acessibilidadeDoArraste(nomeDe)}>
+      <div className="space-y-6">
+        {groups.map((g) => {
+          if (g.items.length === 0) return null;
+          const priorizavel = g.key !== "concluida";
+          return (
+            <div key={g.key}>
+              <div className="mb-1 flex items-center gap-2">
+                <h3
+                  className={`text-xs font-semibold uppercase tracking-wider ${g.key === "atrasada" ? "text-destructive" : g.key === "hoje" ? "text-warning" : g.key === "concluida" ? "text-success" : "text-muted-foreground"}`}
+                >
+                  {g.label}
+                </h3>
+                <span className="text-[10px] text-muted-foreground">({g.items.length})</span>
+                {priorizavel && (
+                  <span className="text-[10px] text-muted-foreground/70">
+                    · arraste ⋮⋮ para priorizar
+                  </span>
+                )}
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-border bg-card shadow-sm">
+                {/* Larguras fixas, as mesmas em todos os grupos. Cada grupo é
+                    uma tabela à parte, e com a largura automática cada uma
+                    media as colunas pelo próprio conteúdo: "Responsável"
+                    começava num ponto em Hoje e noutro em Atrasadas, e a
+                    lista inteira parecia torta. A Tarefa fica com o resto. */}
+                <table className="w-full min-w-240 table-fixed text-left">
+                  <colgroup>
+                    <col className="w-10" />
+                    <col className="w-9" />
+                    <col />
+                    <col className="w-52" />
+                    <col className="w-32" />
+                    <col className="w-30" />
+                    <col className="w-34" />
+                    <col className="w-34" />
+                  </colgroup>
+                  <thead>
+                    <tr className="border-b border-border bg-secondary/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <th className="py-2 pl-4 pr-2"></th>
+                      <th className="py-2 pr-2">#</th>
+                      <th className="py-2 pr-4">Tarefa</th>
+                      <th className="py-2 pr-4">Responsável</th>
+                      <th className="py-2 pr-4">Prazo</th>
+                      <th className="py-2 pr-4">Status</th>
+                      <th className="py-2 pr-4">Setor</th>
+                      <th className="py-2 pr-4"></th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        );
-      })}
-    </div>
+                  </thead>
+                  <SortableContext
+                    items={g.items.map((t) => t.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <tbody>
+                      {g.items.map((t, index) => {
+                        const assignee = users.find((u) => u.id === t.assigneeId);
+                        const sec = sectors.find((s) => s.id === t.sector);
+                        return (
+                          <LinhaArrastavel
+                            key={t.id}
+                            id={t.id}
+                            desligada={!priorizavel}
+                            aoAbrir={() => onEdit(t.id)}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              window.dispatchEvent(
+                                new CustomEvent("fluxo:task-context", {
+                                  detail: { id: t.id, x: e.clientX, y: e.clientY },
+                                }),
+                              );
+                            }}
+                            className="group border-b border-border last:border-0 hover:bg-secondary/40"
+                          >
+                            <td className="py-2.5 pl-4 pr-2">
+                              {t.status !== "concluida" && (
+                                <button
+                                  onClick={() => onComplete(t.id)}
+                                  className="flex h-4 w-4 items-center justify-center rounded border border-border hover:border-primary hover:bg-primary/10"
+                                  title="Marcar concluída"
+                                />
+                              )}
+                            </td>
+                            <td className="py-2.5 pr-2">
+                              {/* O número é a posição na fila de trabalho — numa
+                                  tarefa entregue ele afirmaria uma prioridade que
+                                  não existe mais. */}
+                              {priorizavel && (
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                                  {index + 1}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 pr-4">
+                              <button
+                                onClick={() => onEdit(t.id)}
+                                className="flex items-start gap-2 text-left"
+                              >
+                                <CheckSquare className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                                <div>
+                                  <div className="text-sm font-medium">
+                                    <SeloDoProjeto projectId={t.projectId} />
+                                    {t.title}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                    {t.recurring && (
+                                      <span className="inline-flex items-center gap-1">
+                                        <Repeat className="h-2.5 w-2.5" /> Recorrente
+                                      </span>
+                                    )}
+                                    {t.checklist.length > 0 && (
+                                      <span>
+                                        ✓ {t.checklist.filter((c) => c.done).length}/
+                                        {t.checklist.length}
+                                      </span>
+                                    )}
+                                    {t.mentions.length > 0 && (
+                                      <span className="inline-flex items-center gap-0.5">
+                                        <AtSign className="h-2.5 w-2.5" /> {t.mentions.length}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            </td>
+                            <td className="py-2.5 pr-4">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <UserAvatar
+                                  nome={assignee?.name ?? ""}
+                                  iniciais={assignee?.avatar ?? ""}
+                                  className="h-6 w-6 shrink-0 text-[10px]"
+                                />
+                                {/* Nome inteiro no passar do mouse: com a coluna
+                                    de largura fixa, os nomes compridos cortam. */}
+                                <span className="truncate text-xs" title={assignee?.name}>
+                                  {assignee?.name}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 pr-4 text-xs text-muted-foreground">
+                              {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
+                            </td>
+                            <td className="py-2.5 pr-4">
+                              <Badge label={statusLabels[t.status]} color={statusColor[t.status]} />
+                            </td>
+                            <td className="py-2.5 pr-4">
+                              <Badge
+                                label={sec?.name ?? "—"}
+                                color={sec?.color ?? "oklch(0.55 0.02 260)"}
+                                dot
+                              />
+                            </td>
+                            <td className="py-2.5 pr-4 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <TaskTimerControls
+                                  taskId={t.id}
+                                  estimatedMinutes={t.estimatedMinutes}
+                                />
+                                <button
+                                  onClick={() => onTogglePack(t.id, !t.inPack)}
+                                  title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
+                                  className={`rounded p-1 transition ${
+                                    t.inPack
+                                      ? "text-amber-500 hover:bg-amber-500/10"
+                                      : "text-muted-foreground hover:bg-secondary hover:text-amber-500"
+                                  }`}
+                                >
+                                  <Star
+                                    className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`}
+                                  />
+                                </button>
+                                <button
+                                  onClick={() => onEdit(t.id)}
+                                  className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground group-hover:opacity-100"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </LinhaArrastavel>
+                        );
+                      })}
+                    </tbody>
+                  </SortableContext>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <LinhaNaMao
+        linha={(id) => {
+          const t = tasks.find((x) => x.id === id);
+          return (
+            t && {
+              titulo: t.title,
+              detalhe: (
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
+                </span>
+              ),
+            }
+          );
+        }}
+      />
+    </DndContext>
   );
 }
 
-/** Como uma coluna do quadro é ordenada. `manual` = a ordem do arraste. */
-type OrdemColuna = "manual" | "asc" | "desc";
+/**
+ * Como uma coluna do quadro é ordenada. `manual` = a ordem do arraste;
+ * `asc`/`desc` = pelo prazo; `entrega-*` = pelo dia da entrega, só na
+ * coluna Concluída (ver `FiltroDaEntrega`).
+ */
+type OrdemColuna = "manual" | "asc" | "desc" | "entrega-recente" | "entrega-antiga";
 
 /**
  * Ordenação de UMA coluna do quadro, por prazo.
@@ -800,11 +858,16 @@ type OrdemColuna = "manual" | "asc" | "desc";
  * Escolher prazo desliga a ordem do arraste naquela coluna — os dois não podem
  * valer ao mesmo tempo —, e é por isso que a opção de voltar é um ícone de
  * arrastar: ela diz o que se recupera, não o que se desliga.
+ *
+ * O destaque da opção escolhida desliza de uma para a outra (`layoutId` por
+ * coluna, senão as três colunas disputariam o mesmo destaque).
  */
 function OrdemDaColuna({
+  coluna,
   valor,
   aoEscolher,
 }: {
+  coluna: Status;
   valor: OrdemColuna;
   aoEscolher: (v: OrdemColuna) => void;
 }) {
@@ -814,26 +877,297 @@ function OrdemDaColuna({
     { v: "desc", icone: ArrowDownNarrowWide, titulo: "Vence por último" },
   ];
   return (
-    <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5">
-      {opcoes.map(({ v, icone: Icone, titulo }) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => aoEscolher(v)}
-          title={titulo}
-          aria-label={titulo}
-          aria-pressed={valor === v}
-          className={`rounded p-1 transition-colors ${
-            valor === v
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Icone className="h-3 w-3" />
-        </button>
-      ))}
+    <div
+      role="radiogroup"
+      aria-label="Ordem da coluna"
+      className="inline-flex items-center rounded-lg bg-background/60 p-0.5 ring-1 ring-border"
+    >
+      {opcoes.map(({ v, icone: Icone, titulo }) => {
+        const ativo = valor === v;
+        return (
+          <Dica key={v} texto={titulo}>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={ativo}
+              aria-label={titulo}
+              onClick={() => aoEscolher(v)}
+              className={`relative flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                ativo
+                  ? "text-primary-foreground"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              {ativo && (
+                <motion.span
+                  layoutId={`ordem-da-coluna-${coluna}`}
+                  layoutDependency={valor}
+                  className="absolute inset-0 rounded-md bg-primary shadow-sm"
+                  transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                />
+              )}
+              <Icone className="relative h-3.5 w-3.5" />
+            </button>
+          </Dica>
+        );
+      })}
     </div>
   );
+}
+
+/** O nome da ação ao parar o mouse — o ícone sozinho não diz. Pede `TooltipProvider` acima. */
+function Dica({ texto, children }: { texto: string; children: React.ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" className="px-2 py-1 text-[11px] normal-case tracking-normal">
+        {texto}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** O estilo dos botões quadrados do cabeçalho da coluna (entregas, nova tarefa). */
+const BOTAO_DO_CABECALHO =
+  "flex h-7 w-7 items-center justify-center rounded-lg ring-1 transition-colors";
+
+/** Recorte da coluna Concluída pelo dia da entrega, com as duas pontas. */
+type FiltroDeEntrega = { frase: string; de: string; ate: string } | null;
+
+/** Se a tarefa cai no recorte. Sem recorte, todas caem. */
+function naEntrega(t: Task, filtro: FiltroDeEntrega): boolean {
+  if (!filtro) return true;
+  const dia = diaDaEntrega(t);
+  return !!dia && dia >= filtro.de && dia <= filtro.ate;
+}
+
+/** Os atalhos de dia, calculados na hora — "hoje" muda à meia-noite. */
+function atalhosDeEntrega(): { rotulo: string; filtro: NonNullable<FiltroDeEntrega> }[] {
+  const hoje = new Date();
+  const dia = (delta: number) => {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() + delta);
+    return dataParaIso(d);
+  };
+  const seg = (hoje.getDay() + 6) % 7; // dias desde a segunda
+  return [
+    { rotulo: "Hoje", filtro: { frase: "hoje", de: dia(0), ate: dia(0) } },
+    { rotulo: "Ontem", filtro: { frase: "ontem", de: dia(-1), ate: dia(-1) } },
+    { rotulo: "Esta semana", filtro: { frase: "nesta semana", de: dia(-seg), ate: dia(6 - seg) } },
+    {
+      rotulo: "Semana passada",
+      filtro: { frase: "na semana passada", de: dia(-seg - 7), ate: dia(-seg - 1) },
+    },
+  ];
+}
+
+/**
+ * O filtro da coluna Concluída: a ordem da entrega (mais recentes ou mais
+ * antigas primeiro) e o recorte por dia — um atalho ou um dia qualquer no
+ * calendário. Fica aceso quando algum dos dois está valendo.
+ *
+ * Ordenar por entrega é mais uma ordenação da coluna, como a do prazo: escolher
+ * um dos três botões ao lado a desfaz.
+ */
+function FiltroDaEntrega({
+  ordem,
+  aoOrdenar,
+  filtro,
+  aoFiltrar,
+}: {
+  ordem: OrdemColuna;
+  aoOrdenar: (v: OrdemColuna) => void;
+  filtro: FiltroDeEntrega;
+  aoFiltrar: (f: FiltroDeEntrega) => void;
+}) {
+  const atalhos = atalhosDeEntrega();
+  const porEntrega = ordem === "entrega-recente" || ordem === "entrega-antiga";
+  const ativo = porEntrega || !!filtro;
+  const atalhoEscolhido = atalhos.find(
+    (a) => filtro && a.filtro.de === filtro.de && a.filtro.ate === filtro.ate,
+  );
+  const diaEscolhido = filtro && !atalhoEscolhido && filtro.de === filtro.ate ? filtro.de : "";
+  const opcao = (escolhida: boolean) =>
+    `rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+      escolhida
+        ? "border-primary bg-primary text-primary-foreground"
+        : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+    }`;
+  return (
+    <Popover>
+      <Dica texto={ativo ? "Entregas: filtro ativo" : "Entregas: ordem e dia"}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Entregas: ordem e dia"
+            className={`${BOTAO_DO_CABECALHO} ${
+              ativo
+                ? "bg-primary text-primary-foreground ring-primary"
+                : "bg-background/60 text-muted-foreground ring-border hover:bg-secondary hover:text-foreground"
+            }`}
+          >
+            <CalendarCheck className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+      </Dica>
+      <PopoverContent align="end" className="w-64 p-2 normal-case tracking-normal">
+        <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Ordem da entrega
+        </div>
+        <div className="grid grid-cols-2 gap-1">
+          {(
+            [
+              ["entrega-recente", "Mais recentes"],
+              ["entrega-antiga", "Mais antigas"],
+            ] as const
+          ).map(([v, rotulo]) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={ordem === v}
+              onClick={() => aoOrdenar(ordem === v ? "manual" : v)}
+              className={opcao(ordem === v)}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 px-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Entregues em
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <button type="button" onClick={() => aoFiltrar(null)} className={opcao(!filtro)}>
+            Qualquer dia
+          </button>
+          {atalhos.map((a) => (
+            <button
+              key={a.rotulo}
+              type="button"
+              onClick={() => aoFiltrar(a.filtro)}
+              className={opcao(atalhoEscolhido === a)}
+            >
+              {a.rotulo}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-2 px-1">
+          <span className="text-[11px] text-muted-foreground">Dia</span>
+          <CampoData
+            value={diaEscolhido}
+            onChange={(iso) =>
+              aoFiltrar(
+                iso
+                  ? {
+                      frase: `em ${isoParaData(iso)?.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`,
+                      de: iso,
+                      ate: iso,
+                    }
+                  : null,
+              )
+            }
+            placeholder="Escolher dia"
+            title="Entregues neste dia"
+            className="flex-1 py-1 text-xs"
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const COLUNAS_DO_QUADRO = [
+  "pendente",
+  "andamento",
+  "concluida",
+] as const satisfies readonly Status[];
+
+/**
+ * Uma assinatura da ordem de cada coluna na tela: muda quando algum cartão
+ * daquela coluna entra, sai ou troca de lugar. É o `layoutDependency` dos
+ * cartões — ver `CartaoDoQuadro`.
+ */
+function disposicaoPorColuna(exibido: Arranjo<Status>): Record<Status, string> {
+  return {
+    pendente: exibido.pendente.join(),
+    andamento: exibido.andamento.join(),
+    concluida: exibido.concluida.join(),
+  };
+}
+
+/**
+ * Marca invisível da coluna no framer. Quando a coluna muda, ela avisa o grupo
+ * da coluna para medir os cartões — inclusive o que está saindo, que já não se
+ * redesenha. Sem ela, o último cartão de uma coluna ia para a outra sem
+ * atravessar a tela: não sobrava ninguém na coluna para disparar a medida.
+ */
+function MarcaDaColuna({ disposicao }: { disposicao: string }) {
+  return <motion.div layout layoutDependency={disposicao} aria-hidden className="hidden" />;
+}
+
+/**
+ * O dia em que a tarefa foi entregue ("yyyy-MM-dd"): o que a pessoa informou
+ * como dia real da conclusão ou, sem isso, o dia do clique que a concluiu. É
+ * o mesmo dia que a Timeline mostra.
+ */
+function diaDaEntrega(t: Task): string | null {
+  if (t.status !== "concluida") return null;
+  if (t.actualCompletionDate) return t.actualCompletionDate;
+  return t.completedAt ? dataParaIso(new Date(t.completedAt)) : null;
+}
+
+/** Uma coluna na ordem escolhida no cabeçalho dela. */
+function ordenarColuna(itens: Task[], ordem: OrdemColuna): Task[] {
+  return [...itens].sort((a, b) => {
+    // Sem ordenação escolhida, vale a ordem do arraste.
+    if (ordem === "manual") return a.order - b.order;
+    if (ordem === "entrega-recente" || ordem === "entrega-antiga") {
+      // Sem data de entrega vai para o fim nos dois sentidos.
+      const da = diaDaEntrega(a);
+      const db = diaDaEntrega(b);
+      if (!da !== !db) return da ? -1 : 1;
+      // O dia primeiro (o informado vale mais que o clique), o clique desempata.
+      const ka = `${da ?? ""}|${a.completedAt ?? ""}`;
+      const kb = `${db ?? ""}|${b.completedAt ?? ""}`;
+      if (ka !== kb) return (ka < kb ? -1 : 1) * (ordem === "entrega-antiga" ? 1 : -1);
+      return a.order - b.order;
+    }
+    // Sem prazo fica por último nos dois sentidos: não vence nem cedo nem tarde.
+    if (!a.dueDate !== !b.dueDate) return a.dueDate ? -1 : 1;
+    const da = prazoMs(a.dueDate);
+    const db = prazoMs(b.dueDate);
+    if (da !== db) return ordem === "asc" ? da - db : db - da;
+    // Empate de prazo cai na prioridade, para a lista não embaralhar
+    // sozinha a cada render.
+    return a.order - b.order;
+  });
+}
+
+/**
+ * Onde a tarefa entra na coluna INTEIRA, que é o que `moveTask` numera.
+ *
+ * O quadro mostra o recorte dos filtros, e a coluna inteira tem também as
+ * tarefas escondidas por eles. A posição da tela passada direto errava sempre
+ * que havia escondidas no meio: soltar a primeira tarefa depois da segunda a
+ * deixava em primeiro, porque a "posição 2" da coluna inteira ainda caía antes
+ * das duas. A âncora é o vizinho de baixo na tela (ou o de cima, soltando no
+ * fim), que existe nas duas contagens.
+ */
+function posicaoNaColunaInteira(
+  todas: Task[],
+  id: string,
+  coluna: Status,
+  naTela: string[],
+): number | undefined {
+  const inteira = todas
+    .filter((t) => t.status === coluna && t.id !== id)
+    .sort((a, b) => a.order - b.order)
+    .map((t) => t.id);
+  const i = naTela.indexOf(id);
+  const abaixo = naTela[i + 1];
+  if (abaixo && inteira.includes(abaixo)) return inteira.indexOf(abaixo);
+  const acima = naTela[i - 1];
+  if (acima && inteira.includes(acima)) return inteira.indexOf(acima) + 1;
+  return undefined; // sozinha na tela: vai para o fim
 }
 
 function KanbanBoard({
@@ -851,8 +1185,7 @@ function KanbanBoard({
   onQuickComplete: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
 }) {
-  const { users } = useFluxo();
-  const [dragOver, setDragOver] = useState<{ col: Status; index: number } | null>(null);
+  const { tasks: todas } = useFluxo();
   /* Ordenação por coluna, e não uma para o quadro inteiro: o que se quer ver
      primeiro muda com a coluna. Em "A fazer" interessa o que vence antes; em
      "Concluída", quase sempre o contrário — o que foi entregue por último. */
@@ -861,6 +1194,7 @@ function KanbanBoard({
     andamento: "manual",
     concluida: "manual",
   });
+  const [filtroEntrega, setFiltroEntrega] = useState<FiltroDeEntrega>(null);
 
   const cols: { id: Status; title: string; color: string }[] = [
     { id: "pendente", title: statusLabels.pendente, color: statusColor.pendente },
@@ -868,277 +1202,574 @@ function KanbanBoard({
     { id: "concluida", title: statusLabels.concluida, color: statusColor.concluida },
   ];
 
+  const porId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const atual = useMemo(
+    () =>
+      Object.fromEntries(
+        COLUNAS_DO_QUADRO.map((c) => [
+          c,
+          ordenarColuna(
+            tasks.filter(
+              (t) => t.status === c && naEntrega(t, c === "concluida" ? filtroEntrega : null),
+            ),
+            ordemPorColuna[c],
+          ).map((t) => t.id),
+        ]),
+      ) as Arranjo<Status>,
+    [tasks, ordemPorColuna, filtroEntrega],
+  );
+
+  /* A PRIORIDADE de cada tarefa, que é a ordem do arraste.
+     Precisa ser calculada à parte porque o número no cartão diz
+     "Prioridade N", e ordenando por prazo a posição na tela deixa de ser
+     a prioridade. Sem este mapa, a tarefa prioridade 1 apareceria como
+     "3" só porque vence depois — e o número viraria mentira. */
+  const prioridades = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of COLUNAS_DO_QUADRO)
+      ordenarColuna(
+        tasks.filter((t) => t.status === c),
+        "manual",
+      ).forEach((t, i) => m.set(t.id, i + 1));
+    return m;
+  }, [tasks]);
+
+  const { ativo, exibido, contexto } = useArrasteEntreColunas<Status>({
+    colunas: COLUNAS_DO_QUADRO,
+    atual,
+    reordenavel: (c) => ordemPorColuna[c] === "manual",
+    encaixar: (c, ids) =>
+      ordenarColuna(
+        ids.flatMap((id) => porId.get(id) ?? []),
+        ordemPorColuna[c],
+      ).map((t) => t.id),
+    aoSoltar: ({ id, de, para, ids, sobreOutro }) => {
+      /* Arrastar define PRIORIDADE: `moveTask` regrava o campo `order`
+         da coluna inteira, e é ele que o número no cartão mostra.
+
+         Por isso, com a coluna ordenada por prazo, a posição dentro dela não
+         vale: ali a posição significa data, e gravá-la como prioridade
+         reescreveria a fila inteira a partir de um critério que não é o da
+         pessoa. O cartão nem sai do lugar enquanto se arrasta; trocar de
+         coluna continua funcionando — ali o que muda é a situação. */
+      if (ordemPorColuna[para] !== "manual") {
+        if (de !== para) onMove(id, para);
+        else if (sobreOutro)
+          toast.info(
+            `Ordenado por ${ordemPorColuna[para].startsWith("entrega") ? "entrega" : "prazo"} — a prioridade não mudou.`,
+            {
+              description: "Volte para a ordem de arraste para reposicionar.",
+            },
+          );
+        return;
+      }
+      if (de === para && ids.join() === atual[para].join()) return;
+      onMove(id, para, posicaoNaColunaInteira(todas, id, para, ids));
+    },
+  });
+  const tarefaAtiva = ativo ? porId.get(ativo) : undefined;
+
+  /* Cartão e miolo são `memo`. No arraste o quadro se redesenha a cada troca
+     de lugar, e redesenhar o miolo de todos os cartões a cada vez (prazo
+     formatado, fotos, cronômetro) era o que fazia o arraste engasgar com o
+     quadro cheio. Para o `memo` valer, as ações têm de ser as mesmas funções de
+     um desenho para o outro — e as que chegam da página não são. */
+  const acoes = useAcoesEstaveis({ onEdit, onMove, onQuickComplete, onTogglePack });
+  // Muda quando algum cartão da coluna muda de lugar — ver `CartaoDoQuadro`.
+  const disposicao = useMemo(() => disposicaoPorColuna(exibido), [exibido]);
+
+  const nomeDe = (id: UniqueIdentifier) => {
+    const t = porId.get(String(id));
+    if (t) return `"${t.title}"`;
+    const col = cols.find((c) => idDaColuna(c.id) === String(id));
+    return col ? `a coluna ${col.title}` : "a tarefa";
+  };
+
   return (
-    /* O `LayoutGroup` é o que faz o cartão ATRAVESSAR a tela ao trocar de
-       coluna: ele sai de uma lista e entra na outra, e o framer liga as duas
-       posições pelo `layoutId` em vez de o cartão sumir aqui e piscar ali. */
-    <LayoutGroup>
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-      {cols.map((col) => {
-        const ordem = ordemPorColuna[col.id];
-        const daColuna = tasks.filter((t) => t.status === col.id);
-
-        /* A PRIORIDADE de cada tarefa, que é a ordem do arraste.
-           Precisa ser calculada à parte porque o número no cartão diz
-           "Prioridade N", e ordenando por prazo a posição na tela deixa de ser
-           a prioridade. Sem este mapa, a tarefa prioridade 1 apareceria como
-           "3" só porque vence depois — e o número viraria mentira. */
-        const prioridade = new Map(
-          [...daColuna].sort((a, b) => a.order - b.order).map((t, i) => [t.id, i + 1]),
-        );
-
-        const items = [...daColuna].sort((a, b) => {
-          // Sem ordenação escolhida, vale a ordem do arraste.
-          if (ordem === "manual") return a.order - b.order;
-          // Sem prazo fica por último nos dois sentidos: não vence nem cedo nem tarde.
-          if (!a.dueDate !== !b.dueDate) return a.dueDate ? -1 : 1;
-          const da = prazoMs(a.dueDate);
-          const db = prazoMs(b.dueDate);
-          if (da !== db) return ordem === "asc" ? da - db : db - da;
-          // Empate de prazo cai na prioridade, para a lista não embaralhar
-          // sozinha a cada render.
-          return a.order - b.order;
-        });
-        const isOver = dragOver?.col === col.id;
-        return (
-          <div
-            key={col.id}
-            onDragOver={(e) => {
-              e.preventDefault();
-              if (!isOver) setDragOver({ col: col.id, index: items.length });
-            }}
-            onDragLeave={(e) => {
-              if (e.currentTarget === e.target) setDragOver(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const id = e.dataTransfer.getData("text/plain");
-              setDragOver(null);
-              if (!id) return;
-
-              /* Arrastar define PRIORIDADE: `moveTask` regrava o campo `order`
-                 da coluna inteira, e é ele que o número no cartão mostra.
-
-                 Por isso, com a coluna ordenada por prazo, soltar DENTRO dela
-                 não pode valer: a posição onde a pessoa soltou significa data,
-                 e gravá-la como prioridade reescreveria a fila inteira a
-                 partir de um critério que não é o dela. Trocar de coluna
-                 continua funcionando — ali o que muda é a situação. */
-              const atual = tasks.find((t) => t.id === id);
-              const mesmaColuna = atual?.status === col.id;
-              if (ordem !== "manual" && mesmaColuna) {
-                toast.info("Ordenado por prazo — a prioridade não mudou.", {
-                  description: "Volte para a ordem de arraste para reposicionar.",
-                });
-                return;
-              }
-              onMove(id, col.id, ordem === "manual" ? dragOver?.index : undefined);
-            }}
-            className={`rounded-md border p-3 transition ${
-              isOver ? "border-primary bg-primary/5" : "border-transparent bg-secondary/40"
-            }`}
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
-                <span className="h-2 w-2 rounded-full" style={{ background: col.color }} />
-                {col.title}
-                <span className="rounded-full bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  {items.length}
-                </span>
-                <OrdemDaColuna
-                  valor={ordem}
-                  aoEscolher={(v) => setOrdemPorColuna((o) => ({ ...o, [col.id]: v }))}
-                />
-              </div>
-              <button
-                onClick={() => onCreate(col.id)}
-                className="rounded p-1 text-muted-foreground hover:bg-card hover:text-foreground"
+    <TooltipProvider delayDuration={300}>
+      <DndContext {...contexto} accessibility={acessibilidadeDoArraste(nomeDe)}>
+        <RemedirAoMudar chave={exibido} />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {cols.map((col) => {
+            const ordem = ordemPorColuna[col.id];
+            const items = exibido[col.id].flatMap((id) => porId.get(id) ?? []);
+            /* Acende a coluna que vai receber o cartão. A de origem não: ali
+               ele só troca de lugar, e o lugar aberto já mostra isso. */
+            const recebendo =
+              !!tarefaAtiva &&
+              tarefaAtiva.status !== col.id &&
+              exibido[col.id].includes(tarefaAtiva.id);
+            return (
+              <ColunaDoQuadro
+                key={col.id}
+                status={col.id}
+                className={`rounded-md border p-3 transition-colors ${
+                  recebendo ? "border-primary bg-primary/5" : "border-transparent bg-secondary/40"
+                }`}
               >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="space-y-2">
-              {items.map((t, index) => {
-                const assignee = users.find((u) => u.id === t.assigneeId);
-                const sec = sectors.find((s) => s.id === t.sector);
-                const alvoDoArraste =
-                  ordem === "manual" && dragOver?.col === col.id && dragOver.index === index;
-                return (
-                  <motion.div
-                    key={t.id}
-                    /* `layoutId` e não só `layout`: o cartão não se move dentro
-                       da mesma lista quando troca de coluna — ele desmonta de
-                       uma e monta na outra. O id compartilhado é o que liga as
-                       duas posições e faz o cartão viajar até lá. */
-                    layout
-                    layoutId={`cartao-${t.id}`}
-                    transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.8 }}
-                  >
-                  <CartaoNaCorDoProjeto
-                    projectId={t.projectId}
-                    destacado={alvoDoArraste}
-                    draggable
-                    onDragStart={(e) => e.dataTransfer.setData("text/plain", t.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      window.dispatchEvent(
-                        new CustomEvent("fluxo:task-context", {
-                          detail: { id: t.id, x: e.clientX, y: e.clientY },
-                        }),
-                      );
-                    }}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      const before = e.clientY < rect.top + rect.height / 2;
-                      setDragOver({ col: col.id, index: before ? index : index + 1 });
-                    }}
-                    onClick={() => onEdit(t.id)}
-                    /* A marca de "cai aqui" só com ordem manual: ordenado por
-                       prazo, ela prometeria uma posição que a lista desfaz no
-                       quadro seguinte. */
-                    /* `transition-[box-shadow,border-color]` e não o utilitário
-                       `transition` inteiro: o cartão vive dentro de um
-                       `motion.div` com `layout`, e o cheio poria transição CSS
-                       em transform — que é justamente o que a animação de
-                       troca de coluna escreve a cada quadro. */
-                    className={`cursor-grab rounded-md border bg-card p-3 shadow-sm transition-[box-shadow,border-color] hover:shadow-md active:cursor-grabbing ${
-                      alvoDoArraste ? "border-primary" : "border-border"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {/* A prioridade real, não a posição na tela. Ordenando
-                          por prazo as duas deixam de coincidir. */}
-                      <span
-                        className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary"
-                        title={`Prioridade ${prioridade.get(t.id) ?? index + 1}`}
-                      >
-                        {prioridade.get(t.id) ?? index + 1}
-                      </span>
-                      <span
-                        className="rounded px-1.5 py-0.5"
-                        style={{
-                          background: `color-mix(in oklab, ${sec?.color} 15%, transparent)`,
-                          color: sec?.color,
-                        }}
-                      >
-                        {sec?.name}
-                      </span>
-                      {/* Ao lado do setor, e não na frente do título: é
-                          informação de contexto como o setor, e o título fica
-                          inteiro para ler. */}
-                      <SeloDoProjeto projectId={t.projectId} className="min-w-0" />
-                      {t.recurring && <Repeat className="h-2.5 w-2.5 shrink-0" />}
+                {/* O que se lê à esquerda (coluna e quantas), o que se opera à
+                  direita, junto. Antes os controles vinham colados ao título e
+                  o "+" isolado na ponta, com um vão no meio. */}
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+                    <span className="h-2 w-2 rounded-full" style={{ background: col.color }} />
+                    {col.title}
+                    <span className="rounded-full bg-background/60 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground/70 ring-1 ring-border">
+                      {items.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <OrdemDaColuna
+                      coluna={col.id}
+                      valor={ordem}
+                      aoEscolher={(v) => setOrdemPorColuna((o) => ({ ...o, [col.id]: v }))}
+                    />
+                    {col.id === "concluida" && (
+                      <FiltroDaEntrega
+                        ordem={ordem}
+                        aoOrdenar={(v) => setOrdemPorColuna((o) => ({ ...o, concluida: v }))}
+                        filtro={filtroEntrega}
+                        aoFiltrar={setFiltroEntrega}
+                      />
+                    )}
+                    <Dica texto={`Nova tarefa em ${col.title}`}>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTogglePack(t.id, !t.inPack);
-                        }}
-                        title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
-                        className={`ml-auto rounded p-0.5 transition ${
-                          t.inPack
-                            ? "text-amber-500"
-                            : "text-muted-foreground hover:text-amber-500"
-                        }`}
+                        type="button"
+                        onClick={() => onCreate(col.id)}
+                        aria-label={`Nova tarefa em ${col.title}`}
+                        className={`${BOTAO_DO_CABECALHO} bg-background/60 text-muted-foreground ring-border hover:bg-primary hover:text-primary-foreground hover:ring-primary`}
                       >
-                        <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
+                        <Plus className="h-4 w-4" />
                       </button>
-                    </div>
-                    {/* Título ladeado pelos dois atalhos: concluir à esquerda
-                        (o mesmo círculo do Meu pack) e a seta que empurra para
-                        a próxima coluna à direita. */}
-                    <div className="mt-1.5 flex items-start gap-2">
-                      <CirculoDeConcluir
-                        concluida={col.id === "concluida"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (col.id === "concluida") onMove(t.id, "andamento");
-                          else onQuickComplete(t.id);
-                        }}
-                      />
-                      <div className="min-w-0 flex-1 text-sm font-medium leading-snug">
-                        {t.title}
+                    </Dica>
+                  </div>
+                </div>
+                {/* O recorte ativo fica à vista, com quanto ele esconde: sem isso
+                  a coluna com 3 cartões parecia ter só 3 entregas. */}
+                <AnimatePresence initial={false}>
+                  {col.id === "concluida" && filtroEntrega && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mb-2 flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1 text-[11px] text-primary">
+                        <CalendarCheck className="h-3 w-3 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">
+                          Entregues {filtroEntrega.frase} · {items.length} de{" "}
+                          {tasks.filter((t) => t.status === "concluida").length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setFiltroEntrega(null)}
+                          className="rounded p-0.5 hover:bg-primary/15"
+                          title="Mostrar todas as entregas"
+                          aria-label="Mostrar todas as entregas"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </div>
-                      <SetaDeColuna
-                        destino={PROXIMA_COLUNA[col.id]}
-                        voltando={col.id === "concluida"}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onMove(t.id, PROXIMA_COLUNA[col.id]);
-                        }}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                {/* Um `LayoutGroup` por coluna. Ele é o que faz o cartão
+                    ATRAVESSAR a tela ao trocar de coluna: o cartão sai de uma
+                    lista e entra na outra, e o framer liga as duas posições
+                    pelo `layoutId` (que vale para a tela toda) em vez de o
+                    cartão sumir aqui e piscar ali. No arraste é ele também que
+                    desliza os cartões que abrem espaço. Um só para o quadro
+                    inteiro fazia qualquer troca medir as três colunas; assim
+                    só mede a coluna que mudou. */}
+                <LayoutGroup>
+                  <MarcaDaColuna disposicao={disposicao[col.id]} />
+                  <div className="space-y-2">
+                    {items.map((t, index) => (
+                      <CartaoDoQuadro
+                        key={t.id}
+                        task={t}
+                        coluna={col.id}
+                        prioridade={prioridades.get(t.id) ?? index + 1}
+                        acoes={acoes}
+                        disposicao={disposicao[col.id]}
                       />
-                    </div>
-                    {(t.mentions.length > 0 || t.checklist.length > 0) && (
-                      <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
-                        {t.checklist.length > 0 && (
-                          <span>
-                            ✓ {t.checklist.filter((c) => c.done).length}/{t.checklist.length}
-                          </span>
-                        )}
-                        {t.mentions.length > 0 && (
-                          <div className="flex items-center gap-1">
-                            <AtSign className="h-2.5 w-2.5" />
-                            <div className="flex -space-x-1">
-                              {t.mentions.slice(0, 4).map((mid) => {
-                                const u = users.find((x) => x.id === mid);
-                                if (!u) return null;
-                                return (
-                                  <UserAvatar
-                                    key={mid}
-                                    nome={u.name}
-                                    iniciais={u.avatar}
-                                    title={u.name}
-                                    className="h-4 w-4 border border-card text-[8px]"
-                                  />
-                                );
-                              })}
-                            </div>
-                            {t.mentions.length > 4 && <span>+{t.mentions.length - 4}</span>}
-                          </div>
-                        )}
+                    ))}
+                    {items.length === 0 && (
+                      <div className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                        Arraste tarefas aqui
                       </div>
                     )}
-                    {/* Rodapé numa linha só: o que se lê à esquerda (prazo), o
-                        que se opera à direita (temporizador e responsável).
-                        Concluir saiu daqui e virou o círculo na frente do
-                        título — ver `CirculoDeConcluir`. */}
-                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                      <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1.5 whitespace-nowrap">
-                          <Clock className="h-3 w-3" />
-                          {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
-                        </span>
-                      </div>
-                      <div className="ml-auto flex items-center gap-2">
-                        <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
-                        {/* Foto, com as iniciais por trás como reserva. O
-                            cartão desenhava só as iniciais, então o quadro era
-                            uma parede de siglas — e reconhecer alguém por "LP"
-                            exige decorar, enquanto o rosto se reconhece sozinho. */}
-                        <UserAvatar
-                          nome={assignee?.name ?? ""}
-                          iniciais={assignee?.avatar ?? ""}
-                          title={assignee?.name}
-                          className="h-6 w-6 text-[10px]"
-                        />
-                      </div>
-                    </div>
-                  </CartaoNaCorDoProjeto>
-                  </motion.div>
-                );
-              })}
-              {items.length === 0 && (
-                <div className="rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
-                  Arraste tarefas aqui
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
+                  </div>
+                </LayoutGroup>
+              </ColunaDoQuadro>
+            );
+          })}
+        </div>
+        <NoTopo>
+          <DragOverlay dropAnimation={POUSO}>
+            {tarefaAtiva ? (
+              <Levantado className="rounded-md">
+                <CartaoNaCorDoProjeto
+                  projectId={tarefaAtiva.projectId}
+                  className="rounded-md border border-border bg-card p-3"
+                >
+                  <ConteudoDoCartao
+                    task={tarefaAtiva}
+                    coluna={tarefaAtiva.status}
+                    prioridade={prioridades.get(tarefaAtiva.id) ?? 1}
+                    acoes={acoes}
+                  />
+                </CartaoNaCorDoProjeto>
+              </Levantado>
+            ) : null}
+          </DragOverlay>
+        </NoTopo>
+      </DndContext>
+    </TooltipProvider>
+  );
+}
+
+/** Uma coluna do quadro ou do pack, que também é área de soltar (para quando está vazia). */
+function ColunaDoQuadro({
+  status,
+  className,
+  children,
+}: {
+  status: Status;
+  className: string;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef } = useDroppable({ id: idDaColuna(status) });
+  return (
+    <div ref={setNodeRef} className={className}>
+      {children}
     </div>
-    </LayoutGroup>
+  );
+}
+
+/**
+ * Um cartão do quadro.
+ *
+ * O `motion.div` de fora é o que se mede: é arrastável e área de soltar ao
+ * mesmo tempo, e o framer anima a posição dele. O cartão de dentro é o que se
+ * pega — recebe o foco, o clique e o teclado. Enquanto está na mão, o cartão
+ * vira só o lugar onde ele vai cair: tracejado e vazio, do mesmo tamanho.
+ *
+ * `disposicao` é o `layoutDependency` do framer: ele só mede e anima quando
+ * algum cartão da coluna mudou de lugar. Sem isso ele media o quadro inteiro a
+ * cada desenho de qualquer cartão — e no arraste o @dnd-kit redesenha todos os
+ * cartões cada vez que o mouse passa de um para outro.
+ */
+const CartaoDoQuadro = memo(function CartaoDoQuadro({
+  task: t,
+  coluna,
+  prioridade,
+  acoes,
+  disposicao,
+}: {
+  task: Task;
+  coluna: Status;
+  prioridade: number;
+  acoes: AcoesDoCartao;
+  disposicao: string;
+}) {
+  const {
+    setNodeRef: arrastavel,
+    setActivatorNodeRef,
+    attributes,
+    listeners,
+    isDragging,
+  } = useDraggable({ id: t.id, attributes: { roleDescription: "tarefa" } });
+  const { setNodeRef: area } = useDroppable({ id: t.id });
+  const medido = useCallback(
+    (n: HTMLDivElement | null) => {
+      arrastavel(n);
+      area(n);
+    },
+    [arrastavel, area],
+  );
+  return (
+    <CorpoDoCartao
+      task={t}
+      coluna={coluna}
+      prioridade={prioridade}
+      acoes={acoes}
+      disposicao={disposicao}
+      medido={medido}
+      pegador={setActivatorNodeRef}
+      attributes={attributes}
+      listeners={listeners}
+      isDragging={isDragging}
+    />
+  );
+});
+
+/**
+ * O corpo do cartão, separado dos ganchos do @dnd-kit em `CartaoDoQuadro`.
+ *
+ * O @dnd-kit redesenha todo cartão que usa `useDraggable` quando alguém pega
+ * ou solta um cartão e quando o alvo sob o mouse muda — com o quadro cheio,
+ * dezenas de `motion.div` de uma vez, e era isso que engasgava o gesto ao
+ * pegar e ao soltar. Os ganchos ficam na casca fina; o corpo é `memo` e só se
+ * redesenha quando algo dele mudou: a tarefa, o lugar, ou estar na mão.
+ */
+const CorpoDoCartao = memo(function CorpoDoCartao({
+  task: t,
+  coluna,
+  prioridade,
+  acoes,
+  disposicao,
+  medido,
+  pegador,
+  attributes,
+  listeners,
+  isDragging,
+}: {
+  task: Task;
+  coluna: Status;
+  prioridade: number;
+  acoes: AcoesDoCartao;
+  disposicao: string;
+  medido: (n: HTMLDivElement | null) => void;
+  pegador: (n: HTMLElement | null) => void;
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  isDragging: boolean;
+}) {
+  return (
+    <motion.div
+      ref={medido}
+      /* `layoutId` e não só `layout`: o cartão não se move dentro
+         da mesma lista quando troca de coluna — ele desmonta de
+         uma e monta na outra. O id compartilhado é o que liga as
+         duas posições e faz o cartão viajar até lá. */
+      layout
+      layoutId={`cartao-${t.id}`}
+      layoutDependency={disposicao}
+      transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.8 }}
+    >
+      <CartaoNaCorDoProjeto
+        ref={pegador}
+        projectId={t.projectId}
+        vazio={isDragging}
+        data-arrastavel=""
+        {...attributes}
+        {...listeners}
+        onKeyDown={(e) => {
+          listeners?.onKeyDown?.(e);
+          // Espaço pega o cartão; Enter abre, como o clique.
+          if (e.key === "Enter" && e.target === e.currentTarget && !isDragging) acoes.onEdit(t.id);
+        }}
+        onClick={() => acoes.onEdit(t.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          window.dispatchEvent(
+            new CustomEvent("fluxo:task-context", {
+              detail: { id: t.id, x: e.clientX, y: e.clientY },
+            }),
+          );
+        }}
+        /* `transition-[box-shadow,border-color]` e não o utilitário
+           `transition` inteiro: o cartão vive dentro de um
+           `motion.div` com `layout`, e o cheio poria transição CSS
+           em transform — que é justamente o que a animação de
+           troca de coluna escreve a cada quadro. */
+        className={`rounded-md border p-3 transition-[box-shadow,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+          isDragging
+            ? "border-dashed border-primary/50 bg-primary/5 shadow-none *:invisible"
+            : "border-border bg-card shadow-sm hover:shadow-md"
+        }`}
+      >
+        <ConteudoDoCartao task={t} coluna={coluna} prioridade={prioridade} acoes={acoes} />
+      </CartaoNaCorDoProjeto>
+    </motion.div>
+  );
+});
+
+/** O que um cartão do quadro pode fazer. Ver `useAcoesEstaveis`. */
+type AcoesDoCartao = {
+  onEdit: (id: string) => void;
+  onMove: (id: string, status: Status) => void;
+  onQuickComplete: (id: string) => void;
+  onTogglePack: (id: string, v: boolean) => void;
+};
+
+/** O miolo do cartão: no quadro e no cartão levantado pelo arraste. */
+const ConteudoDoCartao = memo(function ConteudoDoCartao({
+  task: t,
+  coluna,
+  prioridade,
+  acoes: { onMove, onQuickComplete, onTogglePack },
+}: {
+  task: Task;
+  coluna: Status;
+  prioridade: number;
+  acoes: AcoesDoCartao;
+}) {
+  const { users } = useFluxo();
+  const assignee = users.find((u) => u.id === t.assigneeId);
+  const sec = sectors.find((s) => s.id === t.sector);
+  return (
+    <>
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {/* A prioridade real, não a posição na tela. Ordenando
+            por prazo as duas deixam de coincidir. */}
+        <span
+          className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary"
+          title={`Prioridade ${prioridade}`}
+        >
+          {prioridade}
+        </span>
+        <span
+          className="rounded px-1.5 py-0.5"
+          style={{
+            background: `color-mix(in oklab, ${sec?.color} 15%, transparent)`,
+            color: sec?.color,
+          }}
+        >
+          {sec?.name}
+        </span>
+        {/* Ao lado do setor, e não na frente do título: é
+            informação de contexto como o setor, e o título fica
+            inteiro para ler. */}
+        <SeloDoProjeto projectId={t.projectId} className="min-w-0" />
+        {t.recurring && <Repeat className="h-2.5 w-2.5 shrink-0" />}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePack(t.id, !t.inPack);
+          }}
+          title={t.inPack ? "Remover do Meu pack" : "Adicionar ao Meu pack"}
+          className={`ml-auto rounded p-0.5 transition ${
+            t.inPack ? "text-amber-500" : "text-muted-foreground hover:text-amber-500"
+          }`}
+        >
+          <Star className={`h-3.5 w-3.5 ${t.inPack ? "fill-amber-500" : ""}`} />
+        </button>
+      </div>
+      {/* Título ladeado pelos dois atalhos: concluir à esquerda
+          (o mesmo círculo do Meu pack) e a seta que empurra para
+          a próxima coluna à direita. */}
+      <div className="mt-1.5 flex items-start gap-2">
+        <CirculoDeConcluir
+          concluida={coluna === "concluida"}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (coluna === "concluida") onMove(t.id, "andamento");
+            else onQuickComplete(t.id);
+          }}
+        />
+        <div className="min-w-0 flex-1 text-sm font-medium leading-snug">{t.title}</div>
+        <SetaDeColuna
+          destino={PROXIMA_COLUNA[coluna]}
+          voltando={coluna === "concluida"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMove(t.id, PROXIMA_COLUNA[coluna]);
+          }}
+        />
+      </div>
+      {coluna === "concluida" && <LinhaDaEntrega task={t} />}
+      {(t.mentions.length > 0 || t.checklist.length > 0) && (
+        <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
+          {t.checklist.length > 0 && (
+            <span>
+              ✓ {t.checklist.filter((c) => c.done).length}/{t.checklist.length}
+            </span>
+          )}
+          {t.mentions.length > 0 && (
+            <div className="flex items-center gap-1">
+              <AtSign className="h-2.5 w-2.5" />
+              <div className="flex -space-x-1">
+                {t.mentions.slice(0, 4).map((mid) => {
+                  const u = users.find((x) => x.id === mid);
+                  if (!u) return null;
+                  return (
+                    <UserAvatar
+                      key={mid}
+                      nome={u.name}
+                      iniciais={u.avatar}
+                      title={u.name}
+                      className="h-4 w-4 border border-card text-[8px]"
+                    />
+                  );
+                })}
+              </div>
+              {t.mentions.length > 4 && <span>+{t.mentions.length - 4}</span>}
+            </div>
+          )}
+        </div>
+      )}
+      {/* Rodapé numa linha só: o que se lê à esquerda (prazo), o
+          que se opera à direita (temporizador e responsável).
+          Concluir saiu daqui e virou o círculo na frente do
+          título — ver `CirculoDeConcluir`. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5 whitespace-nowrap">
+            <Clock className="h-3 w-3" />
+            {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
+          </span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
+          {/* Foto, com as iniciais por trás como reserva. O
+              cartão desenhava só as iniciais, então o quadro era
+              uma parede de siglas — e reconhecer alguém por "LP"
+              exige decorar, enquanto o rosto se reconhece sozinho. */}
+          <UserAvatar
+            nome={assignee?.name ?? ""}
+            iniciais={assignee?.avatar ?? ""}
+            title={assignee?.name}
+            className="h-6 w-6 text-[10px]"
+          />
+        </div>
+      </div>
+    </>
+  );
+});
+
+/**
+ * "Entregue 28 de set., 10:24" no cartão concluído: verde no prazo, âmbar
+ * depois dele. Com o dia real informado na tarefa, vale ele (sem hora, porque
+ * a hora que existe é a do clique) — o mesmo dia da Timeline.
+ */
+function LinhaDaEntrega({ task: t }: { task: Task }) {
+  const dia = diaDaEntrega(t);
+  const quando = isoParaData(dia);
+  if (!dia || !quando) return null;
+  const clique = t.completedAt ? new Date(t.completedAt) : null;
+  const doClique = !!clique && dataParaIso(clique) === dia;
+  const texto = doClique
+    ? clique.toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  const atrasada =
+    !!t.dueDate &&
+    (doClique
+      ? clique.getTime() > new Date(t.dueDate).getTime()
+      : dia > dataParaIso(new Date(t.dueDate)));
+  const dica = [
+    atrasada ? "Entregue depois do prazo" : "Entregue no prazo",
+    clique && !doClique ? `marcada como concluída em ${clique.toLocaleString("pt-BR")}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div
+      title={dica}
+      className={`mt-1.5 flex items-center gap-1 text-[11px] font-medium ${
+        atrasada ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"
+      }`}
+    >
+      <CheckCircle2 className="h-3 w-3 shrink-0" />
+      Entregue {texto}
+      {atrasada && <span className="font-normal opacity-80">· após o prazo</span>}
+    </div>
   );
 }
 
@@ -1244,23 +1875,18 @@ function SetaDeColuna({
  *
  * Existe como componente só porque a cor vem de um hook (`useProjetoDaTarefa`),
  * e hook não pode ser chamado dentro do `map` do quadro. O resto passa direto.
- * Com o cartão marcado como destino do arraste, a borda volta a ser a do tema:
- * a cor do projeto não pode esconder onde a tarefa vai cair.
+ * `vazio` é o lugar do cartão que está na mão do arraste: sem a cor do projeto,
+ * que esconderia o tracejado de onde a tarefa vai cair.
  */
 function CartaoNaCorDoProjeto({
   projectId,
-  destacado,
+  vazio,
   style,
   ...props
-}: React.HTMLAttributes<HTMLDivElement> & { projectId?: string; destacado?: boolean }) {
+}: React.ComponentProps<"div"> & { projectId?: string; vazio?: boolean }) {
   const projeto = useProjetoDaTarefa(projectId);
-  const cor = estiloDoCartaoDoProjeto(projeto);
-  return (
-    <div
-      {...props}
-      style={{ ...style, ...cor, ...(destacado && cor ? { borderColor: undefined } : null) }}
-    />
-  );
+  const cor = vazio ? undefined : estiloDoCartaoDoProjeto(projeto);
+  return <div {...props} style={{ ...style, ...cor }} />;
 }
 
 function Badge({ label, color, dot }: { label: string; color: string; dot?: boolean }) {
@@ -1328,12 +1954,6 @@ function PackView({
     day: "2-digit",
     month: "short",
   });
-  const cols: { id: Status; label: string }[] = [
-    { id: "pendente", label: statusLabels.pendente },
-    { id: "andamento", label: statusLabels.andamento },
-    { id: "concluida", label: statusLabels.concluida },
-  ];
-
   return (
     <div className="space-y-4">
       {/* Faixa compacta do pack — só o essencial */}
@@ -1371,52 +1991,7 @@ function PackView({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {cols.map((c) => {
-            const items = tasks.filter((t) => t.status === c.id);
-            return (
-              <div
-                key={c.id}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const id = e.dataTransfer.getData("text/plain");
-                  if (id) onMove(id, c.id);
-                }}
-                className="rounded-lg border border-border bg-secondary/30 p-2"
-              >
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ background: statusColor[c.id] }}
-                    />
-                    {c.label}
-                  </div>
-                  <span className="rounded-full bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    {items.length}
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {items.map((t) => (
-                    <PackKanbanCard
-                      key={t.id}
-                      task={t}
-                      onEdit={onEdit}
-                      onMove={onMove}
-                      onTogglePack={onTogglePack}
-                    />
-                  ))}
-                  {items.length === 0 && (
-                    <div className="rounded-md border border-dashed border-border/70 py-4 text-center text-[10px] text-muted-foreground">
-                      Arraste aqui
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <PackEmColunas tasks={tasks} onEdit={onEdit} onMove={onMove} onTogglePack={onTogglePack} />
       )}
 
       {/* --- Tarefas externas do dia ------------------------------------ */}
@@ -1621,16 +2196,78 @@ function PackRow({
   );
 }
 
-function PackKanbanCard({
+const PackKanbanCard = memo(function PackKanbanCard({
   task,
-  onEdit,
-  onMove,
-  onTogglePack,
+  acoes,
+  disposicao,
 }: {
   task: Task;
+  acoes: AcoesDoPack;
+  disposicao: string;
+}) {
+  const {
+    setNodeRef: arrastavel,
+    setActivatorNodeRef,
+    attributes,
+    listeners,
+    isDragging,
+  } = useDraggable({ id: task.id, attributes: { roleDescription: "tarefa do pack" } });
+  const { setNodeRef: area } = useDroppable({ id: task.id });
+  const medido = useCallback(
+    (n: HTMLDivElement | null) => {
+      arrastavel(n);
+      area(n);
+    },
+    [arrastavel, area],
+  );
+  const done = task.status === "concluida";
+  // Mesmo arranjo do cartão do quadro — ver `CartaoDoQuadro`.
+  return (
+    <motion.div
+      ref={medido}
+      layout
+      layoutDependency={disposicao}
+      transition={{ type: "spring", stiffness: 420, damping: 36, mass: 0.8 }}
+    >
+      <div
+        ref={setActivatorNodeRef}
+        data-arrastavel=""
+        {...attributes}
+        {...listeners}
+        onKeyDown={(e) => {
+          listeners?.onKeyDown?.(e);
+          if (e.key === "Enter" && e.target === e.currentTarget && !isDragging)
+            acoes.onEdit(task.id);
+        }}
+        onClick={() => acoes.onEdit(task.id)}
+        className={`group rounded-md border p-2 transition-[box-shadow,border-color,opacity] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+          isDragging
+            ? "border-dashed border-primary/50 bg-primary/5 shadow-none *:invisible"
+            : `bg-card shadow-sm hover:shadow-md ${
+                done ? "border-emerald-500/30 opacity-70" : "border-amber-500/30"
+              }`
+        }`}
+      >
+        <MioloDoCartaoDoPack task={task} acoes={acoes} />
+      </div>
+    </motion.div>
+  );
+});
+
+/** O que um cartão do pack pode fazer. Ver `useAcoesEstaveis`. */
+type AcoesDoPack = {
   onEdit: (id: string) => void;
   onMove: (id: string, status: Status) => void;
   onTogglePack: (id: string, v: boolean) => void;
+};
+
+/** O miolo do cartão do pack: na coluna e no cartão levantado pelo arraste. */
+const MioloDoCartaoDoPack = memo(function MioloDoCartaoDoPack({
+  task,
+  acoes: { onMove, onTogglePack },
+}: {
+  task: Task;
+  acoes: AcoesDoPack;
 }) {
   const done = task.status === "concluida";
   /* A caixinha e a coluna diziam coisas diferentes: a coluna seguia a
@@ -1639,14 +2276,7 @@ function PackKanbanCard({
      banco — ver `concluidaHoje`. */
   const doneToday = concluidaHoje(task);
   return (
-    <div
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData("text/plain", task.id)}
-      onClick={() => onEdit(task.id)}
-      className={`group cursor-grab rounded-md border bg-card p-2 shadow-sm transition hover:shadow-md active:cursor-grabbing ${
-        done ? "border-emerald-500/30 opacity-70" : "border-amber-500/30"
-      }`}
-    >
+    <>
       <div className="flex items-start gap-2">
         <button
           onClick={(e) => {
@@ -1733,6 +2363,109 @@ function PackKanbanCard({
           )}
         </div>
       </div>
-    </div>
+    </>
+  );
+});
+
+/**
+ * As três colunas do pack de hoje. Aqui o arraste só troca a situação: a ordem
+ * dentro da coluna não é prioridade, então o cartão entra sempre no fim.
+ */
+function PackEmColunas({
+  tasks,
+  onEdit,
+  onMove,
+  onTogglePack,
+}: {
+  tasks: Task[];
+  onEdit: (id: string) => void;
+  onMove: (id: string, status: Status) => void;
+  onTogglePack: (id: string, v: boolean) => void;
+}) {
+  const porId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const atual = useMemo(
+    () =>
+      Object.fromEntries(
+        COLUNAS_DO_QUADRO.map((c) => [c, tasks.filter((t) => t.status === c).map((t) => t.id)]),
+      ) as Arranjo<Status>,
+    [tasks],
+  );
+  const { ativo, exibido, contexto } = useArrasteEntreColunas<Status>({
+    colunas: COLUNAS_DO_QUADRO,
+    atual,
+    reordenavel: () => false,
+    encaixar: (_coluna, ids) => ids,
+    aoSoltar: ({ id, de, para }) => {
+      if (de !== para) onMove(id, para);
+    },
+  });
+  const tarefaAtiva = ativo ? porId.get(ativo) : undefined;
+  // Mesma razão do quadro — ver `KanbanBoard` e `CartaoDoQuadro`.
+  const acoes = useAcoesEstaveis({ onEdit, onMove, onTogglePack });
+  const disposicao = useMemo(() => disposicaoPorColuna(exibido), [exibido]);
+  const nomeDe = (id: UniqueIdentifier) => {
+    const t = porId.get(String(id));
+    if (t) return `"${t.title}"`;
+    const c = COLUNAS_DO_QUADRO.find((x) => idDaColuna(x) === String(id));
+    return c ? `a coluna ${statusLabels[c]}` : "a tarefa";
+  };
+
+  return (
+    <DndContext {...contexto} accessibility={acessibilidadeDoArraste(nomeDe)}>
+      <RemedirAoMudar chave={exibido} />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {COLUNAS_DO_QUADRO.map((c) => {
+          const items = exibido[c].flatMap((id) => porId.get(id) ?? []);
+          const recebendo =
+            !!tarefaAtiva && tarefaAtiva.status !== c && exibido[c].includes(tarefaAtiva.id);
+          return (
+            <ColunaDoQuadro
+              key={c}
+              status={c}
+              className={`rounded-lg border p-2 transition-colors ${
+                recebendo ? "border-primary bg-primary/5" : "border-border bg-secondary/30"
+              }`}
+            >
+              <div className="mb-2 flex items-center justify-between px-1">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
+                  <span className="h-2 w-2 rounded-full" style={{ background: statusColor[c] }} />
+                  {statusLabels[c]}
+                </div>
+                <span className="rounded-full bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {items.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {items.map((t) => (
+                  <PackKanbanCard key={t.id} task={t} acoes={acoes} disposicao={disposicao[c]} />
+                ))}
+                {items.length === 0 && (
+                  <div className="rounded-md border border-dashed border-border/70 py-4 text-center text-[10px] text-muted-foreground">
+                    Arraste aqui
+                  </div>
+                )}
+              </div>
+            </ColunaDoQuadro>
+          );
+        })}
+      </div>
+      <NoTopo>
+        <DragOverlay dropAnimation={POUSO}>
+          {tarefaAtiva ? (
+            <Levantado className="rounded-md">
+              <div
+                className={`rounded-md border bg-card p-2 ${
+                  tarefaAtiva.status === "concluida"
+                    ? "border-emerald-500/30"
+                    : "border-amber-500/30"
+                }`}
+              >
+                <MioloDoCartaoDoPack task={tarefaAtiva} acoes={acoes} />
+              </div>
+            </Levantado>
+          ) : null}
+        </DragOverlay>
+      </NoTopo>
+    </DndContext>
   );
 }
