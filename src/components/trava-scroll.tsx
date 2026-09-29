@@ -20,18 +20,55 @@ let abertos = 0;
 let overflowAnterior = "";
 let paddingAnterior = "";
 
+/* A largura da barra de rolagem da página, sempre em dia.
+ *
+ * Medida quando o navegador JÁ fez o layout — no aviso do ResizeObserver e no
+ * resize da janela —, e não na hora de abrir o modal. Ler a largura ali, logo
+ * depois de o React inserir o modal, obrigava o navegador a refazer o layout da
+ * página inteira no meio do clique, e de novo em seguida por causa do
+ * `overflow: hidden`. Medido na agenda do calendário, era metade do tempo de
+ * abrir o modal.
+ *
+ * O observador olha o `<html>`, cujo tamanho muda quando a barra aparece ou
+ * some e quando o conteúdo cresce — os casos em que a largura muda. Com a
+ * página travada a barra some de propósito; essa medida é ignorada, para o
+ * modal seguinte compensar a barra que existia antes dele. */
+let larguraDaBarra: number | null = null;
+let acompanhando = false;
+
+const medirAgora = () => window.innerWidth - document.documentElement.clientWidth;
+
+function acompanharBarra() {
+  if (acompanhando || typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+    return;
+  }
+  acompanhando = true;
+  const medir = () => {
+    if (abertos > 0) return;
+    larguraDaBarra = medirAgora();
+  };
+  new ResizeObserver(medir).observe(document.documentElement);
+  window.addEventListener("resize", medir);
+}
+
+// Começa cedo: os modais são carregados junto com o layout, e o primeiro aviso
+// do observador chega bem antes do primeiro clique.
+acompanharBarra();
+
 export function TravaScroll() {
   useEffect(() => {
+    acompanharBarra();
     abertos += 1;
     if (abertos === 1) {
       const body = document.body;
       overflowAnterior = body.style.overflow;
       paddingAnterior = body.style.paddingRight;
       // Sem compensar a barra de rolagem que some, o conteúdo atrás dá um salto
-      // lateral no instante em que o modal abre.
-      const larguraBarra = window.innerWidth - document.documentElement.clientWidth;
+      // lateral no instante em que o modal abre. Sem medida ainda (um modal que
+      // abre antes do primeiro aviso do observador), mede na hora, como antes.
+      const largura = larguraDaBarra ?? medirAgora();
       body.style.overflow = "hidden";
-      if (larguraBarra > 0) body.style.paddingRight = `${larguraBarra}px`;
+      if (largura > 0) body.style.paddingRight = `${largura}px`;
     }
     return () => {
       abertos -= 1;
