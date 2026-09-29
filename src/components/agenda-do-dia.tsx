@@ -1060,16 +1060,22 @@ function AgendaAberta({
           />
         </div>
 
-        {/* ---------------- Corpo ---------------- */}
+        {/* ---------------- Corpo ----------------
+            No desktop o corpo tem altura fixa — a que cabe na janela — e cada
+            coluna rola por conta própria. Com a altura presa ao conteúdo, abrir
+            um bloco da direita esticava o cartão inteiro a cada quadro da
+            animação, e o navegador repintava cartão, sombra e o calendário por
+            trás. Fixa, só a coluna da direita se mexe; e o cartão também não
+            muda mais de tamanho ao trocar de dia. */}
         <div
           key={dia}
           ref={corpoRef}
-          className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_19rem]"
+          className="grid gap-4 p-4 sm:p-5 lg:h-[clamp(26rem,calc(100dvh-var(--titlebar-h)-15.5rem),50rem)] lg:grid-cols-[minmax(0,1fr)_19rem] lg:grid-rows-[minmax(0,1fr)]"
         >
           {/* Agenda */}
-          <div className="min-w-0 space-y-5 lg:max-h-[min(62vh,640px)] lg:overflow-y-auto lg:pr-1">
+          <div className="min-w-0 space-y-5 lg:overflow-y-auto lg:pr-1">
             {vazio ? (
-              <div className="flex flex-col items-center px-6 py-14 text-center">
+              <div className="flex flex-col items-center px-6 py-14 text-center lg:h-full lg:justify-center lg:py-0">
                 <span className="grid h-12 w-12 place-items-center rounded-full bg-primary/10 text-primary">
                   <CalendarCheck2 className="h-6 w-6" />
                 </span>
@@ -1153,8 +1159,11 @@ function AgendaAberta({
             )}
           </div>
 
-          {/* Ações: criar tarefa direto; os outros três abrem pelo cabeçalho. */}
-          <div className="order-first space-y-2.5 lg:order-0">
+          {/* Ações: criar tarefa direto; os outros três abrem pelo cabeçalho.
+              O espaço da barra de rolagem fica reservado (e sai do respiro da
+              borda, `-mr-3`): senão, a barra que aparece no meio de uma
+              animação estreitaria a coluna e o texto pularia de linha. */}
+          <div className="order-first space-y-2.5 lg:order-0 lg:-mr-3 lg:overflow-y-auto lg:overscroll-contain lg:scrollbar-gutter-stable">
             <div>
               <button
                 type="button"
@@ -1398,9 +1407,17 @@ function TituloDaSecao({
  *     nas laterais. Aqui o retorno do clique é só a cor;
  *   - abre e fecha deslizando a altura, e os blocos de baixo acompanham.
  *
+ * O clique só anima; o trabalho pesado sai de dentro dele. O conteúdo entra na
+ * página antes — quando o mouse chega no cabeçalho, ou o foco do teclado —,
+ * fechado, com altura zero e inerte; depois de fechado ele fica, pronto para a
+ * próxima vez. Montar e estilizar tudo no próprio clique segurava o primeiro
+ * quadro da animação.
+ *
  * Aberto pelo clique, o foco vai para o campo de texto, para já escrever; aberto
  * porque ficou lembrado, não — senão as setas parariam de trocar o dia assim
- * que a agenda abrisse.
+ * que a agenda abrisse. E o foco só vem quando o bloco TERMINA de abrir: focar
+ * no clique obrigava o navegador a calcular estilo e layout antes do primeiro
+ * quadro, pelo mesmo motivo.
  */
 function SecaoRecolhivel({
   secao,
@@ -1425,6 +1442,8 @@ function SecaoRecolhivel({
   const id = useId();
   const reduzir = useReducedMotion();
   const [aberta, setAberta] = useState(() => secoesGuardadas().includes(secao));
+  const [montado, setMontado] = useState(aberta);
+  const preparar = () => setMontado(true);
   const conteudoRef = useRef<HTMLDivElement>(null);
   const abertaPeloClique = useRef(false);
 
@@ -1432,15 +1451,15 @@ function SecaoRecolhivel({
     guardarSecao(secao, aberta);
   }, [secao, aberta]);
 
-  useLayoutEffect(() => {
+  // Chamado também ao fim do fechar: aí `aberta` já é false e nada acontece.
+  // Com o bloco inteiro à vista, o foco pode rolar a coluna até o campo.
+  const aoTerminarAnimacao = () => {
     if (!aberta || !abertaPeloClique.current) return;
     abertaPeloClique.current = false;
     if (focarAoAbrir) {
-      conteudoRef.current
-        ?.querySelector<HTMLElement>("textarea, input:not([type=time])")
-        ?.focus({ preventScroll: true });
+      conteudoRef.current?.querySelector<HTMLElement>("textarea, input:not([type=time])")?.focus();
     }
-  }, [aberta, focarAoAbrir]);
+  };
 
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-background">
@@ -1448,7 +1467,10 @@ function SecaoRecolhivel({
         type="button"
         aria-expanded={aberta}
         aria-controls={id}
+        onPointerEnter={preparar}
+        onFocus={preparar}
         onClick={() => {
+          preparar();
           abertaPeloClique.current = !aberta;
           setAberta((v) => !v);
         }}
@@ -1473,31 +1495,30 @@ function SecaoRecolhivel({
         />
       </button>
       {/* `initial={false}`: o bloco que já abre aberto (lembrado, ou ao trocar
-          de dia) aparece pronto; só o clique anima. */}
-      <AnimatePresence initial={false}>
-        {aberta && (
-          <motion.div
-            key="conteudo"
-            id={id}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={
-              reduzir
-                ? { duration: 0 }
-                : {
-                    height: { duration: 0.26, ease: [0.22, 0.61, 0.36, 1] },
-                    opacity: { duration: 0.2, ease: "easeOut" },
-                  }
-            }
-            className="overflow-hidden"
-          >
-            <div ref={conteudoRef} className="border-t border-border px-3 pb-3 pt-2.5">
-              {children}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          de dia) aparece pronto, e o montado de antemão nasce fechado; só o
+          clique anima. */}
+      {montado && (
+        <motion.div
+          id={id}
+          initial={false}
+          animate={aberta ? { height: "auto", opacity: 1 } : { height: 0, opacity: 0 }}
+          transition={
+            reduzir
+              ? { duration: 0 }
+              : {
+                  height: { duration: 0.26, ease: [0.22, 0.61, 0.36, 1] },
+                  opacity: { duration: 0.2, ease: "easeOut" },
+                }
+          }
+          onAnimationComplete={aoTerminarAnimacao}
+          inert={!aberta}
+          className="overflow-hidden"
+        >
+          <div ref={conteudoRef} className="border-t border-border px-3 pb-3 pt-2.5">
+            {children}
+          </div>
+        </motion.div>
+      )}
     </section>
   );
 }
