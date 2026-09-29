@@ -25,7 +25,14 @@ import {
   type PerfilFuncional,
 } from "@/integrations/iam/auth.functions";
 import { iniciaisDoNome, papeisParaRole, type IamUsuario } from "@/integrations/iam/types";
-import { chaveDaFoto, guardarNome, nomeConhecido } from "@/integrations/iam/nome-cache";
+import {
+  chaveDaFoto,
+  esquecerUsuario,
+  guardarNome,
+  lembrarUsuario,
+  nomeConhecido,
+  usuarioLembrado,
+} from "@/integrations/iam/nome-cache";
 import { FirstAccessModal } from "@/components/first-access-modal";
 import { transicionar } from "@/components/transition-veil";
 
@@ -99,11 +106,41 @@ function FormIam() {
     perfil: PerfilFuncional | null;
   } | null>(null);
 
+  /* "Lembrar meu usuário": desmarcada por padrão. Com um usuário lembrado, ele
+     já vem escrito e o cursor vai direto para a senha. A leitura é depois de
+     montar, e não no estado inicial: esta tela também é desenhada no servidor,
+     que não tem o armazenamento do navegador. */
+  const [lembrar, setLembrar] = useState(false);
+  const [lembrado, setLembrado] = useState<string | null>(null);
+  const loginRef = useRef<HTMLInputElement>(null);
+  const senhaRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const salvo = usuarioLembrado();
+    if (!salvo) return;
+    setLogin(salvo);
+    setLembrar(true);
+    setLembrado(salvo);
+    senhaRef.current?.focus();
+  }, []);
+
+  const trocarUsuario = () => {
+    esquecerUsuario();
+    setLembrado(null);
+    setLembrar(false);
+    setLogin("");
+    setSenha("");
+    loginRef.current?.focus();
+  };
+
   const entrar = (u: IamUsuario, avisarTelefone: boolean, perfil: PerfilFuncional | null) => {
     // Guarda login → nome completo. É isso que faz a foto CERTA aparecer já na
     // digitação no próximo acesso desta máquina: a IAM indexa foto por nome, e
     // o login cru pode cair num registro antigo.
     guardarNome(login, u.nome);
+    // Só depois de entrar de verdade: lembrar um usuário digitado errado seria
+    // deixar o erro pronto para a próxima vez.
+    if (lembrar) lembrarUsuario(login);
+    else esquecerUsuario();
 
     void transicionar({ tipo: "entrada", nome: u.nome, iniciais: iniciaisDoNome(u.nome) }, () => {
       entrarNoSistema(u, avisarTelefone, perfil);
@@ -169,15 +206,27 @@ function FormIam() {
       >
         <Cabecalho subtitulo="Acesso corporativo Larsil" login={login} />
 
-        <label
-          htmlFor="iam-login"
-          className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/60"
-        >
-          Usuário
-        </label>
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <label
+            htmlFor="iam-login"
+            className="block text-[10px] font-semibold uppercase tracking-wider text-white/60"
+          >
+            Usuário
+          </label>
+          {lembrado && login.trim().toLowerCase() === lembrado.toLowerCase() && (
+            <button
+              type="button"
+              onClick={trocarUsuario}
+              className="text-[11px] text-white/50 underline-offset-2 transition hover:text-white hover:underline"
+            >
+              Não é você? Trocar de usuário
+            </button>
+          )}
+        </div>
         <div className="mb-4 flex items-center gap-2 rounded-md border border-white/10 bg-black/30 px-3 py-2.5 focus-within:border-white/30">
           <UserIcon className="h-4 w-4 text-white/40" />
           <input
+            ref={loginRef}
             id="iam-login"
             value={login}
             autoFocus
@@ -197,6 +246,7 @@ function FormIam() {
         <div className="mb-4 flex items-center gap-2 rounded-md border border-white/10 bg-black/30 px-3 py-2.5 focus-within:border-white/30">
           <Lock className="h-4 w-4 text-white/40" />
           <input
+            ref={senhaRef}
             id="iam-senha"
             type={senhaVisivel ? "text" : "password"}
             value={senha}
@@ -216,6 +266,16 @@ function FormIam() {
             {senhaVisivel ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </div>
+
+        <label className="-mt-1 mb-4 flex w-fit cursor-pointer select-none items-center gap-2 text-xs text-white/70 transition hover:text-white/90">
+          <input
+            type="checkbox"
+            checked={lembrar}
+            onChange={(e) => setLembrar(e.target.checked)}
+            className="h-3.5 w-3.5 cursor-pointer accent-(--auth-glow)"
+          />
+          Lembrar meu usuário neste computador
+        </label>
 
         {erro && (
           <div

@@ -64,3 +64,47 @@ export function chaveDaFoto(login: string): string {
   if (l.length < 3) return "";
   return nomeConhecido(l) ?? nomeFormatado(l);
 }
+
+/* ---------------------------- Usuário lembrado ---------------------------- */
+
+/**
+ * O usuário que a pessoa pediu para lembrar neste computador, na caixa
+ * "Lembrar meu usuário" do login.
+ *
+ * Só o login. A senha nunca passa por aqui: ela só existe no instante de
+ * entrar, e a sessão fica no cookie que o servidor define.
+ *
+ * Opcional e desmarcado por padrão, porque há computador usado por mais de
+ * uma pessoa — o usuário de uma aparecendo pronto para a outra seria o
+ * contrário de ajuda.
+ */
+const CHAVE_LEMBRADO = "larsil_usuario_lembrado";
+
+export function usuarioLembrado(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = localStorage.getItem(CHAVE_LEMBRADO)?.trim();
+    return v ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function lembrarUsuario(login: string): void {
+  const l = login.trim();
+  if (typeof window === "undefined" || !l) return;
+  try {
+    localStorage.setItem(CHAVE_LEMBRADO, l);
+  } catch {
+    /* armazenamento bloqueado: fica só sem lembrar */
+  }
+}
+
+export function esquecerUsuario(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(CHAVE_LEMBRADO);
+  } catch {
+    /* idem */
+  }
+}
