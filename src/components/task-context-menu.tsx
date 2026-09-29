@@ -106,6 +106,8 @@ export function TaskContextMenu() {
 
   return (
     <div
+      // A agenda do dia olha por esta marca para não fechar junto no mesmo Esc.
+      data-menu-da-tarefa
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
       style={{ left, top, width }}

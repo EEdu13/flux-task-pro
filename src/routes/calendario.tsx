@@ -1,13 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, DoorOpen, Plus, Zap, Eye } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlarmClock,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  DoorOpen,
+  NotebookPen,
+  Plus,
+  Zap,
+  Eye,
+} from "lucide-react";
+import { AGENDA_PESSOAL_MUDOU, AgendaDoDia } from "@/components/agenda-do-dia";
+import { listarAgendaPessoal } from "@/lib/agenda-pessoal.functions";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { openTaskContext } from "@/components/task-context-menu";
 import { dataParaIso } from "@/lib/data-iso";
 import { nomeCurto } from "@/lib/nome-curto";
-import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
+import { RESERVA_CRIADA, abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
 import { listarAgendaDeSalas, type ReservaDeSala } from "@/lib/reservas-sala.functions";
 
 export const Route = createFileRoute("/calendario")({
@@ -39,6 +51,9 @@ function CalendarioPage() {
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [scope, setScope] = useState<"eu" | "todos">("eu");
   const [dayCtx, setDayCtx] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
+  /** O dia em que a agenda abriu ("yyyy-MM-dd"), ou `null`. Aberta, ela troca
+   *  de dia sozinha — o calendário por trás não é redesenhado a cada seta. */
+  const [agendaDia, setAgendaDia] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dayCtx) return;
@@ -70,6 +85,8 @@ function CalendarioPage() {
    * 42). A visão de lista fica de fora de propósito — ela é sobre a ordem das
    * tarefas, não sobre o dia. */
   const [reservas, setReservas] = useState<ReservaDeSala[]>([]);
+  /** A faixa que `reservas` de fato cobre — só depois de uma busca que deu certo. */
+  const [faixaCarregada, setFaixaCarregada] = useState<{ de: string; ate: string } | null>(null);
   const faixa = useMemo(() => {
     if (view === "lista") return null;
     if (view === "dia") {
@@ -90,22 +107,40 @@ function CalendarioPage() {
     return { de: dataParaIso(inicio), ate: dataParaIso(fim) };
   }, [view, cursor]);
 
+  /* Reserva feita por cima do calendário (pela agenda do dia, pelo raio): relê
+     a faixa, senão a sala recém-reservada só apareceria ao trocar de mês. */
+  const [versaoReservas, setVersaoReservas] = useState(0);
+  useEffect(() => {
+    const aoCriar = () => setVersaoReservas((v) => v + 1);
+    window.addEventListener(RESERVA_CRIADA, aoCriar);
+    return () => window.removeEventListener(RESERVA_CRIADA, aoCriar);
+  }, []);
+
   useEffect(() => {
     if (!faixa) {
       setReservas([]);
+      setFaixaCarregada(null);
       return;
     }
     let vivo = true;
     listarAgendaDeSalas({ data: { data: faixa.de, dataFim: faixa.ate } })
-      .then((r) => vivo && setReservas(r.reservas))
+      .then((r) => {
+        if (!vivo) return;
+        setReservas(r.reservas);
+        setFaixaCarregada(faixa);
+      })
       /* Falha em silêncio: esta tela é o calendário de TAREFAS, e o Agendador
          fora do ar não pode esvaziá-la nem encher de aviso. Quem precisa saber
          que ele caiu está na tela de reserva, onde o erro aparece. */
-      .catch(() => vivo && setReservas([]));
+      .catch(() => {
+        if (!vivo) return;
+        setReservas([]);
+        setFaixaCarregada(null);
+      });
     return () => {
       vivo = false;
     };
-  }, [faixa]);
+  }, [faixa, versaoReservas]);
 
   const reservasPorDia = useMemo(() => {
     const m = new Map<string, ReservaDeSala[]>();
@@ -118,10 +153,75 @@ function CalendarioPage() {
     return m;
   }, [reservas]);
 
+  /* Marcas de anotação e lembrete nos dias da grade — só as da própria pessoa,
+     como tudo da agenda pessoal. Um extra: se a leitura falhar, o calendário
+     segue igual, sem as marcas. */
+  const [marcas, setMarcas] = useState<Map<string, MarcaDoDia>>(() => new Map());
+  const [versaoMarcas, setVersaoMarcas] = useState(0);
+  useEffect(() => {
+    if (!faixa) return;
+    let vivo = true;
+    listarAgendaPessoal({ data: { de: faixa.de, ate: faixa.ate } })
+      .then((r) => {
+        if (!vivo) return;
+        const m = new Map<string, MarcaDoDia>();
+        const doDia = (iso: string) => {
+          let v = m.get(iso);
+          if (!v) m.set(iso, (v = { nota: false, lembretes: 0 }));
+          return v;
+        };
+        for (const n of r.anotacoes) doDia(n.dia).nota = true;
+        for (const l of r.lembretes) doDia(dataParaIso(new Date(l.quando))).lembretes += 1;
+        setMarcas(m);
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [faixa, versaoMarcas]);
+
+  /* A agenda avisa a cada anotação salva — e ela salva a cada pausa da
+     digitação. Reler a grade a cada aviso seria uma ida ao servidor por frase,
+     para marcas que estão escondidas atrás do modal. Então só anota que mudou,
+     e relê quando a agenda fecha. */
+  const marcasMudaram = useRef(false);
+  useEffect(() => {
+    const aoMudar = () => {
+      marcasMudaram.current = true;
+    };
+    window.addEventListener(AGENDA_PESSOAL_MUDOU, aoMudar);
+    return () => window.removeEventListener(AGENDA_PESSOAL_MUDOU, aoMudar);
+  }, []);
+  useEffect(() => {
+    if (agendaDia !== null || !marcasMudaram.current) return;
+    marcasMudaram.current = false;
+    setVersaoMarcas((v) => v + 1);
+  }, [agendaDia]);
+
   /* Abre o modal já no dia clicado, em vez de navegar: o calendário é a tela
      de onde se enxerga o conflito, e sair dela para resolver seria perder de
-     vista justamente o que motivou a reserva. */
-  const abrirReservas = (iso: string) => abrirReservaDeSala(iso);
+     vista justamente o que motivou a reserva.
+
+     Estes três são estáveis (`useCallback`) porque as grades são memorizadas:
+     abrir e fechar a agenda ou o menu do dia não redesenha o mês inteiro. */
+  const abrirReservas = useCallback((iso: string) => abrirReservaDeSala(iso), []);
+  const abrirMenuDoDia = useCallback(
+    (x: number, y: number, iso: string, count: number) => setDayCtx({ x, y, date: iso, count }),
+    [],
+  );
+  const irParaODia = useCallback((iso: string) => {
+    setCursor(new Date(iso + "T00:00:00"));
+    setView("dia");
+  }, []);
+
+  /* O que o calendário já buscou vale como ponto de partida da agenda do dia.
+     Fora da faixa carregada — ou com a busca ainda no ar, ou falha — a resposta
+     é `undefined`: "não sei". Responder lista vazia ali mostraria as salas
+     livres justamente quando o Agendador não respondeu. */
+  const reservasConhecidas = (iso: string) =>
+    faixaCarregada && iso >= faixaCarregada.de && iso <= faixaCarregada.ate
+      ? (reservasPorDia.get(iso) ?? [])
+      : undefined;
 
   const goPrev = () => {
     const d = new Date(cursor);
@@ -206,35 +306,30 @@ function CalendarioPage() {
         </div>
 
         {view === "mes" && (
-          <MonthGrid
+          <MonthGridMemo
             cursor={cursor}
             filtered={filtered}
             users={users}
             reservasPorDia={reservasPorDia}
+            marcas={marcas}
             onReservaClick={abrirReservas}
-            onDayClick={(iso) => openNewTask({ dueDate: iso })}
-            onDayContext={(x, y, iso, count) => setDayCtx({ x, y, date: iso, count })}
+            onDayClick={setAgendaDia}
+            onDayContext={abrirMenuDoDia}
             onTaskClick={openTask}
-            onSwitchDay={(iso) => {
-              setCursor(new Date(iso + "T00:00:00"));
-              setView("dia");
-            }}
           />
         )}
         {view === "semana" && (
-          <WeekGrid
+          <WeekGridMemo
             cursor={cursor}
             filtered={filtered}
             users={users}
             reservasPorDia={reservasPorDia}
+            marcas={marcas}
             onReservaClick={abrirReservas}
-            onDayClick={(iso) => openNewTask({ dueDate: iso })}
-            onDayContext={(x, y, iso, count) => setDayCtx({ x, y, date: iso, count })}
+            onDayClick={setAgendaDia}
+            onDayContext={abrirMenuDoDia}
             onTaskClick={openTask}
-            onSwitchDay={(iso) => {
-              setCursor(new Date(iso + "T00:00:00"));
-              setView("dia");
-            }}
+            onSwitchDay={irParaODia}
           />
         )}
         {view === "dia" && (
@@ -285,6 +380,16 @@ function CalendarioPage() {
           <div className="mt-1 flex flex-col">
             <button
               onClick={() => {
+                setAgendaDia(dayCtx.date);
+                setDayCtx(null);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span>Ver agenda do dia</span>
+            </button>
+            <button
+              onClick={() => {
                 openQuickCreate({ dueDate: dayCtx.date });
                 setDayCtx(null);
               }}
@@ -316,14 +421,51 @@ function CalendarioPage() {
           </div>
         </div>
       )}
+      <AgendaDoDia
+        diaInicial={agendaDia}
+        tarefas={filtered}
+        escopo={scope}
+        aoMudarEscopo={setScope}
+        reservasConhecidas={reservasConhecidas}
+        aoFechar={() => setAgendaDia(null)}
+        aoVerNoCalendario={(iso) => {
+          setAgendaDia(null);
+          irParaODia(iso);
+        }}
+      />
     </FluxoLayout>
   );
 }
 
 type DayCell = { date: Date; inMonth: boolean; tasks: any[] };
 
+/** O que a pessoa marcou num dia pela agenda: anotação e quantos lembretes. */
+type MarcaDoDia = { nota: boolean; lembretes: number };
+
+/** Os ícones de anotação e lembrete ao lado do número do dia. */
+function MarcasDoDia({ marca }: { marca: MarcaDoDia | undefined }) {
+  if (!marca || (!marca.nota && marca.lembretes === 0)) return null;
+  return (
+    <span className="flex items-center gap-0.5 text-muted-foreground" aria-hidden>
+      {marca.nota && <NotebookPen className="h-3 w-3" />}
+      {marca.lembretes > 0 && <AlarmClock className="h-3 w-3 text-warning" />}
+    </span>
+  );
+}
+
+/** O rótulo do botão do dia diz também o que as marcas mostram — para quem não as vê. */
+function rotuloDoDia(data: Date, marca: MarcaDoDia | undefined): string {
+  const partes = [`Agenda de ${data.toLocaleDateString("pt-BR")}`];
+  if (marca?.nota) partes.push("com anotação");
+  if (marca && marca.lembretes > 0)
+    partes.push(`${marca.lembretes} ${marca.lembretes === 1 ? "lembrete" : "lembretes"}`);
+  return partes.join(", ");
+}
+
 /**
- * O clique no vazio do dia (nova tarefa nele; no mês, duplo clique abre o dia).
+ * O clique no vazio do dia: abre a agenda dele (`AgendaDoDia`), de onde se cria
+ * tarefa ou se reserva sala. Antes criava tarefa direto, e no mês o duplo clique
+ * trocava para o modo Dia — o que a agenda agora faz pelo botão "Ver no modo Dia".
  *
  * Fica POR TRÁS do conteúdo, cobrindo a célula, e não em volta dele. Antes a
  * célula inteira era um <button> com as pílulas de tarefa e de reserva — botões
@@ -331,21 +473,13 @@ type DayCell = { date: Date; inMonth: boolean; tasks: any[] };
  * console e o leitor de tela não chegava nas pílulas. O conteúdo por cima deixa
  * o mouse passar (`pointer-events-none`) e só as pílulas o recebem de volta.
  */
-function BotaoDoDia({
-  rotulo,
-  onClick,
-  onDoubleClick,
-}: {
-  rotulo: string;
-  onClick: () => void;
-  onDoubleClick?: () => void;
-}) {
+function BotaoDoDia({ rotulo, onClick }: { rotulo: string; onClick: () => void }) {
   return (
     <button
       type="button"
       aria-label={rotulo}
+      aria-haspopup="dialog"
       onClick={onClick}
-      onDoubleClick={onDoubleClick}
       className="absolute inset-0 rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
     />
   );
@@ -416,21 +550,21 @@ function MonthGrid({
   filtered,
   users,
   reservasPorDia,
+  marcas,
   onReservaClick,
   onDayClick,
   onDayContext,
   onTaskClick,
-  onSwitchDay,
 }: {
   cursor: Date;
   filtered: any[];
   users: any[];
   reservasPorDia: Map<string, ReservaDeSala[]>;
+  marcas: Map<string, MarcaDoDia>;
   onReservaClick: (iso: string) => void;
   onDayClick: (iso: string) => void;
   onDayContext: (x: number, y: number, iso: string, count: number) => void;
   onTaskClick: (id: string) => void;
-  onSwitchDay: (iso: string) => void;
 }) {
   const cells = useMemo<DayCell[]>(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -479,19 +613,21 @@ function MonthGrid({
             className={`relative min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
           >
             <BotaoDoDia
-              rotulo={`Nova tarefa em ${cell.date.toLocaleDateString("pt-BR")}`}
+              rotulo={rotuloDoDia(cell.date, marcas.get(iso))}
               onClick={() => onDayClick(iso)}
-              onDoubleClick={() => onSwitchDay(iso)}
             />
             <div className="pointer-events-none relative flex items-center justify-between">
-              <span
-                className={`text-[11px] font-semibold ${
-                  today
-                    ? "rounded-full bg-primary px-1.5 text-primary-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {cell.date.getDate()}
+              <span className="flex items-center gap-1">
+                <span
+                  className={`text-[11px] font-semibold ${
+                    today
+                      ? "rounded-full bg-primary px-1.5 text-primary-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {cell.date.getDate()}
+                </span>
+                <MarcasDoDia marca={marcas.get(iso)} />
               </span>
               {cell.tasks.length > 0 && (
                 <span className="text-[10px] text-muted-foreground">{cell.tasks.length}</span>
@@ -531,6 +667,7 @@ function WeekGrid({
   filtered,
   users,
   reservasPorDia,
+  marcas,
   onReservaClick,
   onDayClick,
   onDayContext,
@@ -541,6 +678,7 @@ function WeekGrid({
   filtered: any[];
   users: any[];
   reservasPorDia: Map<string, ReservaDeSala[]>;
+  marcas: Map<string, MarcaDoDia>;
   onReservaClick: (iso: string) => void;
   onDayClick: (iso: string) => void;
   onDayContext: (x: number, y: number, iso: string, count: number) => void;
@@ -579,8 +717,11 @@ function WeekGrid({
               <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {day.date.toLocaleDateString("pt-BR", { weekday: "short" })}
               </div>
-              <div className={`text-lg font-semibold ${today ? "text-primary" : ""}`}>
-                {day.date.getDate()}
+              <div className="flex items-center gap-1.5">
+                <span className={`text-lg font-semibold ${today ? "text-primary" : ""}`}>
+                  {day.date.getDate()}
+                </span>
+                <MarcasDoDia marca={marcas.get(iso)} />
               </div>
             </button>
             <div
@@ -592,7 +733,7 @@ function WeekGrid({
               className="relative flex-1 p-1.5 text-left hover:bg-secondary/30"
             >
               <BotaoDoDia
-                rotulo={`Nova tarefa em ${day.date.toLocaleDateString("pt-BR")}`}
+                rotulo={rotuloDoDia(day.date, marcas.get(iso))}
                 onClick={() => onDayClick(iso)}
               />
               <div className="pointer-events-none relative space-y-1">
@@ -619,6 +760,12 @@ function WeekGrid({
     </div>
   );
 }
+
+/* Memorizadas: a agenda do dia e o menu do dia moram na página, e abrir ou
+   fechar qualquer um deles redesenhava as 42 células do mês com todas as
+   pílulas. O que elas recebem é estável — ver os `useCallback` na página. */
+const MonthGridMemo = memo(MonthGrid);
+const WeekGridMemo = memo(WeekGrid);
 
 function DayView({
   cursor,

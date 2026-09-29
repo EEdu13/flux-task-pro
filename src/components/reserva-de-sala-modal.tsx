@@ -16,6 +16,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { TravaScroll } from "@/components/trava-scroll";
 import { useFluxo } from "@/lib/fluxo-store";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
+import { EXPEDIENTE, PASSO, emHora, emMinutos } from "@/lib/horario-de-sala";
 import { nomeCurto } from "@/lib/nome-curto";
 import {
   listarAgendaDeSalas,
@@ -43,25 +44,31 @@ import {
 
 const EVENTO = "fluxo:reserva-sala-open";
 
-/** Abre o modal de onde for — o raio, a paleta de comandos, o calendário. */
-export function abrirReservaDeSala(dia?: string) {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(EVENTO, { detail: { dia } }));
+/** Disparado depois que uma reserva entra no Agendador, com `{ dia }` no detalhe.
+ *  Quem mostra reservas (o calendário, a agenda do dia) relê ao ouvir. */
+export const RESERVA_CRIADA = "fluxo:reserva-sala-criada";
+
+/** Disparado quando o modal fecha. A agenda do dia, que fica aberta por baixo,
+ *  usa para voltar a responder ao Esc — ver `AgendaDoDia`. */
+export const RESERVA_FECHADA = "fluxo:reserva-sala-fechada";
+
+/** Sala e horário já escolhidos ao abrir, como quando a agenda do dia oferece
+ *  uma janela livre. Chegam marcados na grade; a pessoa ainda pode mudar. */
+export interface EscolhaDeHorario {
+  salaId: number;
+  inicio: string;
+  fim: string;
 }
 
-/* ----------------------------- Horas e minutos ----------------------------- */
+/** Abre o modal de onde for — o raio, a paleta de comandos, o calendário. */
+export function abrirReservaDeSala(dia?: string, escolha?: EscolhaDeHorario) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(EVENTO, { detail: { dia, escolha } }));
+}
 
-/** "14:30" → 870. A grade inteira raciocina em minutos desde a meia-noite. */
-const emMinutos = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-const emHora = (min: number) =>
-  `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
-
-/** Passo da grade e altura de cada passo. 30 min é a menor reunião que se marca. */
-const PASSO = 30;
+/** Altura de cada passo de 30 min na grade (o passo e o expediente vêm de
+ *  `horario-de-sala`, que a agenda do dia também usa). */
 const ALTURA_PASSO = 28;
-
-/** Expediente. Só o padrão: uma reserva fora dele alarga a janela (ver `janela`). */
-const EXPEDIENTE = { de: 7 * 60, ate: 19 * 60 };
 
 /* -------------------------------- Erros -------------------------------- */
 
@@ -117,22 +124,32 @@ function mensagemDaFalha(e: unknown): string {
  * transformado passa a ser relativo a ele — o modal abriria preso no canto.
  */
 export function ReservaDeSalaModal() {
-  const [dia, setDia] = useState<string | null>(null);
+  const [pedido, setPedido] = useState<{ dia: string; escolha?: EscolhaDeHorario } | null>(null);
 
   useEffect(() => {
     const aoAbrir = (e: Event) => {
-      const pedido = (e as CustomEvent<{ dia?: string }>).detail?.dia;
-      setDia(pedido ?? dataParaIso(new Date()));
+      const detalhe = (e as CustomEvent<{ dia?: string; escolha?: EscolhaDeHorario }>).detail;
+      setPedido({ dia: detalhe?.dia ?? dataParaIso(new Date()), escolha: detalhe?.escolha });
     };
     window.addEventListener(EVENTO, aoAbrir);
     return () => window.removeEventListener(EVENTO, aoAbrir);
   }, []);
 
+  const fechar = () => {
+    setPedido(null);
+    window.dispatchEvent(new Event(RESERVA_FECHADA));
+  };
+
   if (typeof document === "undefined") return null;
   return createPortal(
     <AnimatePresence>
-      {dia !== null && (
-        <ReservaAberta key="reserva-sala" diaInicial={dia} aoFechar={() => setDia(null)} />
+      {pedido !== null && (
+        <ReservaAberta
+          key="reserva-sala"
+          diaInicial={pedido.dia}
+          escolhaInicial={pedido.escolha}
+          aoFechar={fechar}
+        />
       )}
     </AnimatePresence>,
     document.body,
@@ -144,7 +161,15 @@ export function ReservaDeSalaModal() {
 /** Montado só enquanto aberto: fechar desmonta, e desmontar zera o formulário
  *  e garante que a agenda seja relida na próxima abertura, em vez de mostrar o
  *  que estava na tela da última vez. */
-function ReservaAberta({ diaInicial, aoFechar }: { diaInicial: string; aoFechar: () => void }) {
+function ReservaAberta({
+  diaInicial,
+  escolhaInicial,
+  aoFechar,
+}: {
+  diaInicial: string;
+  escolhaInicial?: EscolhaDeHorario;
+  aoFechar: () => void;
+}) {
   const { users, currentUser } = useFluxo();
 
   const [dia, setDia] = useState(diaInicial);
@@ -154,9 +179,9 @@ function ReservaAberta({ diaInicial, aoFechar }: { diaInicial: string; aoFechar:
   const [carregandoAgenda, setCarregandoAgenda] = useState(false);
   const [falhaGeral, setFalhaGeral] = useState<string | null>(null);
 
-  const [salaId, setSalaId] = useState<number | null>(null);
-  const [inicio, setInicio] = useState("");
-  const [fim, setFim] = useState("");
+  const [salaId, setSalaId] = useState<number | null>(escolhaInicial?.salaId ?? null);
+  const [inicio, setInicio] = useState(escolhaInicial?.inicio ?? "");
+  const [fim, setFim] = useState(escolhaInicial?.fim ?? "");
   const [motivo, setMotivo] = useState("");
   const [paraQuem, setParaQuem] = useState("");
   const [participantes, setParticipantes] = useState<string[]>([]);
@@ -336,6 +361,7 @@ function ReservaAberta({ diaInicial, aoFechar }: { diaInicial: string; aoFechar:
       toast.success(`${r.reserva.sala} reservada`, {
         description: `${diaPorExtenso(dia)} · ${inicio} às ${fim}`,
       });
+      window.dispatchEvent(new CustomEvent(RESERVA_CRIADA, { detail: { dia } }));
 
       if (r.participantesIgnorados.length > 0) {
         /* Silêncio aqui seria o pior desfecho: a pessoa sai achando que

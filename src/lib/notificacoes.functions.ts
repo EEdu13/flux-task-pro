@@ -26,7 +26,7 @@ import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/ia
 export type NotificacaoDoBanco = {
   id: string;
   userId: string;
-  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto";
+  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto" | "lembrete";
   title: string;
   desc: string;
   at: string;
@@ -39,7 +39,15 @@ export type NotificacaoDoBanco = {
   projectId?: string;
 };
 
-const TIPOS = ["mencao", "atribuida", "prazo", "concluida", "chamada_perdida", "projeto"] as const;
+const TIPOS = [
+  "mencao",
+  "atribuida",
+  "prazo",
+  "concluida",
+  "chamada_perdida",
+  "projeto",
+  "lembrete",
+] as const;
 
 /**
  * Os tipos que o navegador pode pedir.
@@ -97,6 +105,46 @@ function paraApp(n: LinhaNotificacao): NotificacaoDoBanco {
 }
 
 /**
+ * Entrega os lembretes vencidos de quem está na sessão (`agenda-pessoal`):
+ * marca como avisado e cria o aviso da sineta NA MESMA transação.
+ *
+ * O `UPDATE ... OUTPUT` é o que impede o lembrete de tocar duas vezes quando
+ * duas leituras se cruzam — a janela voltando ao foco no instante em que o
+ * relógio de um minuto também lê. A segunda espera a trava da primeira e, ao
+ * reler a linha, já encontra `avisado_em` preenchido.
+ *
+ * Falhar aqui não pode esvaziar a sineta: o erro fica no log e a lista segue.
+ * O lembrete continua pendente e sai na leitura seguinte.
+ */
+async function entregarLembretes(eu: number): Promise<void> {
+  try {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("eu", sql.Int, eu)
+      .query(
+        `SET XACT_ABORT ON;
+         BEGIN TRAN;
+           DECLARE @vencidos TABLE (texto NVARCHAR(300), quando DATETIMEOFFSET);
+           UPDATE gestor.lembretes
+              SET avisado_em = SYSDATETIMEOFFSET()
+           OUTPUT inserted.texto, inserted.quando INTO @vencidos
+            WHERE pessoa_id = @eu AND avisado_em IS NULL AND quando <= SYSDATETIMEOFFSET();
+           INSERT INTO gestor.notificacoes (destinatario_id, tipo, titulo, descricao)
+           SELECT @eu, 'lembrete',
+                  N'Lembrete das ' +
+                    CONVERT(VARCHAR(5), quando AT TIME ZONE N'E. South America Standard Time', 108),
+                  texto
+             FROM @vencidos;
+         COMMIT;`,
+      );
+  } catch (e) {
+    console.warn("[lembretes] não entregou:", (e as Error)?.message);
+  }
+}
+
+/**
  * As minhas, e só as minhas.
  *
  * Diferente de `listarTarefas`, aqui não existe regra de papel: um gerente não
@@ -105,11 +153,16 @@ function paraApp(n: LinhaNotificacao): NotificacaoDoBanco {
  *
  * O teto de 200 é o que a sineta mostra. Sem ele, a consulta cresceria para
  * sempre e a tela inicial ficaria mais lenta a cada mês de uso.
+ *
+ * Antes de listar, entrega os lembretes vencidos (`entregarLembretes`): é esta
+ * leitura, que o app já repete ao voltar para a janela e a cada minuto, que
+ * faz o lembrete tocar — sem relógio nem chamada a mais.
  */
 export const listarNotificacoes = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (eu): Promise<{ notificacoes: NotificacaoDoBanco[] }> => {
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
+    await entregarLembretes(eu);
     const r = await pool
       .request()
       .input("eu", sql.Int, eu)

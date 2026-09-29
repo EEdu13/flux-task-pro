@@ -234,7 +234,7 @@ export interface MeetingMinute {
 export interface Notification {
   id: string;
   userId: string; // recipient
-  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto";
+  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto" | "lembrete";
   title: string;
   desc: string;
   at: string; // ISO

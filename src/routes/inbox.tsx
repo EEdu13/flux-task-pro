@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
+  AlarmClock,
   AtSign,
   Bell,
   Check,
@@ -33,6 +34,7 @@ const filters = [
   { id: "prazo", label: "Prazos" },
   { id: "concluida", label: "Concluídas" },
   { id: "chamada_perdida", label: "Chamadas" },
+  { id: "lembrete", label: "Lembretes" },
 ] as const;
 
 function InboxPage() {
@@ -53,6 +55,7 @@ function InboxPage() {
     if (type === "concluida") return CheckCircle2;
     if (type === "chamada_perdida") return PhoneMissed;
     if (type === "projeto") return FolderKanban;
+    if (type === "lembrete") return AlarmClock;
     return Bell;
   };
 
