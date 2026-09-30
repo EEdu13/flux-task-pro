@@ -52,6 +52,7 @@ import {
   useArrasteEntreColunas,
   type Arranjo,
 } from "@/components/arraste";
+import { EtiquetasDaTarefa, PilulasDeEtiqueta } from "@/components/etiquetas-da-tarefa";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 
@@ -79,7 +80,12 @@ import {
   type Task,
 } from "@/lib/fluxo-types";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
-import { estiloDoCartaoDoProjeto, useProjetoDaTarefa } from "@/lib/projeto-da-tarefa";
+import { comCerquilha } from "@/lib/etiquetas-do-projeto";
+import {
+  estiloDoCartaoDoProjeto,
+  useEtiquetasDoCartao,
+  useProjetoDaTarefa,
+} from "@/lib/projeto-da-tarefa";
 import { semAcento } from "@/lib/texto-busca";
 import { SEM_PRAZO, porPrazo, prazoMs, prazoVencido, rotuloDoPrazo } from "@/lib/prazo";
 
@@ -230,9 +236,18 @@ function MinhasTarefas() {
     const range = dateRangeFor(datePreset, dateFrom, dateTo);
     /* O termo entra sem acento e em minúsculas uma vez só, e o nome do
        responsável vira mapa antes do laço — buscar dentro do filtro faria uma
-       varredura da lista de pessoas por tarefa. */
-    const busca = semAcento(search);
+       varredura da lista de pessoas por tarefa.
+
+       Cada palavra é procurada por conta própria: "frete sistema" acha
+       "Sistema de Frete". Inteira, a frase só achava o texto escrito
+       exatamente naquela ordem. */
+    const termos = semAcento(search).split(/\s+/).filter(Boolean);
     const nomePorId = new Map(users.map((u) => [u.id, u.name]));
+    /* Busca e pessoa só filtram onde aparecem. No Meu pack a barra fica
+       escondida, e o que tivesse sido digitado ou escolhido em outra aba
+       continuava valendo lá: o pack aparecia pela metade, ou vazio, sem nada
+       na tela que explicasse por quê. */
+    const comBarra = scope !== "pack";
     return tasks.filter((t) => {
       if (currentUser.role === "adm") {
         const involved =
@@ -259,7 +274,7 @@ function MinhasTarefas() {
       if (sector !== "todos" && t.sector !== sector) return false;
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
-      if (assignee !== "todos" && t.assigneeId !== assignee) return false;
+      if (comBarra && assignee !== "todos" && t.assigneeId !== assignee) return false;
       if (tag !== "todas" && !t.tags.includes(tag)) return false;
       if (range && scope !== "pack") {
         // Filtro de período é sobre o prazo; sem prazo, fora do período.
@@ -270,12 +285,15 @@ function MinhasTarefas() {
       /* O responsável entra na busca: o campo lá em cima sempre prometeu
          "tarefa, pessoa, tag" e só cumpria dois terços — procurar pelo nome de
          alguém não trazia as tarefas dessa pessoa, a menos que o nome estivesse
-         escrito no título. */
-      if (busca) {
+         escrito no título.
+         A etiqueta entra com o "#" na frente, que é como o campo pede para
+         procurar. Gravada ela vem sem, e "#frete" não achava nada; "frete"
+         continua achando, porque está dentro de "#frete". */
+      if (comBarra && termos.length > 0) {
         const alvo = semAcento(
-          `${t.title} ${t.description ?? ""} ${t.tags.join(" ")} ${nomePorId.get(t.assigneeId) ?? ""}`,
+          `${t.title} ${t.description ?? ""} ${t.tags.map(comCerquilha).join(" ")} ${nomePorId.get(t.assigneeId) ?? ""}`,
         );
-        if (!alvo.includes(busca)) return false;
+        if (!termos.every((p) => alvo.includes(p))) return false;
       }
       return true;
     });
@@ -454,7 +472,7 @@ function MinhasTarefas() {
             ))}
           </div>
           <input
-            placeholder="Buscar por título, descrição ou #tag…"
+            placeholder="Buscar por título, descrição, pessoa ou #tag…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="input min-w-[16rem] flex-1 py-1.5"
@@ -737,6 +755,7 @@ function TaskList({
                                     {t.title}
                                   </div>
                                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                    <EtiquetasDaTarefa task={t} />
                                     {t.recurring && (
                                       <span className="inline-flex items-center gap-1">
                                         <Repeat className="h-2.5 w-2.5" /> Recorrente
@@ -1609,6 +1628,7 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
   const { users } = useFluxo();
   const assignee = users.find((u) => u.id === t.assigneeId);
   const sec = sectors.find((s) => s.id === t.sector);
+  const etiquetas = useEtiquetasDoCartao(t);
   return (
     <>
       <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -1670,8 +1690,9 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
         />
       </div>
       {coluna === "concluida" && <LinhaDaEntrega task={t} />}
-      {(t.mentions.length > 0 || t.checklist.length > 0) && (
+      {(etiquetas.length > 0 || t.mentions.length > 0 || t.checklist.length > 0) && (
         <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
+          <PilulasDeEtiqueta etiquetas={etiquetas} />
           {t.checklist.length > 0 && (
             <span>
               ✓ {t.checklist.filter((c) => c.done).length}/{t.checklist.length}
@@ -2098,6 +2119,7 @@ function ExternalRow({
               <Repeat className="h-2.5 w-2.5" /> Recorrente
             </span>
           )}
+          <EtiquetasDaTarefa task={task} />
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
@@ -2172,6 +2194,7 @@ function PackRow({
               <Repeat className="h-2.5 w-2.5" /> Recorrente
             </span>
           )}
+          <EtiquetasDaTarefa task={task} />
         </div>
       </button>
       <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
@@ -2308,6 +2331,7 @@ const MioloDoCartaoDoPack = memo(function MioloDoCartaoDoPack({
           <Star className="h-3.5 w-3.5 fill-amber-500" />
         </button>
       </div>
+      <EtiquetasDaTarefa task={task} className="mt-1.5 pl-6" />
       <div className="mt-2 flex items-center justify-between gap-1">
         <div className="flex gap-0.5">
           {task.status !== "pendente" && (

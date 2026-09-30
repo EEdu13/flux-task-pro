@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
+import { ETIQUETA_DE_PROJETO, normalizarEtiqueta } from "@/lib/etiquetas-do-projeto";
 import { useFluxo } from "@/lib/fluxo-store";
-import type { Project } from "@/lib/fluxo-types";
+import type { Project, Task } from "@/lib/fluxo-types";
 
 /**
  * O projeto de uma tarefa.
@@ -15,6 +16,20 @@ export function useProjetoDaTarefa(projectId?: string): Project | undefined {
   if (!projectId) return undefined;
   const alvo = projectId.toLowerCase();
   return projects.find((p) => p.id.toLowerCase() === alvo);
+}
+
+/**
+ * As etiquetas que valem aparecer no cartão.
+ *
+ * Toda subtarefa de projeto carrega "projeto" e o nome do projeto (ver
+ * `etiquetasDoProjeto`), e o selo do projeto já diz as duas coisas no mesmo
+ * cartão. Repetidas como etiqueta, tomariam o lugar das que a pessoa escolheu.
+ */
+export function useEtiquetasDoCartao(task: Pick<Task, "tags" | "projectId">): string[] {
+  const projeto = useProjetoDaTarefa(task.projectId);
+  if (!projeto) return task.tags;
+  const doProjeto = new Set([ETIQUETA_DE_PROJETO, normalizarEtiqueta(projeto.name).toLowerCase()]);
+  return task.tags.filter((e) => !doProjeto.has(e.replace(/^#+/, "").toLowerCase()));
 }
 
 /** A cor do projeto, com a do tema quando ele não tem uma. */

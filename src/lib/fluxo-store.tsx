@@ -942,8 +942,6 @@ async function carregarDoBanco(
       tasks: [
         ...tf.tarefas.map((t) => ({
           ...t,
-          mentions: [] as string[],
-          tags: [] as string[],
           comments: [],
           checklist: [],
           activity: [],
@@ -1166,8 +1164,6 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             .map((t) => ({
               // Os satélites chegam quando a tarefa é aberta, como no login.
               ...t,
-              mentions: [] as string[],
-              tags: [] as string[],
               comments: [],
               checklist: [],
               activity: [],
@@ -1939,16 +1935,18 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             ...tf.tarefas.map((t) => {
               const anterior = emMemoria.get(t.id.toLowerCase());
               if (anterior && semConfirmacao.has(t.id.toLowerCase())) return anterior;
-              /* Os satélites não vêm nesta consulta — como no login, chegariam
-                 vazios. Para uma tarefa que já foi aberta, o que está na memória
-                 é mais completo que esse vazio, e sobrescrever apagaria da tela
-                 o checklist de uma tarefa aberta neste instante. Só os campos da
-                 própria tarefa são atualizados; os satélites ficam. */
+              /* Checklist, comentários e histórico não vêm nesta consulta — como
+                 no login, chegariam vazios. Para uma tarefa que já foi aberta, o
+                 que está na memória é mais completo que esse vazio, e
+                 sobrescrever apagaria da tela o checklist de uma tarefa aberta
+                 neste instante. Só os campos da própria tarefa são atualizados;
+                 esses três ficam. Etiquetas e menções vêm na consulta, e valem
+                 as do banco: são mais novas que as de quando a tarefa foi
+                 aberta, e o que ainda não subiu já saiu acima, em
+                 `semConfirmacao`. */
               return anterior?.satellitesLoaded
                 ? {
                     ...t,
-                    mentions: anterior.mentions,
-                    tags: anterior.tags,
                     comments: anterior.comments,
                     checklist: anterior.checklist,
                     activity: anterior.activity,
@@ -1957,8 +1955,6 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                   }
                 : {
                     ...t,
-                    mentions: [] as string[],
-                    tags: [] as string[],
                     comments: [],
                     checklist: [],
                     activity: [],

@@ -21,6 +21,9 @@ export const ETIQUETA_DE_PROJETO = "projeto";
 export const normalizarEtiqueta = (nome: string): string =>
   nome.trim().slice(0, TETO_DA_ETIQUETA).trim();
 
+/** "#frete", com uma cerquilha só: a etiqueta pode ter sido gravada com ou sem. */
+export const comCerquilha = (etiqueta: string): string => `#${etiqueta.replace(/^#+/, "")}`;
+
 export function etiquetasDoProjeto(nomeDoProjeto: string): string[] {
   const nome = normalizarEtiqueta(nomeDoProjeto);
   return nome ? [ETIQUETA_DE_PROJETO, nome] : [ETIQUETA_DE_PROJETO];

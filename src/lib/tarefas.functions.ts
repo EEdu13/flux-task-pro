@@ -35,6 +35,10 @@ export type TarefaDoBanco = {
   recurringMonthDay?: number | null;
   /** 0 = domingo … 6 = sábado. Ver `dias` em `COLUNAS_TAREFA`. */
   recurringWeekdays: number[];
+  /** Nomes das etiquetas, em ordem alfabética. Ver `etiquetas` em `COLUNAS_TAREFA`. */
+  tags: string[];
+  /** Ids das pessoas mencionadas. */
+  mentions: string[];
   estimatedMinutes?: number;
   requireProof?: boolean;
   inPack?: boolean;
@@ -133,7 +137,13 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
  *  pelo fuso no caminho.
  *  Os dias da semana da recorrência vêm junto, embora morem em outra tabela:
  *  sem eles, concluir uma semanal "de segunda a sexta" sem abrir a tarefa —
- *  como se faz no pack — calculava a próxima para dali a sete dias. */
+ *  como se faz no pack — calculava a próxima para dali a sete dias.
+ *  Etiquetas e menções vêm pelo mesmo motivo: sem elas, a busca por #tag e a
+ *  aba "Mencionaram-me" só enxergavam as tarefas que a pessoa já tinha aberto.
+ *  As etiquetas são separadas por NCHAR(31), e não por vírgula, porque a do
+ *  projeto é o nome dele, e nome de projeto pode ter vírgula. O CAST para MAX
+ *  tira o teto de 4000 caracteres do STRING_AGG, que derrubaria a lista
+ *  inteira por causa de uma tarefa só. */
 export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
                                frequencia, situacao, prioridade, pontos, prazo, recorrente,
                                recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
@@ -141,7 +151,18 @@ export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, respons
                                CONVERT(CHAR(5), horario, 108) AS horario,
                                (SELECT STRING_AGG(CAST(d.dia_da_semana AS VARCHAR(1)), ',')
                                   FROM gestor.dias_de_recorrencia d
-                                 WHERE d.tarefa_id = t.id) AS dias`;
+                                 WHERE d.tarefa_id = t.id) AS dias,
+                               (SELECT STRING_AGG(CAST(e.nome AS NVARCHAR(MAX)), NCHAR(31))
+                                       WITHIN GROUP (ORDER BY e.nome)
+                                  FROM gestor.tarefa_etiquetas te
+                                  JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
+                                 WHERE te.tarefa_id = t.id) AS etiquetas,
+                               (SELECT STRING_AGG(CAST(m.pessoa_id AS VARCHAR(MAX)), ',')
+                                  FROM gestor.mencoes m
+                                 WHERE m.tarefa_id = t.id) AS mencoes`;
+
+/** O separador das etiquetas em `COLUNAS_TAREFA`. */
+const SEPARADOR_DE_ETIQUETAS = "\u001f";
 
 export type LinhaTarefa = {
   id: string;
@@ -171,6 +192,10 @@ export type LinhaTarefa = {
   horario: string | null;
   /** "1,2,3,4,5" — ver `COLUNAS_TAREFA`. */
   dias: string | null;
+  /** Nomes separados por NCHAR(31) — ver `COLUNAS_TAREFA`. */
+  etiquetas: string | null;
+  /** "467,512" — ver `COLUNAS_TAREFA`. */
+  mencoes: string | null;
 };
 
 /** Do formato do banco para o que a interface já espera. */
@@ -202,6 +227,8 @@ export function paraApp(t: LinhaTarefa): TarefaDoBanco {
       .map(Number)
       .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
       .sort((a, b) => a - b),
+    tags: (t.etiquetas ?? "").split(SEPARADOR_DE_ETIQUETAS).filter(Boolean),
+    mentions: (t.mencoes ?? "").split(",").filter(Boolean),
     estimatedMinutes: t.minutos_estimados ?? undefined,
     requireProof: !!t.exige_comprovante,
     inPack: !!t.no_pack,

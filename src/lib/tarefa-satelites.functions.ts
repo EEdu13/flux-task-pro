@@ -91,9 +91,12 @@ export const carregarSatelites = createServerFn({ method: "POST" })
         ),
         req().query(`SELECT pessoa_id FROM gestor.mencoes WHERE tarefa_id=@t`),
         req().query(
+          // Na ordem da listagem (`COLUNAS_TAREFA`): abrir a tarefa não
+          // embaralha as etiquetas do cartão.
           `SELECT e.nome FROM gestor.tarefa_etiquetas te
              JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
-            WHERE te.tarefa_id=@t`,
+            WHERE te.tarefa_id=@t
+            ORDER BY e.nome`,
         ),
         req().query(
           `SELECT dia_da_semana FROM gestor.dias_de_recorrencia WHERE tarefa_id=@t
