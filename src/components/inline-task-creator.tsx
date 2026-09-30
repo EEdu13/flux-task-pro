@@ -692,11 +692,14 @@ export function InlineTaskCreator({
           assigneeId: p.assigneeId ?? defaultAssigneeId ?? currentUser.id,
           sector: p.sector ?? currentUser.sector,
           dueDate: p.dueDate ?? defaultDueDate ?? todayStr(),
+          priority: p.priority,
         }),
       );
-      // fill titles / estimates
+      // O resto do que veio da planilha — a descrição entre eles; ver `parseExcelPaste`.
       parsed.forEach((p, i) => {
         drafts[i].title = p.title;
+        if (p.description) drafts[i].description = p.description;
+        if (p.horario) drafts[i].horario = p.horario;
         if (p.estimateHM) drafts[i].estimateHM = p.estimateHM;
       });
       // Replace anchor row if it's still empty, otherwise insert after it
@@ -1183,6 +1186,7 @@ export function InlineTaskCreator({
               <option value="">{SEM_RECORRENCIA}</option>
               <option value="diaria">Todo dia</option>
               <option value="semanal">Toda semana</option>
+              <option value="quinzenal">A cada 15 dias</option>
               <option value="mensal">Todo mês</option>
               <option value="anual">Todo ano</option>
             </select>
@@ -1501,6 +1505,10 @@ export function InlineTaskCreator({
                 <span>
                   Cada linha vira uma tarefa só quando tem título — as vazias são ignoradas.
                 </span>
+                <span>
+                  Colando do Excel na coluna Tarefa, as colunas seguem a ordem da grade (Tarefa,
+                  Descrição, Responsável, Prazo…) — ou a do cabeçalho, se a planilha tiver um.
+                </span>
               </p>
             </div>
           )}
@@ -1584,9 +1592,11 @@ export function InlineTaskCreator({
                           (opcional)
                         </span>
                       </th>
+                      {/* Logo depois do que é a tarefa, quem a faz; prazo e o
+                          resto vêm à direita. Pedido do usuário, 30/09/2026. */}
+                      {!compact && <th className={`${TH} w-44`}>Responsável</th>}
                       <th className={`${TH} w-46`}>Prazo</th>
                       <th className={`${TH} w-24`}>Horário</th>
-                      {!compact && <th className={`${TH} w-44`}>Responsável</th>}
                       <th className={`${TH} w-24`}>Prioridade</th>
                       <th className={`${TH} w-22`}>Estimativa</th>
                       <th className={`${TH} w-40`}>Extras</th>
@@ -1612,6 +1622,15 @@ export function InlineTaskCreator({
                           <td className={`${TD} p-0 align-top`}>
                             {campoDescricao(row, idx, CELULA)}
                           </td>
+                          {!compact && (
+                            <td className={`${TD} px-1`}>
+                              <SeletorResponsavel
+                                valor={row.assigneeId}
+                                pessoas={assignees}
+                                aoMudar={(id) => update(row.id, { assigneeId: id })}
+                              />
+                            </td>
+                          )}
                           <td className={`${TD} px-1`}>
                             {/* Largura mínima e sem quebra: no modal a tabela
                                 aperta as colunas fixas, e esta encolhia até o
@@ -1664,15 +1683,6 @@ export function InlineTaskCreator({
                               className={`${CELULA} min-w-22 font-mono disabled:cursor-not-allowed disabled:opacity-40`}
                             />
                           </td>
-                          {!compact && (
-                            <td className={`${TD} px-1`}>
-                              <SeletorResponsavel
-                                valor={row.assigneeId}
-                                pessoas={assignees}
-                                aoMudar={(id) => update(row.id, { assigneeId: id })}
-                              />
-                            </td>
-                          )}
                           <td className={`${TD} p-0`}>
                             <select
                               value={row.priority}

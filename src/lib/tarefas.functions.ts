@@ -26,7 +26,7 @@ export type TarefaDoBanco = {
   sector: string;
   createdBy: string;
   assigneeId: string;
-  frequency: "diaria" | "semanal" | "mensal" | "anual";
+  frequency: "diaria" | "semanal" | "quinzenal" | "mensal" | "anual";
   status: "pendente" | "andamento" | "concluida";
   priority: "baixa" | "media" | "alta";
   score: number;
@@ -59,7 +59,10 @@ export type TarefaDoBanco = {
   actualCompletionDate?: string | null;
 };
 
-const FREQUENCIAS = ["diaria", "semanal", "mensal", "anual"] as const;
+/* Os valores que o CHECK de gestor.tarefas.frequencia aceita. "quinzenal"
+   (a cada 15 dias) exige a trava do banco atualizada junto — sem ela, gravar
+   uma quinzenal é recusado pelo banco. */
+const FREQUENCIAS = ["diaria", "semanal", "quinzenal", "mensal", "anual"] as const;
 const SITUACOES = ["pendente", "andamento", "concluida"] as const;
 const PRIORIDADES = ["baixa", "media", "alta"] as const;
 

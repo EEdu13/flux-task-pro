@@ -208,6 +208,13 @@ export function proximaOcorrencia(
       break;
     }
 
+    case "quinzenal": {
+      // A cada 15 dias corridos, contados do prazo — e não duas vezes por mês.
+      proxima = new Date(base);
+      proxima.setDate(proxima.getDate() + 15);
+      break;
+    }
+
     case "mensal": {
       const dia = tarefa.recurringMonthDay ?? prazo.getDate();
       proxima = new Date(base);
@@ -315,6 +322,8 @@ export function descreverRecorrencia(
       const nomes = [...new Set(dias)].sort((a, b) => a - b).map((d) => DIAS_SEMANA[d]);
       return `Toda ${nomes.join(", ")}`;
     }
+    case "quinzenal":
+      return "A cada 15 dias";
     case "mensal": {
       const dia = tarefa.recurringMonthDay;
       if (dia === ULTIMO_DIA_UTIL) return "Todo último dia útil do mês";
