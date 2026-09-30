@@ -359,34 +359,37 @@ function MinhasTarefas() {
     dateTo,
   ]);
 
-  /* O que o filtro de etiquetas oferece: todas as etiquetas das tarefas que
-     esta pessoa acompanha, e não só as do recorte da aba. O número de cada uma
-     vem de `base` — quantas a tela mostra agora com ela marcada. As marcadas
-     ficam na lista mesmo sem tarefa nenhuma, para poder desmarcar. */
+  /* O que o filtro de etiquetas oferece: só as etiquetas das tarefas que a
+     tela mostra agora (`base`, sem o filtro de etiquetas), com quantas são.
+     Listava também as de tarefas fora da aba ou dos filtros, com zero — linhas
+     vazias que pareciam de tarefas excluídas (pedido do usuário, 30/09/2026).
+     As marcadas ficam mesmo sem tarefa, para poder desmarcar. */
   const opcoesDeTag = useMemo(() => {
-    const nomes = new Map<string, string>();
-    for (const t of tasks) {
-      if (!naVisaoDoPapel(t, currentUser, equipe)) continue;
-      for (const g of t.tags) {
-        const chave = chaveDaEtiqueta(g);
-        if (chave && !nomes.has(chave)) nomes.set(chave, g.replace(/^#+/, "").trim());
-      }
-    }
-    for (const chave of filtroTags.tags) if (!nomes.has(chave)) nomes.set(chave, chave);
-
-    const porChave = new Map<string, number>();
+    const porChave = new Map<string, { nome: string; n: number }>();
     let semTags = 0;
     for (const t of base) {
       if (t.tags.length === 0) semTags++;
-      for (const chave of new Set(t.tags.map(chaveDaEtiqueta))) {
-        porChave.set(chave, (porChave.get(chave) ?? 0) + 1);
+      const vistas = new Set<string>();
+      for (const g of t.tags) {
+        const chave = chaveDaEtiqueta(g);
+        if (!chave || vistas.has(chave)) continue;
+        vistas.add(chave);
+        const atual = porChave.get(chave);
+        if (atual) atual.n++;
+        else porChave.set(chave, { nome: g.replace(/^#+/, "").trim(), n: 1 });
       }
     }
-    const tags = [...nomes]
-      .map(([chave, nome]) => ({ chave, nome, n: porChave.get(chave) ?? 0 }))
+    for (const chave of filtroTags.tags) {
+      if (porChave.has(chave)) continue;
+      // O nome como está gravado, se alguma tarefa ainda tiver a etiqueta.
+      const grafia = tasks.flatMap((t) => t.tags).find((g) => chaveDaEtiqueta(g) === chave);
+      porChave.set(chave, { nome: grafia?.replace(/^#+/, "").trim() ?? chave, n: 0 });
+    }
+    const tags = [...porChave]
+      .map(([chave, { nome, n }]) => ({ chave, nome, n }))
       .sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
     return { tags, semTags };
-  }, [tasks, currentUser, equipe, base, filtroTags.tags]);
+  }, [tasks, base, filtroTags.tags]);
 
   const scopeCounts = useMemo(() => {
     const active = tasks.filter(
@@ -708,26 +711,34 @@ function FiltroDeTags({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-0">
-        <div className="border-b border-border px-3 py-2">
-          <div className="text-xs font-semibold">Tags</div>
-          <div className="text-[11px] text-muted-foreground">
-            Mostra as tarefas com qualquer uma das marcadas.
+      {/* Mais contraste que o padrão do popover: no tema escuro o painel se
+          confundia com a página por trás, e a letra miúda cansava. */}
+      <PopoverContent
+        align="end"
+        className="w-80 overflow-hidden border-primary/30 p-0 shadow-2xl ring-1 ring-black/10"
+      >
+        <div className="flex items-start gap-2 border-b border-border bg-secondary/60 px-3 py-2.5">
+          <Tag className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <div>
+            <div className="text-sm font-semibold text-foreground">Filtrar por tag</div>
+            <div className="text-xs text-muted-foreground">
+              Mostra as tarefas com qualquer uma das marcadas.
+            </div>
           </div>
         </div>
         {opcoes.length > 8 && (
-          <div className="relative border-b border-border px-2 py-1.5">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <div className="relative border-b border-border px-2.5 py-2">
+            <Search className="pointer-events-none absolute left-5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               value={procura}
               onChange={(e) => setProcura(e.target.value)}
               placeholder="Procurar tag…"
               aria-label="Procurar tag"
-              className="w-full rounded-md bg-secondary/60 py-1 pl-7 pr-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+              className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
         )}
-        <div className="max-h-72 overflow-y-auto p-1">
+        <div className="max-h-80 overflow-y-auto p-1.5">
           {!termo && (
             <>
               <OpcaoDeTag
@@ -736,7 +747,7 @@ function FiltroDeTags({
                 marcada={valor.semTags}
                 aoAlternar={() => aoMudar({ ...valor, semTags: !valor.semTags })}
               />
-              <div className="my-1 h-px bg-border" />
+              <div className="mx-1 my-1.5 h-px bg-border" />
             </>
           )}
           {listadas.map((o) => (
@@ -749,13 +760,13 @@ function FiltroDeTags({
             />
           ))}
           {listadas.length === 0 && (
-            <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">
-              {termo ? "Nenhuma tag com esse nome." : "Nenhuma tarefa daqui tem tag ainda."}
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+              {termo ? "Nenhuma tag com esse nome." : "Nenhuma tarefa daqui tem tag."}
             </p>
           )}
         </div>
-        <div className="flex items-center justify-between gap-2 border-t border-border px-2 py-1.5">
-          <span className="text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-3 py-2">
+          <span className="text-xs text-muted-foreground">
             {ativo
               ? `${rotulos.length} marcada${rotulos.length > 1 ? "s" : ""}`
               : "Nenhuma marcada"}
@@ -764,9 +775,9 @@ function FiltroDeTags({
             type="button"
             onClick={() => aoMudar(SEM_SELECAO_DE_TAGS)}
             disabled={!ativo}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-primary transition hover:bg-primary/10 disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-50"
           >
-            <X className="h-3 w-3" /> Limpar filtros
+            <X className="h-3.5 w-3.5" /> Limpar filtros
           </button>
         </div>
       </PopoverContent>
@@ -792,19 +803,25 @@ function OpcaoDeTag({
       role="checkbox"
       aria-checked={marcada}
       onClick={aoAlternar}
-      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition hover:bg-secondary ${
-        n === 0 && !marcada ? "text-muted-foreground" : ""
+      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition ${
+        marcada ? "bg-primary/15 font-medium" : "hover:bg-secondary"
       }`}
     >
       <span
-        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
-          marcada ? "border-primary bg-primary text-primary-foreground" : "border-border"
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-[1.5px] ${
+          marcada ? "border-primary bg-primary text-primary-foreground" : "border-foreground/45"
         }`}
       >
-        {marcada && <Check className="h-2.5 w-2.5" />}
+        {marcada && <Check className="h-3 w-3" />}
       </span>
       <span className="min-w-0 flex-1 truncate">{rotulo}</span>
-      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{n}</span>
+      <span
+        className={`min-w-6 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums ${
+          marcada ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground/80"
+        }`}
+      >
+        {n}
+      </span>
     </button>
   );
 }
