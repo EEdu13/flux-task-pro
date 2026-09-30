@@ -186,18 +186,29 @@ export const salvarProjeto = createServerFn({ method: "POST" })
           fotoId: string | null;
         },
       ): Promise<{ id: string }> => {
+        /* A fechadura. Nome, descrição, situação, dono, prazo, cor e foto são
+           do dono do projeto, do chefe dele e da gerência; os membros mexem na
+           lista de membros, como a tela sempre deixou. Dos outros, o banco
+           guarda o que tinha. Projeto novo não tem o que conferir. */
+        const { permissaoNoProjeto } = await import("@/lib/permissoes.server");
+        const permissao = d.id ? await permissaoNoProjeto(eu, d.id) : null;
+        if (permissao?.existe && !permissao.conteudo && !permissao.membro) {
+          throw new Error("Você não pode alterar este projeto.");
+        }
+        const podeConteudo = !permissao?.existe || permissao.conteudo;
+
         const { getPool, sql } = await import("@/integrations/db.server");
         const pool = await getPool();
-        const dono = d.donoId ?? eu;
 
         const req = pool
           .request()
+          .input("pode_conteudo", sql.Bit, podeConteudo)
           .input("id", sql.UniqueIdentifier, d.id)
           .input("id_legado", sql.NVarChar, d.idLegado)
           .input("nome", sql.NVarChar, d.nome)
           .input("descricao", sql.NVarChar(sql.MAX), d.descricao)
           .input("situacao", sql.NVarChar, d.status)
-          .input("dono", sql.Int, dono)
+          .input("dono", sql.Int, d.donoId ?? eu)
           .input("setor", sql.NVarChar, d.setor)
           .input("prazo", sql.DateTimeOffset, d.prazo)
           .input("cor", sql.NVarChar, d.cor)
@@ -217,22 +228,24 @@ export const salvarProjeto = createServerFn({ method: "POST" })
         const r = await req.query(
           `IF @id IS NOT NULL AND EXISTS (SELECT 1 FROM gestor.projetos WHERE id=@id)
              BEGIN
-               UPDATE gestor.projetos
-                  SET nome=@nome, descricao=@descricao, situacao=@situacao,
-                      dono_id=@dono, setor=@setor, prazo=@prazo, cor=@cor,
-                      foto_anexo_id=@foto
-                WHERE id=@id;
-               SELECT @id AS id;
+               IF @pode_conteudo = 1
+                 UPDATE gestor.projetos
+                    SET nome=@nome, descricao=@descricao, situacao=@situacao,
+                        dono_id=@dono, setor=@setor, prazo=@prazo, cor=@cor,
+                        foto_anexo_id=@foto
+                  WHERE id=@id;
+               SELECT id, dono_id AS dono FROM gestor.projetos WHERE id=@id;
              END
            ELSE
              INSERT INTO gestor.projetos
                (id, id_legado, nome, descricao, situacao, dono_id, setor, prazo, cor,
                 foto_anexo_id, criado_por)
-             OUTPUT INSERTED.id
+             OUTPUT INSERTED.id, INSERTED.dono_id AS dono
              VALUES (COALESCE(@id, NEWID()), @id_legado, @nome, @descricao, @situacao, @dono,
                      @setor, @prazo, @cor, @foto, @por);`,
         );
-        const id = (r.recordset[0] as { id: string }).id;
+        // O dono que ficou gravado: o enviado, ou o de antes quando quem salvou é só membro.
+        const { id, dono } = r.recordset[0] as { id: string; dono: number };
 
         /* Membros: apaga e regrava.
            A lista é pequena (pessoas de um projeto) e vem inteira do cliente.
@@ -297,7 +310,13 @@ export const apagarProjeto = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, d: { id: string }): Promise<{ apagou: boolean }> => {
+    comSessao(async (eu, d: { id: string }): Promise<{ apagou: boolean }> => {
+      // Só o dono, o chefe dele ou a gerência — ver `permissoes.server.ts`.
+      const { permissaoNoProjeto } = await import("@/lib/permissoes.server");
+      const permissao = await permissaoNoProjeto(eu, d.id);
+      if (permissao.existe && !permissao.conteudo) {
+        throw new Error("Só o dono do projeto, o supervisor dele ou a gerência podem apagá-lo.");
+      }
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       // Os membros saem por cascata (a chave estrangeira cuida). As tarefas do

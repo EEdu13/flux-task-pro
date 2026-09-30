@@ -17,6 +17,7 @@ import {
   Eraser,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { statusColor, statusLabels, type Task } from "@/lib/fluxo-types";
 import {
   COLOR_PALETTE,
@@ -380,7 +381,8 @@ export function MyView({
         const t = ordered.find((x) => x.id === rowMenu.id);
         if (!t) return null;
         const isDone = t.status === "concluida";
-        const canDelete = t.createdBy === currentUser.id || currentUser.role === "gerente";
+        // Quem criou, o supervisor ou a gerência — ver `permissoes.ts`.
+        const canDelete = podeMexerNoConteudo(t, currentUser, users);
         const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
         const vh = typeof window !== "undefined" ? window.innerHeight : 800;
         const width = 240;
@@ -461,13 +463,13 @@ export function MyView({
                   async () => {
                     const ok = await confirmar({
                       titulo: "Excluir esta tarefa?",
-                      descricao: `"${t.title}" sai da lista de todo mundo, junto com comentários e anexos. Não dá para desfazer.`,
+                      descricao: `"${t.title}" sai do quadro de todo mundo. Se mudar de ideia, use o Desfazer do aviso que aparece em seguida.`,
                       confirmar: "Excluir",
                       perigo: true,
                     });
                     if (!ok) return;
+                    // O aviso "excluída", com Desfazer, sai de `deleteTask`.
                     deleteTask(t.id);
-                    toast.success("Tarefa excluída");
                   },
                   true,
                 )}

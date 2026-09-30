@@ -25,6 +25,9 @@ import {
   Undo2,
   GripVertical,
   CalendarCheck,
+  ChevronDown,
+  Search,
+  Tag,
   X,
 } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
@@ -71,6 +74,7 @@ import { FiltroPessoa } from "@/components/filtro-pessoa";
 import { toast } from "sonner";
 import {
   freqLabels,
+  progressoDoChecklist,
   sectors,
   statusColor,
   statusLabels,
@@ -78,9 +82,10 @@ import {
   type Priority,
   type Status,
   type Task,
+  type User,
 } from "@/lib/fluxo-types";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
-import { comCerquilha } from "@/lib/etiquetas-do-projeto";
+import { chaveDaEtiqueta, comCerquilha } from "@/lib/etiquetas-do-projeto";
 import {
   estiloDoCartaoDoProjeto,
   useEtiquetasDoCartao,
@@ -176,12 +181,39 @@ function dateRangeFor(preset: DatePreset, from?: string, to?: string): [number, 
   }
   if (preset === "entre") {
     if (!from && !to) return null;
-    const s = from ? startOfDay(new Date(from)).getTime() : -Infinity;
-    const e = to ? endOfDay(new Date(to)).getTime() : Infinity;
+    /* `isoParaData`, e não `new Date(from)`: "2026-10-01" sozinho é lido como
+       meia-noite em UTC, que no Brasil é 21h do dia anterior — o período
+       inteiro andava um dia para trás. */
+    const de = from ? isoParaData(from) : null;
+    const ate = to ? isoParaData(to) : null;
+    const s = de ? startOfDay(de).getTime() : -Infinity;
+    const e = ate ? endOfDay(ate).getTime() : Infinity;
     return [s, e];
   }
   return null;
 }
+
+/**
+ * O que entra em Minhas tarefas para esta pessoa, pelo papel dela. O servidor
+ * manda mais (o setor inteiro); aqui o colaborador fica com o que é dele —
+ * responsável, criou ou foi mencionado —, o supervisor com o da equipe, e a
+ * gerência com tudo. Estava escrito três vezes nesta tela, e o filtro de
+ * etiquetas seria a quarta.
+ */
+function naVisaoDoPapel(t: Task, eu: User, equipe: ReadonlySet<string>): boolean {
+  if (eu.role === "adm") {
+    return t.assigneeId === eu.id || t.createdBy === eu.id || t.mentions.includes(eu.id);
+  }
+  if (eu.role === "supervisor") {
+    return equipe.has(t.assigneeId) || equipe.has(t.createdBy) || t.mentions.includes(eu.id);
+  }
+  return true;
+}
+
+/** As etiquetas marcadas no filtro (pela `chaveDaEtiqueta`) e o "Sem tags". */
+type SelecaoDeTags = { semTags: boolean; tags: string[] };
+
+const SEM_SELECAO_DE_TAGS: SelecaoDeTags = { semTags: false, tags: [] };
 
 const scopeLabels: Record<Scope, string> = {
   pack: "Meu pack",
@@ -200,7 +232,7 @@ function MinhasTarefas() {
   const [freq, setFreq] = useState<Frequency | "todas">("todas");
   const [priority, setPriority] = useState<Priority | "todas">("todas");
   const [assignee, setAssignee] = useState<string>("todos");
-  const [tag, setTag] = useState<string>("todas");
+  const [filtroTags, setFiltroTags] = useState<SelecaoDeTags>(SEM_SELECAO_DE_TAGS);
   const [datePreset, setDatePreset] = useState<DatePreset>("todas");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -232,7 +264,22 @@ function MinhasTarefas() {
     return () => window.removeEventListener("fluxo:busca-global", aoBuscar);
   }, []);
 
-  const visible = useMemo(() => {
+  /* A equipe de um supervisor: ele e quem responde a ele. Montada uma vez —
+     os filtros abaixo a remontavam tarefa a tarefa. */
+  const equipe = useMemo(
+    () =>
+      new Set([
+        currentUser.id,
+        ...users.filter((u) => u.supervisorId === currentUser.id).map((u) => u.id),
+      ]),
+    [users, currentUser.id],
+  );
+
+  /* O recorte, em duas etapas. `base` passa por tudo menos as etiquetas, e é
+     dela que saem os números do filtro de etiquetas: cada número diz quantas
+     tarefas a tela mostra ao marcar aquela opção. `visible` é a base com as
+     etiquetas aplicadas. */
+  const { visible, base } = useMemo(() => {
     const range = dateRangeFor(datePreset, dateFrom, dateTo);
     /* O termo entra sem acento e em minúsculas uma vez só, e o nome do
        responsável vira mapa antes do laço — buscar dentro do filtro faria uma
@@ -248,22 +295,8 @@ function MinhasTarefas() {
        continuava valendo lá: o pack aparecia pela metade, ou vazio, sem nada
        na tela que explicasse por quê. */
     const comBarra = scope !== "pack";
-    return tasks.filter((t) => {
-      if (currentUser.role === "adm") {
-        const involved =
-          t.assigneeId === currentUser.id ||
-          t.createdBy === currentUser.id ||
-          t.mentions.includes(currentUser.id);
-        if (!involved) return false;
-      } else if (currentUser.role === "supervisor") {
-        const team = users.filter((u) => u.supervisorId === currentUser.id).map((u) => u.id);
-        team.push(currentUser.id);
-        const involved =
-          team.includes(t.assigneeId) ||
-          team.includes(t.createdBy) ||
-          t.mentions.includes(currentUser.id);
-        if (!involved) return false;
-      }
+    const base = tasks.filter((t) => {
+      if (!naVisaoDoPapel(t, currentUser, equipe)) return false;
       if (scope === "atribuidas" && t.assigneeId !== currentUser.id) return false;
       if (scope === "criadas" && t.createdBy !== currentUser.id) return false;
       if (scope === "mencionadas" && !t.mentions.includes(currentUser.id)) return false;
@@ -275,7 +308,6 @@ function MinhasTarefas() {
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
       if (comBarra && assignee !== "todos" && t.assigneeId !== assignee) return false;
-      if (tag !== "todas" && !t.tags.includes(tag)) return false;
       if (range && scope !== "pack") {
         // Filtro de período é sobre o prazo; sem prazo, fora do período.
         if (!t.dueDate) return false;
@@ -297,29 +329,69 @@ function MinhasTarefas() {
       }
       return true;
     });
-  }, [tasks, users, currentUser, scope, sector, freq, priority, assignee, tag, search, datePreset, dateFrom, dateTo]);
+    /* Etiquetas: qualquer uma das marcadas basta — marcar mais amplia o
+       recorte, como num filtro de loja. "Sem tags" é mais uma opção do mesmo
+       grupo. Como a busca, só vale onde a barra aparece. */
+    const marcadas = new Set(filtroTags.tags);
+    const filtrando = comBarra && (filtroTags.semTags || marcadas.size > 0);
+    const visible = filtrando
+      ? base.filter((t) =>
+          t.tags.length === 0
+            ? filtroTags.semTags
+            : t.tags.some((g) => marcadas.has(chaveDaEtiqueta(g))),
+        )
+      : base;
+    return { visible, base };
+  }, [
+    tasks,
+    users,
+    currentUser,
+    equipe,
+    scope,
+    sector,
+    freq,
+    priority,
+    assignee,
+    filtroTags,
+    search,
+    datePreset,
+    dateFrom,
+    dateTo,
+  ]);
+
+  /* O que o filtro de etiquetas oferece: todas as etiquetas das tarefas que
+     esta pessoa acompanha, e não só as do recorte da aba. O número de cada uma
+     vem de `base` — quantas a tela mostra agora com ela marcada. As marcadas
+     ficam na lista mesmo sem tarefa nenhuma, para poder desmarcar. */
+  const opcoesDeTag = useMemo(() => {
+    const nomes = new Map<string, string>();
+    for (const t of tasks) {
+      if (!naVisaoDoPapel(t, currentUser, equipe)) continue;
+      for (const g of t.tags) {
+        const chave = chaveDaEtiqueta(g);
+        if (chave && !nomes.has(chave)) nomes.set(chave, g.replace(/^#+/, "").trim());
+      }
+    }
+    for (const chave of filtroTags.tags) if (!nomes.has(chave)) nomes.set(chave, chave);
+
+    const porChave = new Map<string, number>();
+    let semTags = 0;
+    for (const t of base) {
+      if (t.tags.length === 0) semTags++;
+      for (const chave of new Set(t.tags.map(chaveDaEtiqueta))) {
+        porChave.set(chave, (porChave.get(chave) ?? 0) + 1);
+      }
+    }
+    const tags = [...nomes]
+      .map(([chave, nome]) => ({ chave, nome, n: porChave.get(chave) ?? 0 }))
+      .sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+    return { tags, semTags };
+  }, [tasks, currentUser, equipe, base, filtroTags.tags]);
 
   const scopeCounts = useMemo(() => {
-    const inRole = (t: Task) => {
-      if (currentUser.role === "adm") {
-        return (
-          t.assigneeId === currentUser.id ||
-          t.createdBy === currentUser.id ||
-          t.mentions.includes(currentUser.id)
-        );
-      }
-      if (currentUser.role === "supervisor") {
-        const team = users.filter((u) => u.supervisorId === currentUser.id).map((u) => u.id);
-        team.push(currentUser.id);
-        return (
-          team.includes(t.assigneeId) ||
-          team.includes(t.createdBy) ||
-          t.mentions.includes(currentUser.id)
-        );
-      }
-      return true;
-    };
-    const active = tasks.filter((t) => inRole(t) && t.status !== "concluida");
+    const active = tasks.filter(
+      (t) => naVisaoDoPapel(t, currentUser, equipe) && t.status !== "concluida",
+    );
     return {
       todas: active.length,
       atribuidas: active.filter((t) => t.assigneeId === currentUser.id).length,
@@ -327,15 +399,13 @@ function MinhasTarefas() {
       mencionadas: active.filter((t) => t.mentions.includes(currentUser.id)).length,
       pack: active.filter((t) => t.assigneeId === currentUser.id && t.inPack).length,
     } as Record<Scope, number>;
-  }, [tasks, users, currentUser]);
+  }, [tasks, currentUser, equipe]);
   // O número da aba do pack é o que ainda falta hoje.
   const packRemainingToday = useMemo(
     () => tasks.filter((t) => noPackDeHoje(t, currentUser.id) && !concluidaHoje(t)).length,
     [tasks, currentUser.id],
   );
   scopeCounts.pack = packRemainingToday;
-
-  const allTags = useMemo(() => Array.from(new Set(tasks.flatMap((t) => t.tags))), [tasks]);
 
   /* Quem pode aparecer no filtro de pessoa.
      Sai das tarefas que passam pelo RECORTE DE PAPEL, e só por ele. Não pode
@@ -348,26 +418,9 @@ function MinhasTarefas() {
      um caminho para descobrir quem a tela não mostraria de outro jeito. */
   const pessoasFiltraveis = useMemo(() => {
     const ids = new Set<string>();
-    for (const t of tasks) {
-      if (currentUser.role === "adm") {
-        const meu =
-          t.assigneeId === currentUser.id ||
-          t.createdBy === currentUser.id ||
-          t.mentions.includes(currentUser.id);
-        if (!meu) continue;
-      } else if (currentUser.role === "supervisor") {
-        const time = users.filter((u) => u.supervisorId === currentUser.id).map((u) => u.id);
-        time.push(currentUser.id);
-        const doTime =
-          time.includes(t.assigneeId) ||
-          time.includes(t.createdBy) ||
-          t.mentions.includes(currentUser.id);
-        if (!doTime) continue;
-      }
-      ids.add(t.assigneeId);
-    }
+    for (const t of tasks) if (naVisaoDoPapel(t, currentUser, equipe)) ids.add(t.assigneeId);
     return users.filter((u) => ids.has(u.id));
-  }, [tasks, users, currentUser]);
+  }, [tasks, users, currentUser, equipe]);
 
   return (
     <FluxoLayout title="Minhas tarefas">
@@ -471,11 +524,14 @@ function MinhasTarefas() {
               </button>
             ))}
           </div>
+          {/* Busca e etiquetas dividem a sobra da linha em 3 para 2: a busca
+              cedeu espaço para o filtro de etiquetas, que fica logo à direita
+              do número de tarefas. */}
           <input
             placeholder="Buscar por título, descrição, pessoa ou #tag…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="input min-w-[16rem] flex-1 py-1.5"
+            className="input min-w-56 flex-3 py-1.5"
           />
           {datePreset === "entre" && (
             <div className="inline-flex items-center gap-1">
@@ -497,6 +553,13 @@ function MinhasTarefas() {
             </div>
           )}
           <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
+          <FiltroDeTags
+            opcoes={opcoesDeTag.tags}
+            semTagsN={opcoesDeTag.semTags}
+            valor={filtroTags}
+            aoMudar={setFiltroTags}
+            className="min-w-48 flex-2"
+          />
         </div>
         )}
 
@@ -572,6 +635,177 @@ function MinhasTarefas() {
         </div>
       </div>
     </FluxoLayout>
+  );
+}
+
+/**
+ * O filtro de etiquetas: uma área que abre a lista de todas as etiquetas, com
+ * "Sem tags" no topo. Marca quantas quiser; basta a tarefa ter uma delas.
+ *
+ * O gatilho mostra o que está marcado, para o filtro nunca ficar ligado sem
+ * ninguém ver — o erro que a busca tinha no Meu pack.
+ */
+function FiltroDeTags({
+  opcoes,
+  semTagsN,
+  valor,
+  aoMudar,
+  className = "",
+}: {
+  opcoes: { chave: string; nome: string; n: number }[];
+  semTagsN: number;
+  valor: SelecaoDeTags;
+  aoMudar: (v: SelecaoDeTags) => void;
+  className?: string;
+}) {
+  const [procura, setProcura] = useState("");
+  const marcadas = new Set(valor.tags);
+  const ativo = valor.semTags || marcadas.size > 0;
+  const nomeDe = new Map(opcoes.map((o) => [o.chave, o.nome]));
+  const rotulos = [
+    ...(valor.semTags ? ["Sem tags"] : []),
+    ...valor.tags.map((chave) => comCerquilha(nomeDe.get(chave) ?? chave)),
+  ];
+  const termo = semAcento(procura);
+  const listadas = termo ? opcoes.filter((o) => semAcento(o.nome).includes(termo)) : opcoes;
+
+  const alternar = (chave: string) =>
+    aoMudar({
+      ...valor,
+      tags: marcadas.has(chave) ? valor.tags.filter((k) => k !== chave) : [...valor.tags, chave],
+    });
+
+  return (
+    <Popover onOpenChange={(aberto) => !aberto && setProcura("")}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={ativo ? `Filtro de tags: ${rotulos.join(", ")}` : "Filtrar por tag"}
+          className={`input flex items-center gap-1.5 py-1.5 text-left ${ativo ? "border-primary/60" : ""} ${className}`}
+        >
+          <Tag
+            className={`h-3.5 w-3.5 shrink-0 ${ativo ? "text-primary" : "text-muted-foreground"}`}
+          />
+          {ativo ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              {rotulos.slice(0, 2).map((r, i) => (
+                <span
+                  key={`${i}-${r}`}
+                  className="max-w-32 truncate rounded bg-primary/15 px-1.5 text-[11px] font-medium leading-5 text-primary"
+                >
+                  {r}
+                </span>
+              ))}
+              {rotulos.length > 2 && (
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  +{rotulos.length - 2}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">Filtrar por tag</span>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-0">
+        <div className="border-b border-border px-3 py-2">
+          <div className="text-xs font-semibold">Tags</div>
+          <div className="text-[11px] text-muted-foreground">
+            Mostra as tarefas com qualquer uma das marcadas.
+          </div>
+        </div>
+        {opcoes.length > 8 && (
+          <div className="relative border-b border-border px-2 py-1.5">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={procura}
+              onChange={(e) => setProcura(e.target.value)}
+              placeholder="Procurar tag…"
+              aria-label="Procurar tag"
+              className="w-full rounded-md bg-secondary/60 py-1 pl-7 pr-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+        )}
+        <div className="max-h-72 overflow-y-auto p-1">
+          {!termo && (
+            <>
+              <OpcaoDeTag
+                rotulo="Sem tags"
+                n={semTagsN}
+                marcada={valor.semTags}
+                aoAlternar={() => aoMudar({ ...valor, semTags: !valor.semTags })}
+              />
+              <div className="my-1 h-px bg-border" />
+            </>
+          )}
+          {listadas.map((o) => (
+            <OpcaoDeTag
+              key={o.chave}
+              rotulo={comCerquilha(o.nome)}
+              n={o.n}
+              marcada={marcadas.has(o.chave)}
+              aoAlternar={() => alternar(o.chave)}
+            />
+          ))}
+          {listadas.length === 0 && (
+            <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+              {termo ? "Nenhuma tag com esse nome." : "Nenhuma tarefa daqui tem tag ainda."}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-border px-2 py-1.5">
+          <span className="text-[11px] text-muted-foreground">
+            {ativo
+              ? `${rotulos.length} marcada${rotulos.length > 1 ? "s" : ""}`
+              : "Nenhuma marcada"}
+          </span>
+          <button
+            type="button"
+            onClick={() => aoMudar(SEM_SELECAO_DE_TAGS)}
+            disabled={!ativo}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <X className="h-3 w-3" /> Limpar filtros
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Uma linha do filtro de etiquetas: a caixa, o nome e quantas tarefas. */
+function OpcaoDeTag({
+  rotulo,
+  n,
+  marcada,
+  aoAlternar,
+}: {
+  rotulo: string;
+  n: number;
+  marcada: boolean;
+  aoAlternar: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={marcada}
+      onClick={aoAlternar}
+      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition hover:bg-secondary ${
+        n === 0 && !marcada ? "text-muted-foreground" : ""
+      }`}
+    >
+      <span
+        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+          marcada ? "border-primary bg-primary text-primary-foreground" : "border-border"
+        }`}
+      >
+        {marcada && <Check className="h-2.5 w-2.5" />}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{rotulo}</span>
+      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{n}</span>
+    </button>
   );
 }
 
@@ -761,10 +995,10 @@ function TaskList({
                                         <Repeat className="h-2.5 w-2.5" /> Recorrente
                                       </span>
                                     )}
-                                    {t.checklist.length > 0 && (
+                                    {progressoDoChecklist(t).total > 0 && (
                                       <span>
-                                        ✓ {t.checklist.filter((c) => c.done).length}/
-                                        {t.checklist.length}
+                                        ✓ {progressoDoChecklist(t).feitos}/
+                                        {progressoDoChecklist(t).total}
                                       </span>
                                     )}
                                     {t.mentions.length > 0 && (
@@ -1629,6 +1863,7 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
   const assignee = users.find((u) => u.id === t.assigneeId);
   const sec = sectors.find((s) => s.id === t.sector);
   const etiquetas = useEtiquetasDoCartao(t);
+  const passos = progressoDoChecklist(t);
   return (
     <>
       <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -1690,12 +1925,12 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
         />
       </div>
       {coluna === "concluida" && <LinhaDaEntrega task={t} />}
-      {(etiquetas.length > 0 || t.mentions.length > 0 || t.checklist.length > 0) && (
+      {(etiquetas.length > 0 || t.mentions.length > 0 || passos.total > 0) && (
         <div className="mt-1.5 flex items-center gap-3 text-[10px] text-muted-foreground">
           <PilulasDeEtiqueta etiquetas={etiquetas} />
-          {t.checklist.length > 0 && (
+          {passos.total > 0 && (
             <span>
-              ✓ {t.checklist.filter((c) => c.done).length}/{t.checklist.length}
+              ✓ {passos.feitos}/{passos.total}
             </span>
           )}
           {t.mentions.length > 0 && (

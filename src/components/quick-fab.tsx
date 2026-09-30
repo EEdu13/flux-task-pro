@@ -127,6 +127,21 @@ export function QuickFab() {
       toast.success(`Adicionado ao seu pack (${lines.length} ${lines.length === 1 ? "item" : "itens"})`);
     } else {
       toast.success(`Pack enviado para ${target?.name?.split(" ")[0] ?? "a pessoa"} (${lines.length})`);
+      /* Um aviso só, como no modelo de pack. Sem ele a pessoa não sabia de
+         nada: tarefa de pack não avisa uma a uma (o servidor olha `no_pack`),
+         e a menção a quem já é responsável também não avisa. */
+      void import("@/lib/notificacoes.functions")
+        .then((api) =>
+          api.avisar({
+            data: {
+              paraPessoaId: assigneeId,
+              tipo: "atribuida",
+              titulo: "Itens novos no seu pack",
+              descricao: `${lines.length} ${lines.length === 1 ? "tarefa adicionada" : "tarefas adicionadas"} ao seu pack de hoje`,
+            },
+          }),
+        )
+        .catch((e) => console.warn("[fluxo] aviso do pack não saiu:", (e as Error)?.message));
     }
     setPackBulk("");
     setPackTab("concluir");

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil, CheckCircle2, RotateCcw, Star, Copy, Trash2, AtSign, Sunrise, Clock, CalendarDays, Play } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { toast } from "sonner";
 import { useUndo } from "@/lib/undo-stack";
 import { startFocus } from "@/components/focus-overlay";
@@ -12,7 +13,7 @@ interface Detail {
 }
 
 export function TaskContextMenu() {
-  const { tasks, updateTask, deleteTask, createTask, openTask, currentUser } = useFluxo();
+  const { tasks, users, updateTask, deleteTask, createTask, openTask, currentUser } = useFluxo();
   const { push: pushUndo } = useUndo();
   const [ctx, setCtx] = useState<Detail | null>(null);
 
@@ -69,7 +70,8 @@ export function TaskContextMenu() {
   };
 
   const isDone = task.status === "concluida";
-  const canDelete = task.createdBy === currentUser.id || currentUser.role === "gerente";
+  // Quem criou, o supervisor ou a gerência — ver `permissoes.ts`.
+  const canDelete = podeMexerNoConteudo(task, currentUser, users);
   // clamp position to viewport
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
@@ -166,38 +168,11 @@ export function TaskContextMenu() {
           toast.success("Tarefa duplicada");
         })}
         <div className="my-1 h-px bg-border" />
-        {canDelete && item(
-          Trash2,
-          "Excluir",
-          () => {
-            const snapshot = task;
-            deleteTask(task.id);
-            pushUndo({
-              label: `"${snapshot.title}" excluída`,
-              undo: () => {
-                // Re-create task with original fields
-                createTask({
-                  title: snapshot.title,
-                  description: snapshot.description,
-                  sector: snapshot.sector,
-                  createdBy: snapshot.createdBy,
-                  assigneeId: snapshot.assigneeId,
-                  mentions: snapshot.mentions,
-                  frequency: snapshot.frequency,
-                  status: snapshot.status,
-                  score: snapshot.score,
-                  dueDate: snapshot.dueDate,
-                  dueTime: snapshot.dueTime,
-                  recurring: snapshot.recurring,
-                  priority: snapshot.priority,
-                  tags: snapshot.tags,
-                  inPack: snapshot.inPack,
-                });
-              },
-            });
-          },
-          true,
-        )}
+        {/* O desfazer vem de `deleteTask`, que devolve a própria tarefa. Este
+            menu empilhava um segundo, por cima, que recriava a tarefa como
+            outra — sem comentários, checklist nem histórico, e com a original
+            ainda arquivada. Era esse que o aviso e o Ctrl+Z executavam. */}
+        {canDelete && item(Trash2, "Excluir", () => deleteTask(task.id), true)}
       </div>
     </div>
   );

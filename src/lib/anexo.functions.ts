@@ -89,6 +89,12 @@ export const enviarAnexo = createServerFn({ method: "POST" })
           conteudo: string;
         },
       ): Promise<AnexoGravado> => {
+        // Só anexa em quem enxerga — ver `permissoes.server.ts`.
+        const { podeVerDonoDeAnexo } = await import("@/lib/permissoes.server");
+        if (!(await podeVerDonoDeAnexo(eu, dados.donoTipo, dados.donoId))) {
+          throw new Error("Você não tem acesso a onde este arquivo seria anexado.");
+        }
+
         // A vírgula separa o cabeçalho do data URL do conteúdo. Sem data URL,
         // a string inteira já é o base64.
         const virgula = dados.conteudo.indexOf(",");
@@ -199,6 +205,16 @@ export const removerAnexo = createServerFn({ method: "POST" })
   )
   .handler(
     comSessao(async (eu, dados: { id: string }) => {
+      /* A fechadura: quem enviou o arquivo, ou quem mexe no conteúdo do dono
+         dele — na tarefa (ou no comentário dela), quem criou, o chefe ou a
+         gerência; no projeto, o dono, o chefe dele ou a gerência. Na conversa
+         de chat, só quem mandou. Antes qualquer pessoa logada apagava qualquer
+         anexo pelo id, inclusive o comprovante de uma tarefa já concluída. */
+      const { permissaoNoAnexo } = await import("@/lib/permissoes.server");
+      const permissao = await permissaoNoAnexo(eu, dados.id);
+      if (!permissao.existe) return { ok: true, removido: false };
+      if (!permissao.remover) throw new Error("Você não pode remover este anexo.");
+
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
 
@@ -247,7 +263,11 @@ export const listarAnexos = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, dados: { donoTipo: Dono; donoId: string }) => {
+    comSessao(async (eu, dados: { donoTipo: Dono; donoId: string }) => {
+      // Só de quem enxerga o dono — ver `permissoes.server.ts`.
+      const { podeVerDonoDeAnexo } = await import("@/lib/permissoes.server");
+      if (!(await podeVerDonoDeAnexo(eu, dados.donoTipo, dados.donoId))) return { anexos: [] };
+
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       const r = await pool

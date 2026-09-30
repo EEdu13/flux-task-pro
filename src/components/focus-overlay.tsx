@@ -8,8 +8,18 @@ import { TravaScroll } from "@/components/trava-scroll";
 const FOCUS_MINUTES = 25;
 
 export function FocusOverlay() {
-  const { tasks, currentUser, updateTask, toggleChecklistItem } = useFluxo();
+  const { tasks, currentUser, updateTask, toggleChecklistItem, hidratarTarefa } = useFluxo();
   const [taskId, setTaskId] = useState<string | null>(null);
+
+  /* O checklist só chega quando a tarefa é aberta. Entrando em foco numa
+     tarefa que ninguém abriu, a lista aparecia vazia — justamente no lugar
+     feito para ir marcando os passos. Busca ao entrar, uma vez. */
+  const naoCarregada = tasks.some((t) => t.id === taskId && !t.satellitesLoaded);
+  useEffect(() => {
+    if (taskId && naoCarregada) hidratarTarefa(taskId);
+    // Só na troca de tarefa: `hidratarTarefa` muda a cada render da store.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
   const [remaining, setRemaining] = useState(FOCUS_MINUTES * 60);
   const [running, setRunning] = useState(false);
   const startedRef = useRef<number | null>(null);

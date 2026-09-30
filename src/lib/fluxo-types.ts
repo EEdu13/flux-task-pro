@@ -108,13 +108,13 @@ export interface Task {
   activity: ActivityEntry[];
   attachments?: Attachment[];
   /**
-   * Se os satélites (checklist, menções, etiquetas, dias de recorrência) desta
-   * tarefa já vieram do banco.
+   * Se os satélites (checklist, comentários, histórico, anexos) desta tarefa já
+   * vieram do banco.
    *
-   * A listagem do login NÃO traz nada disso — seria seis consultas por tarefa
-   * para desenhar um quadro que mostra título e prazo. Os satélites chegam
-   * quando a tarefa é aberta. Até lá, as listas estão vazias por ignorância,
-   * não porque a tarefa não tenha nada.
+   * A listagem do login traz só etiquetas, menções e dias de recorrência (ver
+   * `COLUNAS_TAREFA`); o resto seria uma consulta por tabela e por tarefa para
+   * desenhar um quadro. Chega quando a tarefa é aberta. Até lá, essas listas
+   * estão vazias por ignorância, não porque a tarefa não tenha nada.
    *
    * Sem esta marca as duas situações eram indistinguíveis, e `gravarTarefa`
    * mandava as listas vazias como se fossem verdade — apagando no banco o que
@@ -132,6 +132,17 @@ export interface Task {
    * Ex: conciliação bancária, pagamento, envio de relatório.
    */
   requireProof?: boolean;
+  /**
+   * Exige comprovante e o banco já tem anexo para ele, na tarefa ou num
+   * comentário. Vem da listagem e só vale enquanto os anexos não foram
+   * carregados (`satellitesLoaded`); depois disso, a lista em memória manda.
+   */
+  hasProof?: boolean;
+  /**
+   * Quantos itens o checklist tem e quantos estão marcados, vindo da listagem.
+   * Vale enquanto o checklist não foi carregado — ver `progressoDoChecklist`.
+   */
+  checklistResumo?: { total: number; feitos: number };
   /**
    * Tempo estimado (em minutos) para executar essa tarefa. Opcional.
    */
@@ -316,6 +327,21 @@ export const SEM_RECORRENCIA = "Sem recorrência";
  */
 export function rotuloDaFrequencia(t: Pick<Task, "frequency" | "recurring">): string {
   return t.recurring ? freqLabels[t.frequency] : SEM_RECORRENCIA;
+}
+
+/**
+ * O progresso do checklist, para o "✓ 2/5" do cartão.
+ *
+ * Aberta, a tarefa tem a lista inteira em memória, e ela manda — inclusive o
+ * item marcado agora e ainda não gravado. Fechada, só a listagem sabe: vale o
+ * resumo que veio com ela. Sem isto, o cartão de uma tarefa que ninguém abriu
+ * não mostrava progresso nenhum.
+ */
+export function progressoDoChecklist(t: Task): { feitos: number; total: number } {
+  if (t.satellitesLoaded || !t.checklistResumo) {
+    return { feitos: t.checklist.filter((c) => c.done).length, total: t.checklist.length };
+  }
+  return t.checklistResumo;
 }
 
 export const statusLabels: Record<Status, string> = {

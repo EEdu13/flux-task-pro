@@ -26,6 +26,19 @@ const guid = (v: unknown): string | null =>
 const texto = (v: unknown, max: number): string =>
   typeof v === "string" ? v.trim().slice(0, max) : "";
 
+/**
+ * A fechadura desta página: ler ou gravar o que pende de uma tarefa exige
+ * enxergá-la (ver `permissoes.server.ts`). Antes bastava estar logado — quem
+ * tivesse o id lia comentários e anexos de qualquer tarefa da empresa, e
+ * regravava o checklist dela.
+ */
+async function exigirAcesso(eu: number, tarefaId: string): Promise<void> {
+  const { permissaoNaTarefa } = await import("@/lib/permissoes.server");
+  const p = await permissaoNaTarefa(eu, tarefaId);
+  if (!p.existe) throw new Error("Tarefa não encontrada.");
+  if (!p.ver) throw new Error("Você não tem acesso a esta tarefa.");
+}
+
 /** Ordem do histórico: pelo horário, e pelo id no empate. */
 const SQL_DO_HISTORICO = `SELECT id, autor_id, tipo, texto, em FROM gestor.historico_da_tarefa
                            WHERE tarefa_id=@t ORDER BY em, id`;
@@ -79,7 +92,8 @@ export const carregarSatelites = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, d: { tarefaId: string }): Promise<SatelitesDaTarefa> => {
+    comSessao(async (eu, d: { tarefaId: string }): Promise<SatelitesDaTarefa> => {
+      await exigirAcesso(eu, d.tarefaId);
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       const req = () => pool.request().input("t", sql.UniqueIdentifier, d.tarefaId);
@@ -201,7 +215,8 @@ export const carregarHistorico = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, d: { tarefaId: string }) => {
+    comSessao(async (eu, d: { tarefaId: string }) => {
+      await exigirAcesso(eu, d.tarefaId);
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       const r = await pool
@@ -306,6 +321,7 @@ export const salvarSatelites = createServerFn({ method: "POST" })
           recurringWeekdays?: number[];
         },
       ) => {
+        await exigirAcesso(eu, d.tarefaId);
         const { getPool, sql } = await import("@/integrations/db.server");
         const { mudancasNoChecklist, pessoaNoTexto, registrarNoHistorico } =
           await import("@/lib/historico.server");
@@ -523,6 +539,52 @@ export const salvarSatelites = createServerFn({ method: "POST" })
           throw e;
         }
 
+        /* A próxima ocorrência que ainda não nasceu acompanha estas listas.
+           Ela é criada pelo servidor no mesmo pedido que concluiu esta tarefa
+           (ver criarProximaOcorrencia, em tarefas.functions.ts) e copia as
+           listas que o banco tinha naquele instante — antes desta gravação, que
+           chega logo depois. Quem mexeu no checklist ou nas etiquetas no mesmo
+           "Salvar" que concluiu veria a próxima nascer com a lista antiga.
+           Ninguém enxerga a ocorrência antes de ela nascer, então regravar as
+           listas dela não pisa em nada. Complemento: uma falha fica no log. */
+        await pool
+          .request()
+          .input("t", sql.UniqueIdentifier, d.tarefaId)
+          .query(
+            `DECLARE @proxima UNIQUEIDENTIFIER = (
+               SELECT TOP 1 f.id FROM gestor.tarefas f
+                 JOIN gestor.tarefas a ON a.id = @t
+                WHERE a.recorrente = 1 AND a.concluida_em IS NOT NULL
+                  AND f.id <> a.id AND f.recorrente = 1
+                  AND f.titulo = a.titulo AND f.responsavel_id = a.responsavel_id
+                  AND f.arquivada_em IS NULL AND f.criada_em > SYSDATETIMEOFFSET()
+                ORDER BY f.criada_em);
+             IF @proxima IS NOT NULL
+             BEGIN
+               DELETE FROM gestor.itens_de_checklist WHERE tarefa_id = @proxima;
+               INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
+               SELECT @proxima, texto, 0, ordem FROM gestor.itens_de_checklist WHERE tarefa_id = @t;
+
+               DELETE FROM gestor.tarefa_etiquetas WHERE tarefa_id = @proxima;
+               INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id)
+               SELECT @proxima, etiqueta_id FROM gestor.tarefa_etiquetas WHERE tarefa_id = @t;
+
+               DELETE FROM gestor.mencoes WHERE tarefa_id = @proxima;
+               INSERT INTO gestor.mencoes (tarefa_id, pessoa_id)
+               SELECT @proxima, pessoa_id FROM gestor.mencoes WHERE tarefa_id = @t;
+
+               DELETE FROM gestor.dias_de_recorrencia WHERE tarefa_id = @proxima;
+               INSERT INTO gestor.dias_de_recorrencia (tarefa_id, dia_da_semana)
+               SELECT @proxima, dia_da_semana FROM gestor.dias_de_recorrencia WHERE tarefa_id = @t;
+             END`,
+          )
+          .catch((e) =>
+            console.warn("[satelites] próxima ocorrência não acompanhou as listas:", {
+              tarefa: d.tarefaId,
+              erro: (e as Error)?.message,
+            }),
+          );
+
         // Por último: só depois de as listas estarem gravadas.
         await registrarNoHistorico(d.tarefaId, eu, paraOHistorico);
 
@@ -551,6 +613,7 @@ export const comentarNaTarefa = createServerFn({ method: "POST" })
   )
   .handler(
     comSessao(async (eu, d: { tarefaId: string; texto: string }) => {
+      await exigirAcesso(eu, d.tarefaId);
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       const r = await pool

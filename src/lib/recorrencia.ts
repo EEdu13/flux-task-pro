@@ -252,6 +252,51 @@ export function proximaOcorrencia(
   return proxima;
 }
 
+/**
+ * Quanto somar a um instante para que o calendário LOCAL desta máquina leia a
+ * hora de Brasília. Zero num navegador no Brasil; −3h num servidor em UTC.
+ *
+ * O Brasil não tem horário de verão desde 2019: o fuso é sempre −03:00.
+ */
+function deslocamentoParaBrasilia(agora: Date): number {
+  return (agora.getTimezoneOffset() - 180) * 60_000;
+}
+
+/**
+ * `proximaOcorrencia` no calendário de Brasília, em qualquer máquina.
+ *
+ * A conta usa o calendário local (getDay, setDate, setHours). No navegador ele
+ * é o de Brasília; no servidor, que roda em UTC, um prazo às 23:59 de Brasília
+ * já é 02:59 do dia seguinte, e a "segunda-feira" da recorrência viraria terça.
+ * Aqui as datas entram deslocadas para o relógio local ler a hora de Brasília,
+ * e a resposta volta sem o deslocamento.
+ */
+export function proximaOcorrenciaEmBrasilia(
+  tarefa: Parameters<typeof proximaOcorrencia>[0],
+  agora: Date = new Date(),
+): Date | null {
+  const d = deslocamentoParaBrasilia(agora);
+  const mover = (iso: string | null | undefined) =>
+    iso ? new Date(new Date(iso).getTime() + d).toISOString() : iso;
+  const proxima = proximaOcorrencia(
+    {
+      ...tarefa,
+      dueDate: mover(tarefa.dueDate) ?? null,
+      recurringUntil: mover(tarefa.recurringUntil),
+    },
+    new Date(agora.getTime() + d),
+  );
+  return proxima ? new Date(proxima.getTime() - d) : null;
+}
+
+/** A próxima meia-noite de Brasília — quando nasce a próxima ocorrência. */
+export function meiaNoiteDeAmanhaEmBrasilia(agora: Date = new Date()): Date {
+  const d = deslocamentoParaBrasilia(agora);
+  const local = new Date(agora.getTime() + d);
+  local.setHours(24, 0, 0, 0);
+  return new Date(local.getTime() - d);
+}
+
 /** Descrição curta da regra, para mostrar na interface. */
 export function descreverRecorrencia(
   tarefa: Pick<Task, "frequency" | "recurring" | "recurringWeekdays" | "recurringMonthDay"> & {

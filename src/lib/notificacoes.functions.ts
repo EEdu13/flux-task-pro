@@ -210,6 +210,9 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
             -- A próxima ocorrência que ainda não nasceu — ver salvarTarefa.
             AND t.criada_em <= SYSDATETIMEOFFSET()
             AND t.prazo < DATEADD(DAY, 1, SYSDATETIMEOFFSET())
+            -- O pack vence todo dia e é feito todo dia: "prazo se aproximando"
+            -- nele era aviso diário de rotina. Atrasado, ele ainda avisa.
+            AND (t.no_pack = 0 OR t.prazo < SYSDATETIMEOFFSET())
             AND NOT EXISTS (
                   SELECT 1 FROM gestor.notificacoes n
                    WHERE n.tarefa_id = t.id

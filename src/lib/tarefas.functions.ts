@@ -1,5 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import {
+  comSessao,
+  comSessaoSemEntrada,
+  semIdentidade,
+} from "@/integrations/iam/funcao-com-sessao";
 
 /* A tarefa — bloco C, o eixo.
  *
@@ -39,6 +43,10 @@ export type TarefaDoBanco = {
   tags: string[];
   /** Ids das pessoas mencionadas. */
   mentions: string[];
+  /** Exige comprovante e o banco já tem anexo para ele. Ver `COLUNAS_TAREFA`. */
+  hasProof: boolean;
+  /** Quantos itens o checklist tem e quantos estão marcados. Ver `COLUNAS_TAREFA`. */
+  checklistResumo: { total: number; feitos: number };
   estimatedMinutes?: number;
   requireProof?: boolean;
   inPack?: boolean;
@@ -143,7 +151,13 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
  *  As etiquetas são separadas por NCHAR(31), e não por vírgula, porque a do
  *  projeto é o nome dele, e nome de projeto pode ter vírgula. O CAST para MAX
  *  tira o teto de 4000 caracteres do STRING_AGG, que derrubaria a lista
- *  inteira por causa de uma tarefa só. */
+ *  inteira por causa de uma tarefa só.
+ *  `tem_comprovante` diz se a tarefa que exige comprovante já tem anexo, nela
+ *  ou num comentário. Os anexos só chegam quando a tarefa é aberta, e sem esta
+ *  coluna concluir pelo quadro era barrado mesmo com o comprovante enviado.
+ *  `passos` e `passos_feitos` são o "✓ 2/5" do cartão: o checklist em si só
+ *  chega quando a tarefa é aberta, e o cartão de quem não a abriu não mostrava
+ *  progresso nenhum. */
 export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
                                frequencia, situacao, prioridade, pontos, prazo, recorrente,
                                recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
@@ -159,7 +173,18 @@ export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, respons
                                  WHERE te.tarefa_id = t.id) AS etiquetas,
                                (SELECT STRING_AGG(CAST(m.pessoa_id AS VARCHAR(MAX)), ',')
                                   FROM gestor.mencoes m
-                                 WHERE m.tarefa_id = t.id) AS mencoes`;
+                                 WHERE m.tarefa_id = t.id) AS mencoes,
+                               CASE WHEN t.exige_comprovante = 1 AND (
+                                      EXISTS (SELECT 1 FROM gestor.anexos a
+                                               WHERE a.dono_tipo = 'tarefa' AND a.dono_id = t.id)
+                                   OR EXISTS (SELECT 1 FROM gestor.anexos a
+                                                JOIN gestor.comentarios c ON c.id = a.dono_id
+                                               WHERE a.dono_tipo = 'comentario' AND c.tarefa_id = t.id))
+                                    THEN 1 ELSE 0 END AS tem_comprovante,
+                               (SELECT COUNT(*) FROM gestor.itens_de_checklist i
+                                 WHERE i.tarefa_id = t.id) AS passos,
+                               (SELECT COUNT(*) FROM gestor.itens_de_checklist i
+                                 WHERE i.tarefa_id = t.id AND i.feito = 1) AS passos_feitos`;
 
 /** O separador das etiquetas em `COLUNAS_TAREFA`. */
 const SEPARADOR_DE_ETIQUETAS = "\u001f";
@@ -196,6 +221,11 @@ export type LinhaTarefa = {
   etiquetas: string | null;
   /** "467,512" — ver `COLUNAS_TAREFA`. */
   mencoes: string | null;
+  /** 1 quando exige comprovante e já tem anexo — ver `COLUNAS_TAREFA`. */
+  tem_comprovante: number;
+  /** Itens do checklist, e quantos estão marcados — ver `COLUNAS_TAREFA`. */
+  passos: number;
+  passos_feitos: number;
 };
 
 /** Do formato do banco para o que a interface já espera. */
@@ -229,6 +259,8 @@ export function paraApp(t: LinhaTarefa): TarefaDoBanco {
       .sort((a, b) => a - b),
     tags: (t.etiquetas ?? "").split(SEPARADOR_DE_ETIQUETAS).filter(Boolean),
     mentions: (t.mencoes ?? "").split(",").filter(Boolean),
+    hasProof: !!t.tem_comprovante,
+    checklistResumo: { total: t.passos ?? 0, feitos: t.passos_feitos ?? 0 },
     estimatedMinutes: t.minutos_estimados ?? undefined,
     requireProof: !!t.exige_comprovante,
     inPack: !!t.no_pack,
@@ -403,39 +435,143 @@ export const salvarTarefa = createServerFn({ method: "POST" })
   )
   .handler(
     comSessao(async (eu, d: EntradaTarefa): Promise<GravacaoDaTarefa> => {
-      const { getPool, sql } = await import("@/integrations/db.server");
-      const pool = await getPool();
+      /* A fechadura. Tarefa que já existe só é regravada por quem a enxerga
+         (ver `permissoes.server.ts`); título, descrição, pontos e "exigir
+         comprovante" só mudam pela mão de quem criou, do chefe ou da gerência —
+         dos outros, o banco guarda o que já tinha. Era a tela que decidia, e
+         uma chamada feita à mão regravava a tarefa de qualquer um. Tarefa nova
+         não tem o que conferir: qualquer pessoa cria para qualquer pessoa. */
+      const { permissaoNaTarefa } = await import("@/lib/permissoes.server");
+      const permissao = d.id ? await permissaoNaTarefa(eu, d.id) : null;
+      if (permissao?.existe && !permissao.ver) {
+        throw new Error("Você não tem acesso a esta tarefa.");
+      }
+      const r = await gravarNoBanco(eu, d, !permissao?.existe || permissao.conteudo);
+      // Nada gravado: era a próxima ocorrência, e ela já existia. Ver o INSERT.
+      if (!r) return { id: d.id ?? "", nova: false, ignorada: true };
+      if (r.concluiu) await criarProximaOcorrencia(eu, r.id);
+      /* `nova` diz a quem chamou se esta gravação CRIOU a tarefa. Quem grava o
+         checklist em seguida precisa saber: os itens com que a tarefa nasceu
+         fazem parte da criação, não são "adicionou" um por um. */
+      return { id: r.id, nova: r.nova };
+    }),
+  );
 
-      const req = pool
-        .request()
-        .input("id", sql.UniqueIdentifier, d.id)
-        .input("titulo", sql.NVarChar, d.titulo)
-        .input("descricao", sql.NVarChar(sql.MAX), d.descricao)
-        .input("setor", sql.NVarChar, d.setor)
-        .input("responsavel", sql.Int, d.responsavelId)
-        .input("projeto", sql.UniqueIdentifier, d.projetoId)
-        .input("frequencia", sql.NVarChar, d.frequencia)
-        .input("situacao", sql.NVarChar, d.situacao)
-        .input("prioridade", sql.NVarChar, d.prioridade)
-        .input("pontos", sql.Int, d.pontos)
-        .input("prazo", sql.DateTimeOffset, d.prazo)
-        // Texto, pelo mesmo motivo da data real: um TIME vindo do JS passaria pelo fuso.
-        .input("horario", sql.NVarChar(5), d.horario)
-        .input("recorrente", sql.Bit, d.recorrente)
-        .input("recorre_ate", sql.DateTimeOffset, d.recorreAte)
-        .input("dia_do_mes", sql.SmallInt, d.diaDoMes)
-        .input("minutos", sql.Int, d.minutosEstimados)
-        .input("comprovante", sql.Bit, d.exigeComprovante)
-        .input("no_pack", sql.Bit, d.noPack)
-        .input("ordem", sql.Int, d.ordem)
-        .input("origem", sql.NVarChar(500), d.origem)
-        // Texto, convertido no SQL: um DATE vindo de Date do JS passaria pelo fuso.
-        .input("data_real", sql.NVarChar(10), d.dataReal)
-        .input("nasce_em", sql.DateTimeOffset, d.nasceEm)
-        .input("anterior", sql.UniqueIdentifier, d.anteriorId)
-        .input("por", sql.Int, eu);
+/**
+ * A próxima ocorrência de uma recorrente que acabou de ser concluída.
+ *
+ * Era o navegador que a criava, logo depois de concluir: se a gravação dela
+ * falhasse, ou a janela fechasse no meio, a série parava sem aviso nenhum.
+ * Aqui ela sai do mesmo pedido que gravou a conclusão, a partir do que o banco
+ * tem da tarefa. A data é calculada no calendário de Brasília — ver
+ * `proximaOcorrenciaEmBrasilia`.
+ *
+ * Complemento, como o histórico: uma falha aqui fica no log e não desfaz a
+ * conclusão, que já foi gravada. E não duplica — o INSERT não cria a mesma
+ * ocorrência duas vezes (ver `gravarNoBanco`), então a tela de quem ainda está
+ * com a versão antiga do app, que também a cria, não gera uma segunda.
+ */
+async function criarProximaOcorrencia(eu: number, id: string): Promise<void> {
+  try {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("id", sql.UniqueIdentifier, id)
+      .query(`SELECT ${COLUNAS_TAREFA} FROM gestor.tarefas t WHERE t.id=@id`);
+    const linha = r.recordset[0] as LinhaTarefa | undefined;
+    if (!linha || !linha.recorrente || !linha.prazo) return;
 
-      /* `concluida_em` é derivado da situação, não recebido.
+    const { meiaNoiteDeAmanhaEmBrasilia, proximaOcorrenciaEmBrasilia } =
+      await import("@/lib/recorrencia");
+    const proxima = proximaOcorrenciaEmBrasilia(paraApp(linha));
+    if (!proxima) return;
+
+    await gravarNoBanco(
+      eu,
+      {
+        id: null,
+        titulo: linha.titulo,
+        descricao: linha.descricao,
+        setor: linha.setor,
+        responsavelId: linha.responsavel_id,
+        projetoId: linha.projeto_id,
+        frequencia: linha.frequencia,
+        situacao: "pendente",
+        prioridade: linha.prioridade,
+        pontos: linha.pontos,
+        prazo: proxima,
+        horario: linha.horario,
+        recorrente: true,
+        recorreAte: linha.recorre_ate,
+        diaDoMes: linha.dia_do_mes,
+        minutosEstimados: linha.minutos_estimados,
+        exigeComprovante: !!linha.exige_comprovante,
+        noPack: !!linha.no_pack,
+        ordem: linha.ordem,
+        origem: "criou pela recorrência, ao concluir a anterior",
+        dataReal: null,
+        nasceEm: meiaNoiteDeAmanhaEmBrasilia(),
+        anteriorId: id,
+      },
+      true,
+    );
+  } catch (e) {
+    console.error("[tarefas] próxima ocorrência não foi criada:", {
+      tarefa: id,
+      por: eu,
+      erro: (e as Error)?.message,
+    });
+  }
+}
+
+/**
+ * Grava a tarefa — cria ou atualiza — com tudo que decorre dela: conclusão e
+ * pontos, avisos, histórico, satélites da próxima ocorrência e etiquetas do
+ * projeto. Devolve `null` quando era a próxima ocorrência e ela já existia.
+ *
+ * @param podeConteudo  Título, descrição, pontos e "exigir comprovante" valem
+ *                      o que veio; sem permissão, fica o que o banco já tinha.
+ */
+async function gravarNoBanco(
+  eu: number,
+  d: EntradaTarefa,
+  podeConteudo: boolean,
+): Promise<{ id: string; nova: boolean; concluiu: boolean } | null> {
+  const { getPool, sql } = await import("@/integrations/db.server");
+  const pool = await getPool();
+
+  const req = pool
+    .request()
+    .input("pode_conteudo", sql.Bit, podeConteudo)
+    .input("id", sql.UniqueIdentifier, d.id)
+    .input("titulo", sql.NVarChar, d.titulo)
+    .input("descricao", sql.NVarChar(sql.MAX), d.descricao)
+    .input("setor", sql.NVarChar, d.setor)
+    .input("responsavel", sql.Int, d.responsavelId)
+    .input("projeto", sql.UniqueIdentifier, d.projetoId)
+    .input("frequencia", sql.NVarChar, d.frequencia)
+    .input("situacao", sql.NVarChar, d.situacao)
+    .input("prioridade", sql.NVarChar, d.prioridade)
+    .input("pontos", sql.Int, d.pontos)
+    .input("prazo", sql.DateTimeOffset, d.prazo)
+    // Texto, pelo mesmo motivo da data real: um TIME vindo do JS passaria pelo fuso.
+    .input("horario", sql.NVarChar(5), d.horario)
+    .input("recorrente", sql.Bit, d.recorrente)
+    .input("recorre_ate", sql.DateTimeOffset, d.recorreAte)
+    .input("dia_do_mes", sql.SmallInt, d.diaDoMes)
+    .input("minutos", sql.Int, d.minutosEstimados)
+    .input("comprovante", sql.Bit, d.exigeComprovante)
+    .input("no_pack", sql.Bit, d.noPack)
+    .input("ordem", sql.Int, d.ordem)
+    .input("origem", sql.NVarChar(500), d.origem)
+    // Texto, convertido no SQL: um DATE vindo de Date do JS passaria pelo fuso.
+    .input("data_real", sql.NVarChar(10), d.dataReal)
+    .input("nasce_em", sql.DateTimeOffset, d.nasceEm)
+    .input("anterior", sql.UniqueIdentifier, d.anteriorId)
+    .input("por", sql.Int, eu);
+
+  /* `concluida_em` é derivado da situação, não recebido.
          Se viesse do cliente, uma tarefa poderia ser marcada como concluída
          ontem por quem a concluiu agora — e o placar do mês passaria a depender
          de um valor que o navegador escolhe.
@@ -455,8 +591,8 @@ export const salvarTarefa = createServerFn({ method: "POST" })
          para quem esqueceu de marcar na hora. A Timeline mostra essa data, mas
          conclusão, prazo e pontos continuam pelo clique — decisão do usuário
          em 24/09/2026, enquanto o placar é revisto. */
-      const gravacao = req.query(
-        `/* Só com a tarefa concluída, e nunca no futuro — o "hoje" é o de
+  const gravacao = req.query(
+    `/* Só com a tarefa concluída, e nunca no futuro — o "hoje" é o de
             Brasília, não o do relógio de quem mandou. */
          DECLARE @dia_real DATE = CASE
            WHEN @situacao = 'concluida'
@@ -482,6 +618,25 @@ export const salvarTarefa = createServerFn({ method: "POST" })
                           AT TIME ZONE N'E. South America Standard Time',
                           '+00:00');
 
+         /* Comprovante: a tarefa que o exige só conclui com anexo, nela ou num
+            comentário. A tela já barrava, mas a tela não é a fechadura — e a
+            regra tem de valer por qualquer caminho. Só na tarefa que existe e
+            ainda não estava concluída: a criada agora recebe os anexos depois
+            de existir. Antes de qualquer escrita, então nada fica pela metade. */
+         IF @situacao = N'concluida'
+            AND EXISTS (SELECT 1 FROM gestor.tarefas x
+                         WHERE x.id = @id AND x.concluida_em IS NULL
+                           AND (CASE WHEN @pode_conteudo = 1 THEN @comprovante
+                                     ELSE x.exige_comprovante END) = 1)
+            AND NOT EXISTS (SELECT 1 FROM gestor.anexos a
+                             WHERE a.dono_tipo = 'tarefa' AND a.dono_id = @id)
+            AND NOT EXISTS (SELECT 1 FROM gestor.anexos a
+                              JOIN gestor.comentarios c ON c.id = a.dono_id
+                             WHERE a.dono_tipo = 'comentario' AND c.tarefa_id = @id)
+         BEGIN
+           ;THROW 50010, N'Essa tarefa exige comprovante: anexe um arquivo antes de concluir.', 1;
+         END
+
          DECLARE @efeito TABLE (
            tarefa             UNIQUEIDENTIFIER,
            criador            INT,
@@ -504,13 +659,21 @@ export const salvarTarefa = createServerFn({ method: "POST" })
 
          IF @id IS NOT NULL AND EXISTS (SELECT 1 FROM gestor.tarefas WHERE id=@id)
          BEGIN
+           /* Título, descrição, pontos e comprovante: só com @pode_conteudo.
+              Sem ela, a coluna fica com o que tinha — a gravação segue, para
+              quem só mudou a situação ou o prazo não receber erro. */
            UPDATE gestor.tarefas
-              SET titulo=@titulo, descricao=@descricao, setor=@setor,
+              SET titulo = CASE WHEN @pode_conteudo = 1 THEN @titulo ELSE titulo END,
+                  descricao = CASE WHEN @pode_conteudo = 1 THEN @descricao ELSE descricao END,
+                  setor=@setor,
                   responsavel_id=@responsavel, projeto_id=@projeto,
                   frequencia=@frequencia, situacao=@situacao, prioridade=@prioridade,
-                  pontos=@pontos, prazo=@prazo, horario=@hora, recorrente=@recorrente,
+                  pontos = CASE WHEN @pode_conteudo = 1 THEN @pontos ELSE pontos END,
+                  prazo=@prazo, horario=@hora, recorrente=@recorrente,
                   recorre_ate=@recorre_ate, dia_do_mes=@dia_do_mes,
-                  minutos_estimados=@minutos, exige_comprovante=@comprovante,
+                  minutos_estimados=@minutos,
+                  exige_comprovante = CASE WHEN @pode_conteudo = 1 THEN @comprovante
+                                           ELSE exige_comprovante END,
                   no_pack=@no_pack, ordem=@ordem,
                   data_real_de_conclusao=@dia_real,
                   concluida_em = CASE
@@ -881,28 +1044,28 @@ export const salvarTarefa = createServerFn({ method: "POST" })
            DECLARE @falha_nas_etiquetas NVARCHAR(4000) = ERROR_MESSAGE();
          END CATCH
 
-         SELECT tarefa AS id, nova FROM @efeito;`,
-      );
-      /* No log do servidor, com a tarefa e quem gravava. O motivo também chega
-         ao aviso na tela, mas lá fica no computador de quem clicou. */
-      const r = await gravacao.catch((e: unknown) => {
-        console.error("[tarefas] gravação falhou:", {
-          tarefa: d.id,
-          por: eu,
-          erro: (e as Error)?.message,
-        });
-        throw e;
-      });
-
-      const linha = r.recordset[0] as { id: string; nova: boolean } | undefined;
-      // Nada gravado: era a próxima ocorrência, e ela já existia. Ver o INSERT.
-      if (!linha) return { id: d.id ?? "", nova: false, ignorada: true };
-      /* `nova` diz a quem chamou se esta gravação CRIOU a tarefa. Quem grava o
-         checklist em seguida precisa saber: os itens com que a tarefa nasceu
-         fazem parte da criação, não são "adicionou" um por um. */
-      return { id: linha.id, nova: !!linha.nova };
-    }),
+         /* concluiu: foi ESTA gravação que concluiu a tarefa — é o que manda
+            criar a próxima ocorrência, ver criarProximaOcorrencia. */
+         SELECT tarefa AS id, nova,
+                CAST(CASE WHEN concluida_depois IS NOT NULL AND concluida_antes IS NULL
+                          THEN 1 ELSE 0 END AS BIT) AS concluiu
+           FROM @efeito;`,
   );
+  /* No log do servidor, com a tarefa e quem gravava. O motivo também chega
+         ao aviso na tela, mas lá fica no computador de quem clicou. */
+  const r = await gravacao.catch((e: unknown) => {
+    console.error("[tarefas] gravação falhou:", {
+      tarefa: d.id,
+      por: eu,
+      erro: (e as Error)?.message,
+    });
+    throw e;
+  });
+
+  const linha = r.recordset[0] as { id: string; nova: boolean; concluiu: boolean } | undefined;
+  if (!linha) return null;
+  return { id: linha.id, nova: !!linha.nova, concluiu: !!linha.concluiu };
+}
 
 /**
  * Arquiva ou desarquiva. Não existe apagar.
@@ -930,23 +1093,26 @@ export const arquivarTarefa = createServerFn({ method: "POST" })
   )
   .handler(
     comSessao(async (eu, d: { id: string; arquivar: boolean }) => {
+      /* A fechadura: quem criou, o chefe de quem criou ou de quem é
+         responsável, e a gerência — a mesma regra do botão Excluir (ver
+         `permissoes.server.ts`). A tela já limita quem vê o botão, mas a tela
+         não é a fechadura: sem esta conferência, quem descobrisse o id de uma
+         tarefa qualquer poderia tirá-la do quadro de outra pessoa.
+
+         Recusa devolve `ok: false`, e a tela põe a tarefa de volta com um
+         aviso. Antes a gerência via o botão e a fechadura não a deixava
+         passar: a tarefa sumia, voltava na sincronização seguinte, e ninguém
+         sabia por quê. */
+      const { permissaoNaTarefa } = await import("@/lib/permissoes.server");
+      if (!(await permissaoNaTarefa(eu, d.id)).conteudo) return { ok: false };
+
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
-
-      /* O `responsavel_id=@eu OR criado_por=@eu` é a fechadura.
-         A tela já limita quem vê o botão, mas a tela não é a fechadura: sem
-         esta linha, quem descobrisse o id de uma tarefa qualquer poderia
-         tirá-la do quadro de outra pessoa. */
       const r = await pool
         .request()
         .input("id", sql.UniqueIdentifier, d.id)
-        .input("eu", sql.Int, eu)
         .input("quando", sql.DateTimeOffset, d.arquivar ? new Date() : null)
-        .query(
-          `UPDATE gestor.tarefas
-              SET arquivada_em=@quando
-            WHERE id=@id AND (responsavel_id=@eu OR criado_por=@eu)`,
-        );
+        .query(`UPDATE gestor.tarefas SET arquivada_em=@quando WHERE id=@id`);
 
       return { ok: r.rowsAffected[0] > 0 };
     }),

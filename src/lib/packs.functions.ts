@@ -156,6 +156,14 @@ export const salvarPack = createServerFn({ method: "POST" })
           items: { title: string; estimatedMinutes: number | null }[];
         },
       ): Promise<{ id: string }> => {
+        /* A fechadura: o modelo que já existe só muda pela mão de quem o
+           criou, do chefe dessa pessoa ou da gerência (ver
+           `permissoes.server.ts`). Modelo novo, qualquer um cria. */
+        if (d.id) {
+          const { podeMexerNoModeloDePack } = await import("@/lib/permissoes.server");
+          const p = await podeMexerNoModeloDePack(eu, d.id);
+          if (p.existe && !p.pode) throw new Error("Você não pode alterar este modelo de pack.");
+        }
         const { getPool, sql } = await import("@/integrations/db.server");
         const pool = await getPool();
 
@@ -222,7 +230,11 @@ export const apagarPack = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, d: { id: string }) => {
+    comSessao(async (eu, d: { id: string }) => {
+      // Só quem criou, o chefe dessa pessoa ou a gerência.
+      const { podeMexerNoModeloDePack } = await import("@/lib/permissoes.server");
+      const p = await podeMexerNoModeloDePack(eu, d.id);
+      if (p.existe && !p.pode) throw new Error("Você não pode apagar este modelo de pack.");
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
       // Os itens saem por cascata, pela chave estrangeira.

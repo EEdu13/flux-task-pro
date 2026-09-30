@@ -68,7 +68,19 @@ export interface IamUsuarioBasico {
 
 function taskHasProof(t: Task): boolean {
   if ((t.attachments?.length ?? 0) > 0) return true;
-  return t.comments.some((c) => (c.attachments?.length ?? 0) > 0);
+  if (t.comments.some((c) => (c.attachments?.length ?? 0) > 0)) return true;
+  /* Os anexos só chegam quando a tarefa é aberta. Até lá, vale o que a
+     listagem disse (`hasProof`): sem isto, concluir pelo quadro era barrado
+     mesmo com o comprovante enviado. Aberta, a lista em memória está completa
+     e manda — inclusive quando o comprovante acabou de ser removido. */
+  return !t.satellitesLoaded && !!t.hasProof;
+}
+
+/** Tira este anexo e não sobra nenhum comprovante na tarefa? */
+function removeriaOComprovante(t: Task, anexoId: string): boolean {
+  if (!t.requireProof) return false;
+  if ((t.attachments ?? []).some((a) => a.id !== anexoId)) return false;
+  return !t.comments.some((c) => (c.attachments?.length ?? 0) > 0);
 }
 
 /**
@@ -207,6 +219,8 @@ interface Store {
   taskDialog: TaskDialogState;
   openNewTask: (opts?: { status?: Status; dueDate?: string }) => void;
   openTask: (id: string) => void;
+  /** Busca checklist, comentários, anexos e histórico da tarefa, sem abrir o painel. */
+  hidratarTarefa: (id: string) => void;
   closeTaskDialog: () => void;
   // quick create modal (spreadsheet-style)
   quickCreate: { open: boolean; status?: Status; dueDate?: string; assigneeId?: string };
@@ -467,6 +481,10 @@ function naFilaDoProjeto(id: string, gravar: () => Promise<unknown>): void {
 
 const gravacoesFalhadas = new Map<string, Task>();
 let toastDeFalhaAberto = false;
+
+/** Quando os avisos de prazo foram gerados pela última vez. Ver `sincronizar`. */
+let avisosDePrazoGeradosEm = 0;
+const AVISOS_DE_PRAZO_A_CADA_MS = 10 * 60_000;
 
 async function tentarNovamente(): Promise<void> {
   const pendentes = [...gravacoesFalhadas.values()];
@@ -966,6 +984,7 @@ async function carregarDoBanco(
       import("@/lib/conclusoes.functions"),
       import("@/lib/notificacoes.functions"),
     ]);
+    avisosDePrazoGeradosEm = Date.now();
     await notif.gerarAvisosDePrazo().catch(() => {});
     const [cn, nt] = await Promise.all([conc.listarConclusoes(), notif.listarNotificacoes()]);
     setState((s) => ({
@@ -1333,52 +1352,72 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
        tarefa era aberta. */
     const tasks = s.tasks.map((t) => (t.id === next.id ? next : t));
 
-    // Próxima ocorrência da série. A caixa "repete automaticamente ao concluir"
-    // prometia isso desde sempre, mas a geração tinha sido removida no commit
-    // e708d06 — a tarefa sumia ao concluir e nada voltava.
+    /* A próxima ocorrência da série não sai mais daqui: o servidor a cria no
+       mesmo pedido que grava a conclusão (ver `criarProximaOcorrencia`, em
+       tarefas.functions.ts). Criada por esta tela, ela dependia de uma segunda
+       gravação — se falhasse, ou a janela fechasse no meio, a série parava sem
+       aviso. Ela continua nascendo amanhã à meia-noite, no pack se a de hoje
+       estava, com o checklist desmarcado; a sincronização a traz quando o dia
+       chega. */
     void prev;
-    const proxima = proximaOcorrencia(next);
-    /* O id nasce UUID, e a ocorrência é gravada.
-       Ela nascia com `rid("t")` — formato antigo — e `gravarTarefa` recusa esse
-       formato em silêncio. O resultado era uma tarefa recorrente que voltava só
-       neste navegador: quem concluísse a de segunda no computador de casa não
-       teria a de terça no do trabalho.
-
-       Ela é gravada agora, mas só NASCE amanhã, à meia-noite — e não entra
-       nesta tela hoje. Entrava na hora, pendente e com o prazo de amanhã: quem
-       concluía a de hoje via a de amanhã em "A fazer", concluía também, e cada
-       conclusão gerava a do dia seguinte. Em 24/09/2026 isso produziu quatro
-       ocorrências em sete minutos. A sincronização a traz quando o dia chega.
-
-       E continua no pack se a de hoje estava: a obrigação diária que se repete
-       é justamente a que deve voltar ao pack no dia seguinte. Antes ela saía,
-       porque aparecer já no pack de hoje seria pior. */
-    const amanha = new Date();
-    amanha.setHours(24, 0, 0, 0);
-    const seguinte: Task | null = proxima
-      ? {
-          ...next,
-          id: novoId(),
-          previousOccurrenceId: next.id,
-          createdAt: amanha.toISOString(),
-          availableFrom: amanha.toISOString(),
-          dueDate: proxima.toISOString(),
-          status: "pendente" as Status,
-          completedAt: null,
-          actualCompletionDate: null,
-          // A nova ocorrência começa limpa: histórico, conversa e provas são
-          // da vez que passou. O checklist volta desmarcado, que é o ponto de
-          // ter checklist numa tarefa que se repete.
-          comments: [],
-          activity: [],
-          checklist: next.checklist.map((c) => ({ ...c, id: rid("c"), done: false })),
-          attachments: undefined,
-          inPack: next.inPack,
-        }
-      : null;
-    if (seguinte) void gravarTarefa(seguinte, "criou pela recorrência, ao concluir a anterior");
 
     return { ...s, tasks, users, completions };
+  };
+
+  /* Os satélites chegam quando a tarefa é aberta, não na listagem.
+     Trazer checklist, comentários e histórico de todas as tarefas no login
+     seria seis consultas por tarefa para desenhar um quadro que mostra só
+     título e prazo. Aqui é uma consulta por tabela, uma vez, para a tarefa
+     que a pessoa está de fato olhando — no painel da tarefa e no modo foco.
+
+     Como é assíncrono, a tela abre com o que já está em memória e se completa
+     em seguida — o mesmo padrão do perfil no login. */
+  const hidratarTarefa = (id: string) => {
+    if (!ehGuid(id)) return;
+    void (async () => {
+      try {
+        const { carregarSatelites } = await import("@/lib/tarefa-satelites.functions");
+        const s = await carregarSatelites({ data: { tarefaId: id } });
+        setState((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  // Daqui em diante esta tarefa pode ser regravada por
+                  // inteiro: as listas abaixo são o que o banco tem, não o
+                  // vazio da listagem. Ver `satellitesLoaded` em Task.
+                  satellitesLoaded: true,
+                  checklist: s.checklist,
+                  mentions: s.mentions,
+                  tags: s.tags,
+                  recurringWeekdays: s.recurringWeekdays,
+                  /* Os anexos vêm junto agora. Este `attachments: []` era
+                     fixo: mesmo depois de o arquivo passar a subir para o
+                     Blob, ele não reapareceria ao abrir a tarefa de novo. */
+                  attachments: s.attachments,
+                  comments: s.comments.map((c) => ({
+                    id: c.id,
+                    userId: c.userId,
+                    text: c.text,
+                    at: c.at,
+                    attachments: c.attachments.length ? c.attachments : undefined,
+                  })),
+                  activity: s.activity.map((a) => ({
+                    id: a.id,
+                    userId: a.userId,
+                    kind: a.kind as ActivityKind,
+                    text: a.text,
+                    at: a.at,
+                  })),
+                }
+              : t,
+          ),
+        }));
+      } catch (e) {
+        console.warn("[fluxo] detalhes da tarefa não carregaram:", (e as Error)?.message);
+      }
+    })();
   };
 
   const store: Store = {
@@ -1501,7 +1540,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          nesta máquina, onde a sineta de ninguém os leria. Quem os escreve
          agora é o servidor: a atribuição em `salvarTarefa`, a menção em
          `salvarSatelites`, cada um no comando que cria o fato. */
-      void gravarTarefa(task);
+      const gravada = gravarTarefa(task);
 
       /* Anexo escolhido antes da tarefa existir.
          A grade de criação em massa deixa anexar arquivo numa linha que ainda
@@ -1516,6 +1555,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       const pendentes = task.attachments ?? [];
       if (pendentes.length && ehGuid(id)) {
         void (async () => {
+          /* Depois da tarefa gravada: o servidor só aceita anexo em tarefa que
+             exista e que quem envia enxergue. Saindo juntos, o arquivo podia
+             chegar antes da tarefa e ser recusado. */
+          await gravada;
           const { subirAnexos } = await import("@/lib/anexo-upload");
           const enviados = await subirAnexos("tarefa", id, pendentes);
           if (!enviados.length) return;
@@ -1584,14 +1627,23 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
      */
     deleteTask: (id) => {
       const alvo = state.tasks.find((t) => t.id === id);
+      /* Põe a tarefa de volta na tela: no desfazer, e quando o servidor não
+         arquiva. Só se ela ainda não estiver lá — as duas coisas podem
+         acontecer com a mesma tarefa. */
+      const devolver = () => {
+        if (!alvo) return;
+        setState((s) =>
+          s.tasks.some((t) => t.id === id) ? s : { ...s, tasks: [alvo, ...s.tasks] },
+        );
+      };
 
       setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
 
       // Desfazer é barato agora que nada some de verdade.
       empilharDesfazer({
-        label: alvo?.title ? `"${alvo.title}" arquivada` : "Tarefa arquivada",
+        label: alvo?.title ? `"${alvo.title}" excluída` : "Tarefa excluída",
         undo: () => {
-          if (alvo) setState((s) => ({ ...s, tasks: [alvo, ...s.tasks] }));
+          devolver();
           if (ehGuid(id)) {
             void import("@/lib/tarefas.functions")
               .then((api) => api.arquivarTarefa({ data: { id, arquivar: false } }))
@@ -1600,12 +1652,27 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         },
       });
 
-      /* O servidor confere de novo se quem arquivou é o responsável ou o
-         criador — a tela não é a fechadura. */
+      /* O servidor confere de novo quem pode: quem criou, o responsável ou a
+         gerência — a tela não é a fechadura. Se ele não arquivar, a tarefa
+         volta e a pessoa fica sabendo. Antes ela sumia daqui, continuava no
+         banco e reaparecia na sincronização seguinte, sem explicação. */
       if (ehGuid(id)) {
         void import("@/lib/tarefas.functions")
           .then((api) => api.arquivarTarefa({ data: { id } }))
-          .catch((e) => console.warn("[fluxo] tarefa não arquivou:", (e as Error)?.message));
+          .then((r) => {
+            if (r.ok) return;
+            devolver();
+            toast.error("A tarefa não foi excluída", {
+              description: "Só quem criou, o responsável ou a gerência podem excluir.",
+            });
+          })
+          .catch((e) => {
+            console.warn("[fluxo] tarefa não arquivou:", (e as Error)?.message);
+            devolver();
+            toast.error("A tarefa não foi excluída", {
+              description: "O servidor não respondeu. Tente de novo em instantes.",
+            });
+          });
       }
     },
 
@@ -1755,6 +1822,16 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     },
 
     removeTaskAttachment: (taskId, attId) => {
+      /* Concluída com comprovante obrigatório: o último anexo é a prova de que
+         ela foi feita, e tirá-lo deixava uma tarefa concluída sem prova. Trocar
+         de arquivo continua possível — anexa o novo, tira o antigo. */
+      const alvo = state.tasks.find((t) => t.id === taskId);
+      if (alvo?.status === "concluida" && removeriaOComprovante(alvo, attId)) {
+        toast.error("Este anexo é o comprovante da tarefa", {
+          description: "Anexe o arquivo certo antes de remover este, ou reabra a tarefa.",
+        });
+        return;
+      }
       setState((s) => ({
         ...s,
         tasks: s.tasks.map((t) =>
@@ -1915,6 +1992,16 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         import("@/lib/notificacoes.functions"),
         import("@/lib/conclusoes.functions"),
       ]);
+      /* Os avisos de prazo nasciam só no login. O app fica aberto o dia
+         inteiro, então a tarefa criada de manhã para hoje à tarde nunca
+         ganhava o "Prazo se aproximando" — ele chegava no login do dia
+         seguinte, já como atrasada. Aqui eles nascem também durante o dia, a
+         cada 10 minutos no máximo; o servidor não repete aviso da mesma
+         tarefa. Antes da leitura da sineta, para o aviso novo já vir nela. */
+      if (inicio - avisosDePrazoGeradosEm >= AVISOS_DE_PRAZO_A_CADA_MS) {
+        avisosDePrazoGeradosEm = inicio;
+        await notif.gerarAvisosDePrazo().catch(() => {});
+      }
       const [tf, nt, cn] = await Promise.all([
         tarefas.listarTarefas(),
         notif.listarNotificacoes(),
@@ -1940,16 +2027,19 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                  que está na memória é mais completo que esse vazio, e
                  sobrescrever apagaria da tela o checklist de uma tarefa aberta
                  neste instante. Só os campos da própria tarefa são atualizados;
-                 esses três ficam. Etiquetas e menções vêm na consulta, e valem
-                 as do banco: são mais novas que as de quando a tarefa foi
-                 aberta, e o que ainda não subiu já saiu acima, em
-                 `semConfirmacao`. */
+                 esses três ficam, e os anexos também: eles não vêm na consulta,
+                 e sem esta linha sumiam da tarefa aberta a cada minuto — e com
+                 eles o comprovante, que voltava a barrar a conclusão.
+                 Etiquetas e menções vêm na consulta, e valem as do banco: são
+                 mais novas que as de quando a tarefa foi aberta, e o que ainda
+                 não subiu já saiu acima, em `semConfirmacao`. */
               return anterior?.satellitesLoaded
                 ? {
                     ...t,
                     comments: anterior.comments,
                     checklist: anterior.checklist,
                     activity: anterior.activity,
+                    attachments: anterior.attachments,
                     recurringWeekdays: anterior.recurringWeekdays,
                     satellitesLoaded: true,
                   }
@@ -2213,61 +2303,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setQuickCreate({ open: true, status: opts?.status, dueDate: opts?.dueDate }),
     openTask: (id) => {
       setTaskDialog({ open: true, editingId: id });
-
-      /* Os satélites chegam quando a tarefa é aberta, não na listagem.
-         Trazer checklist, comentários e histórico de todas as tarefas no login
-         seria seis consultas por tarefa para desenhar um quadro que mostra só
-         título e prazo. Aqui é uma consulta por tabela, uma vez, para a tarefa
-         que a pessoa está de fato olhando.
-
-         Como é assíncrono, o painel abre com o que já está em memória e se
-         completa em seguida — o mesmo padrão do perfil no login. */
-      if (!ehGuid(id)) return;
-      void (async () => {
-        try {
-          const { carregarSatelites } = await import("@/lib/tarefa-satelites.functions");
-          const s = await carregarSatelites({ data: { tarefaId: id } });
-          setState((prev) => ({
-            ...prev,
-            tasks: prev.tasks.map((t) =>
-              t.id === id
-                ? {
-                    ...t,
-                    // Daqui em diante esta tarefa pode ser regravada por
-                    // inteiro: as listas abaixo são o que o banco tem, não o
-                    // vazio da listagem. Ver `satellitesLoaded` em Task.
-                    satellitesLoaded: true,
-                    checklist: s.checklist,
-                    mentions: s.mentions,
-                    tags: s.tags,
-                    recurringWeekdays: s.recurringWeekdays,
-                    /* Os anexos vêm junto agora. Este `attachments: []` era
-                       fixo: mesmo depois de o arquivo passar a subir para o
-                       Blob, ele não reapareceria ao abrir a tarefa de novo. */
-                    attachments: s.attachments,
-                    comments: s.comments.map((c) => ({
-                      id: c.id,
-                      userId: c.userId,
-                      text: c.text,
-                      at: c.at,
-                      attachments: c.attachments.length ? c.attachments : undefined,
-                    })),
-                    activity: s.activity.map((a) => ({
-                      id: a.id,
-                      userId: a.userId,
-                      kind: a.kind as ActivityKind,
-                      text: a.text,
-                      at: a.at,
-                    })),
-                  }
-                : t,
-            ),
-          }));
-        } catch (e) {
-          console.warn("[fluxo] detalhes da tarefa não carregaram:", (e as Error)?.message);
-        }
-      })();
+      hidratarTarefa(id);
     },
+    hidratarTarefa,
     closeTaskDialog: () => setTaskDialog({ open: false }),
     quickCreate,
     openQuickCreate: (opts) =>

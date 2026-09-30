@@ -27,11 +27,22 @@ export const Route = createFileRoute("/api/anexo/$id")({
 
         // A sessão é exigida antes de qualquer consulta: sem ela não há motivo
         // para descobrir sequer se o anexo existe.
+        let eu: number;
         try {
-          const { usuarioDaSessao } = await import("@/integrations/iam/identidade.server");
-          await usuarioDaSessao();
+          const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+          eu = await pessoaDaSessao();
         } catch {
           return new Response("não autorizado", { status: 401 });
+        }
+
+        /* E quem está logado precisa enxergar o dono do arquivo: a tarefa (ou o
+           comentário dela) ou a conversa de chat. Bastava estar logado — um
+           link repassado abria o anexo de qualquer tarefa, e o arquivo de uma
+           conversa particular, para a empresa inteira. A resposta é a mesma de
+           anexo inexistente, para não confirmar que ele existe. */
+        const { permissaoNoAnexo } = await import("@/lib/permissoes.server");
+        if (!(await permissaoNoAnexo(eu, id)).ver) {
+          return new Response("anexo não encontrado", { status: 404 });
         }
 
         const { getPool, sql } = await import("@/integrations/db.server");

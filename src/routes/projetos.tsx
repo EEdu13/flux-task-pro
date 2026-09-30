@@ -34,6 +34,7 @@ import { ProjectTracking } from "@/components/project-tracking";
 import { ProjectPortfolio } from "@/components/project-portfolio";
 import { CampoData } from "@/components/campo-data";
 import { useFluxo } from "@/lib/fluxo-store";
+import { podeEditarProjeto } from "@/lib/permissoes";
 import type { CompletionEntry, ProjectStatus, Status } from "@/lib/fluxo-types";
 import {
   forecastProject,
@@ -556,8 +557,11 @@ function ProjectDetail({
   onQuickAdd,
   quickInputRef,
 }: ProjectDetailProps) {
-  const isOwner = selected.ownerId === currentUserId;
-  const { setProjectPhoto } = useFluxo();
+  const { setProjectPhoto, currentUser } = useFluxo();
+  /* Quem mexe no projeto — nome, situação, foto, apagar: o dono, o supervisor
+     dele e a gerência, a mesma regra do servidor (ver `permissoes.ts`). O
+     nome `isOwner` ficou porque é o que os blocos abaixo recebem. */
+  const isOwner = podeEditarProjeto(selected, currentUser, users);
   const participantes = useMemo(
     () => participantesDoProjeto(selected, users, currentUserId),
     [selected, users, currentUserId],

@@ -39,8 +39,9 @@ export function prazoVencido(
 
 /**
  * "25/09/2026", ou "25/09/2026 · 14:00" quando a pessoa escolheu o horário.
- * Sem horário escolhido a hora não aparece: 17:00 e 23:59 são regra da casa,
- * não algo que alguém decidiu.
+ * Sem horário escolhido a hora não aparece: o 23:59 é regra da casa, não algo
+ * que alguém decidiu. (Prazos antigos trocados pela janela da tarefa podem
+ * estar às 17:00, a regra de lá até 30/09/2026.)
  */
 export function rotuloDoPrazo(
   t: { dueDate: string | null; dueTime?: string | null },

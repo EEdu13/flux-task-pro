@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "@tanstack/react-router";
 import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip } from "lucide-react";
 import { descartarPendencias, useFluxo } from "@/lib/fluxo-store";
+import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
@@ -515,8 +516,12 @@ export function TaskDialog() {
   };
 
   const assignables = visibleUsersForAssign();
-  const canEditContent = !editing || editing.createdBy === currentUser.id;
-  const canDelete = !!editing && (editing.createdBy === currentUser.id || currentUser.role === "gerente");
+  /* Título, descrição, "exigir comprovante" e excluir: quem criou, o
+     supervisor de quem criou ou de quem é responsável, e a gerência — a regra
+     do servidor (ver `permissoes.ts`). O supervisor entrou para poder
+     completar as tarefas da equipe com o que ele pensou. */
+  const canEditContent = !editing || podeMexerNoConteudo(editing, currentUser, users);
+  const canDelete = !!editing && canEditContent;
 
   /* Checklist igual nos dois modos: tudo no rascunho local, tudo sobe no
      Salvar. Antes a tarefa existente mexia direto na store a cada clique —
@@ -624,8 +629,7 @@ export function TaskDialog() {
        devolveria o título antigo. Salvar já escreve a tarefa inteira, checklist
        incluído — o agendamento não tem mais o que acrescentar. */
     if (editing) descartarPendencias(editing.id);
-    const preserveTitle = editing && editing.createdBy !== currentUser.id;
-    const isCreator = !editing || editing.createdBy === currentUser.id;
+    const preserveTitle = !canEditContent;
     const estMinutes = parseHM(estimateHM);
     /* Data que a pessoa não mexeu fica EXATAMENTE como estava, com a hora
        junto. Remontar a partir do dia trocava o "23:59" de quem criou pelo
@@ -633,18 +637,16 @@ export function TaskDialog() {
     const mesmoDia = (iso: string | null | undefined, dia: string) =>
       !!iso && dataParaIso(new Date(iso)) === dia;
     /* Sem prazo escolhido, vence hoje. O campo deixa limpar a data, e
-       `new Date("T17:00:00")` é data inválida: o `toISOString` lançava e o
+       `new Date("T23:59:00")` é data inválida: o `toISOString` lançava e o
        Salvar não fazia nada, sem aviso nenhum. */
     const hoje = dataParaIso(new Date());
     const diaDoPrazo = dueDate || hoje;
     const horaEscolhida = HORARIO_VALIDO.test(horario) ? horario : "";
-    /* Com horário escolhido, vence nele. Sem, às 17h — e, para hoje e já
-       depois das 17h, no fim do dia. Às 17h a tarefa pontual criada no fim da
-       tarde nascia atrasada, e vencer no próprio dia em que nasce é justamente
-       o que ela promete. */
-    const prazoNovo = new Date(`${diaDoPrazo}T${horaEscolhida || "17:00"}:00`);
-    if (!horaEscolhida && diaDoPrazo === hoje && prazoNovo.getTime() < Date.now())
-      prazoNovo.setHours(23, 59, 0, 0);
+    /* Com horário escolhido, vence nele. Sem, no fim do dia (23:59) — a regra
+       da grade, do raio, do pack e do Telegram. Aqui era às 17h, e a mesma
+       tarefa vencia em horas diferentes conforme a tela em que o prazo foi
+       escolhido: trocar a data por esta janela adiantava o vencimento. */
+    const prazoNovo = new Date(`${diaDoPrazo}T${horaEscolhida || "23:59"}:00`);
     const prazoIso = semPrazo
       ? null
       : editing &&
@@ -680,7 +682,7 @@ export function TaskDialog() {
         repete && (frequency === "mensal" || frequency === "anual") ? recurringMonthDay : null,
       priority,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
-      requireProof: isCreator ? requireProof : !!editing?.requireProof,
+      requireProof: canEditContent ? requireProof : !!editing?.requireProof,
       estimatedMinutes: estMinutes && estMinutes > 0 ? estMinutes : undefined,
       actualCompletionDate: status === "concluida" && dataReal ? dataReal : null,
     };
@@ -700,17 +702,17 @@ export function TaskDialog() {
     if (!editing) return;
     const ok = await confirmar({
       titulo: "Excluir esta tarefa?",
-      descricao: `"${editing.title}" sai da lista de todo mundo, junto com comentários e anexos. Não dá para desfazer.`,
+      descricao: `"${editing.title}" sai do quadro de todo mundo. Se mudar de ideia, use o Desfazer do aviso que aparece em seguida.`,
       confirmar: "Excluir",
       perigo: true,
     });
     if (!ok) return;
+    // O aviso "excluída", com Desfazer, sai de `deleteTask`.
     deleteTask(editing.id);
     // A tarefa deixou de existir; perguntar por alterações não salvas dela
     // seria perguntar por algo que não tem mais onde ser salvo.
     originalRef.current = "";
     closeTaskDialog();
-    toast.success("Tarefa excluída");
   };
 
   return (
@@ -793,7 +795,9 @@ export function TaskDialog() {
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
                 Título
                 {!canEditContent && (
-                  <span className="ml-2 text-[10px] text-muted-foreground/70">(somente o criador pode editar)</span>
+                  <span className="ml-2 text-[10px] text-muted-foreground/70">
+                    (só quem criou, o supervisor ou a gerência podem editar)
+                  </span>
                 )}
               </label>
               <input
@@ -864,11 +868,6 @@ export function TaskDialog() {
                     </option>
                   ))}
                 </select>
-                {currentUser.role === "adm" && (
-                  <p className="mt-1 text-[10px] text-muted-foreground">
-                    Como ADM, você só cria tarefas para si mesmo. Use @ para mencionar colegas.
-                  </p>
-                )}
               </Field>
               <Field label="Setor">
                 <select value={sector} onChange={(e) => setSector(e.target.value)} className="input">
@@ -1239,7 +1238,7 @@ export function TaskDialog() {
               )}
             </div>
 
-            {(!editing || editing.createdBy === currentUser.id) && (
+            {canEditContent && (
             <div className="rounded-md border border-border bg-secondary/40 p-3">
               <label className="flex cursor-pointer items-start gap-2 text-sm">
                 <input
@@ -1676,7 +1675,8 @@ export function TaskDialog() {
                 </button>
               ) : (
                 <span className="text-[11px] text-muted-foreground">
-                  Apenas quem criou pode excluir. Conclua a tarefa para encerrá-la.
+                  Só quem criou, o supervisor ou a gerência podem excluir. Conclua a tarefa para
+                  encerrá-la.
                 </span>
               )
             )}

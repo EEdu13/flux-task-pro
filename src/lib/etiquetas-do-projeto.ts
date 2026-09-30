@@ -24,6 +24,14 @@ export const normalizarEtiqueta = (nome: string): string =>
 /** "#frete", com uma cerquilha só: a etiqueta pode ter sido gravada com ou sem. */
 export const comCerquilha = (etiqueta: string): string => `#${etiqueta.replace(/^#+/, "")}`;
 
+/**
+ * A identidade de uma etiqueta para comparar: sem cerquilha, sem espaço nas
+ * pontas e sem caixa. "#Frete" e "frete" são a mesma coisa para quem filtra —
+ * e, sem a cerquilha, são a mesma linha em `gestor.etiquetas`.
+ */
+export const chaveDaEtiqueta = (etiqueta: string): string =>
+  etiqueta.replace(/^#+/, "").trim().toLowerCase();
+
 export function etiquetasDoProjeto(nomeDoProjeto: string): string[] {
   const nome = normalizarEtiqueta(nomeDoProjeto);
   return nome ? [ETIQUETA_DE_PROJETO, nome] : [ETIQUETA_DE_PROJETO];

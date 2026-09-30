@@ -9,9 +9,8 @@ import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/ia
  * errar custa pouco.
  *
  * A meta é COLETIVA de propósito: todo mundo lê todas. É assim que o gerente
- * define o alvo do setor e a pessoa vê o dela. Quem pode DEFINIR é outra
- * conversa — hoje a tela já limita ao gerente, e a checagem de papel no
- * servidor entra junto com a hierarquia, no bloco da tarefa.
+ * define o alvo do setor e a pessoa vê o dela. Quem pode DEFINIR é a gerência,
+ * e o supervisor para a equipe e o setor dele — ver `podeDefinirMeta`.
  */
 
 /* Os mesmos valores que o app usa, e os mesmos que o CHECK da tabela aceita.
@@ -111,9 +110,14 @@ export const salvarMeta = createServerFn({ method: "POST" })
   .handler(
     comSessao(
       async (
-        _eu,
+        eu,
         d: { scope: string; scopeId: string; period: string; metric: string; target: number },
       ) => {
+        // Gerência, ou o supervisor para a equipe e o setor dele — ver `podeDefinirMeta`.
+        const { podeDefinirMeta } = await import("@/lib/permissoes.server");
+        if (!(await podeDefinirMeta(eu, d.scope, d.scopeId))) {
+          throw new Error("Você não pode definir esta meta.");
+        }
         const { getPool, sql } = await import("@/integrations/db.server");
         const pool = await getPool();
         await pool
@@ -148,9 +152,20 @@ export const removerMeta = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(async (_eu, d: { id: string }) => {
+    comSessao(async (eu, d: { id: string }) => {
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
+      // Tira quem poderia defini-la — ver `podeDefinirMeta`.
+      const r = await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, d.id)
+        .query(`SELECT escopo, escopo_id FROM gestor.metas WHERE id=@id`);
+      const meta = r.recordset[0] as { escopo: string; escopo_id: string } | undefined;
+      if (!meta) return { ok: true };
+      const { podeDefinirMeta } = await import("@/lib/permissoes.server");
+      if (!(await podeDefinirMeta(eu, meta.escopo, meta.escopo_id))) {
+        throw new Error("Você não pode remover esta meta.");
+      }
       await pool
         .request()
         .input("id", sql.UniqueIdentifier, d.id)

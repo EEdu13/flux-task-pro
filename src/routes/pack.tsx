@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
+import { podeEditarModeloDePack } from "@/lib/permissoes";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import type { PackTemplateScope } from "@/lib/fluxo-types";
@@ -493,6 +494,7 @@ function ModelosSection({
   transferPack,
   tasks,
 }: ModelosProps) {
+  const { currentUser } = useFluxo();
   const jobTitles = useMemo(
     () => Array.from(new Set(users.map((u) => u.jobTitle).filter(Boolean))),
     [users],
@@ -692,23 +694,27 @@ function ModelosSection({
                     {tpl.items.length} {tpl.items.length === 1 ? "item" : "itens"}
                   </div>
                 </div>
-                <button
-                  onClick={async () => {
-                    const ok = await confirmar({
-                      titulo: "Excluir este modelo?",
-                      descricao: `"${tpl.name}" deixa de aparecer ao montar o pack. Os packs já criados a partir dele continuam intactos.`,
-                      confirmar: "Excluir",
-                      perigo: true,
-                    });
-                    if (!ok) return;
-                    deletePackTemplate(tpl.id);
-                    toast.success("Modelo excluído");
-                  }}
-                  className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  title="Excluir modelo"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {/* Quem criou, o supervisor dessa pessoa ou a gerência — a
+                    regra do servidor (ver `permissoes.ts`). */}
+                {podeEditarModeloDePack(tpl, currentUser, users) && (
+                  <button
+                    onClick={async () => {
+                      const ok = await confirmar({
+                        titulo: "Excluir este modelo?",
+                        descricao: `"${tpl.name}" deixa de aparecer ao montar o pack. Os packs já criados a partir dele continuam intactos.`,
+                        confirmar: "Excluir",
+                        perigo: true,
+                      });
+                      if (!ok) return;
+                      deletePackTemplate(tpl.id);
+                      toast.success("Modelo excluído");
+                    }}
+                    className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title="Excluir modelo"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
               <ul className="mt-2 space-y-0.5">
                 {tpl.items.slice(0, 4).map((it) => (
