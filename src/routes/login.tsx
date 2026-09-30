@@ -523,13 +523,13 @@ function Cabecalho({ subtitulo, login = "" }: { subtitulo: string; login?: strin
               "linear-gradient(135deg, var(--auth-deep) 0%, var(--auth-glow) 100%)",
           }}
         >
-          F
+          C
         </div>
       )}
 
       <div className="min-w-0">
         <div className="truncate text-lg font-semibold">
-          {nome ? `Olá, ${nome}` : "Entrar no Fluxo"}
+          {nome ? `Olá, ${nome}` : "Entrar no SGL - CONECTA"}
         </div>
         <div className="truncate text-xs text-white/60">{subtitulo}</div>
       </div>

@@ -308,7 +308,7 @@ function SettingsPage() {
                   <Palette className="h-4 w-4" /> Paleta de cores
                 </h3>
                 <p className="mb-4 text-[11px] text-muted-foreground">
-                  Escolha a identidade visual do seu Fluxo. Vale para claro e escuro, e é salva neste dispositivo.
+                  Escolha a identidade visual do seu SGL - CONECTA. Vale para claro e escuro, e é salva neste dispositivo.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {paletteOptions.map((p) => {
@@ -357,7 +357,7 @@ function SettingsPage() {
               </p>
               <ul className="divide-y divide-border">
                 {[
-                  { key: "push" as const, label: "Notificações no painel", desc: "Alertas em tempo real dentro do Fluxo." },
+                  { key: "push" as const, label: "Notificações no painel", desc: "Alertas em tempo real dentro do SGL - CONECTA." },
                   { key: "email" as const, label: "Email", desc: currentUser.email || "Preencha o email no perfil." },
                   { key: "whatsapp" as const, label: "WhatsApp", desc: formatarTelefone(currentUser.phone) || "Preencha o telefone no perfil." },
                   { key: "weeklyDigest" as const, label: "Resumo semanal", desc: "Toda segunda pela manhã." },
@@ -566,7 +566,7 @@ function AcessosEDispositivos() {
         <ShieldCheck className="h-4 w-4" /> Acessos e dispositivos
       </h3>
       <p className="mb-4 text-[11px] text-muted-foreground">
-        Quando e de onde sua conta entrou no Fluxo. Se aparecer algo que não foi você, troque a
+        Quando e de onde sua conta entrou no SGL - CONECTA. Se aparecer algo que não foi você, troque a
         senha e avise a TI.
       </p>
 
@@ -714,7 +714,7 @@ function DesktopAutostart() {
       <h3 className="mb-1 text-sm font-semibold">Abrir junto com o computador</h3>
       <p className="mb-3 text-[11px] text-muted-foreground">
         {nativo
-          ? "O Fluxo abre sozinho quando você liga o computador, para não perder chamadas e mensagens."
+          ? "O SGL - CONECTA abre sozinho quando você liga o computador, para não perder chamadas e mensagens."
           : "Disponível só no aplicativo instalado — no navegador não há como iniciar junto com o sistema."}
       </p>
 

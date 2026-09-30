@@ -39,7 +39,7 @@ export const paletteOptions: {
   {
     id: "forest",
     name: "Forest Precision",
-    description: "Verde profundo com creme quente. Padrão do Fluxo.",
+    description: "Verde profundo com creme quente. Padrão do SGL - CONECTA.",
     swatch: ["#f4efe4", "#2f4a34", "#c8e26a", "#1a2820"],
   },
   {

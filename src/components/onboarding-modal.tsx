@@ -66,7 +66,7 @@ export function OnboardingModal() {
           }}
         >
           <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-            <Sparkles className="h-3 w-3" /> Bem-vindo(a) ao Fluxo
+            <Sparkles className="h-3 w-3" /> Bem-vindo(a) ao SGL - CONECTA
           </div>
           <h2 className="text-xl font-semibold">Complete seu contato</h2>
           <p className="mt-1 text-sm text-white/85">

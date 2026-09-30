@@ -962,7 +962,7 @@ function ExportarPeriodo({
           doc.setFontSize(8);
           doc.setTextColor(...muted);
           doc.text(
-            `Fluxo · Documento gerado em ${new Date().toLocaleString("pt-BR")}`,
+            `SGL - CONECTA · Documento gerado em ${new Date().toLocaleString("pt-BR")}`,
             margin,
             pageH - 26,
           );

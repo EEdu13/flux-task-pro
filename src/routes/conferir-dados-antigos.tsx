@@ -137,7 +137,7 @@ function ConferirDadosAntigos() {
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">O que ficou neste computador</h1>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Quando o dado de demonstração saiu, o Fluxo passou a usar uma chave nova de
+          Quando o dado de demonstração saiu, o SGL - CONECTA passou a usar uma chave nova de
           armazenamento. O conteúdo anterior continua guardado aqui, sem ser lido. Esta
           tela só conta o que existe — ela não importa, não apaga e não grava nada.
         </p>
