@@ -28,6 +28,18 @@ const pessoaAlvo = (v: unknown): number => {
 const iso = (d: Date | string | null): string | null =>
   d === null ? null : d instanceof Date ? d.toISOString() : String(d);
 
+/**
+ * A lista de conversas de uma pessoa fica guardada no servidor (ver
+ * `cache-compartilhado.server`) até ela ou o outro lado mandar ou ler uma
+ * mensagem — quem grava descarta a lista das duas pontas — e, de qualquer
+ * jeito, por no máximo 15 s. Cada aba a pedia a cada 3 s, uma consulta por
+ * pessoa, e quase sempre a resposta era a mesma da vez anterior.
+ */
+const chaveDasConversas = (pessoa: number) => `chat:conversas:${pessoa}`;
+
+/** A lista de quem está online, igual para todo mundo — ver `presenceList`. */
+const CHAVE_PRESENCA = "presenca:lista";
+
 /* -------------------- Mensagens -------------------- */
 
 export const chatSend = createServerFn({ method: "POST" })
@@ -74,6 +86,10 @@ export const chatSend = createServerFn({ method: "POST" })
          VALUES (@de, @para, @corpo)`,
       );
     const m = res.recordset[0] as { id: string; created_at: Date };
+    // A conversa mudou nas duas pontas: as listas guardadas das duas já não valem.
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(chaveDasConversas(eu));
+    esquecer(chaveDasConversas(data.toUserId));
     return { message: { ...m, created_at: iso(m.created_at) as string } };
   });
 
@@ -180,6 +196,11 @@ export const chatThreads = createServerFn({ method: "POST" }).handler(async () =
   const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
   const eu = await pessoaDaSessao();
 
+  const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+  return compartilhado(chaveDasConversas(eu), 15_000, () => conversasDe(eu));
+});
+
+async function conversasDe(eu: number) {
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
   const res = await pool
@@ -227,7 +248,7 @@ export const chatThreads = createServerFn({ method: "POST" }).handler(async () =
       created_at: iso(t.created_at) as string,
     })),
   };
-});
+}
 
 export const chatMarkRead = createServerFn({ method: "POST" })
   .inputValidator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
@@ -245,6 +266,9 @@ export const chatMarkRead = createServerFn({ method: "POST" })
         `UPDATE gestor.mensagens SET lida_em=SYSDATETIMEOFFSET()
           WHERE para_pessoa_id=@me AND de_pessoa_id=@peer AND lida_em IS NULL`,
       );
+    // As não lidas mudaram: a lista guardada de quem leu já não vale.
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(chaveDasConversas(eu));
     return { ok: true };
   });
 
@@ -306,7 +330,15 @@ export const chatDigitando = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/* Igual para todo mundo, então uma consulta serve a todos por 2 s (ver
+   `cache-compartilhado.server`). Cada aba pede a cada 10 s, e a batida de quem
+   está online é de 20 s em 20 s: 2 s a mais de atraso não mudam quem aparece. */
 export const presenceList = createServerFn({ method: "POST" }).handler(async () => {
+  const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+  return compartilhado(CHAVE_PRESENCA, 2_000, listaDePresenca);
+});
+
+async function listaDePresenca() {
   const { getPool } = await import("@/integrations/db.server");
   const pool = await getPool();
   const res = await pool
@@ -321,7 +353,7 @@ export const presenceList = createServerFn({ method: "POST" }).handler(async () 
       }),
     ),
   };
-});
+}
 
 /* -------------------- Status escolhido (disponível/ocupado/ausente) -------------------- */
 
@@ -354,5 +386,8 @@ export const definirEstado = createServerFn({ method: "POST" })
          ELSE
            INSERT INTO gestor.presenca (pessoa_id, estado) VALUES (@pessoa, @estado);`,
       );
+    // O status novo aparece para os outros na próxima sondagem, sem esperar a lista guardada vencer.
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(CHAVE_PRESENCA);
     return { estado: data.estado };
   });

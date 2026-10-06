@@ -215,116 +215,140 @@ export const listSectorRooms = createServerFn({ method: "POST" })
     return { sectors };
   })
   .handler(async ({ data }) => {
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl = process.env.LIVEKIT_URL;
-    if (!apiKey || !apiSecret || !wsUrl) {
-      throw new Error("LiveKit não configurado no servidor");
-    }
-    const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
-    const { RoomServiceClient } = await import("livekit-server-sdk");
-    const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
-    let liveRooms: string[] = [];
-    try {
-      const rooms = await svc.listRooms();
-      liveRooms = rooms.map((r) => r.name);
-    } catch {
-      liveRooms = [];
-    }
-
-    const { getPool, sql } = await import("@/integrations/db.server");
-    const pool = await getPool();
-
-    const bySector: Record<
-      string,
-      {
-        name: string;
-        isPrivate: boolean;
-        participants: { identity: string; name: string }[];
-        activeSpeakers: string[];
-      }[]
-    > = {};
-
-    await Promise.all(
-      data.sectors.map(async (sector) => {
-        const matches = new Set<string>([sector]);
-        const re = new RegExp(`^${sector}(?:-([2-9]|[1-9][0-9]))?$`);
-        for (const r of liveRooms) if (re.test(r)) matches.add(r);
-        const names = Array.from(matches).sort((a, b) =>
-          a.localeCompare(b, "pt-BR", { numeric: true }),
-        );
-
-        // Busca room_state das salas do setor (IN dinâmico e parametrizado).
-        const req = pool.request();
-        const placeholders = names.map((n, i) => {
-          req.input(`n${i}`, sql.NVarChar, n);
-          return `@n${i}`;
-        });
-        const states =
-          placeholders.length > 0
-            ? (
-                await req.query(
-                  `SELECT sala AS room_name, privada AS is_private, locutores AS active_speakers,
-                          locutores_em AS speakers_updated_at
-                     FROM gestor.salas WHERE sala IN (${placeholders.join(",")})`,
-                )
-              ).recordset
-            : [];
-
-        const privacyMap = new Map<string, boolean>(
-          states.map((s: { room_name: string; is_private: boolean }) => [s.room_name, !!s.is_private]),
-        );
-        const now = Date.now();
-        const speakersMap = new Map<string, string[]>();
-        for (const s of states as {
-          room_name: string;
-          active_speakers: string | null;
-          speakers_updated_at: Date | null;
-        }[]) {
-          const ts = s.speakers_updated_at ? new Date(s.speakers_updated_at).getTime() : 0;
-          if (ts && now - ts < 5000 && s.active_speakers) {
-            try {
-              const arr = JSON.parse(s.active_speakers);
-              if (Array.isArray(arr)) {
-                speakersMap.set(
-                  s.room_name,
-                  arr.filter((x): x is string => typeof x === "string"),
-                );
-              }
-            } catch {
-              /* ignore json inválido */
-            }
-          }
-        }
-
-        const withParts = await Promise.all(
-          names.map(async (name) => {
-            try {
-              const parts = await svc.listParticipants(name);
-              return {
-                name,
-                isPrivate: privacyMap.get(name) ?? false,
-                participants: parts.map((p) => ({
-                  identity: p.identity,
-                  name: p.name || p.identity,
-                })),
-                activeSpeakers: speakersMap.get(name) ?? [],
-              };
-            } catch {
-              return {
-                name,
-                isPrivate: privacyMap.get(name) ?? false,
-                participants: [],
-                activeSpeakers: speakersMap.get(name) ?? [],
-              };
-            }
-          }),
-        );
-        bySector[sector] = withParts;
-      }),
+    /* A mesma resposta para todo mundo, porque todas as abas mandam a mesma
+       lista de setores. Uma busca serve a todos por 2 s (ver
+       `cache-compartilhado.server`). Antes, por pessoa e a cada 5 s, era uma
+       consulta ao banco POR SETOR e uma chamada à API do LiveKit por sala. */
+    const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+    return compartilhado(`salas:${data.sectors.join(",")}`, 2_000, () =>
+      salasDosSetores(data.sectors),
     );
-    return { bySector };
   });
+
+/** As salas de cada setor, com quem está nelas e quem fala — ver `listSectorRooms`. */
+async function salasDosSetores(sectors: string[]) {
+  const apiKey = process.env.LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const wsUrl = process.env.LIVEKIT_URL;
+  if (!apiKey || !apiSecret || !wsUrl) {
+    throw new Error("LiveKit não configurado no servidor");
+  }
+  const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+  const { RoomServiceClient } = await import("livekit-server-sdk");
+  const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+  let liveRooms: string[] = [];
+  try {
+    const rooms = await svc.listRooms();
+    liveRooms = rooms.map((r) => r.name);
+  } catch {
+    liveRooms = [];
+  }
+
+  // As salas de cada setor: a principal e as numeradas que estão no ar.
+  const salasPorSetor = new Map<string, string[]>();
+  for (const sector of sectors) {
+    const matches = new Set<string>([sector]);
+    const re = new RegExp(`^${sector}(?:-([2-9]|[1-9][0-9]))?$`);
+    for (const r of liveRooms) if (re.test(r)) matches.add(r);
+    salasPorSetor.set(
+      sector,
+      Array.from(matches).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true })),
+    );
+  }
+
+  /* O estado de TODAS as salas numa consulta só (IN dinâmico e parametrizado).
+     Era uma por setor, e cada setor é uma consulta a mais por pessoa. */
+  const todas = [...new Set([...salasPorSetor.values()].flat())];
+  const { getPool, sql } = await import("@/integrations/db.server");
+  const pool = await getPool();
+  const req = pool.request();
+  const placeholders = todas.map((n, i) => {
+    req.input(`n${i}`, sql.NVarChar, n);
+    return `@n${i}`;
+  });
+  const states = (
+    placeholders.length > 0
+      ? (
+          await req.query(
+            `SELECT sala AS room_name, privada AS is_private, locutores AS active_speakers,
+                    locutores_em AS speakers_updated_at
+               FROM gestor.salas WHERE sala IN (${placeholders.join(",")})`,
+          )
+        ).recordset
+      : []
+  ) as {
+    room_name: string;
+    is_private: boolean;
+    active_speakers: string | null;
+    speakers_updated_at: Date | null;
+  }[];
+
+  const privacyMap = new Map<string, boolean>(states.map((s) => [s.room_name, !!s.is_private]));
+  const now = Date.now();
+  const speakersMap = new Map<string, string[]>();
+  for (const s of states) {
+    const ts = s.speakers_updated_at ? new Date(s.speakers_updated_at).getTime() : 0;
+    if (ts && now - ts < 5000 && s.active_speakers) {
+      try {
+        const arr = JSON.parse(s.active_speakers);
+        if (Array.isArray(arr)) {
+          speakersMap.set(
+            s.room_name,
+            arr.filter((x): x is string => typeof x === "string"),
+          );
+        }
+      } catch {
+        /* ignore json inválido */
+      }
+    }
+  }
+
+  const bySector: Record<
+    string,
+    {
+      name: string;
+      isPrivate: boolean;
+      participants: { identity: string; name: string }[];
+      activeSpeakers: string[];
+    }[]
+  > = {};
+
+  await Promise.all(
+    sectors.map(async (sector) => {
+      const names = salasPorSetor.get(sector) ?? [];
+      bySector[sector] = await Promise.all(
+        names.map(async (name) => {
+          try {
+            const parts = await svc.listParticipants(name);
+            return {
+              name,
+              isPrivate: privacyMap.get(name) ?? false,
+              participants: parts.map((p) => ({
+                identity: p.identity,
+                name: p.name || p.identity,
+              })),
+              activeSpeakers: speakersMap.get(name) ?? [],
+            };
+          } catch {
+            return {
+              name,
+              isPrivate: privacyMap.get(name) ?? false,
+              participants: [],
+              activeSpeakers: speakersMap.get(name) ?? [],
+            };
+          }
+        }),
+      );
+    }),
+  );
+  return { bySector };
+}
+
+/* As respostas compartilhadas das sondagens de chamada — ver
+   `cache-compartilhado.server`. Quem grava uma chamada (ligar, atender,
+   recusar) descarta a resposta guardada, e a sondagem seguinte já a lê nova. */
+const CHAVE_TOCANDO = "chamadas:tocando";
+const CHAVE_RESPONDIDAS = "chamadas:respondidas";
 
 export const createRoomCall = createServerFn({ method: "POST" })
   .inputValidator(
@@ -367,6 +391,8 @@ export const createRoomCall = createServerFn({ method: "POST" })
       );
     const call = res.recordset[0];
     if (!call) throw new Error("Não foi possível chamar essa pessoa agora");
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(CHAVE_TOCANDO);
     // Duas traduções na saída: a situação volta para o termo do app, e os ids
     // voltam para texto — `User.id` é string em toda a interface, e comparar
     // número com texto falharia em silêncio num `===`.
@@ -379,15 +405,18 @@ export const listIncomingRoomCalls = createServerFn({ method: "POST" }).handler(
   const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
   const eu = await pessoaDaSessao();
 
-  const { getPool, sql, expireStaleCalls } = await import("@/integrations/db.server");
-  const pool = await getPool();
-  await expireStaleCalls(pool);
-
-  const res = await pool
-    .request()
-    .input("uid", sql.Int, eu)
-    .query(
-      `SELECT TOP 3 id,
+  /* As chamadas tocando de TODO mundo, numa consulta só, guardada por 1 s (ver
+     `cache-compartilhado.server`); cada pessoa fica com as suas. Era uma
+     consulta por pessoa a cada 1,5 s, mais o UPDATE de expirar — que aqui não
+     faz falta, porque a janela de 45 s no próprio SQL já deixa de fora a que
+     venceu. Quem precisa da "perdida" gravada é quem ligou, em
+     `listOutgoingRoomCallUpdates`. */
+  const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+  const tocando = await compartilhado(CHAVE_TOCANDO, 1_000, async () => {
+    const { getPool } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const res = await pool.request().query(
+      `SELECT id,
               de_pessoa_id   AS caller_user_id,
               para_pessoa_id AS target_user_id,
               sala           AS room_name,
@@ -395,11 +424,18 @@ export const listIncomingRoomCalls = createServerFn({ method: "POST" }).handler(
               situacao       AS status,
               em             AS created_at
          FROM gestor.chamadas
-        WHERE para_pessoa_id=@uid AND situacao='tocando'
+        WHERE situacao='tocando'
           AND em >= DATEADD(second, -45, SYSDATETIMEOFFSET())
         ORDER BY em DESC`,
     );
-  return { calls: (res.recordset ?? []).map(recebidaParaApp) };
+    return (res.recordset ?? []) as LinhaRecebida[];
+  });
+  return {
+    calls: tocando
+      .filter((c) => c.target_user_id === eu)
+      .slice(0, 3)
+      .map(recebidaParaApp),
+  };
 });
 
 export const updateRoomCallStatus = createServerFn({ method: "POST" })
@@ -447,6 +483,9 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
           WHERE c.para_pessoa_id=@uid AND c.situacao='tocando'
             AND c.de_pessoa_id=alvo.de_pessoa_id AND c.sala=alvo.sala`,
       );
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(CHAVE_TOCANDO);
+    esquecer(CHAVE_RESPONDIDAS);
     return { ok: true };
   });
 
@@ -463,16 +502,18 @@ export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
 
-    const { getPool, sql, expireStaleCalls } = await import("@/integrations/db.server");
-    const pool = await getPool();
-    await expireStaleCalls(pool);
-
-    const res = await pool
-      .request()
-      .input("uid", sql.Int, eu)
-      .input("since", sql.DateTimeOffset, new Date(data.sinceIso))
-      .query(
-        `SELECT TOP 10 id,
+    /* As chamadas respondidas nos últimos 3 minutos, de TODO mundo, numa
+       consulta só guardada por 1 s (ver `cache-compartilhado.server`); cada
+       pessoa fica com as que ela fez. Quem sonda a cada 1,5 s não precisa de
+       mais que 3 minutos para trás: o que for mais velho ele já viu. */
+    const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+    const respondidas = await compartilhado(CHAVE_RESPONDIDAS, 1_000, async () => {
+      const { getPool, expireStaleCalls } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      await expireStaleCalls(pool);
+      const res = await pool.request().query(
+        `SELECT id,
+                de_pessoa_id,
                 para_pessoa_id AS target_user_id,
                 sala           AS room_name,
                 sala_rotulo    AS room_label,
@@ -480,11 +521,19 @@ export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
                 respondida_em  AS handled_at,
                 em             AS created_at
            FROM gestor.chamadas
-          WHERE de_pessoa_id=@uid AND situacao IN ('aceita','recusada','perdida')
-            AND respondida_em >= @since
+          WHERE situacao IN ('aceita','recusada','perdida')
+            AND respondida_em >= DATEADD(minute, -3, SYSDATETIMEOFFSET())
           ORDER BY respondida_em DESC`,
       );
-    return { calls: (res.recordset ?? []).map(enviadaParaApp) };
+      return (res.recordset ?? []) as (LinhaEnviada & { de_pessoa_id: number })[];
+    });
+    const desde = new Date(data.sinceIso).getTime();
+    return {
+      calls: respondidas
+        .filter((c) => c.de_pessoa_id === eu && !!c.handled_at && c.handled_at.getTime() >= desde)
+        .slice(0, 10)
+        .map(({ de_pessoa_id: _quemLigou, ...c }) => enviadaParaApp(c)),
+    };
   });
 
 export const purgeAllRooms = createServerFn({ method: "POST" }).handler(async () => {

@@ -71,8 +71,22 @@ export { sql };
       para os termos que o app usa acontece em `livekit-token.functions.ts`,
       num lugar só. */
 
-/** Expira chamadas que ficaram tocando mais de 45s, marcando como perdidas. */
+/** Quando a expiração rodou pela última vez neste processo — ver `expireStaleCalls`. */
+let chamadasExpiradasEm = 0;
+
+/**
+ * Expira chamadas que ficaram tocando mais de 45s, marcando como perdidas.
+ *
+ * No máximo uma vez a cada 3 s. Rodava em toda sondagem de chamada, duas vezes
+ * a cada 1,5 s por pessoa conectada, e era a consulta mais frequente do banco
+ * inteiro: 7,7 por segundo com seis pessoas, uma escrita cada. A janela de 45 s
+ * não muda; só quem passa por aqui de novo antes de 3 s encontra o trabalho
+ * feito, e a "perdida" chega a quem ligou no máximo 3 s depois.
+ */
 export async function expireStaleCalls(pool: sql.ConnectionPool): Promise<void> {
+  const agora = Date.now();
+  if (agora - chamadasExpiradasEm < 3_000) return;
+  chamadasExpiradasEm = agora;
   await pool
     .request()
     .query(

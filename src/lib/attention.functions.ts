@@ -17,6 +17,9 @@ const pessoaAlvo = (v: unknown): number => {
 /** Tipos de aviso que trafegam pela mesma tabela. */
 export type TipoAviso = "cutucada" | "trator";
 
+/** A resposta compartilhada da sondagem de avisos — ver `listNudgesFn`. */
+const CHAVE_RECENTES = "avisos-de-tela:recentes";
+
 /**
  * Envia um aviso gravando no Azure SQL — cutucada ou trator.
  * O destinatário recebe por polling (mesma mecânica das chamadas, que é
@@ -77,6 +80,9 @@ export const sendNudgeFn = createServerFn({ method: "POST" })
            (de_pessoa_id, de_nome, de_avatar, para_pessoa_id, tipo, mensagem)
          VALUES (@de, @name, @avatar, @para, @tipo, @msg)`,
       );
+    // A sondagem seguinte de quem recebe já lê o aviso novo, sem esperar a resposta guardada vencer.
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(CHAVE_RECENTES);
     return { ok: true };
   });
 
@@ -103,42 +109,63 @@ export const listNudgesFn = createServerFn({ method: "POST" })
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
 
-    const { getPool, sql } = await import("@/integrations/db.server");
-    const pool = await getPool();
-    const res = await pool
-      .request()
-      .input("uid", sql.Int, eu)
-      .input("janela", sql.Int, data.janelaSegundos)
-      .query(
+    /* Os avisos dos últimos 5 minutos (a maior janela aceita) de TODO mundo,
+       numa consulta só guardada por 1 s (ver `cache-compartilhado.server`);
+       cada pessoa fica com os dela. Era uma consulta por pessoa por segundo, a
+       sondagem mais frequente do app.
+
+       A idade de cada aviso sai do SQL, medida pelo relógio do banco contra ele
+       mesmo, como o comentário acima pede. Aqui só se soma o tempo que a
+       resposta passou guardada, medido pelo relógio do servidor contra ele
+       mesmo: nenhum dos dois relógios é comparado com o outro. */
+    const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+    const busca = await compartilhado(CHAVE_RECENTES, 1_000, async () => {
+      const { getPool } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const res = await pool.request().query(
         // Apelidos devolvem os nomes que o overlay já espera.
-        `SELECT TOP 5 id,
+        `SELECT id,
+                para_pessoa_id,
                 de_pessoa_id AS from_user_id,
                 de_nome      AS from_name,
                 de_avatar    AS from_avatar,
                 tipo         AS kind,
                 mensagem     AS message,
-                em           AS created_at
+                em           AS created_at,
+                DATEDIFF_BIG(millisecond, em, SYSDATETIMEOFFSET()) AS idade_ms
            FROM gestor.avisos_de_tela
-          WHERE para_pessoa_id=@uid
-            AND em > DATEADD(second, -@janela, SYSDATETIMEOFFSET())
+          WHERE em > DATEADD(second, -300, SYSDATETIMEOFFSET())
           ORDER BY em DESC`,
       );
-    return {
-      nudges: (
-        res.recordset as {
+      return {
+        lidaEm: Date.now(),
+        avisos: res.recordset as {
           id: string;
+          para_pessoa_id: number;
           from_user_id: number;
           from_name: string;
           from_avatar: string | null;
           kind: string;
           message: string | null;
           created_at: Date;
-        }[]
-      ).map((n) => ({
-        ...n,
-        // `User.id` é string no app; comparar 467 com "467" daria falso.
-        from_user_id: String(n.from_user_id),
-        created_at: n.created_at.toISOString(),
-      })),
+          idade_ms: number | string;
+        }[],
+      };
+    });
+    const guardadaHa = Date.now() - busca.lidaEm;
+    return {
+      nudges: busca.avisos
+        .filter(
+          (n) =>
+            n.para_pessoa_id === eu &&
+            Number(n.idade_ms) + guardadaHa < data.janelaSegundos * 1000,
+        )
+        .slice(0, 5)
+        .map(({ para_pessoa_id: _destinatario, idade_ms: _idade, ...n }) => ({
+          ...n,
+          // `User.id` é string no app; comparar 467 com "467" daria falso.
+          from_user_id: String(n.from_user_id),
+          created_at: n.created_at.toISOString(),
+        })),
     };
   });

@@ -115,6 +115,11 @@ function paraApp(n: LinhaNotificacao): NotificacaoDoBanco {
  *
  * Falhar aqui não pode esvaziar a sineta: o erro fica no log e a lista segue.
  * O lembrete continua pendente e sai na leitura seguinte.
+ *
+ * O `IF EXISTS` na frente é o que deixa isto barato: quase sempre não há
+ * lembrete vencido, e sem ele cada sincronização de cada pessoa abria uma
+ * transação de escrita só para não achar nada. A releitura dentro da transação
+ * continua sendo a trava contra tocar duas vezes.
  */
 async function entregarLembretes(eu: number): Promise<void> {
   try {
@@ -124,20 +129,24 @@ async function entregarLembretes(eu: number): Promise<void> {
       .request()
       .input("eu", sql.Int, eu)
       .query(
-        `SET XACT_ABORT ON;
-         BEGIN TRAN;
-           DECLARE @vencidos TABLE (texto NVARCHAR(300), quando DATETIMEOFFSET);
-           UPDATE gestor.lembretes
-              SET avisado_em = SYSDATETIMEOFFSET()
-           OUTPUT inserted.texto, inserted.quando INTO @vencidos
-            WHERE pessoa_id = @eu AND avisado_em IS NULL AND quando <= SYSDATETIMEOFFSET();
-           INSERT INTO gestor.notificacoes (destinatario_id, tipo, titulo, descricao)
-           SELECT @eu, 'lembrete',
-                  N'Lembrete das ' +
-                    CONVERT(VARCHAR(5), quando AT TIME ZONE N'E. South America Standard Time', 108),
-                  texto
-             FROM @vencidos;
-         COMMIT;`,
+        `IF EXISTS (SELECT 1 FROM gestor.lembretes
+                     WHERE pessoa_id = @eu AND avisado_em IS NULL AND quando <= SYSDATETIMEOFFSET())
+         BEGIN
+           SET XACT_ABORT ON;
+           BEGIN TRAN;
+             DECLARE @vencidos TABLE (texto NVARCHAR(300), quando DATETIMEOFFSET);
+             UPDATE gestor.lembretes
+                SET avisado_em = SYSDATETIMEOFFSET()
+             OUTPUT inserted.texto, inserted.quando INTO @vencidos
+              WHERE pessoa_id = @eu AND avisado_em IS NULL AND quando <= SYSDATETIMEOFFSET();
+             INSERT INTO gestor.notificacoes (destinatario_id, tipo, titulo, descricao)
+             SELECT @eu, 'lembrete',
+                    N'Lembrete das ' +
+                      CONVERT(VARCHAR(5), quando AT TIME ZONE N'E. South America Standard Time', 108),
+                    texto
+               FROM @vencidos;
+           COMMIT;
+         END`,
       );
   } catch (e) {
     console.warn("[lembretes] não entregou:", (e as Error)?.message);
