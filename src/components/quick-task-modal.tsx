@@ -5,12 +5,13 @@ import { InlineTaskCreator, escDeUmPainel } from "@/components/inline-task-creat
 import { TravaScroll } from "@/components/trava-scroll";
 
 export function QuickTaskModal() {
-  const { quickCreate, closeQuickCreate } = useFluxo();
+  const { quickCreate, closeQuickCreate, taskDialog } = useFluxo();
   useEffect(() => {
     if (!quickCreate.open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (escDeUmPainel(e)) return; // o Esc é do calendário ou da lista, não do modal
+      if (taskDialog.open) return; // é da janela da tarefa, aberta por cima
       e.preventDefault();
       e.stopPropagation();
       // Let the creator decide (discard confirm if there's a draft).
@@ -18,7 +19,7 @@ export function QuickTaskModal() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [quickCreate.open]);
+  }, [quickCreate.open, taskDialog.open]);
   if (!quickCreate.open) return null;
   return (
     <div

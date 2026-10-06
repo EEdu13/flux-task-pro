@@ -1,5 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { comSessao, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import {
+  comSessao,
+  comSessaoSemEntrada,
+  semIdentidade,
+} from "@/integrations/iam/funcao-com-sessao";
 import { etiquetasDoProjeto, juntarEtiquetas } from "@/lib/etiquetas-do-projeto";
 import type { LinhaDeHistorico } from "@/lib/historico.server";
 
@@ -81,6 +85,42 @@ export type SatelitesDaTarefa = {
   /** Anexos da própria tarefa. Os de comentário vão dentro de cada comentário. */
   attachments: AnexoDaTarefa[];
 };
+
+/**
+ * As tags desta pessoa, para as sugestões do campo de tags: as que ela criou
+ * (`gestor.etiquetas.criada_por`) e as que ela usa nas tarefas que criou, com
+ * em quantas dessas tarefas cada uma está.
+ *
+ * Só as dela, e não as das tarefas que ela enxerga: o campo sugeria as do
+ * setor inteiro, e a lista de quem criava uma tarefa vinha cheia de tags dos
+ * colegas (pedido do usuário, 02/10/2026). Quem criou a tag só o banco sabe —
+ * a tela recebe as tags como nomes soltos em cada tarefa.
+ */
+export const minhasEtiquetas = createServerFn({ method: "POST" }).handler(
+  comSessaoSemEntrada(async (eu): Promise<{ etiquetas: { nome: string; n: number }[] }> => {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("eu", sql.Int, eu)
+      .query(
+        `SELECT e.nome, COUNT(t.id) AS n
+           FROM gestor.etiquetas e
+           LEFT JOIN gestor.tarefa_etiquetas te ON te.etiqueta_id = e.id
+           LEFT JOIN gestor.tarefas t
+             ON t.id = te.tarefa_id AND t.criado_por = @eu AND t.arquivada_em IS NULL
+          GROUP BY e.id, e.nome, e.criada_por
+         HAVING e.criada_por = @eu OR COUNT(t.id) > 0
+          ORDER BY COUNT(t.id) DESC, e.nome`,
+      );
+    return {
+      etiquetas: (r.recordset as { nome: string; n: number }[]).map((l) => ({
+        nome: l.nome,
+        n: l.n,
+      })),
+    };
+  }),
+);
 
 /** Tudo que pende de uma tarefa, numa consulta por tabela. */
 export const carregarSatelites = createServerFn({ method: "POST" })

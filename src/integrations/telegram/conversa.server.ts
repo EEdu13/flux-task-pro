@@ -13,6 +13,7 @@
 // `editarMensagem` saiu daqui: estava importado e nunca usado.
 import { enviarMensagem, escaparMd, removerTeclado, responderCallback } from "./client.server";
 import { desvincular, pessoaPorTelegram, vincularPorContato } from "./contas.server";
+import { sqlListaDeTarefas } from "@/lib/permissoes.server";
 /* `hojeEmBrasilia` e `fimDoDiaBr` saíram: eram do prazo por botão em linha, que
    virou etapa de texto. Quem monta a data agora é o `lerPrazo`, que já entende
    "hoje" e "amanhã" — os dois atalhos que restaram, como botões de texto. */
@@ -55,21 +56,14 @@ interface TarefaResumo {
 const POR_PRAZO = "CASE WHEN prazo IS NULL THEN 1 ELSE 0 END, prazo, ordem";
 
 /**
- * O MESMO recorte de `listarTarefas`, reescrito aqui porque aquela é uma server
- * function presa à sessão da IAM — que no Telegram não existe.
- *
- * Reescrever regra de permissão em dois lugares é dívida, e está anotada como
- * tal: o dia em que o filtro do app mudar e este não, o bot mostra o que a tela
- * não mostra. O caminho de saída é extrair o filtro para um módulo que os dois
- * importam; não foi feito agora para não mexer na consulta que serve o app
- * inteiro no mesmo passo que estreia o bot.
+ * O MESMO recorte de `listarTarefas`. Aquela é uma server function presa à
+ * sessão da IAM, que no Telegram não existe; por isso este arquivo não a chama,
+ * e sim a regra que as duas importam: `sqlListaDeTarefas`, em
+ * `permissoes.server.ts`. Era uma cópia, e a cópia ficou para trás quando a
+ * lista do app passou a trazer as tarefas em que a pessoa foi mencionada.
  */
 function filtroPorPapel(papel: string, setor: string | null): string {
-  return papel === "gerente"
-    ? "1=1"
-    : setor
-      ? "(setor=@setor OR responsavel_id=@eu OR criado_por=@eu)"
-      : "(responsavel_id=@eu OR criado_por=@eu)";
+  return sqlListaDeTarefas(papel, setor);
 }
 
 async function perfilDe(pessoaId: number) {

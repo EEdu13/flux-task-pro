@@ -71,6 +71,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { FiltroPessoa } from "@/components/filtro-pessoa";
+import {
+  SEM_SELECAO_DE_PESSOAS,
+  passaNoFiltroDePessoas,
+  type SelecaoDePessoas,
+} from "@/lib/filtro-de-pessoas";
 import { toast } from "sonner";
 import {
   freqLabels,
@@ -231,7 +236,7 @@ function MinhasTarefas() {
   const [sector, setSector] = useState<string>("todos");
   const [freq, setFreq] = useState<Frequency | "todas">("todas");
   const [priority, setPriority] = useState<Priority | "todas">("todas");
-  const [assignee, setAssignee] = useState<string>("todos");
+  const [filtroPessoas, setFiltroPessoas] = useState<SelecaoDePessoas>(SEM_SELECAO_DE_PESSOAS);
   const [filtroTags, setFiltroTags] = useState<SelecaoDeTags>(SEM_SELECAO_DE_TAGS);
   const [datePreset, setDatePreset] = useState<DatePreset>("todas");
   const [dateFrom, setDateFrom] = useState<string>("");
@@ -307,7 +312,7 @@ function MinhasTarefas() {
       if (sector !== "todos" && t.sector !== sector) return false;
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
-      if (comBarra && assignee !== "todos" && t.assigneeId !== assignee) return false;
+      if (comBarra && !passaNoFiltroDePessoas(filtroPessoas, t.assigneeId)) return false;
       if (range && scope !== "pack") {
         // Filtro de período é sobre o prazo; sem prazo, fora do período.
         if (!t.dueDate) return false;
@@ -351,7 +356,7 @@ function MinhasTarefas() {
     sector,
     freq,
     priority,
-    assignee,
+    filtroPessoas,
     filtroTags,
     search,
     datePreset,
@@ -418,12 +423,16 @@ function MinhasTarefas() {
 
      Também não sai de `users`: oferecer gente para quem não existe nenhuma
      tarefa visível daria um filtro que só sabe devolver vazio, e o menu viraria
-     um caminho para descobrir quem a tela não mostraria de outro jeito. */
+     um caminho para descobrir quem a tela não mostraria de outro jeito.
+
+     Quem está marcado no filtro fica, mesmo que as tarefas dessa pessoa tenham
+     sumido no meio do caminho: marcada e fora da lista seria um filtro ligado
+     sem rosto para desmarcar. */
   const pessoasFiltraveis = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set<string>(filtroPessoas.ids);
     for (const t of tasks) if (naVisaoDoPapel(t, currentUser, equipe)) ids.add(t.assigneeId);
     return users.filter((u) => ids.has(u.id));
-  }, [tasks, users, currentUser, equipe]);
+  }, [tasks, users, currentUser, equipe, filtroPessoas.ids]);
 
   return (
     <FluxoLayout title="Minhas tarefas">
@@ -566,13 +575,13 @@ function MinhasTarefas() {
         </div>
         )}
 
-        {/* Filtro por pessoa, em faixa própria.
-            O estado `assignee` já existia e já era aplicado no recorte — o que
-            faltava era o controle, então `setAssignee` nunca era chamado.
+        {/* Filtro por pessoa, em faixa própria. Marca várias pessoas, para
+            mostrar só as tarefas delas ou esconder as delas — ver
+            `FiltroPessoa`.
 
-            Fora da barra de cima porque agora ele tem duas linhas (setores e
-            rostos) e espremê-lo entre os atalhos de data e a busca quebraria as
-            duas coisas.
+            Fora da barra de cima porque ele tem três linhas (setores, o modo e
+            os rostos) e espremê-lo entre os atalhos de data e a busca quebraria
+            as duas coisas.
 
             Só para quem enxerga mais de uma pessoa: para um colaborador, a
             lista teria um nome só, o dele, e o filtro não filtraria nada. */}
@@ -580,8 +589,8 @@ function MinhasTarefas() {
           <div className="mt-2">
             <FiltroPessoa
               pessoas={pessoasFiltraveis}
-              valor={assignee}
-              aoEscolher={setAssignee}
+              valor={filtroPessoas}
+              aoMudar={setFiltroPessoas}
             />
           </div>
         )}
@@ -712,10 +721,12 @@ function FiltroDeTags({
         </button>
       </PopoverTrigger>
       {/* Mais contraste que o padrão do popover: no tema escuro o painel se
-          confundia com a página por trás, e a letra miúda cansava. */}
+          confundia com a página por trás, e a letra miúda cansava.
+          `z-140` põe o painel acima do balão do chat e do acesso rápido
+          (120 e 130), que antes o cobriam no canto de baixo. */}
       <PopoverContent
         align="end"
-        className="w-80 overflow-hidden border-primary/30 p-0 shadow-2xl ring-1 ring-black/10"
+        className="z-140 w-80 overflow-hidden border-primary/30 p-0 shadow-2xl ring-1 ring-black/10"
       >
         <div className="flex items-start gap-2 border-b border-border bg-secondary/60 px-3 py-2.5">
           <Tag className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -738,7 +749,10 @@ function FiltroDeTags({
             />
           </div>
         )}
-        <div className="max-h-80 overflow-y-auto p-1.5">
+        {/* Umas seis linhas e a ponta da seguinte, para se ver que rola
+            (pedido do usuário, 02/10/2026): a lista inteira descia até o
+            rodapé. Cada linha tem 40px, e "Sem tags" vem com o traço embaixo. */}
+        <div className="max-h-68 overflow-y-auto p-1.5">
           {!termo && (
             <>
               <OpcaoDeTag

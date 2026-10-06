@@ -59,6 +59,25 @@ export const SQL_VE_A_TAREFA = `(${SQL_CONTEUDO_DA_TAREFA} OR t.responsavel_id =
   OR (@setor_eu IS NOT NULL AND t.setor = @setor_eu)
   OR EXISTS (SELECT 1 FROM gestor.mencoes m WHERE m.tarefa_id = t.id AND m.pessoa_id = @eu))`;
 
+/**
+ * As tarefas que chegam à LISTA de uma pessoa, na tela e no bot do Telegram:
+ * a gerência vê todas; os demais, as do próprio setor, as suas (responsável ou
+ * criadora) e aquelas em que foram mencionados. Usa @eu e, havendo setor,
+ * @setor. Serve com ou sem o apelido `t` na tabela: a menção é um `id IN`.
+ *
+ * A menção entrou em 02/10/2026. Quem era mencionado numa tarefa de outro
+ * setor recebia o aviso e não achava a tarefa: nem em "Mencionaram-me", nem ao
+ * tocar no aviso, que abria a janela vazia de "Nova tarefa". `SQL_VE_A_TAREFA`
+ * já deixava essa pessoa abrir a tarefa; só a lista não a trazia.
+ */
+export function sqlListaDeTarefas(papel: string, setor: string | null): string {
+  if (papel === "gerente") return "1=1";
+  const mencionada = "id IN (SELECT m.tarefa_id FROM gestor.mencoes m WHERE m.pessoa_id=@eu)";
+  return setor
+    ? `(setor=@setor OR responsavel_id=@eu OR criado_por=@eu OR ${mencionada})`
+    : `(responsavel_id=@eu OR criado_por=@eu OR ${mencionada})`;
+}
+
 /** Mexe no projeto `p` (nome, situação, foto…) e o apaga: dono, chefe do dono, gerência. */
 export const SQL_CONTEUDO_DO_PROJETO = `(@gerente = 1 OR p.dono_id = @eu OR ${sqlChefeDe("p.dono_id")})`;
 

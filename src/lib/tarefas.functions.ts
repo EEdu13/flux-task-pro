@@ -87,6 +87,9 @@ const guid = (v: unknown): string | null =>
  *   supervisor  → as do próprio setor, mais as suas
  *   adm         → só as suas (responsável ou criador)
  *
+ * E, para quem não é gerente, também as tarefas em que foi mencionado — ver
+ * `sqlListaDeTarefas` em `permissoes.server.ts`.
+ *
  * Quem não tem papel registrado cai em `adm`, que é a regra mais restrita.
  * Errar para o lado de mostrar menos é recuperável; errar para o outro lado
  * vaza a tarefa de todo mundo.
@@ -114,12 +117,8 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
        usuário — é o comportamento que a tela sempre prometeu.
 
        A gerência continua vendo tudo, sem hierarquia, como era. */
-    const filtro =
-      papel === "gerente"
-        ? "1=1"
-        : setor
-          ? "(setor=@setor OR responsavel_id=@eu OR criado_por=@eu)"
-          : "(responsavel_id=@eu OR criado_por=@eu)";
+    const { sqlListaDeTarefas } = await import("@/lib/permissoes.server");
+    const filtro = sqlListaDeTarefas(papel, setor);
 
     const req = pool.request().input("eu", sql.Int, eu);
     if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);

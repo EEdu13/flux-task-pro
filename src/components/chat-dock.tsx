@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Minus, Search, X } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
@@ -12,6 +12,7 @@ import {
 } from "@/components/chat-ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLancadoresRecolhidos } from "@/lib/lancadores";
+import { useFecharAoSair } from "@/hooks/use-fechar-ao-sair";
 
 /**
  * Dock de chat. Botão no canto inferior direito (ACIMA do FAB ⚡) que expande
@@ -35,6 +36,11 @@ export function ChatDock() {
   } = useChat();
   const [panelOpen, setPanelOpen] = useState(false);
   const [q, setQ] = useState("");
+  /* O balão e a lista de conversas: clique fora deles ou Esc fecha a lista —
+     ver `useFecharAoSair`. As janelas de conversa abertas não entram: elas
+     ficam até quem as abriu fechar. */
+  const lancadorRef = useRef<HTMLDivElement>(null);
+  useFecharAoSair(lancadorRef, panelOpen, () => setPanelOpen(false));
 
   const others = useMemo(
     () => users.filter((u) => u.id !== currentUser.id),
@@ -217,7 +223,7 @@ export function ChatDock() {
       )}
 
       {/* Launcher (acima do FAB) + painel de contatos */}
-      <div className="pointer-events-auto absolute bottom-24 right-5">
+      <div ref={lancadorRef} className="pointer-events-auto absolute bottom-24 right-5">
         <AnimatePresence>
         {panelOpen && (
           <motion.div

@@ -13,6 +13,7 @@ import { formatHM, parseHM } from "@/lib/time-log";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
+import { CampoDeTags } from "@/components/campo-de-tags";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import {
   DIAS_SEMANA,
@@ -191,6 +192,10 @@ export function TaskDialog() {
     corpoRef.current?.scrollTo({ top: 0 });
     indoParaRef.current = null;
     setPendingCommentAtts([]);
+    /* O texto do comentário também. Fechar a janela não desmonta este
+       componente, e o rascunho deixado numa tarefa aparecia na próxima que se
+       abrisse, pronto para ser enviado na tarefa errada. */
+    setNewComment("");
 
     const v = editing
       ? {
@@ -352,32 +357,37 @@ export function TaskDialog() {
      justificativa de que "grava direto na store a cada clique" — e essa era a
      origem do problema, porque a store não é o banco: nem gravava nem avisava.
      Agora ele é rascunho local como todo o resto, e um item marcado conta como
-     alteração pendente igual a um título mudado. */
+     alteração pendente igual a um título mudado.
+
+     Comentário escrito e ainda não enviado também conta: com o Esc fechando a
+     janela, um Esc por reflexo no meio do texto o perderia sem aviso. */
+  const comentarioPorEnviar = newComment.trim() !== "" || pendingCommentAtts.length > 0;
   const sujo =
     open &&
-    originalRef.current !== "" &&
-    chaveDoFormulario({
-      title,
-      description,
-      sector,
-      assigneeId,
-      frequency,
-      status,
-      priority,
-      dueDate,
-      semPrazo,
-      horario,
-      recurring,
-      recurringUntil,
-      recurringWeekdays,
-      recurringMonthDay,
-      requireProof,
-      estimateHM,
-      dataReal,
-      tags,
-      mentions,
-      checklist: checklistLocal,
-    }) !== originalRef.current;
+    (comentarioPorEnviar ||
+      (originalRef.current !== "" &&
+        chaveDoFormulario({
+          title,
+          description,
+          sector,
+          assigneeId,
+          frequency,
+          status,
+          priority,
+          dueDate,
+          semPrazo,
+          horario,
+          recurring,
+          recurringUntil,
+          recurringWeekdays,
+          recurringMonthDay,
+          requireProof,
+          estimateHM,
+          dataReal,
+          tags,
+          mentions,
+          checklist: checklistLocal,
+        }) !== originalRef.current));
 
   /* Fechar a aba ou a janela com edição pendente.
      `preventDefault` é o que faz o navegador mostrar o próprio aviso dele —
@@ -418,12 +428,15 @@ export function TaskDialog() {
     enableBeforeUnload: false, // já tratado acima, para não pedir duas vezes
   });
 
+  const painelRef = useRef<HTMLDivElement>(null);
+
   /** Fecha o diálogo, perguntando antes se houver edição pendente. */
   const fecharComGuarda = async () => {
     if (!sujo) {
       closeTaskDialog();
       return;
     }
+    const focoAntes = document.activeElement;
     const sair = await confirmar({
       titulo: "Deseja sair? Você tem alterações não salvas.",
       descricao: "As alterações feitas nesta tarefa serão perdidas.",
@@ -436,8 +449,56 @@ export function TaskDialog() {
       // no mesmo instante e perguntaria de novo.
       originalRef.current = "";
       closeTaskDialog();
+    } else {
+      /* A confirmação some levando o foco junto. Ele volta para onde estava
+         (o campo que a pessoa editava) ou, sem isso, para a janela. */
+      const painel = painelRef.current;
+      const volta =
+        focoAntes instanceof HTMLElement && painel?.contains(focoAntes) ? focoAntes : painel;
+      volta?.focus({ preventScroll: true });
     }
   };
+
+  /* Esc fecha a janela pelo mesmo caminho do X: com edição pendente, pergunta
+     antes. A escuta é na captura da janela porque a grade de criação e a
+     agenda também fecham com Esc, e a tarefa aberta por cima delas tem que
+     fechar primeiro. Elas cedem o Esc enquanto esta janela está aberta ou
+     quando ele nasce dentro de um `role="dialog"` (ver `escDeUmPainel`); por
+     isso o painel tem esse papel e recebe o foco ao abrir.
+
+     O Esc de quem está por cima DESTA janela fica com quem está por cima: a
+     confirmação e o calendário do prazo e as listas, que o Radix desenha fora
+     do painel, e as sugestões do campo de tags. A lista de @ da descrição é
+     daqui mesmo, e fecha antes. */
+  const aoEscRef = useRef(() => {});
+  useEffect(() => {
+    aoEscRef.current = () => {
+      if (painelRef.current?.querySelector("[data-lista-de-mencao]")) {
+        setMentionQuery(null);
+        return;
+      }
+      void fecharComGuarda();
+    };
+  });
+  useEffect(() => {
+    if (!open) return;
+    const painel = painelRef.current;
+    if (painel && !painel.contains(document.activeElement)) painel.focus({ preventScroll: true });
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      if (document.querySelector('[role="alertdialog"]')) return;
+      const alvo = e.target instanceof Element ? e.target : null;
+      // Campo com a própria lista aberta (as sugestões de tag): o Esc é dele.
+      if (alvo?.matches('[role="combobox"][aria-expanded="true"]')) return;
+      const camada = alvo?.closest('[role="dialog"], [role="listbox"], [role="menu"]');
+      if (camada && camada !== painelRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      aoEscRef.current();
+    };
+    window.addEventListener("keydown", aoTeclar, true);
+    return () => window.removeEventListener("keydown", aoTeclar, true);
+  }, [open]);
 
   if (!open) return null;
 
@@ -726,7 +787,12 @@ export function TaskDialog() {
       onClick={() => void fecharComGuarda()}
     >
       <div
-        className="w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
+        ref={painelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={editing ? "Editar tarefa" : "Nova tarefa"}
+        tabIndex={-1}
+        className="w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
@@ -823,7 +889,10 @@ export function TaskDialog() {
                 className={`w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${!canEditContent ? "cursor-not-allowed opacity-70" : ""}`}
               />
               {mentionQuery !== null && filteredMentions.length > 0 && (
-                <div className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+                <div
+                  data-lista-de-mencao
+                  className="absolute left-0 right-0 z-10 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-popover shadow-lg"
+                >
                   {filteredMentions.map((u) => (
                     <button
                       key={u.id}
@@ -997,7 +1066,7 @@ export function TaskDialog() {
                 </div>
               </Field>
               <Field label="Tags (separadas por vírgula)">
-                <input value={tags} onChange={(e) => setTags(e.target.value)} className="input" />
+                <CampoDeTags valor={tags} aoMudar={setTags} />
               </Field>
               <Field label="Tempo estimado (hh:mm)">
                 <input

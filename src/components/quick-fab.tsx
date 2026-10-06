@@ -22,6 +22,7 @@ import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { sendNudge } from "@/components/attention-overlay";
 import { AnimatePresence, motion } from "framer-motion";
 import { alternarLancadores, useLancadoresRecolhidos } from "@/lib/lancadores";
+import { useFecharAoSair } from "@/hooks/use-fechar-ao-sair";
 import { TarefaPorVoz } from "@/components/tarefa-por-voz";
 import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
 
@@ -62,17 +63,11 @@ export function QuickFab() {
   const [vozAberta, setVozAberta] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (!open) return;
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setMode("menu");
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  // Clique fora ou Esc fecha e volta ao menu — ver `useFecharAoSair`.
+  useFecharAoSair(rootRef, open, () => {
+    setOpen(false);
+    setMode("menu");
+  });
 
   useEffect(() => {
     const onOpen = () => {

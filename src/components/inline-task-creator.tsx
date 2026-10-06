@@ -14,6 +14,7 @@ import {
 } from "@/lib/recorrencia";
 import { filesToAttachments, formatBytes, isImage, openAttachment } from "@/lib/attachments";
 import { CampoData } from "@/components/campo-data";
+import { CampoDeTags } from "@/components/campo-de-tags";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { parseHM } from "@/lib/time-log";
 import { parseExcelPaste, type ParsedPasteRow } from "@/lib/excel-paste";
@@ -29,9 +30,14 @@ import { HORARIO_VALIDO, SEM_PRAZO } from "@/lib/prazo";
  * prazo (Popover, role="dialog") ou a lista de responsável (role="listbox")?
  * A escuta do modal é em captura na janela e roda ANTES do painel: sem esta
  * conferência, Esc para fechar o calendário fechava o modal inteiro.
+ *
+ * Vale também para um campo de digitar com a própria lista aberta (um
+ * `combobox` expandido), como as sugestões do campo de tags: ele fecha a lista
+ * no próprio Esc, e só o seguinte fecha o resto.
  */
 export function escDeUmPainel(e: KeyboardEvent): boolean {
   const alvo = e.target instanceof Element ? e.target : null;
+  if (alvo?.matches('[role="combobox"][aria-expanded="true"]')) return true;
   return !!alvo?.closest('[role="dialog"], [role="listbox"]');
 }
 
@@ -356,7 +362,8 @@ export function InlineTaskCreator({
    */
   aoFechar?: () => void;
 }) {
-  const { currentUser, visibleUsersForAssign, createTask, quickCreate, closeQuickCreate } = useFluxo();
+  const { currentUser, visibleUsersForAssign, createTask, quickCreate, closeQuickCreate, taskDialog } =
+    useFluxo();
   /* Esta grade responde ao Esc e ao pedido de fechar? A da aba nunca: com o
      "criar rapidamente" aberto por cima dela, as duas fechariam juntas. */
   const ativa = aoFechar ? true : quickCreate.open && !emPagina;
@@ -611,6 +618,8 @@ export function InlineTaskCreator({
       if (e.key !== "Escape") return;
       // Esc num painel aberto (calendário, lista de responsável) fecha só ele.
       if (escDeUmPainel(e)) return;
+      // A janela de uma tarefa aberta por cima fecha primeiro (ela tem o próprio Esc).
+      if (taskDialog.open) return;
       e.preventDefault();
       e.stopPropagation();
       handleEscape();
@@ -1289,10 +1298,11 @@ export function InlineTaskCreator({
         <span className={ROTULO}>
           Tags <span className="font-medium normal-case text-foreground/45">(opcional)</span>
         </span>
-        <input
-          value={row.tags}
-          onChange={(e) => update(row.id, { tags: e.target.value })}
+        <CampoDeTags
+          valor={row.tags}
+          aoMudar={(tags) => update(row.id, { tags })}
           placeholder="financeiro, urgente"
+          compacto
           className="mt-1.5 h-6 w-full rounded-md border border-foreground/30 bg-background px-1.5 text-[11px] outline-none placeholder:text-foreground/50 focus:border-primary"
         />
         <p className="mt-1 text-[10px] text-foreground/50">Separe por vírgula.</p>
