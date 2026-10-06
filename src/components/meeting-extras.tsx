@@ -369,6 +369,9 @@ export interface MeetingExtrasHandle {
   hasSavedMinute: () => boolean;
   generateAndSave: () => Promise<boolean>;
   openPanel: () => void;
+  /** Quem escreve a ata ainda não salva (identidade no LiveKit), ou null. O
+      "Encerrar" espera por essa pessoa: a ata está no computador dela. */
+  escritorDaAta: () => { identity: string; nome: string } | null;
 }
 
 /**
@@ -424,6 +427,7 @@ export const MeetingExtras = forwardRef<
       hasSavedMinute: () => !!ata.estado?.salva,
       generateAndSave: () => ata.finalizarESalvar(),
       openPanel: () => setVista("aberta"),
+      escritorDaAta: () => (ata.estado && !ata.estado.salva ? ata.estado.dono : null),
     }),
     [ata],
   );

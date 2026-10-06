@@ -11,7 +11,7 @@ import {
   useRoomContext,
   useTrackToggle,
 } from "@livekit/components-react";
-import { RemoteParticipant, Track, RoomEvent } from "livekit-client";
+import { DisconnectReason, RemoteParticipant, Track, RoomEvent } from "livekit-client";
 import type { LocalParticipant, LocalVideoTrack, Room } from "livekit-client";
 import { BackgroundProcessor, type BackgroundProcessorWrapper } from "@livekit/track-processors";
 import "@livekit/components-styles";
@@ -45,6 +45,7 @@ import {
   MonitorUp,
   MonitorOff,
   PhoneOff,
+  Power,
   MoreHorizontal,
   Volume2,
 } from "lucide-react";
@@ -54,6 +55,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
 import {
   createGuestInvite,
+  encerrarLigacao,
   getRoomAccess,
   setRoomPrivacy,
 } from "@/lib/livekit-token.functions";
@@ -115,6 +117,8 @@ function ToolBtn({
   disabled,
   badge,
   wide,
+  text,
+  outline,
 }: {
   icon: typeof X;
   label: string;
@@ -125,6 +129,10 @@ function ToolBtn({
   disabled?: boolean;
   badge?: number;
   wide?: boolean;
+  /** Texto ao lado do ícone, nos botões largos ("Sair", "Encerrar"). */
+  text?: string;
+  /** Vermelho só na borda: o "Encerrar", ao lado do "Sair" cheio. */
+  outline?: boolean;
 }) {
   const base =
     "relative inline-flex items-center justify-center transition disabled:opacity-40";
@@ -134,7 +142,9 @@ function ToolBtn({
       : "h-11 w-14 rounded-full"
     : "h-11 w-11 rounded-full";
   const style = danger
-    ? "bg-red-600 text-white hover:bg-red-500 shadow-md"
+    ? outline
+      ? "border-2 border-red-500 bg-red-950/70 text-red-100 hover:bg-red-900 shadow-md"
+      : "bg-red-600 text-white hover:bg-red-500 shadow-md"
     : muted
       ? "bg-red-500/90 text-white hover:bg-red-500"
       : active
@@ -150,7 +160,7 @@ function ToolBtn({
       className={`${base} ${size} ${style}`}
     >
       <Icon className="h-[20px] w-[20px]" />
-      {wide && danger && <span className="ml-2 text-sm font-medium">Sair</span>}
+      {wide && text && <span className="ml-2 text-sm font-medium">{text}</span>}
       {badge && badge > 0 ? (
         <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-red-500 px-1 text-[9px] font-bold leading-4 text-white">
           {badge}
@@ -673,6 +683,16 @@ export function CallContents({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [endConfirm, setEndConfirm] = useState<null | "prompt" | "saving">(null);
   const [endError, setEndError] = useState<string | null>(null);
+  /* A pergunta aberta é a do "Encerrar" (para todos), e não a do "Sair".
+     `ataMinha`: a ata por salvar é de quem clicou, e a escolha é dela.
+     `escritor`: outra pessoa escreve a ata e salva antes de sair. */
+  const [encerrarTodos, setEncerrarTodos] = useState<null | {
+    ataMinha: boolean;
+    escritor: string | null;
+  }>(null);
+  /* Uma saída já em andamento (salvando a ata, encerrando): o aviso de
+     "Encerrar" que chegar no meio não começa outra. */
+  const saindoRef = useRef(false);
 
   const doEnd = useCallback(() => {
     // Explicitly disconnect LiveKit so audio/video tracks stop immediately —
@@ -685,6 +705,12 @@ export function CallContents({
     }
     onEnd();
   }, [room, onEnd]);
+  /* Para sair depois de esperar a ata: nesse meio-tempo a pessoa pode ter
+     trocado de página, e o `onEnd` da hora do clique já não vale. */
+  const doEndRef = useRef(doEnd);
+  useEffect(() => {
+    doEndRef.current = doEnd;
+  }, [doEnd]);
 
   const requestEnd = useCallback(() => {
     // In mini mode we don't have room to show the "save minute" prompt, and
@@ -697,6 +723,7 @@ export function CallContents({
     const h = meetingRef.current;
     if (h && h.hasContent() && !h.hasSavedMinute()) {
       setEndError(null);
+      setEncerrarTodos(null);
       setEndConfirm("prompt");
       return;
     }
@@ -709,10 +736,12 @@ export function CallContents({
       doEnd();
       return;
     }
+    saindoRef.current = true;
     setEndError(null);
     setEndConfirm("saving");
     const ok = await h.generateAndSave();
     if (!ok) {
+      saindoRef.current = false;
       setEndError("Não foi possível gerar a ata. Tente novamente ou saia sem salvar.");
       setEndConfirm("prompt");
       return;
@@ -720,6 +749,46 @@ export function CallContents({
     setEndConfirm(null);
     doEnd();
   }, [doEnd]);
+
+  /** "Encerrar" sempre pergunta: tira todo mundo da sala, não só quem clicou. */
+  const pedirEncerrar = useCallback(() => {
+    const h = meetingRef.current;
+    const escritor = h?.escritorDaAta() ?? null;
+    setEndError(null);
+    setEncerrarTodos({
+      ataMinha: !!h && h.hasContent() && !h.hasSavedMinute(),
+      escritor: escritor && escritor.identity !== localParticipant.identity ? escritor.nome : null,
+    });
+    setEndConfirm("prompt");
+  }, [localParticipant]);
+
+  /* Outra pessoa encerrou a ligação: sai também. Quem escreve a ata salva
+     antes, e o servidor espera por essa pessoa (ver `encerrarLigacao`); os
+     demais saem na hora. */
+  const sairPorqueEncerraram = async (quem: string) => {
+    if (saindoRef.current) return;
+    saindoRef.current = true;
+    setEndConfirm(null);
+    setEncerrarTodos(null);
+    const h = meetingRef.current;
+    if (h && h.escritorDaAta()?.identity === localParticipant.identity && h.hasContent()) {
+      const aviso = toast.loading(`${quem} encerrou a ligação. Salvando a ata antes de sair…`);
+      const ok = await h.generateAndSave();
+      toast.dismiss(aviso);
+      if (!ok && !mini) {
+        /* A IA falhou e nada foi salvo. Sair agora perderia a ata inteira:
+           fica a pergunta do "Sair", com tentar de novo. */
+        saindoRef.current = false;
+        setEndError("Não foi possível gerar a ata. Tente novamente ou saia sem salvar.");
+        setEndConfirm("prompt");
+        return;
+      }
+      if (!ok) toast.error("Não foi possível gerar a ata desta reunião.");
+    } else {
+      toast.info(`${quem} encerrou a ligação.`);
+    }
+    doEndRef.current();
+  };
 
   const { ask: askInvite } = useCallInviter();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -877,13 +946,18 @@ export function CallContents({
     try {
       const data = JSON.parse(new TextDecoder().decode(msg.payload)) as
         | { kind: "chat"; msg: ChatMessage }
-        | { kind: "raise"; name: string };
+        | { kind: "raise"; name: string }
+        | { kind: "encerrar"; name: string };
       if (data.kind === "chat") {
         setMessages((m) => [...m, data.msg]);
         if (!chatOpenRef.current) setUnread((n) => n + 1);
       } else if (data.kind === "raise") {
         // Conta pela identidade de quem mandou, não pelo nome que veio junto.
         pushRaise(msg.from?.identity ?? data.name, data.name);
+      } else if (data.kind === "encerrar") {
+        // Só vale de alguém do time: o convidado não tem o botão.
+        const de = msg.from?.identity ?? "";
+        if (de && !de.startsWith("guest-")) void sairPorqueEncerraram(data.name || "Alguém");
       }
     } catch {
       /* ignore */
@@ -912,6 +986,62 @@ export function CallContents({
     };
     setMessages((m) => [...m, msg]);
     broadcast({ kind: "chat", msg });
+  };
+
+  /**
+   * Tira todo mundo da ligação. Primeiro o servidor, que confere se quem pede
+   * está na sala e agenda a retirada de quem não sair sozinho; depois o aviso
+   * pela sala, que faz cada um sair na hora. Se o servidor recusar, ninguém é
+   * avisado e a pergunta volta com o motivo.
+   */
+  const encerrarParaTodos = async (salvarAta: boolean) => {
+    if (saindoRef.current) return;
+    saindoRef.current = true;
+    setEndError(null);
+    setEndConfirm("saving");
+    const h = meetingRef.current;
+    const falhou = (motivo: string) => {
+      saindoRef.current = false;
+      setEndError(motivo);
+      setEndConfirm("prompt");
+    };
+    if (salvarAta && h) {
+      if (!(await h.generateAndSave())) {
+        falhou("Não foi possível gerar a ata. Tente novamente ou encerre sem salvar.");
+        return;
+      }
+      setEncerrarTodos((e) => e && { ...e, ataMinha: false });
+    }
+    const escritor = h?.escritorDaAta();
+    try {
+      await encerrarLigacao({
+        data: {
+          roomName,
+          escritorDaAta:
+            escritor && escritor.identity !== localParticipant.identity ? escritor.identity : null,
+        },
+      });
+    } catch (e) {
+      falhou(e instanceof Error ? e.message : "Não foi possível encerrar a ligação.");
+      return;
+    }
+    /* Espera o aviso sair antes de desconectar: fechar a conexão logo em
+       seguida podia derrubá-lo no caminho. Se ele se perder mesmo assim, o
+       servidor tira quem ficou em poucos segundos. */
+    try {
+      const nome = localParticipant.name || localParticipant.identity || "Alguém";
+      await localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify({ kind: "encerrar", name: nome })),
+        { reliable: true, topic: "fluxo-room" },
+      );
+      await new Promise((r) => window.setTimeout(r, 400));
+    } catch {
+      /* o servidor tira quem ficou */
+    }
+    setEndConfirm(null);
+    setEncerrarTodos(null);
+    toast.success("Ligação encerrada para todos.");
+    doEndRef.current();
   };
 
   const raiseHand = () => {
@@ -1067,7 +1197,7 @@ export function CallContents({
               type="button"
               onClick={requestEnd}
               className="rounded p-1 text-red-300 hover:bg-red-500/20"
-              title="Encerrar chamada"
+              title="Sair da chamada"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1376,16 +1506,29 @@ export function CallContents({
           {!mini && (
             <ToolBtn
               icon={PhoneOff}
-              label="Encerrar chamada"
+              label="Sair da chamada (os outros continuam)"
               onClick={requestEnd}
               danger
               wide
+              text="Sair"
+            />
+          )}
+          {/* Não para o convidado, que é visita: quem encerra a reunião é o time. */}
+          {!mini && !convidado && (
+            <ToolBtn
+              icon={Power}
+              label="Encerrar para todos: tira todo mundo da ligação"
+              onClick={pedirEncerrar}
+              danger
+              wide
+              outline
+              text="Encerrar"
             />
           )}
           {mini && (
             <ToolBtn
               icon={PhoneOff}
-              label="Encerrar chamada"
+              label="Sair da chamada"
               onClick={requestEnd}
               danger
             />
@@ -1434,7 +1577,7 @@ export function CallContents({
                         ["C", "Abrir / fechar chat"],
                         ["H", "Levantar a mão"],
                         ["P", "Alternar modo apresentador"],
-                        ["E", "Encerrar chamada"],
+                        ["E", "Sair da chamada"],
                       ].map(([key, desc]) => (
                         <li key={key} className="flex items-center justify-between gap-2 text-[11px]">
                           <span className="text-white/70">{desc}</span>
@@ -1456,15 +1599,42 @@ export function CallContents({
       {endConfirm && !mini && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
           <div className="w-full max-w-md rounded-xl border border-white/10 bg-neutral-900 p-5 text-white shadow-2xl">
-            <div className="flex items-center gap-2 text-base font-semibold">
-              <FileText className="h-5 w-5 text-amber-300" />
-              Salvar ata desta reunião?
-            </div>
-            <p className="mt-2 text-xs text-white/70">
-              Há falas transcritas / mensagens de chat que ainda não viraram ata. Se você encerrar
-              sem salvar, todo esse conteúdo será perdido — a ata e o plano de ação em{" "}
-              <b>Atas &amp; Planos</b> só aparecem se você salvar agora.
-            </p>
+            {encerrarTodos ? (
+              <>
+                <div className="flex items-center gap-2 text-base font-semibold">
+                  <Power className="h-5 w-5 text-red-400" />
+                  Encerrar a ligação para todos?
+                </div>
+                <p className="mt-2 text-xs text-white/70">
+                  Todo mundo sai da sala agora, inclusive quem esqueceu a ligação aberta. Para sair
+                  só você, use <b>Sair</b>.
+                </p>
+                {encerrarTodos.ataMinha && (
+                  <p className="mt-2 text-xs text-white/70">
+                    Há falas transcritas / mensagens de chat que ainda não viraram ata. Se encerrar
+                    sem salvar, esse conteúdo se perde.
+                  </p>
+                )}
+                {encerrarTodos.escritor && (
+                  <p className="mt-2 text-xs text-white/70">
+                    A ata que <b>{encerrarTodos.escritor}</b> está escrevendo é salva antes de
+                    fechar.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 text-base font-semibold">
+                  <FileText className="h-5 w-5 text-amber-300" />
+                  Salvar ata desta reunião?
+                </div>
+                <p className="mt-2 text-xs text-white/70">
+                  Há falas transcritas / mensagens de chat que ainda não viraram ata. Se você
+                  encerrar sem salvar, todo esse conteúdo será perdido — a ata e o plano de ação em{" "}
+                  <b>Atas &amp; Planos</b> só aparecem se você salvar agora.
+                </p>
+              </>
+            )}
             {endError && (
               <div className="mt-3 rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">
                 {endError}
@@ -1474,30 +1644,67 @@ export function CallContents({
               <button
                 type="button"
                 disabled={endConfirm === "saving"}
-                onClick={() => setEndConfirm(null)}
+                onClick={() => {
+                  setEndConfirm(null);
+                  setEncerrarTodos(null);
+                }}
                 className="rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10 disabled:opacity-50"
               >
                 Continuar reunião
               </button>
-              <button
-                type="button"
-                disabled={endConfirm === "saving"}
-                onClick={() => {
-                  setEndConfirm(null);
-                  doEnd();
-                }}
-                className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
-              >
-                Sair sem salvar
-              </button>
-              <button
-                type="button"
-                disabled={endConfirm === "saving"}
-                onClick={saveThenEnd}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-95 disabled:opacity-70"
-              >
-                {endConfirm === "saving" ? "Salvando ata…" : "Salvar ata e sair"}
-              </button>
+              {encerrarTodos ? (
+                encerrarTodos.ataMinha ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={endConfirm === "saving"}
+                      onClick={() => void encerrarParaTodos(false)}
+                      className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+                    >
+                      Encerrar sem salvar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={endConfirm === "saving"}
+                      onClick={() => void encerrarParaTodos(true)}
+                      className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-95 disabled:opacity-70"
+                    >
+                      {endConfirm === "saving" ? "Encerrando…" : "Salvar ata e encerrar"}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={endConfirm === "saving"}
+                    onClick={() => void encerrarParaTodos(false)}
+                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-70"
+                  >
+                    {endConfirm === "saving" ? "Encerrando…" : "Encerrar para todos"}
+                  </button>
+                )
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={endConfirm === "saving"}
+                    onClick={() => {
+                      setEndConfirm(null);
+                      doEnd();
+                    }}
+                    className="rounded-md border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+                  >
+                    Sair sem salvar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={endConfirm === "saving"}
+                    onClick={saveThenEnd}
+                    className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-95 disabled:opacity-70"
+                  >
+                    {endConfirm === "saving" ? "Salvando ata…" : "Salvar ata e sair"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1867,7 +2074,20 @@ export function ActiveCallWidget() {
           webAudioMix: true,
         }}
         style={{ height: "100%", width: "100%" }}
-        onDisconnected={() => endCall()}
+        onDisconnected={(motivo) => {
+          endCall();
+          /* Tirado da sala pelo servidor: o "Encerrar" de alguém, quando o
+             aviso pela sala não chegou. Vai para a lista de salas, como no
+             Sair. Ficar na página da sala abria a prévia, e a prévia liga a
+             câmera de quem talvez nem esteja na frente do computador. */
+          if (
+            motivo === DisconnectReason.PARTICIPANT_REMOVED ||
+            motivo === DisconnectReason.ROOM_DELETED
+          ) {
+            toast.info("A ligação foi encerrada.");
+            if (onRoomRoute) navigate({ to: "/salas" });
+          }
+        }}
       >
         <CallContents
           mini={!docked}

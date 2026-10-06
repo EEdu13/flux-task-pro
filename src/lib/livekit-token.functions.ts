@@ -406,9 +406,12 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
   .inputValidator((input: { callId: string; status: RoomCallStatus }) => {
     if (!input || typeof input.callId !== "string") throw new Error("Chamada inválida");
     const callId = input.callId.trim();
-    if (
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(callId)
-    ) {
+    /* Qualquer GUID, sem exigir versão nem variante. O id de `gestor.chamadas`
+       nasce de NEWSEQUENTIALID(), que não segue esses bits ("...-F111-A6AA-..."),
+       e a regra estrita de antes recusava TODO atender e recusar: a chamada
+       seguia tocando até expirar, e quem ligou recebia "não atendeu". Quem
+       protege a chamada alheia é o `para_pessoa_id=@uid` do UPDATE. */
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(callId)) {
       throw new Error("Chamada inválida");
     }
     const allowed: RoomCallStatus[] = ["accepted", "declined", "missed"];
@@ -423,17 +426,26 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
 
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
-    // O `target_user_id=@uid` no WHERE continua sendo a trava — agora com um
+    // O `para_pessoa_id=@uid` no WHERE continua sendo a trava — agora com um
     // @uid que o cliente não escolhe.
+    //
+    // Responde a LIGAÇÃO, não só o convite: todos os que ainda tocam da mesma
+    // pessoa para a mesma sala, como a tela os agrupa. Um convite que chegasse
+    // entre a última sondagem e o clique ficaria de fora e voltaria a tocar
+    // logo depois de atender.
     await pool
       .request()
       .input("id", sql.UniqueIdentifier, data.callId)
       .input("uid", sql.Int, eu)
       .input("situacao", sql.NVarChar, SITUACAO_NO_BANCO[data.status])
       .query(
-        `UPDATE gestor.chamadas
-           SET situacao=@situacao, respondida_em=SYSDATETIMEOFFSET()
-         WHERE id=@id AND para_pessoa_id=@uid AND situacao='tocando'`,
+        `UPDATE c
+            SET situacao=@situacao, respondida_em=SYSDATETIMEOFFSET()
+           FROM gestor.chamadas c
+           JOIN gestor.chamadas alvo
+             ON alvo.id=@id AND alvo.para_pessoa_id=@uid
+          WHERE c.para_pessoa_id=@uid AND c.situacao='tocando'
+            AND c.de_pessoa_id=alvo.de_pessoa_id AND c.sala=alvo.sala`,
       );
     return { ok: true };
   });
@@ -468,7 +480,7 @@ export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
                 respondida_em  AS handled_at,
                 em             AS created_at
            FROM gestor.chamadas
-          WHERE de_pessoa_id=@uid AND situacao IN ('recusada','perdida')
+          WHERE de_pessoa_id=@uid AND situacao IN ('aceita','recusada','perdida')
             AND respondida_em >= @since
           ORDER BY respondida_em DESC`,
       );
@@ -503,6 +515,83 @@ export const purgeAllRooms = createServerFn({ method: "POST" }).handler(async ()
     .query(`UPDATE gestor.salas SET privada=0, atualizada_em=SYSDATETIMEOFFSET()`);
   return { deleted: names };
 });
+
+/* ---------- Encerrar a ligação para todos ----------
+
+   "Sair" tira só quem clicou: quem esqueceu a ligação aberta continuava na
+   sala, de câmera e microfone ligados, até alguém perceber. "Encerrar" tira
+   todo mundo.
+
+   Quem está com a versão nova do app sai sozinho, avisado pelo canal de dados
+   da sala (ver `CallContents`), e é isso que dá a quem escreve a ata a chance
+   de salvá-la antes de sair. O servidor é a garantia para o resto: aba de uma
+   versão antiga, app travado, computador sem ninguém na frente. */
+
+/** Tempo para cada um sair por conta própria antes de o servidor tirar. */
+const ENCERRAR_TIRA_EM_MS = 5_000;
+/** Quem escreve a ata tem mais tempo: ela é salva antes de a pessoa sair. */
+const ENCERRAR_TIRA_QUEM_ESCREVE_A_ATA_EM_MS = 3 * 60_000;
+
+export const encerrarLigacao = createServerFn({ method: "POST" })
+  .inputValidator((input: { roomName: string; escritorDaAta?: string | null }) => ({
+    roomName: sanitizeRoomName(input?.roomName),
+    escritorDaAta:
+      typeof input?.escritorDaAta === "string" && input.escritorDaAta
+        ? input.escritorDaAta.slice(0, 64)
+        : null,
+  }))
+  .handler(async ({ data }) => {
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    const eu = await pessoaDaSessao();
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_URL;
+    if (!apiKey || !apiSecret || !wsUrl) throw new Error("LiveKit não configurado");
+    const httpUrl = wsUrl.replace(/^wss:\/\//, "https://").replace(/^ws:\/\//, "http://");
+    const { RoomServiceClient } = await import("livekit-server-sdk");
+    const svc = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+
+    let presentes: { identity: string; sid: string }[];
+    try {
+      presentes = (await svc.listParticipants(data.roomName)).map((p) => ({
+        identity: p.identity,
+        sid: p.sid,
+      }));
+    } catch {
+      throw new Error("Não achei esta ligação no servidor. Ela pode já ter terminado.");
+    }
+    // Só quem está na ligação a encerra. A identidade no LiveKit é "<id>-<nome>".
+    if (!presentes.some((p) => Number((p.identity || "").split("-")[0]) === eu)) {
+      throw new Error("Só quem está na ligação pode encerrá-la.");
+    }
+
+    /* Tira só quem continua na MESMA conexão de quando se clicou. O `sid` muda
+       a cada entrada: quem sair e voltar para outra reunião na mesma sala não é
+       tirado por esta. */
+    const tirar = async (quem: { identity: string; sid: string }[]) => {
+      if (!quem.length) return;
+      const sids = new Set(quem.map((q) => q.sid));
+      try {
+        const agora = await svc.listParticipants(data.roomName);
+        await Promise.all(
+          agora
+            .filter((p) => sids.has(p.sid))
+            .map((p) => svc.removeParticipant(data.roomName, p.identity).catch(() => {})),
+        );
+      } catch {
+        /* a sala já fechou: não sobrou ninguém para tirar */
+      }
+    };
+    const escreveAAta = (p: { identity: string }) =>
+      !!data.escritorDaAta && p.identity === data.escritorDaAta;
+    setTimeout(() => void tirar(presentes.filter((p) => !escreveAAta(p))), ENCERRAR_TIRA_EM_MS);
+    setTimeout(
+      () => void tirar(presentes.filter(escreveAAta)),
+      ENCERRAR_TIRA_QUEM_ESCREVE_A_ATA_EM_MS,
+    );
+    return { pessoas: presentes.length };
+  });
 
 // ================= Room privacy / membership / knocks =================
 

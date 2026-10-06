@@ -1,13 +1,17 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { PhoneOff, PhoneMissed } from "lucide-react";
+import { Phone, PhoneOff, PhoneMissed } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { listOutgoingRoomCallUpdates } from "@/lib/livekit-token.functions";
 
 /**
  * Poll caller-side call statuses so the caller learns when the target
- * declined or missed the call — otherwise the caller keeps thinking it's
- * still ringing.
+ * answered, declined or missed the call — otherwise the caller keeps thinking
+ * it's still ringing.
+ *
+ * Quem chamou três vezes tem três convites respondidos juntos; o `id` do aviso
+ * é da ligação (pessoa + sala), e o sonner troca um aviso pelo outro em vez de
+ * empilhar três iguais.
  */
 export function OutgoingCallWatcher() {
   const { currentUser, users } = useFluxo();
@@ -27,13 +31,22 @@ export function OutgoingCallWatcher() {
           seenRef.current.add(c.id);
           const target = users.find((u) => u.id === c.target_user_id);
           const name = target?.name ?? "A pessoa";
-          if (c.status === "declined") {
+          const id = `chamada-${c.target_user_id}-${c.room_name}`;
+          if (c.status === "accepted") {
+            toast(`${name} atendeu`, {
+              id,
+              icon: <Phone className="h-4 w-4 text-emerald-500" />,
+              description: `Entrando na sala ${c.room_label ?? c.room_name}`,
+            });
+          } else if (c.status === "declined") {
             toast(`${name} recusou a chamada`, {
+              id,
               icon: <PhoneOff className="h-4 w-4 text-destructive" />,
               description: `Sala ${c.room_label ?? c.room_name}`,
             });
           } else if (c.status === "missed") {
             toast(`${name} não atendeu`, {
+              id,
               icon: <PhoneMissed className="h-4 w-4 text-amber-500" />,
               description: `Sala ${c.room_label ?? c.room_name} — sem resposta`,
             });
