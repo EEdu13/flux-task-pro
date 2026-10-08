@@ -14,6 +14,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { ReservaDeSalaModal } from "@/components/reserva-de-sala-modal";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
+import { Novidades } from "@/components/novidades";
 
 /** Páginas que não usam o `FluxoLayout` — e não querem as janelas globais. */
 const SEM_GLOBAIS = ["/login", "/convidado", "/chamada", "/conferir-dados-antigos"];
@@ -51,6 +52,8 @@ export function GlobaisDoApp() {
       <ReservaDeSalaModal />
       <TeamDelegatePanel />
       <FocusOverlay />
+      {/* "O que mudou": uma vez por pessoa, por versão — ver `novidades.tsx`. */}
+      <Novidades />
     </>
   );
 }

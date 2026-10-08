@@ -385,7 +385,7 @@ export const salvarMeuPerfil = createServerFn({ method: "POST" })
  */
 /* "calendario" guarda as cores e as salas ocultas do calendário, num JSON
    curto — ver `use-prefs-do-calendario.ts`. */
-const CHAVES = ["tema", "paleta", "calendario", "calendario_dias", "notificacoes"] as const;
+const CHAVES = ["tema", "paleta", "calendario", "calendario_dias", "notificacoes", "novidades"] as const;
 type Chave = (typeof CHAVES)[number];
 const chaveValida = (v: unknown): v is Chave =>
   typeof v === "string" && (CHAVES as readonly string[]).includes(v);
