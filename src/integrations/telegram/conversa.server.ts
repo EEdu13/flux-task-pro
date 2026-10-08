@@ -13,7 +13,11 @@
 // `editarMensagem` saiu daqui: estava importado e nunca usado.
 import { enviarMensagem, escaparMd, removerTeclado, responderCallback } from "./client.server";
 import { desvincular, pessoaPorTelegram, vincularPorContato } from "./contas.server";
-import { SQL_MEUS_SUBORDINADOS, sqlListaDeTarefas } from "@/lib/permissoes.server";
+import {
+  SQL_MEUS_SUBORDINADOS,
+  SQL_PREPARA_SUBORDINADOS,
+  sqlListaDeTarefas,
+} from "@/lib/permissoes.server";
 /* `hojeEmBrasilia` e `fimDoDiaBr` saíram: eram do prazo por botão em linha, que
    virou etapa de texto. Quem monta a data agora é o `lerPrazo`, que já entende
    "hoje" e "amanhã" — os dois atalhos que restaram, como botões de texto. */
@@ -112,7 +116,8 @@ async function minhasTarefas(pessoaId: number, recorte: Recorte) {
     .request()
     .input("eu", sql.Int, pessoaId)
     .query(
-      `SELECT TOP 20 id, titulo, prazo, situacao, prioridade
+      `${SQL_PREPARA_SUBORDINADOS}
+       SELECT TOP 20 id, titulo, prazo, situacao, prioridade
          FROM gestor.tarefas
         WHERE responsavel_id=@eu
           AND arquivada_em IS NULL
@@ -132,7 +137,8 @@ async function pessoasDoMeuEscopo(pessoaId: number) {
   let onde = "p.nome IS NOT NULL AND p.pessoa_id <> @eu";
   if (papel !== "gerente") onde += ` AND p.pessoa_id IN ${SQL_MEUS_SUBORDINADOS}`;
   const r = await req.query(
-    `SELECT TOP 30 p.pessoa_id, p.nome,
+    `${SQL_PREPARA_SUBORDINADOS}
+     SELECT TOP 30 p.pessoa_id, p.nome,
             (SELECT COUNT(*) FROM gestor.tarefas t
               WHERE t.responsavel_id=p.pessoa_id
                 AND t.arquivada_em IS NULL
@@ -153,7 +159,8 @@ async function tarefasDe(solicitante: number, alvo: number) {
   const filtro = filtroPorPapel(papel);
   const req = pool.request().input("eu", sql.Int, solicitante).input("alvo", sql.Int, alvo);
   const r = await req.query(
-    `SELECT TOP 15 id, titulo, prazo, situacao, prioridade
+    `${SQL_PREPARA_SUBORDINADOS}
+     SELECT TOP 15 id, titulo, prazo, situacao, prioridade
        FROM gestor.tarefas
       WHERE responsavel_id=@alvo
         AND arquivada_em IS NULL
@@ -190,7 +197,8 @@ async function podeMexer(pessoaId: number, tarefaId: string): Promise<TarefaResu
     .input("eu", sql.Int, pessoaId)
     .input("id", sql.UniqueIdentifier, tarefaId);
   const r = await req.query(
-    `SELECT TOP 1 id, titulo, prazo, situacao, prioridade
+    `${SQL_PREPARA_SUBORDINADOS}
+     SELECT TOP 1 id, titulo, prazo, situacao, prioridade
        FROM gestor.tarefas
       WHERE id=@id AND arquivada_em IS NULL AND ${filtro}`,
   );

@@ -33,10 +33,6 @@ export const SQL_QUEM_SOU = `
     FROM gestor.perfis WHERE pessoa_id = @eu;
   SET @gerente = CASE WHEN @papel_eu = N'gerente' THEN 1 ELSE 0 END;`;
 
-/** Dois nomes iguais sem espaço nas pontas, caixa e acento. */
-const mesmoNome = (a: string, b: string) =>
-  `LTRIM(RTRIM(${a})) COLLATE Latin1_General_CI_AI = LTRIM(RTRIM(${b})) COLLATE Latin1_General_CI_AI`;
-
 /**
  * Os ids de quem responde a @eu no organograma: as pessoas de quem @eu é
  * SUPERVISOR ou COORDENADOR em `dbo.COLABORADORES` (ativos) ou
@@ -51,17 +47,44 @@ const mesmoNome = (a: string, b: string) =>
  * a `listarPessoas`. A própria pessoa fica de fora: na tabela muita gente é
  * supervisora de si mesma.
  */
-export const SQL_MEUS_SUBORDINADOS = `(SELECT sub.pessoa_id FROM gestor.perfis sub
-    JOIN gestor.perfis chefe ON chefe.pessoa_id = @eu
-   WHERE sub.pessoa_id <> @eu AND chefe.nome IS NOT NULL AND sub.nome IS NOT NULL
-     AND (EXISTS (SELECT 1 FROM dbo.COLABORADORES col
-                   WHERE col.SITUACAO = '1' AND ${mesmoNome("col.NOME", "sub.nome")}
-                     AND (${mesmoNome("col.SUPERVISOR", "chefe.nome")}
-                       OR ${mesmoNome("col.COORDENADOR", "chefe.nome")}))
-       OR EXISTS (SELECT 1 FROM dbo.COLABORADORES_EXTERNOS ext
-                   WHERE ext.ATIVO = 1 AND ${mesmoNome("ext.NOME", "sub.nome")}
-                     AND (${mesmoNome("ext.SUPERVISOR", "chefe.nome")}
-                       OR ${mesmoNome("ext.COORDENADOR", "chefe.nome")}))))`;
+/**
+ * Preenche `@subs` com os ids de quem responde a @eu — UMA vez por comando.
+ * Tem de vir antes de qualquer uso de `SQL_MEUS_SUBORDINADOS`; o
+ * `SQL_QUEM_SOU` já o inclui.
+ *
+ * Por que uma tabela, e não a subconsulta direto no filtro: na subconsulta o
+ * banco refazia a comparação de nomes (LTRIM + COLLATE, sem índice possível)
+ * para cada tarefa da lista. Em 08/10/2026, no ar, isso levou a CPU do banco
+ * compartilhado a 100% por mais de uma hora — a lista de tarefas custava
+ * 725 ms e 171 mil leituras por chamada.
+ *
+ * E a ordem da conta mudou: primeiro os NOMES do organograma que respondem a
+ * mim (um filtro nas duas tabelas, poucas linhas); só então o cruzamento com
+ * `perfis`. Antes era cada perfil contra o organograma inteiro.
+ */
+export const SQL_PREPARA_SUBORDINADOS = `
+  DECLARE @subs TABLE (id INT PRIMARY KEY);
+  DECLARE @chefe_subs NVARCHAR(400) =
+    (SELECT LTRIM(RTRIM(nome)) FROM gestor.perfis WHERE pessoa_id = @eu);
+  IF @chefe_subs IS NOT NULL
+    INSERT INTO @subs (id)
+    SELECT DISTINCT sub.pessoa_id
+      FROM (SELECT LTRIM(RTRIM(col.NOME)) AS nome FROM dbo.COLABORADORES col
+             WHERE col.SITUACAO = '1'
+               AND (LTRIM(RTRIM(col.SUPERVISOR)) COLLATE Latin1_General_CI_AI = @chefe_subs COLLATE Latin1_General_CI_AI
+                 OR LTRIM(RTRIM(col.COORDENADOR)) COLLATE Latin1_General_CI_AI = @chefe_subs COLLATE Latin1_General_CI_AI)
+            UNION
+            SELECT LTRIM(RTRIM(ext.NOME)) FROM dbo.COLABORADORES_EXTERNOS ext
+             WHERE ext.ATIVO = 1
+               AND (LTRIM(RTRIM(ext.SUPERVISOR)) COLLATE Latin1_General_CI_AI = @chefe_subs COLLATE Latin1_General_CI_AI
+                 OR LTRIM(RTRIM(ext.COORDENADOR)) COLLATE Latin1_General_CI_AI = @chefe_subs COLLATE Latin1_General_CI_AI)
+           ) AS n
+      JOIN gestor.perfis sub
+        ON LTRIM(RTRIM(sub.nome)) COLLATE Latin1_General_CI_AI = n.nome COLLATE Latin1_General_CI_AI
+     WHERE sub.pessoa_id <> @eu;`;
+
+/** Os ids de quem responde a @eu — lê `@subs`; ver `SQL_PREPARA_SUBORDINADOS`. */
+export const SQL_MEUS_SUBORDINADOS = `(SELECT id FROM @subs)`;
 
 /** @eu é supervisor ou coordenador de uma destas pessoas (expressões SQL que dão o id). */
 export function sqlChefeDe(...pessoas: string[]): string {
@@ -122,7 +145,7 @@ async function consultar<T>(
       p.tipo === "guid" ? sql.UniqueIdentifier : p.tipo === "int" ? sql.Int : sql.NVarChar(400);
     req.input(nome, tipo, p.valor);
   }
-  const r = await req.query(`${SQL_QUEM_SOU}\n${corpo}`);
+  const r = await req.query(`${SQL_QUEM_SOU}\n${SQL_PREPARA_SUBORDINADOS}\n${corpo}`);
   return r.recordset[0] as T | undefined;
 }
 

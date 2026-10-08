@@ -101,7 +101,7 @@ export const listarSessoesDeTempo = createServerFn({ method: "POST" }).handler(
     const pool = await getPool();
 
     // O tempo de cada um e o de quem responde a ele no organograma.
-    const { SQL_MEUS_SUBORDINADOS } = await import("@/lib/permissoes.server");
+    const { SQL_MEUS_SUBORDINADOS, SQL_PREPARA_SUBORDINADOS } = await import("@/lib/permissoes.server");
     const filtro =
       papel === "gerente"
         ? "1=1"
@@ -110,7 +110,8 @@ export const listarSessoesDeTempo = createServerFn({ method: "POST" }).handler(
     const req = pool.request().input("eu", sql.Int, eu);
 
     const r = await req.query(
-      `SELECT TOP (2000) s.id, s.tarefa_id, s.pessoa_id, s.iniciou_em, s.encerrou_em, s.segundos
+      `${SQL_PREPARA_SUBORDINADOS}
+       SELECT TOP (2000) s.id, s.tarefa_id, s.pessoa_id, s.iniciou_em, s.encerrou_em, s.segundos
          FROM gestor.sessoes_de_tempo s
          JOIN gestor.tarefas t ON t.id = s.tarefa_id
         WHERE ${filtro} AND s.iniciou_em >= DATEADD(DAY, -90, SYSDATETIMEOFFSET())

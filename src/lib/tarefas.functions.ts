@@ -110,7 +110,7 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
        O "time" de cada um é quem responde a ele no organograma, não o setor
        (decisão do usuário, 07/10/2026): ver o setor inteiro mostrava a tarefa
        de todo mundo do setor. A gerência continua vendo tudo. */
-    const { sqlListaDeTarefas } = await import("@/lib/permissoes.server");
+    const { sqlListaDeTarefas, SQL_PREPARA_SUBORDINADOS } = await import("@/lib/permissoes.server");
     const filtro = sqlListaDeTarefas(papel, "t.");
 
     const req = pool.request().input("eu", sql.Int, eu);
@@ -126,7 +126,8 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
     /* As reações vêm numa coluna só, "467:❤️|512:👍": uma consulta por
        tarefa para elas seria uma ida ao banco por cartão do quadro. */
     const r = await req.query(
-      `SELECT ${COLUNAS_TAREFA},
+      `${SQL_PREPARA_SUBORDINADOS}
+       SELECT ${COLUNAS_TAREFA},
               (SELECT STRING_AGG(CAST(CAST(rx.pessoa_id AS varchar(12)) AS nvarchar(12)) + N':' + rx.emoji, N'|')
                  FROM gestor.reacoes_tarefa rx WHERE rx.tarefa_id = t.id) AS reacoes
          FROM gestor.tarefas t

@@ -60,7 +60,9 @@ export const listarConclusoes = createServerFn({ method: "POST" }).handler(
        mais as conclusões dela e de quem responde a ela. Sem isto, o gráfico de
        "últimos 7 dias · time" contaria só quem está olhando. Os parênteses
        existem porque abaixo vem um `AND` de data. */
-    const { sqlListaDeTarefas, SQL_MEUS_SUBORDINADOS } = await import("@/lib/permissoes.server");
+    const { sqlListaDeTarefas, SQL_MEUS_SUBORDINADOS, SQL_PREPARA_SUBORDINADOS } = await import(
+      "@/lib/permissoes.server"
+    );
     const filtro =
       papel === "gerente"
         ? "1=1"
@@ -78,7 +80,8 @@ export const listarConclusoes = createServerFn({ method: "POST" }).handler(
        corrente e os últimos 14 dias; sem um limite, a consulta cresceria para
        sempre e a tela inicial ficaria mais lenta a cada ano de uso. */
     const r = await req.query(
-      `SELECT c.id, c.tarefa_id, c.pessoa_id, c.pontos, c.prioridade, c.no_prazo, c.em
+      `${SQL_PREPARA_SUBORDINADOS}
+       SELECT c.id, c.tarefa_id, c.pessoa_id, c.pontos, c.prioridade, c.no_prazo, c.em
          FROM gestor.conclusoes c
          JOIN gestor.tarefas t ON t.id = c.tarefa_id
         WHERE ${filtro} AND c.em >= DATEADD(DAY, -90, SYSDATETIMEOFFSET())
