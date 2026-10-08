@@ -16,6 +16,8 @@ import { filesToAttachments, formatBytes, isImage, openAttachment } from "@/lib/
 import { CampoData } from "@/components/campo-data";
 import { CampoDeTags } from "@/components/campo-de-tags";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
+import { Calendar } from "@/components/ui/calendar";
+import { ptBR } from "react-day-picker/locale";
 import { parseHM } from "@/lib/time-log";
 import { parseExcelPaste, type ParsedPasteRow } from "@/lib/excel-paste";
 import { UserAvatar } from "@/components/user-avatar";
@@ -290,6 +292,10 @@ interface DraftRow {
   frequency: Frequency;
   recurringWeekdays: number[];
   recurringMonthDay: number | null;
+  /** "Escolher dias": uma tarefa para cada dia marcado no calendário. */
+  modoDatas: boolean;
+  /** Os dias marcados ("yyyy-MM-dd"), quando `modoDatas`. */
+  datas: string[];
   checklist: ChecklistItem[];
   tags: string;
 }
@@ -321,6 +327,8 @@ function makeDraft(defaults: Partial<DraftRow>): DraftRow {
     frequency: "diaria",
     recurringWeekdays: [],
     recurringMonthDay: null,
+    modoDatas: false,
+    datas: [],
     checklist: [],
     tags: "",
   };
@@ -495,6 +503,16 @@ export function InlineTaskCreator({
 
   const commitRow = (row: DraftRow): boolean => {
     if (!row.title.trim()) return false;
+    /* "Escolher dias" (pedido do usuário, 08/10/2026): uma tarefa comum para
+       cada dia marcado, todas iguais menos o prazo. Não é recorrência — não
+       volta ao concluir —, e por isso não precisou de nada novo no banco. */
+    if (row.recurring && row.modoDatas && row.datas.length > 0) {
+      const dias = [...row.datas].sort();
+      for (const dia of dias) {
+        commitRow({ ...row, recurring: false, modoDatas: false, datas: [], dueDate: dia, semPrazo: false });
+      }
+      return true;
+    }
     // isoParaData e não new Date(iso): "2026-08-31" sozinho é lido como
     // meia-noite UTC, que no Brasil (UTC−3) cai às 21h do dia 30 — o
     // setHours abaixo então marcava o prazo para 30/08 23:59, um dia antes
@@ -1173,16 +1191,45 @@ export function InlineTaskCreator({
         {row.recurring && (
           <div className="mt-1.5 space-y-1.5">
             <select
-              value={row.frequency}
+              value={
+                row.modoDatas
+                  ? "escolher"
+                  : row.frequency === "semanal" && row.recurringWeekdays.join() === "1,2,3,4,5"
+                    ? "uteis"
+                    : row.frequency
+              }
               onChange={(e) => {
                 // A opção explícita de não repetir: desmarca a caixa acima.
                 if (!e.target.value) {
-                  update(row.id, { recurring: false });
+                  update(row.id, { recurring: false, modoDatas: false });
+                  return;
+                }
+                if (e.target.value === "escolher") {
+                  update(row.id, {
+                    modoDatas: true,
+                    datas: row.datas.length ? row.datas : row.dueDate ? [row.dueDate] : [],
+                  });
+                  return;
+                }
+                if (e.target.value === "uteis") {
+                  /* Dias úteis é semanal de segunda a sexta — "Todo dia" conta o
+                     fim de semana também. O primeiro prazo não pode cair no
+                     sábado ou no domingo. */
+                  const d = isoParaData(row.dueDate) ?? new Date();
+                  if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+                  if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+                  update(row.id, {
+                    modoDatas: false,
+                    frequency: "semanal",
+                    recurringWeekdays: [1, 2, 3, 4, 5],
+                    dueDate: dataParaIso(d),
+                  });
                   return;
                 }
                 const frequency = e.target.value as Frequency;
                 // Com um dia já escolhido, o prazo volta a seguir a regra na nova frequência.
                 update(row.id, {
+                  modoDatas: false,
                   frequency,
                   dueDate:
                     row.recurringMonthDay === null
@@ -1193,12 +1240,34 @@ export function InlineTaskCreator({
               className={SELECT_PEQUENO}
             >
               <option value="">{SEM_RECORRENCIA}</option>
-              <option value="diaria">Todo dia</option>
+              <option value="uteis">Dias úteis (seg a sex)</option>
+              <option value="diaria">Todo dia (inclusive fim de semana)</option>
+              <option value="alternado">Dia sim, dia não</option>
               <option value="semanal">Toda semana</option>
               <option value="quinzenal">A cada 15 dias</option>
               <option value="mensal">Todo mês</option>
               <option value="anual">Todo ano</option>
+              <option value="escolher">Escolher dias…</option>
             </select>
+            {row.modoDatas && (
+              <div className="rounded-md border border-foreground/20 bg-card">
+                <Calendar
+                  mode="multiple"
+                  locale={ptBR}
+                  selected={row.datas.map((d) => isoParaData(d)).filter((d): d is Date => !!d)}
+                  onSelect={(dias) =>
+                    update(row.id, { datas: (dias ?? []).map((d) => dataParaIso(d)).sort() })
+                  }
+                  defaultMonth={isoParaData(row.datas[0] ?? row.dueDate) ?? new Date()}
+                  className="p-2 [--cell-size:1.75rem]"
+                />
+                <p className="border-t border-foreground/15 px-2 py-1.5 text-[10px] text-foreground/70">
+                  {row.datas.length === 0
+                    ? "Marque os dias no calendário."
+                    : `Cria ${row.datas.length} ${row.datas.length === 1 ? "tarefa" : "tarefas"}, uma em cada dia marcado.`}
+                </p>
+              </div>
+            )}
             {row.frequency === "semanal" && (
               <div className="flex flex-wrap gap-0.5">
                 {DIAS_SEMANA.map((nome, dia) => {
@@ -1273,7 +1342,7 @@ export function InlineTaskCreator({
                 </select>
               </div>
             )}
-            <p className="text-[10px] text-primary">
+            <p className={`text-[10px] text-primary ${row.modoDatas ? "hidden" : ""}`}>
               {descreverRecorrencia({
                 recurring: row.recurring,
                 frequency: row.frequency,

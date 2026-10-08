@@ -1,6 +1,7 @@
 export type Role = "gerente" | "supervisor" | "adm";
 /** "quinzenal" é a cada 15 dias, contados do prazo. */
-export type Frequency = "diaria" | "semanal" | "quinzenal" | "mensal" | "anual";
+/** "alternado" é dia sim, dia não: a cada 2 dias corridos, contados do prazo. */
+export type Frequency = "diaria" | "alternado" | "semanal" | "quinzenal" | "mensal" | "anual";
 export type Status = "pendente" | "andamento" | "concluida";
 export type Priority = "alta" | "media" | "baixa";
 
@@ -270,7 +271,7 @@ export interface Meta {
   scopeId: string;
   // Os períodos de meta são outra lista (ver `metas.functions.ts`); a
   // frequência quinzenal da tarefa não vale aqui.
-  period: Exclude<Frequency, "quinzenal">;
+  period: Exclude<Frequency, "quinzenal" | "alternado">;
   metric: "tarefas" | "pontos";
   target: number;
 }
@@ -317,6 +318,7 @@ export const roleLabels: Record<Role, string> = {
 
 export const freqLabels: Record<Frequency, string> = {
   diaria: "Diária",
+  alternado: "Dia sim, dia não",
   semanal: "Semanal",
   // Por extenso: "quinzenal" também se lê como "duas vezes por mês".
   quinzenal: "A cada 15 dias",

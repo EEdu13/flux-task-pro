@@ -208,6 +208,13 @@ export function proximaOcorrencia(
       break;
     }
 
+    case "alternado": {
+      // Dia sim, dia não: a cada 2 dias corridos, contados do prazo.
+      proxima = new Date(base);
+      proxima.setDate(proxima.getDate() + 2);
+      break;
+    }
+
     case "quinzenal": {
       // A cada 15 dias corridos, contados do prazo — e não duas vezes por mês.
       proxima = new Date(base);
@@ -314,11 +321,15 @@ export function descreverRecorrencia(
   if (!tarefa.recurring) return "Não repete";
   switch (tarefa.frequency as Frequency) {
     case "diaria":
-      return "Todo dia";
+      return "Todo dia, inclusive sábado e domingo";
+    case "alternado":
+      return "Dia sim, dia não";
     case "semanal": {
       const dias = (tarefa.recurringWeekdays ?? []).filter((d) => d >= 0 && d <= 6);
       if (dias.length === 0) return "Toda semana";
       if (dias.length === 7) return "Todo dia";
+      const unicos = [...new Set(dias)].sort((a, b) => a - b);
+      if (unicos.join() === "1,2,3,4,5") return "Dias úteis (seg a sex)";
       const nomes = [...new Set(dias)].sort((a, b) => a - b).map((d) => DIAS_SEMANA[d]);
       return `Toda ${nomes.join(", ")}`;
     }

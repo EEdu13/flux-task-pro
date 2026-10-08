@@ -1115,13 +1115,20 @@ export function TaskDialog() {
               </label>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-muted-foreground">Atalhos:</span>
+                {/* "Dias úteis" era `diaria` empurrando só o PRIMEIRO prazo para
+                    a segunda — dali em diante a série caía no sábado e no
+                    domingo (relato de 08/10/2026). Agora é semanal, de
+                    segunda a sexta, como o pack. */}
                 {([
+                  { label: "Dias úteis", freq: "semanal" as Frequency, days: 30, weekdays: true },
                   { label: "Diária", freq: "diaria" as Frequency, days: 30 },
+                  { label: "Dia sim, dia não", freq: "alternado" as Frequency, days: 30 },
                   { label: "Semanal", freq: "semanal" as Frequency, days: 90 },
                   { label: "Mensal", freq: "mensal" as Frequency, days: 365 },
-                  { label: "Dias úteis", freq: "diaria" as Frequency, days: 30, weekdays: true },
                 ] as { label: string; freq: Frequency; days: number; weekdays?: boolean }[]).map((p) => {
-                  const active = recurring && frequency === p.freq;
+                  const ehUteis = recurringWeekdays.join() === "1,2,3,4,5";
+                  const active =
+                    recurring && frequency === p.freq && (p.freq !== "semanal" || !!p.weekdays === ehUteis);
                   return (
                     <button
                       key={p.label}
@@ -1132,6 +1139,7 @@ export function TaskDialog() {
                         const end = new Date();
                         end.setDate(end.getDate() + p.days);
                         setRecurringUntil(dataParaIso(end));
+                        if (p.freq === "semanal") setRecurringWeekdays(p.weekdays ? [1, 2, 3, 4, 5] : []);
                         if (p.weekdays) {
                           // `new Date("2026-09-13")` é meia-noite UTC — sábado
                           // às 21h no Brasil, e o domingo não era pulado.

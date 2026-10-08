@@ -1690,12 +1690,29 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
     reorderTasks: (orderedIds) => {
       setState((s) => {
-        const map = new Map(orderedIds.map((id, i) => [id, i]));
-        const tarefas = s.tasks.map((t) =>
-          map.has(t.id) ? { ...t, order: map.get(t.id)! } : t,
-        );
-        // Mesma razão do `moveTask`: a ordem é de todos, não de um.
-        for (const t of tarefas) if (map.has(t.id)) void gravarTarefa(t);
+        /* Reaproveita os números de ordem que essas tarefas JÁ tinham, só
+           redistribuídos na sequência nova (relato do usuário, 08/10/2026:
+           "não salva a ordem"). Cada tela manda só o recorte que mostra — uma
+           pessoa no Delegar, um dia no calendário, a lista filtrada — e antes
+           ele virava 0, 1, 2…: os números colidiam com os das tarefas
+           escondidas, e a ordem aparecia embaralhada na tela seguinte. */
+        const porId = new Map(s.tasks.map((t) => [t.id, t]));
+        const ids = orderedIds.filter((id) => porId.has(id));
+        const vagas = ids.map((id) => porId.get(id)!.order).sort((a, b) => a - b);
+        // Estritamente crescente: números repetidos não diriam quem vem antes.
+        for (let i = 1; i < vagas.length; i++) {
+          if (vagas[i]! <= vagas[i - 1]!) vagas[i] = vagas[i - 1]! + 1;
+        }
+        const nova = new Map(ids.map((id, i) => [id, vagas[i]!]));
+        const tarefas = s.tasks.map((t) => {
+          const ordem = nova.get(t.id);
+          if (ordem === undefined || ordem === t.order) return t;
+          const atualizada = { ...t, order: ordem };
+          // Mesma razão do `moveTask`: a ordem é de todos, não de um. Só as
+          // que mudaram vão ao banco.
+          void gravarTarefa(atualizada);
+          return atualizada;
+        });
         return { ...s, tasks: tarefas };
       });
     },
@@ -1714,6 +1731,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         const idx = targetIndex ?? col.length;
         const nextTask: Task = comConclusao(prev.status, { ...prev, status });
         col.splice(idx, 0, nextTask);
+        const ordemAntes = new Map(col.map((t) => [t.id, t.order]));
         const reordered = col.map((t, i) => ({ ...t, order: i }));
         const rest = others.filter((t) => t.status !== status);
         // A mudança de coluna vira linha da Timeline no servidor, em `salvarTarefa`.
@@ -1723,7 +1741,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
            cartão no meio empurra a ordem de todos os que estão abaixo dele.
            Gravar só a arrastada deixaria a ordem certa nesta tela e errada em
            qualquer outra máquina. */
-        for (const t of reordered) void gravarTarefa(t);
+        /* …mas só as que de fato mudaram de número (e a arrastada, que muda
+           de coluna). Gravar a coluna toda era uma ida ao banco por cartão a
+           cada arraste. */
+        for (const t of reordered) {
+          if (t.id === id || ordemAntes.get(t.id) !== t.order) void gravarTarefa(t);
+        }
 
         const base: Persisted = { ...s, tasks };
         if (status === "concluida" && prev.status !== "concluida") {

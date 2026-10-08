@@ -508,7 +508,7 @@ CREATE TABLE gestor.tarefas (
   horario TIME(0) NULL,
   CONSTRAINT PK_gestor_tarefas PRIMARY KEY CLUSTERED (id),
   CONSTRAINT FK_gestor_projeto FOREIGN KEY (projeto_id) REFERENCES gestor.projetos(id) ON DELETE SET NULL,
-  CONSTRAINT CK_gestor_frequencia CHECK ([frequencia]='anual' OR [frequencia]='mensal' OR [frequencia]='quinzenal' OR [frequencia]='semanal' OR [frequencia]='diaria'),
+  CONSTRAINT CK_gestor_frequencia CHECK ([frequencia]='anual' OR [frequencia]='mensal' OR [frequencia]='quinzenal' OR [frequencia]='semanal' OR [frequencia]='diaria' OR [frequencia]='alternado'),
   CONSTRAINT CK_gestor_dia_do_mes CHECK ([dia_do_mes] IS NULL OR ([dia_do_mes]=(-2) OR [dia_do_mes]=(-1)) OR [dia_do_mes]>=(1) AND [dia_do_mes]<=(31)),
   CONSTRAINT CK_gestor_situacao CHECK ([situacao]='concluida' OR [situacao]='andamento' OR [situacao]='pendente'),
   CONSTRAINT CK_gestor_prioridade CHECK ([prioridade]='baixa' OR [prioridade]='media' OR [prioridade]='alta')
