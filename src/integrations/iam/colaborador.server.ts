@@ -176,6 +176,18 @@ export async function buscarColaborador(
 }
 
 /** Esta pessoa é citada como supervisor ou coordenador de alguém? */
+/**
+ * O cargo é de chefia? SUPERVISOR, COORDENADOR ou GERENTE no começo da função.
+ *
+ * Existe porque há chefe sem ninguém cadastrado abaixo dele no organograma —
+ * o João Paulo, supervisor de controladoria (08/10/2026) — e a regra só pela
+ * hierarquia o deixava como "ADM (Colaborador)". O papel do Fluxo não vem da
+ * IAM: trocar lá tiraria funções dele no apontamento.
+ */
+export function cargoDeChefia(funcao: string | null | undefined): boolean {
+  return /^(SUPERVISOR|SUPERVISORA|COORDENADOR|COORDENADORA|GERENTE)/.test(normalizar(funcao ?? ""));
+}
+
 export async function chefiaAlguem(nome: string): Promise<boolean> {
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
@@ -183,8 +195,16 @@ export async function chefiaAlguem(nome: string): Promise<boolean> {
     .request()
     .input("nome", sql.NVarChar, nome.trim())
     .query(
+      /* Os externos também: estagiário e PJ têm supervisor, e quem os chefia
+         é chefe do mesmo jeito. */
       `SELECT TOP 1 1 AS ok FROM dbo.COLABORADORES
         WHERE (SUPERVISOR COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI
+            OR COORDENADOR COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI)
+          AND LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI <> @nome COLLATE Latin1_General_CI_AI
+       UNION ALL
+       SELECT TOP 1 1 FROM dbo.COLABORADORES_EXTERNOS
+        WHERE ATIVO = 1
+          AND (SUPERVISOR COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI
             OR COORDENADOR COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI)
           AND LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI <> @nome COLLATE Latin1_General_CI_AI`,
     );

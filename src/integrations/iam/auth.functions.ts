@@ -68,7 +68,11 @@ export const iamLogin = createServerFn({ method: "POST" })
           perfil = {
             funcao: dados.funcao ?? "",
             setorId: col.setorParaId(dados.setor),
-            role: col.papelPelaHierarquia(dados.nome, await col.chefiaAlguem(dados.nome)),
+            // Chefia alguém no organograma OU tem cargo de chefia — ver `cargoDeChefia`.
+            role: col.papelPelaHierarquia(
+              dados.nome,
+              col.cargoDeChefia(dados.funcao) || (await col.chefiaAlguem(dados.nome)),
+            ),
             // Chefe direto já resolvido: nunca a própria pessoa. Ver chefeDireto().
             supervisorNome: col.chefeDireto(dados),
             coordenadorNome: dados.coordenador || null,
