@@ -6,6 +6,8 @@ import { triggerTractor } from "@/components/tractor-banner";
 import { primeiroNome } from "@/integrations/iam/types";
 import { tocarNudge } from "@/lib/sons";
 import { avisarNoSistema } from "@/lib/aviso-do-sistema";
+import { PREFIXO_EMOJI } from "@/lib/attention.functions";
+import { abrirConversa, dispararEmojiGigante } from "@/lib/avisos-no-chat";
 
 interface AttnEvent {
   fromName: string;
@@ -101,6 +103,28 @@ export function AttentionOverlay() {
              `avisarNoSistema` achar que a pessoa já estava olhando. No
              navegador, onde nada traz a aba para frente, é o único aviso que
              chega a quem está em outra aba. */
+          /* Todo aviso abre a conversa com quem mandou: o chat é onde a
+             resposta acontece (pedido do usuário, 08/10/2026). A linha "fulano
+             chamou sua atenção" já está nela — quem manda a grava junto. */
+          abrirConversa(n.from_user_id);
+
+          // O emoji gigante viaja como cutucada com "emoji:❤️" — ver PREFIXO_EMOJI.
+          const emoji =
+            n.kind === "cutucada" && n.message?.startsWith(PREFIXO_EMOJI)
+              ? n.message.slice(PREFIXO_EMOJI.length)
+              : null;
+          if (emoji) {
+            void avisarNoSistema({
+              titulo: `${emoji} ${primeiroNome(n.from_name)} mandou um emoji`,
+              corpo: "",
+              tag: `atencao-${id}`,
+            });
+            dispararEmojiGigante(emoji, n.from_name);
+            tocarNudge();
+            void desktopBringToFront();
+            continue;
+          }
+
           void avisarNoSistema({
             titulo:
               n.kind === "trator"

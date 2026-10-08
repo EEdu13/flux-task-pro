@@ -106,7 +106,7 @@ const texto = (v: unknown, max: number): string =>
 
 /** Dá um nome ao dispositivo — "Notebook do escritório" em vez de um id. */
 export const renomearDispositivo = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string; apelido: string }) => {
       const id = guid(e?.id);
       if (!id) throw new Error("Dispositivo inválido");

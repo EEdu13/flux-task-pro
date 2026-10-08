@@ -6,7 +6,7 @@
   "packageManager": "npm@11.12.1",
   "scripts": {
     "dev": "vite dev",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "build:dev": "vite build --mode development",
@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "telegram:webhook": "node --env-file=.env scripts/telegram-webhook.mjs",
-    "telegram:diario": "node --env-file=.env scripts/telegram-diario.mjs"
+    "telegram:diario": "node --env-file=.env scripts/telegram-diario.mjs",
+    "db:schema": "node --env-file=.env.local scripts/exportar-schema.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.6",

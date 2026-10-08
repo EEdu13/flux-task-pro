@@ -91,7 +91,7 @@ export const listarPacks = createServerFn({ method: "POST" }).handler(
 );
 
 export const salvarPack = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         id?: string;
@@ -222,7 +222,7 @@ export const salvarPack = createServerFn({ method: "POST" })
   );
 
 export const apagarPack = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = typeof e?.id === "string" ? e.id.trim() : "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Modelo inválido");

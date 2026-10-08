@@ -39,7 +39,7 @@ const guid = (v: unknown): string | null =>
  * a segunda trava, para quem chamar esta função por fora da tela.
  */
 export const registrarSessaoDeTempo = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { tarefaId: string; iniciouEm: string; encerrouEm: string }) => {
       const tarefaId = guid(e?.tarefaId);
       if (!tarefaId) throw new Error("Tarefa inválida");
@@ -95,20 +95,19 @@ type LinhaSessao = {
 export const listarSessoesDeTempo = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (eu): Promise<{ sessoes: SessaoDeTempo[] }> => {
     const { papelEsetor } = await import("@/lib/perfil.functions");
-    const { papel, setor } = await papelEsetor(eu);
+    const { papel } = await papelEsetor(eu);
 
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
 
+    // O tempo de cada um e o de quem responde a ele no organograma.
+    const { SQL_MEUS_SUBORDINADOS } = await import("@/lib/permissoes.server");
     const filtro =
       papel === "gerente"
         ? "1=1"
-        : papel === "supervisor" && setor
-          ? "(t.setor=@setor OR s.pessoa_id=@eu)"
-          : "s.pessoa_id=@eu";
+        : `(s.pessoa_id=@eu OR s.pessoa_id IN ${SQL_MEUS_SUBORDINADOS})`;
 
     const req = pool.request().input("eu", sql.Int, eu);
-    if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);
 
     const r = await req.query(
       `SELECT TOP (2000) s.id, s.tarefa_id, s.pessoa_id, s.iniciou_em, s.encerrou_em, s.segundos

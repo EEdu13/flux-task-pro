@@ -12,6 +12,9 @@ export interface User {
   sector: string;
   avatar: string;
   supervisorId?: string; // for adm users, who supervises them
+  /** O nome do chefe no organograma. Existe mesmo quando o chefe nunca
+   *  entrou no Fluxo — aí não há `supervisorId` para apontar. */
+  supervisorNome?: string;
   score: number;
   streak: number;
   email?: string;
@@ -144,6 +147,8 @@ export interface Task {
    * Vale enquanto o checklist não foi carregado — ver `progressoDoChecklist`.
    */
   checklistResumo?: { total: number; feitos: number };
+  /** Reações de quem enxerga a tarefa, uma por pessoa — ver `reacoes.functions.ts`. */
+  reactions?: { userId: string; emoji: string }[];
   /**
    * Tempo estimado (em minutos) para executar essa tarefa. Opcional.
    */

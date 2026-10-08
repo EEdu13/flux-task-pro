@@ -43,7 +43,7 @@ const CHAVE_PRESENCA = "presenca:lista";
 /* -------------------- Mensagens -------------------- */
 
 export const chatSend = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (input: { toUserId: string; body?: string; comAnexo?: boolean }) => {
       // `fromUserId` saiu da entrada. Ele era o remetente escolhido pelo
       // cliente — ou seja, dava para mandar mensagem no nome de outra pessoa.
@@ -106,7 +106,7 @@ type LinhaMensagem = {
 };
 
 export const chatConversation = createServerFn({ method: "POST" })
-  .inputValidator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
+  .validator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
   .handler(async ({ data }) => {
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
@@ -152,8 +152,10 @@ export const chatConversation = createServerFn({ method: "POST" })
               WHERE x.dono_tipo = 'mensagem' AND x.dono_id = m.id
               ORDER BY x.enviado_em
            ) a
-          WHERE (m.de_pessoa_id=@me AND m.para_pessoa_id=@peer)
-             OR (m.de_pessoa_id=@peer AND m.para_pessoa_id=@me)
+          WHERE ((m.de_pessoa_id=@me AND m.para_pessoa_id=@peer)
+              OR (m.de_pessoa_id=@peer AND m.para_pessoa_id=@me))
+            -- O que eu limpei some para mim; ver chatLimparConversa.
+            AND m.em > ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl WHERE cl.pessoa_id=@me AND cl.outro_id=@peer), '19000101')
           ORDER BY m.em DESC;
 
          -- Digitando: a marca vale 6 segundos. O cliente reavisa a cada 2,5s
@@ -191,6 +193,35 @@ export const chatConversation = createServerFn({ method: "POST" })
     };
   });
 
+/**
+ * Limpa a conversa com alguém — PARA MIM, como o "Limpar conversa" do
+ * WhatsApp (pedido do usuário, 08/10/2026). Nada é apagado: grava-se a hora
+ * da limpeza, e eu passo a ver só o que veio depois. A outra pessoa continua
+ * com o histórico dela; apagar de verdade tiraria dela o registro sem aviso.
+ */
+export const chatLimparConversa = createServerFn({ method: "POST" })
+  .validator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
+  .handler(async ({ data }) => {
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    const eu = await pessoaDaSessao();
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("me", sql.Int, eu)
+      .input("peer", sql.Int, data.peerId)
+      .query(
+        `IF EXISTS (SELECT 1 FROM gestor.conversas_limpas WHERE pessoa_id=@me AND outro_id=@peer)
+           UPDATE gestor.conversas_limpas SET limpa_em=SYSDATETIMEOFFSET()
+            WHERE pessoa_id=@me AND outro_id=@peer;
+         ELSE
+           INSERT INTO gestor.conversas_limpas (pessoa_id, outro_id) VALUES (@me, @peer);`,
+      );
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(chaveDasConversas(eu));
+    return { ok: true };
+  });
+
 /** Última mensagem por contato + não lidas — para a lista estilo WhatsApp. */
 export const chatThreads = createServerFn({ method: "POST" }).handler(async () => {
   const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
@@ -211,8 +242,13 @@ async function conversasDe(eu: number) {
          SELECT
            CASE WHEN de_pessoa_id=@me THEN para_pessoa_id ELSE de_pessoa_id END AS peer,
            id, corpo, em, de_pessoa_id
-         FROM gestor.mensagens
-         WHERE de_pessoa_id=@me OR para_pessoa_id=@me
+         FROM gestor.mensagens mm
+         WHERE (de_pessoa_id=@me OR para_pessoa_id=@me)
+           -- Conversa limpa: só o que veio depois — ver chatLimparConversa.
+           AND em > ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl
+                             WHERE cl.pessoa_id=@me
+                               AND cl.outro_id = CASE WHEN mm.de_pessoa_id=@me THEN mm.para_pessoa_id ELSE mm.de_pessoa_id END),
+                           '19000101')
        ),
        ranked AS (
          SELECT *, ROW_NUMBER() OVER (PARTITION BY peer ORDER BY em DESC) rn FROM conv
@@ -227,7 +263,9 @@ async function conversasDe(eu: number) {
               (SELECT TOP 1 x.tipo_mime FROM gestor.anexos x
                  WHERE x.dono_tipo='mensagem' AND x.dono_id=r.id) AS att_type,
               (SELECT COUNT(*) FROM gestor.mensagens m
-                 WHERE m.para_pessoa_id=@me AND m.de_pessoa_id=r.peer AND m.lida_em IS NULL) AS unread
+                 WHERE m.para_pessoa_id=@me AND m.de_pessoa_id=r.peer AND m.lida_em IS NULL
+                   AND m.em > ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl
+                                       WHERE cl.pessoa_id=@me AND cl.outro_id=r.peer), '19000101')) AS unread
        FROM ranked r WHERE r.rn=1
        ORDER BY r.em DESC`,
     );
@@ -251,7 +289,7 @@ async function conversasDe(eu: number) {
 }
 
 export const chatMarkRead = createServerFn({ method: "POST" })
-  .inputValidator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
+  .validator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
   .handler(async ({ data }) => {
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
@@ -310,7 +348,7 @@ export const presenceHeartbeat = createServerFn({ method: "POST" }).handler(asyn
  * no caso que importa, o de fechar a janela no meio da frase.
  */
 export const chatDigitando = createServerFn({ method: "POST" })
-  .inputValidator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
+  .validator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
   .handler(async ({ data }) => {
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
@@ -366,7 +404,7 @@ async function listaDePresenca() {
  * primeiro heartbeat não pode se perder.
  */
 export const definirEstado = createServerFn({ method: "POST" })
-  .inputValidator((input: { estado: string }) => {
+  .validator((input: { estado: string }) => {
     if (!(ESTADOS as readonly string[]).includes(input?.estado)) throw new Error("Status inválido");
     return { estado: input.estado as EstadoDoChat };
   })

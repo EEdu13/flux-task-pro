@@ -114,7 +114,7 @@ const sanitizeRoomLabel = (value: unknown, fallback: string) => {
 };
 
 export const getLiveKitToken = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; identity: string; name: string }) => {
+  .validator((input: { roomName: string; identity: string; name: string }) => {
     if (!input || typeof input.roomName !== "string" || typeof input.identity !== "string") {
       throw new Error("Parâmetros inválidos");
     }
@@ -135,29 +135,38 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
     if (!apiKey || !apiSecret || !url) {
       throw new Error("LiveKit não configurado no servidor");
     }
-    // Impõe privacidade em CADA emissão de token: quem pede precisa ser membro.
-    //
-    // A checagem já existia; o que faltava era a identidade ser confiável. Ela
-    // conferia `data.userId`, que vinha no corpo da requisição — bastava mandar
-    // o id de um membro para receber o token de uma sala privada.
-    {
-      const { getPool, isRoomMember, getRoomIsPrivate } = await import("@/integrations/db.server");
-      const pool = await getPool();
-      const isPrivate = await getRoomIsPrivate(pool, data.roomName);
-      if (isPrivate) {
-        const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
-        // A sessão só é exigida quando a sala é privada. Sala aberta continua
-        // funcionando para quem ainda não passou pela IAM — o convidado que
-        // entra por link, por exemplo.
-        const eu = await pessoaDaSessao();
-        const member = await isRoomMember(pool, data.roomName, eu);
-        if (!member) throw new Error("Sala privada: peça para entrar antes.");
-      }
+    /* Sessão SEMPRE, e a identidade sai dela (auditoria de 08/10/2026).
+       Antes a sessão só era pedida na sala privada, e identidade e nome
+       vinham do navegador: sem login, qualquer um entrava numa sala aberta
+       com o nome de outra pessoa — e uma identidade repetida derruba a de
+       verdade. O convidado por link não passa aqui: tem `getGuestToken`,
+       com assinatura própria.
+
+       O formato "<id>-<nome>" continua: o app lê o id antes do hífen (a
+       presença nas salas, as atas). Só que o id agora é o da sessão, e o
+       nome, o do cadastro. */
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    const eu = await pessoaDaSessao();
+    const { getPool, sql, isRoomMember, getRoomIsPrivate } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    // A diretoria é sempre privada, como em `getRoomAccess` — mesmo que a
+    // marca da sala tenha sido zerada.
+    const isPrivate = isDiretoriaRoom(data.roomName) || (await getRoomIsPrivate(pool, data.roomName));
+    if (isPrivate && !(await isRoomMember(pool, data.roomName, eu))) {
+      throw new Error("Sala privada: peça para entrar antes.");
     }
+    const perfil = await pool
+      .request()
+      .input("eu", sql.Int, eu)
+      .query(`SELECT nome FROM gestor.perfis WHERE pessoa_id=@eu`);
+    const nomeDoCadastro = (perfil.recordset[0] as { nome: string | null } | undefined)?.nome?.trim();
+    const nome = (nomeDoCadastro || data.name).slice(0, 64);
+    const identidade = `${eu}-${nome.replace(/\s+/g, "_")}`.slice(0, 64);
+
     const { AccessToken } = await import("livekit-server-sdk");
     const at = new AccessToken(apiKey, apiSecret, {
-      identity: data.identity,
-      name: data.name,
+      identity: identidade,
+      name: nome,
       ttl: 60 * 60 * 4, // 4 horas
     });
     at.addGrant({
@@ -172,7 +181,7 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
   });
 
 export const listRoomsPresence = createServerFn({ method: "POST" })
-  .inputValidator((input: { rooms: string[] }) => {
+  .validator((input: { rooms: string[] }) => {
     if (!input || !Array.isArray(input.rooms)) throw new Error("rooms inválido");
     const rooms = input.rooms
       .filter((r) => typeof r === "string" && /^[a-zA-Z0-9_-]+$/.test(r))
@@ -207,7 +216,7 @@ export const listRoomsPresence = createServerFn({ method: "POST" })
   });
 
 export const listSectorRooms = createServerFn({ method: "POST" })
-  .inputValidator((input: { sectors: string[] }) => {
+  .validator((input: { sectors: string[] }) => {
     if (!input || !Array.isArray(input.sectors)) throw new Error("sectors inválido");
     const sectors = input.sectors
       .filter((s) => typeof s === "string" && /^[a-zA-Z0-9_-]+$/.test(s))
@@ -351,7 +360,7 @@ const CHAVE_TOCANDO = "chamadas:tocando";
 const CHAVE_RESPONDIDAS = "chamadas:respondidas";
 
 export const createRoomCall = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (input: { targetUserId: string; roomName: string; roomLabel: string }) => {
       // `callerUserId` saiu: era quem aparecia chamando, escolhido por quem
       // chamava. Dava para tocar o telefone de alguém no nome de outra pessoa.
@@ -439,7 +448,7 @@ export const listIncomingRoomCalls = createServerFn({ method: "POST" }).handler(
 });
 
 export const updateRoomCallStatus = createServerFn({ method: "POST" })
-  .inputValidator((input: { callId: string; status: RoomCallStatus }) => {
+  .validator((input: { callId: string; status: RoomCallStatus }) => {
     if (!input || typeof input.callId !== "string") throw new Error("Chamada inválida");
     const callId = input.callId.trim();
     /* Qualquer GUID, sem exigir versão nem variante. O id de `gestor.chamadas`
@@ -490,7 +499,7 @@ export const updateRoomCallStatus = createServerFn({ method: "POST" })
   });
 
 export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
-  .inputValidator((input: { sinceIso?: string }) => {
+  .validator((input: { sinceIso?: string }) => {
     // `userId` saiu: ele escolhia de quem eram as chamadas feitas.
     const sinceIso =
       typeof input?.sinceIso === "string" && !Number.isNaN(Date.parse(input.sinceIso))
@@ -537,6 +546,16 @@ export const listOutgoingRoomCallUpdates = createServerFn({ method: "POST" })
   });
 
 export const purgeAllRooms = createServerFn({ method: "POST" }).handler(async () => {
+  /* Só a gerência, e só logada. Esta função derruba TODAS as chamadas e
+     torna públicas todas as salas privadas — diretoria inclusive. Ela não
+     pedia nem login: qualquer um que chamasse o endereço fazia isso
+     (auditoria de 08/10/2026). */
+  const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+  const eu = await pessoaDaSessao();
+  const { papelEsetor } = await import("@/lib/perfil.functions");
+  if ((await papelEsetor(eu)).papel !== "gerente") {
+    throw new Error("Só a gerência pode fechar todas as salas");
+  }
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const wsUrl = process.env.LIVEKIT_URL;
@@ -582,7 +601,7 @@ const ENCERRAR_TIRA_EM_MS = 5_000;
 const ENCERRAR_TIRA_QUEM_ESCREVE_A_ATA_EM_MS = 3 * 60_000;
 
 export const encerrarLigacao = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; escritorDaAta?: string | null }) => ({
+  .validator((input: { roomName: string; escritorDaAta?: string | null }) => ({
     roomName: sanitizeRoomName(input?.roomName),
     escritorDaAta:
       typeof input?.escritorDaAta === "string" && input.escritorDaAta
@@ -649,7 +668,7 @@ function isDiretoriaRoom(roomName: string): boolean {
 }
 
 export const getRoomAccess = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string }) => ({
+  .validator((input: { roomName: string }) => ({
     roomName: sanitizeRoomName(input?.roomName),
   }))
   .handler(async ({ data }) => {
@@ -709,7 +728,7 @@ export const getRoomAccess = createServerFn({ method: "POST" })
   });
 
 export const setRoomPrivacy = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; isPrivate: boolean }) => ({
+  .validator((input: { roomName: string; isPrivate: boolean }) => ({
     roomName: sanitizeRoomName(input?.roomName),
     isPrivate: !!input?.isPrivate,
   }))
@@ -777,7 +796,7 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
   });
 
 export const inviteToRoom = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; targetUserId: string }) => ({
+  .validator((input: { roomName: string; targetUserId: string }) => ({
     roomName: sanitizeRoomName(input?.roomName),
     targetUserId: pessoaAlvo(input?.targetUserId),
   }))
@@ -813,7 +832,7 @@ export const inviteToRoom = createServerFn({ method: "POST" })
   });
 
 export const knockRoom = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; userName: string }) => ({
+  .validator((input: { roomName: string; userName: string }) => ({
     roomName: sanitizeRoomName(input?.roomName),
     // `userId` saiu: dava para bater na porta em nome de outra pessoa, e o
     // nome que aparece para quem aprova vinha do mesmo lugar.
@@ -842,7 +861,8 @@ export const knockRoom = createServerFn({ method: "POST" })
           ORDER BY em DESC`,
       );
     const ex = existing.recordset[0] as { id: string; status: "pending" | "approved" } | undefined;
-    if (ex) return { status: ex.status, knockId: ex.id };
+    // O banco guarda "esperando"/"aceito"; a tela espera pending/approved.
+    if (ex) return { status: PEDIDO_NO_APP[ex.status] ?? "pending", knockId: ex.id };
 
     const inserted = await pool
       .request()
@@ -857,7 +877,7 @@ export const knockRoom = createServerFn({ method: "POST" })
   });
 
 export const getKnockStatus = createServerFn({ method: "POST" })
-  .inputValidator((input: { knockId: string }) => {
+  .validator((input: { knockId: string }) => {
     const id = typeof input?.knockId === "string" ? input.knockId.trim() : "";
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Pedido inválido");
     return { knockId: id };
@@ -869,16 +889,17 @@ export const getKnockStatus = createServerFn({ method: "POST" })
       .request()
       .input("id", sql.UniqueIdentifier, data.knockId)
       .query(`SELECT situacao AS status FROM gestor.sala_pedidos_de_entrada WHERE id=@id`);
-    const status = (r.recordset[0]?.status ?? "unknown") as
-      | "pending"
-      | "approved"
-      | "denied"
-      | "unknown";
+    /* Traduz para o que a tela compara. Devolvia "aceito" cru, e a tela
+       esperava "approved": quem batia na porta ficava esperando para sempre,
+       mesmo depois de aceito (auditoria de 08/10/2026). */
+    const bruto = r.recordset[0]?.status as string | undefined;
+    const status: "pending" | "approved" | "denied" | "unknown" =
+      (bruto && PEDIDO_NO_APP[bruto]) || "unknown";
     return { status };
   });
 
 export const listRoomKnocks = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string }) => ({
+  .validator((input: { roomName: string }) => ({
     roomName: sanitizeRoomName(input?.roomName),
   }))
   .handler(async ({ data }) => {
@@ -917,7 +938,7 @@ export const listRoomKnocks = createServerFn({ method: "POST" })
   });
 
 export const resolveKnock = createServerFn({ method: "POST" })
-  .inputValidator((input: { knockId: string; approve: boolean }) => {
+  .validator((input: { knockId: string; approve: boolean }) => {
     const id = typeof input?.knockId === "string" ? input.knockId.trim() : "";
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Pedido inválido");
     // `resolverUserId` saiu: era quem assinava a aprovação.
@@ -966,7 +987,7 @@ export const resolveKnock = createServerFn({ method: "POST" })
 
 // Publica quem está falando para aparecer no card da sala.
 export const updateActiveSpeakers = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; speakers: string[] }) => {
+  .validator((input: { roomName: string; speakers: string[] }) => {
     const roomName = sanitizeRoomName(input?.roomName);
     const speakers = Array.isArray(input?.speakers)
       ? input.speakers
@@ -1057,7 +1078,7 @@ async function verifyGuestToken(token: string, secret: string): Promise<{ r: str
 }
 
 export const createGuestInvite = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; hours?: number }) => ({
+  .validator((input: { roomName: string; hours?: number }) => ({
     roomName: sanitizeRoomName(input?.roomName),
     hours: Math.max(1, Math.min(72, Math.floor(input?.hours ?? 24))),
   }))
@@ -1089,7 +1110,7 @@ export const createGuestInvite = createServerFn({ method: "POST" })
   });
 
 export const getGuestLiveKitToken = createServerFn({ method: "POST" })
-  .inputValidator((input: { roomName: string; guestToken: string; name: string }) => {
+  .validator((input: { roomName: string; guestToken: string; name: string }) => {
     const roomName = sanitizeRoomName(input?.roomName);
     const guestToken =
       typeof input?.guestToken === "string" ? input.guestToken.trim().slice(0, 512) : "";

@@ -124,7 +124,7 @@ export const minhasEtiquetas = createServerFn({ method: "POST" }).handler(
 
 /** Tudo que pende de uma tarefa, numa consulta por tabela. */
 export const carregarSatelites = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { tarefaId: string }) => {
       const id = guid(e?.tarefaId);
       if (!id) throw new Error("Tarefa inválida");
@@ -247,7 +247,7 @@ export const carregarSatelites = createServerFn({ method: "POST" })
  * acabou de acontecer. Leitura de uma tabela só, pelo índice (tarefa_id, em).
  */
 export const carregarHistorico = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { tarefaId: string }) => {
       const id = guid(e?.tarefaId);
       if (!id) throw new Error("Tarefa inválida");
@@ -280,7 +280,7 @@ export const carregarHistorico = createServerFn({ method: "POST" })
  * histórico é só acrescentar — o que mudou no checklist e quem foi mencionado.
  */
 export const salvarSatelites = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         tarefaId: string;
@@ -642,7 +642,7 @@ export const salvarSatelites = createServerFn({ method: "POST" })
  * comentário nenhum.
  */
 export const comentarNaTarefa = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { tarefaId: string; texto: string }) => {
       const tarefaId = guid(e?.tarefaId);
       if (!tarefaId) throw new Error("Tarefa inválida");

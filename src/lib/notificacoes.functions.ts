@@ -226,7 +226,12 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
                   SELECT 1 FROM gestor.notificacoes n
                    WHERE n.tarefa_id = t.id
                      AND n.destinatario_id = @eu
-                     AND n.tipo = 'prazo')`,
+                     AND n.tipo = 'prazo'
+                     -- O mesmo aviso, não qualquer um: quem já recebeu
+                     -- "Prazo se aproximando" ainda precisa receber "Tarefa
+                     -- atrasada" quando vencer (auditoria de 08/10/2026).
+                     AND n.titulo = CASE WHEN t.prazo < SYSDATETIMEOFFSET()
+                                         THEN 'Tarefa atrasada' ELSE 'Prazo se aproximando' END)`,
       );
     return { criados: r.rowsAffected[0] ?? 0 };
   }),
@@ -247,7 +252,7 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
  * fraude, e é onde a linha foi traçada.
  */
 export const avisar = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         paraPessoaId: string | number;
@@ -289,9 +294,19 @@ export const avisar = createServerFn({ method: "POST" })
           tituloDaSala: string | null;
         },
       ): Promise<{ ok: boolean }> => {
+        /* Duas travas (auditoria de 08/10/2026). O remetente já era a sessão,
+           mas o resto era livre: dava para encher a sineta de alguém com
+           "você foi atribuído" inventado, apontando para qualquer tarefa.
+           1) Aviso que aponta tarefa só sai de quem enxerga essa tarefa.
+           2) No máximo 30 avisos por minuto por pessoa — o uso real (pack,
+              atribuição, chamada) fica muito abaixo disso. */
+        if (d.tarefaId) {
+          const { permissaoNaTarefa } = await import("@/lib/permissoes.server");
+          if (!(await permissaoNaTarefa(eu, d.tarefaId)).ver) throw new Error("Tarefa não encontrada");
+        }
         const { getPool, sql } = await import("@/integrations/db.server");
         const pool = await getPool();
-        await pool
+        const gravou = await pool
           .request()
           .input("para", sql.Int, d.paraPessoaId)
           .input("de", sql.Int, eu)
@@ -305,8 +320,11 @@ export const avisar = createServerFn({ method: "POST" })
             `INSERT INTO gestor.notificacoes
                (destinatario_id, de_pessoa_id, tipo, titulo, descricao,
                 tarefa_id, sala, titulo_da_sala)
-             VALUES (@para, @de, @tipo, @titulo, @descricao, @tarefa, @sala, @titulo_sala)`,
+             SELECT @para, @de, @tipo, @titulo, @descricao, @tarefa, @sala, @titulo_sala
+              WHERE (SELECT COUNT(*) FROM gestor.notificacoes
+                      WHERE de_pessoa_id=@de AND em > DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())) < 30`,
           );
+        if ((gravou.rowsAffected[0] ?? 0) === 0) throw new Error("Muitos avisos em pouco tempo. Espere um minuto.");
         return { ok: true };
       },
     ),
@@ -326,7 +344,7 @@ export const avisar = createServerFn({ method: "POST" })
  * LiveKit reporta duas vezes, vira um aviso só.
  */
 export const registrarChamadaPerdida = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { deQuemChamou: string | number; sala: string; tituloDaSala?: string }) => ({
       deQuemChamou: pessoa(e?.deQuemChamou),
       sala: texto(e?.sala, 80),
@@ -373,7 +391,7 @@ export const registrarChamadaPerdida = createServerFn({ method: "POST" })
  * um.
  */
 export const marcarNotificacaoLida = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = guid(e?.id);
       if (!id) throw new Error("Notificação inválida");

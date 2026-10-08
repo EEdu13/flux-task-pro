@@ -7,10 +7,22 @@ import {
   ChevronRight,
   DoorOpen,
   NotebookPen,
+  Palette,
   Plus,
+  Repeat,
+  RotateCcw,
   Zap,
   Eye,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SeletorDeCor } from "@/components/seletor-de-cor";
+import { CalendarioLinhas } from "@/components/calendario-linhas";
+import { comOcorrenciasPrevistas, ehPrevista, idReal } from "@/lib/ocorrencias-previstas";
+import {
+  CORES_DO_DIA,
+  usePrefsDoCalendario,
+  type PrefsDoCalendario,
+} from "@/lib/use-prefs-do-calendario";
 import { AGENDA_PESSOAL_MUDOU, AgendaDoDia } from "@/components/agenda-do-dia";
 import { listarAgendaPessoal } from "@/lib/agenda-pessoal.functions";
 import { FluxoLayout } from "@/components/fluxo-layout";
@@ -32,7 +44,34 @@ export const Route = createFileRoute("/calendario")({
   component: CalendarioPage,
 });
 
-type ViewMode = "mes" | "semana" | "dia" | "lista";
+type ViewMode = "mes" | "semana" | "dia" | "lista" | "linhas";
+
+const ROTULO_DA_VISAO: Record<ViewMode, string> = {
+  mes: "Mês",
+  semana: "Semana",
+  dia: "Dia",
+  lista: "Lista",
+  linhas: "Linhas",
+};
+
+/** Cores prontas para o fundo e para as minhas tarefas; a personalizada vem do seletor. */
+const CORES_PRONTAS = [
+  "#2563eb",
+  "#0d9488",
+  "#16a34a",
+  "#ca8a04",
+  "#ea580c",
+  "#dc2626",
+  "#db2777",
+  "#7c3aed",
+];
+
+/** O dia pintado: a cor escolhida misturada ao cartão, para o texto seguir legível. */
+const fundoPintado = (cor: string | null | undefined) =>
+  cor ? `color-mix(in oklab, ${cor} 28%, var(--card))` : undefined;
+
+/** Primeiro dia do mês da data. */
+const inicioDoMes = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 
 const startOfDay = (d: Date) => {
   const x = new Date(d);
@@ -48,8 +87,12 @@ const startOfWeek = (d: Date) => {
 function CalendarioPage() {
   const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate, reorderTasks } = useFluxo();
   const [view, setView] = useState<ViewMode>("mes");
+  /** A largura da visão em linhas: uma semana ou o mês inteiro. */
+  const [escalaLinhas, setEscalaLinhas] = useState<"semana" | "mes">("semana");
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [scope, setScope] = useState<"eu" | "todos">("eu");
+  const [prefs, mudarPrefs, pintarDia] = usePrefsDoCalendario(currentUser.id);
+  const corMinhas = prefs.minhas ?? "var(--primary)";
   const [dayCtx, setDayCtx] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
   /** O dia em que a agenda abriu ("yyyy-MM-dd"), ou `null`. Aberta, ela troca
    *  de dia sozinha — o calendário por trás não é redesenhado a cada seta. */
@@ -93,6 +136,14 @@ function CalendarioPage() {
       const iso = dataParaIso(cursor);
       return { de: iso, ate: iso };
     }
+    if (view === "linhas") {
+      const inicio = escalaLinhas === "semana" ? startOfWeek(cursor) : inicioDoMes(cursor);
+      const fim =
+        escalaLinhas === "semana"
+          ? new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + 6)
+          : new Date(inicio.getFullYear(), inicio.getMonth() + 1, 0);
+      return { de: dataParaIso(inicio), ate: dataParaIso(fim) };
+    }
     const inicio =
       view === "semana"
         ? startOfWeek(cursor)
@@ -105,7 +156,19 @@ function CalendarioPage() {
     const fim = new Date(inicio);
     fim.setDate(inicio.getDate() + (view === "semana" ? 6 : 41));
     return { de: dataParaIso(inicio), ate: dataParaIso(fim) };
-  }, [view, cursor]);
+  }, [view, cursor, escalaLinhas]);
+
+  /* As recorrentes desenhadas adiante — o pack de todo dia útil aparece em
+     todos os dias úteis, a semanal uma vez por semana. A lista olha 60 dias. */
+  const comPrevistas = useMemo(() => {
+    const ate = faixa
+      ? faixa.ate
+      : dataParaIso(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 59));
+    return comOcorrenciasPrevistas(filtered, faixa?.de ?? dataParaIso(cursor), ate);
+  }, [filtered, faixa, cursor]);
+
+  /** As salas só são buscadas onde aparecem: fora da visão em linhas e se não estão ocultas. */
+  const faixaDasSalas = view === "linhas" || prefs.ocultarSalas ? null : faixa;
 
   /* Reserva feita por cima do calendário (pela agenda do dia, pelo raio): relê
      a faixa, senão a sala recém-reservada só apareceria ao trocar de mês. */
@@ -117,17 +180,17 @@ function CalendarioPage() {
   }, []);
 
   useEffect(() => {
-    if (!faixa) {
+    if (!faixaDasSalas) {
       setReservas([]);
       setFaixaCarregada(null);
       return;
     }
     let vivo = true;
-    listarAgendaDeSalas({ data: { data: faixa.de, dataFim: faixa.ate } })
+    listarAgendaDeSalas({ data: { data: faixaDasSalas.de, dataFim: faixaDasSalas.ate } })
       .then((r) => {
         if (!vivo) return;
         setReservas(r.reservas);
-        setFaixaCarregada(faixa);
+        setFaixaCarregada(faixaDasSalas);
       })
       /* Falha em silêncio: esta tela é o calendário de TAREFAS, e o Agendador
          fora do ar não pode esvaziá-la nem encher de aviso. Quem precisa saber
@@ -140,7 +203,7 @@ function CalendarioPage() {
     return () => {
       vivo = false;
     };
-  }, [faixa, versaoReservas]);
+  }, [faixaDasSalas, versaoReservas]);
 
   const reservasPorDia = useMemo(() => {
     const m = new Map<string, ReservaDeSala[]>();
@@ -223,31 +286,30 @@ function CalendarioPage() {
       ? (reservasPorDia.get(iso) ?? [])
       : undefined;
 
-  const goPrev = () => {
+  /* Mês a mês parte do dia 1: do dia 31, o `setMonth` pulava fevereiro
+     inteiro (31/jan + 1 mês = 3/mar). */
+  const andar = (sentido: 1 | -1) => {
     const d = new Date(cursor);
-    if (view === "mes") d.setMonth(d.getMonth() - 1);
-    else if (view === "semana") d.setDate(d.getDate() - 7);
-    else if (view === "dia") d.setDate(d.getDate() - 1);
-    else d.setDate(d.getDate() - 14);
+    const porMes = view === "mes" || (view === "linhas" && escalaLinhas === "mes");
+    if (porMes) {
+      d.setDate(1);
+      d.setMonth(d.getMonth() + sentido);
+    } else if (view === "semana" || view === "linhas") d.setDate(d.getDate() + 7 * sentido);
+    else if (view === "dia") d.setDate(d.getDate() + sentido);
+    else d.setDate(d.getDate() + 14 * sentido);
     setCursor(d);
   };
-  const goNext = () => {
-    const d = new Date(cursor);
-    if (view === "mes") d.setMonth(d.getMonth() + 1);
-    else if (view === "semana") d.setDate(d.getDate() + 7);
-    else if (view === "dia") d.setDate(d.getDate() + 1);
-    else d.setDate(d.getDate() + 14);
-    setCursor(d);
-  };
+  const goPrev = () => andar(-1);
+  const goNext = () => andar(1);
   const goToday = () => setCursor(startOfDay(new Date()));
 
   const headerLabel = useMemo(() => {
-    if (view === "mes") {
+    if (view === "mes" || (view === "linhas" && escalaLinhas === "mes")) {
       const d = new Date(cursor);
       d.setDate(1);
       return d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
     }
-    if (view === "semana") {
+    if (view === "semana" || view === "linhas") {
       const s = startOfWeek(cursor);
       const e = new Date(s);
       e.setDate(s.getDate() + 6);
@@ -257,7 +319,21 @@ function CalendarioPage() {
       return cursor.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     }
     return "Próximas tarefas";
-  }, [view, cursor]);
+  }, [view, cursor, escalaLinhas]);
+
+  const abrirTarefa = useCallback((id: string) => openTask(idReal(id)), [openTask]);
+
+  const faixaDasLinhas = useMemo(() => {
+    if (view !== "linhas" || !faixa) return null;
+    const inicio = new Date(faixa.de + "T00:00:00");
+    const fim = new Date(faixa.ate + "T00:00:00");
+    return { inicio, dias: Math.round((fim.getTime() - inicio.getTime()) / 86_400_000) + 1 };
+  }, [view, faixa]);
+
+  const destaque = useMemo<Destaque>(
+    () => ({ euId: currentUser.id, cor: corMinhas, dias: prefs.dias }),
+    [currentUser.id, corMinhas, prefs.dias],
+  );
 
   return (
     <FluxoLayout title="Calendário">
@@ -268,17 +344,52 @@ function CalendarioPage() {
             <p className="text-sm text-muted-foreground">Visualize prazos e distribua carga.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
-              {(["mes", "semana", "dia", "lista"] as ViewMode[]).map((v) => (
+            <div className="inline-flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Visão">
+              {(["mes", "semana", "dia", "lista", "linhas"] as ViewMode[]).map((v) => (
                 <button
                   key={v}
+                  type="button"
+                  aria-pressed={view === v}
                   onClick={() => setView(v)}
-                  className={`rounded px-2.5 py-1 capitalize ${view === v ? "bg-secondary" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`rounded px-2.5 py-1 ${view === v ? "bg-secondary" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  {v === "mes" ? "Mês" : v === "semana" ? "Semana" : v === "dia" ? "Dia" : "Lista"}
+                  {ROTULO_DA_VISAO[v]}
                 </button>
               ))}
             </div>
+            {view === "linhas" && (
+              <div className="inline-flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Período das linhas">
+                {(["semana", "mes"] as const).map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    aria-pressed={escalaLinhas === e}
+                    onClick={() => setEscalaLinhas(e)}
+                    className={`rounded px-2 py-1 ${escalaLinhas === e ? "bg-secondary" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {e === "semana" ? "Semana" : "Mês"}
+                  </button>
+                ))}
+              </div>
+            )}
+            {view !== "linhas" && view !== "lista" && (
+              <button
+                type="button"
+                aria-pressed={prefs.ocultarSalas}
+                onClick={() => mudarPrefs({ ocultarSalas: !prefs.ocultarSalas })}
+                title={prefs.ocultarSalas ? "Mostrar as reservas de sala" : "Ocultar as reservas de sala"}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${
+                  prefs.ocultarSalas
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                <DoorOpen className="h-3.5 w-3.5" />
+                {prefs.ocultarSalas ? "Mostrar salas" : "Ocultar salas"}
+              </button>
+            )}
+            <CoresDoCalendario prefs={prefs} aoMudar={mudarPrefs} />
+
             <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
               <button
                 onClick={() => setScope("eu")}
@@ -308,38 +419,42 @@ function CalendarioPage() {
         {view === "mes" && (
           <MonthGridMemo
             cursor={cursor}
-            filtered={filtered}
+            filtered={comPrevistas}
             users={users}
+            destaque={destaque}
             reservasPorDia={reservasPorDia}
             marcas={marcas}
             onReservaClick={abrirReservas}
             onDayClick={setAgendaDia}
             onDayContext={abrirMenuDoDia}
-            onTaskClick={openTask}
+            onTaskClick={abrirTarefa}
           />
         )}
         {view === "semana" && (
           <WeekGridMemo
             cursor={cursor}
-            filtered={filtered}
+            filtered={comPrevistas}
             users={users}
+            destaque={destaque}
             reservasPorDia={reservasPorDia}
             marcas={marcas}
             onReservaClick={abrirReservas}
             onDayClick={setAgendaDia}
             onDayContext={abrirMenuDoDia}
-            onTaskClick={openTask}
+            onTaskClick={abrirTarefa}
             onSwitchDay={irParaODia}
           />
         )}
         {view === "dia" && (
           <DayView
             cursor={cursor}
-            filtered={filtered}
+            filtered={comPrevistas}
             users={users}
+            destaque={destaque}
             reservasDoDia={reservasPorDia.get(dataParaIso(cursor)) ?? []}
+            mostrarSalas={!prefs.ocultarSalas}
             onReservaClick={abrirReservas}
-            onTaskClick={openTask}
+            onTaskClick={abrirTarefa}
             onNew={() => openNewTask({ dueDate: dataParaIso(cursor) })}
             onReorder={reorderTasks}
           />
@@ -347,10 +462,31 @@ function CalendarioPage() {
         {view === "lista" && (
           <ListView
             cursor={cursor}
-            filtered={filtered}
+            filtered={comPrevistas}
             users={users}
-            onTaskClick={openTask}
-              onReorder={reorderTasks}
+            destaque={destaque}
+            onTaskClick={abrirTarefa}
+            onReorder={reorderTasks}
+          />
+        )}
+        {faixaDasLinhas && (
+          <CalendarioLinhas
+            tarefas={comPrevistas}
+            users={users}
+            euId={currentUser.id}
+            corMinhas={corMinhas}
+            diasPintados={prefs.dias}
+            onDiaContexto={(x, y, iso) =>
+              abrirMenuDoDia(
+                x,
+                y,
+                iso,
+                comPrevistas.filter((t) => t.dueDate && dataParaIso(new Date(t.dueDate)) === iso).length,
+              )
+            }
+            inicio={faixaDasLinhas.inicio}
+            dias={faixaDasLinhas.dias}
+            onTaskClick={abrirTarefa}
           />
         )}
       </div>
@@ -375,6 +511,48 @@ function CalendarioPage() {
             </div>
             <div className="text-[10px] text-muted-foreground">
               {dayCtx.count} {dayCtx.count === 1 ? "tarefa" : "tarefas"}
+            </div>
+          </div>
+          {/* Pintar o dia (pedido do usuário, 07/10/2026): "quero deixar o
+              dia 10 laranja para lembrar". Clicar na cor que já está tira. */}
+          <div className="border-b border-border px-2 py-1.5">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Pintar o dia
+            </div>
+            <div className="flex items-center gap-1">
+              {CORES_DO_DIA.map((c) => {
+                const atual = prefs.dias[dayCtx.date] === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-label={atual ? `Tirar a cor ${c}` : `Pintar de ${c}`}
+                    aria-pressed={atual}
+                    onClick={() => {
+                      pintarDia(dayCtx.date, atual ? null : c);
+                      setDayCtx(null);
+                    }}
+                    className={`h-5 w-5 rounded-full border-2 transition hover:scale-110 ${
+                      atual ? "border-foreground" : "border-transparent"
+                    }`}
+                    style={{ background: c }}
+                  />
+                );
+              })}
+              {prefs.dias[dayCtx.date] && (
+                <button
+                  type="button"
+                  aria-label="Tirar a cor do dia"
+                  title="Tirar a cor"
+                  onClick={() => {
+                    pintarDia(dayCtx.date, null);
+                    setDayCtx(null);
+                  }}
+                  className="ml-0.5 grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                </button>
+              )}
             </div>
           </div>
           <div className="mt-1 flex flex-col">
@@ -439,6 +617,101 @@ function CalendarioPage() {
 
 type DayCell = { date: Date; inMonth: boolean; tasks: any[] };
 
+/** Quem está olhando e as cores que escolheu — o que pinta as pílulas e os dias. */
+type Destaque = { euId: string; cor: string; dias: Record<string, string> };
+
+/** A cor de uma tarefa: a minha, na cor escolhida; a dos outros, pela situação. */
+const corDaTarefa = (t: { assigneeId: string; status: string }, d: Destaque) =>
+  t.assigneeId === d.euId ? d.cor : statusColor[t.status as keyof typeof statusColor];
+
+/** Uma fileira de cores para escolher, mais a personalizada e a volta ao padrão. */
+function EscolhaDeCor({
+  titulo,
+  valor,
+  aoMudar,
+}: {
+  titulo: string;
+  valor: string | null;
+  aoMudar: (cor: string | null) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {titulo}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {CORES_PRONTAS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Cor ${c}`}
+            aria-pressed={valor === c}
+            onClick={() => aoMudar(c)}
+            className={`h-6 w-6 rounded-full border-2 transition hover:scale-110 ${
+              valor === c ? "border-foreground" : "border-transparent"
+            }`}
+            style={{ background: c }}
+          />
+        ))}
+        <SeletorDeCor
+          valor={valor ?? "#2563eb"}
+          aoMudar={aoMudar}
+          personalizada={!!valor && !CORES_PRONTAS.includes(valor)}
+        />
+        <button
+          type="button"
+          onClick={() => aoMudar(null)}
+          disabled={!valor}
+          className="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+        >
+          <RotateCcw className="h-3 w-3" /> Padrão
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** O botão "Cores" do calendário: o destaque das minhas tarefas. Os dias se pintam
+ *  um a um, pelo botão direito no dia. */
+function CoresDoCalendario({
+  prefs,
+  aoMudar,
+}: {
+  prefs: PrefsDoCalendario;
+  aoMudar: (parte: Partial<PrefsDoCalendario>) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+        >
+          <Palette className="h-3.5 w-3.5" />
+          Cores
+          {prefs.minhas && (
+            <span
+              className="h-2.5 w-2.5 rounded-full ring-1 ring-card"
+              style={{ background: prefs.minhas }}
+              aria-hidden
+            />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="z-[450] w-72 space-y-4">
+        <EscolhaDeCor
+          titulo="Minhas tarefas"
+          valor={prefs.minhas}
+          aoMudar={(cor) => aoMudar({ minhas: cor })}
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Para pintar um dia, clique nele com o botão direito. Vale só para você.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** O que a pessoa marcou num dia pela agenda: anotação e quantos lembretes. */
 type MarcaDoDia = { nota: boolean; lembretes: number };
 
@@ -488,16 +761,21 @@ function BotaoDoDia({ rotulo, onClick }: { rotulo: string; onClick: () => void }
 function TaskPill({
   t,
   users,
+  destaque,
   onClick,
   onContext,
 }: {
   t: any;
   users: any[];
+  destaque: Destaque;
   onClick: () => void;
   onContext: (x: number, y: number) => void;
 }) {
   const sec = sectors.find((s) => s.id === t.sector);
   const u = users.find((x) => x.id === t.assigneeId);
+  const minha = t.assigneeId === destaque.euId;
+  const prevista = !!t.prevista;
+  const cor = corDaTarefa(t, destaque);
   return (
     <button
       onClick={(e) => {
@@ -509,11 +787,16 @@ function TaskPill({
         e.stopPropagation();
         onContext(e.clientX, e.clientY);
       }}
-      className="pointer-events-auto flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition hover:bg-secondary"
-      style={{ background: `color-mix(in oklab, ${statusColor[t.status as keyof typeof statusColor]} 12%, transparent)` }}
-      title={`${t.title} · ${u?.name}`}
+      className={`pointer-events-auto flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[10px] transition hover:brightness-95 ${
+        minha ? "border-l-[3px] font-medium" : ""
+      } ${prevista ? "border border-dashed opacity-80" : ""}`}
+      style={{
+        background: prevista ? "transparent" : `color-mix(in oklab, ${cor} ${minha ? 24 : 12}%, transparent)`,
+        borderColor: cor,
+      }}
+      title={`${t.title} · ${u?.name}${prevista ? " · próxima ocorrência" : ""}`}
     >
-      
+      {prevista && <Repeat className="h-2.5 w-2.5 shrink-0" style={{ color: cor }} aria-label="Recorrente" />}
       <span className="truncate">{t.title}</span>
       <span className="ml-auto shrink-0" style={{ color: sec?.color }}>•</span>
     </button>
@@ -549,6 +832,7 @@ function MonthGrid({
   cursor,
   filtered,
   users,
+  destaque,
   reservasPorDia,
   marcas,
   onReservaClick,
@@ -559,6 +843,7 @@ function MonthGrid({
   cursor: Date;
   filtered: any[];
   users: any[];
+  destaque: Destaque;
   reservasPorDia: Map<string, ReservaDeSala[]>;
   marcas: Map<string, MarcaDoDia>;
   onReservaClick: (iso: string) => void;
@@ -611,6 +896,7 @@ function MonthGrid({
               onDayContext(e.clientX, e.clientY, iso, cell.tasks.length);
             }}
             className={`relative min-h-[7rem] bg-card p-1.5 text-left transition hover:bg-secondary/40 ${cell.inMonth ? "" : "opacity-40"}`}
+            style={{ background: fundoPintado(destaque.dias[iso]) }}
           >
             <BotaoDoDia
               rotulo={rotuloDoDia(cell.date, marcas.get(iso))}
@@ -645,8 +931,9 @@ function MonthGrid({
                   key={t.id}
                   t={t}
                   users={users}
+                  destaque={destaque}
                   onClick={() => onTaskClick(t.id)}
-                  onContext={(x, y) => openTaskContext(t.id, x, y)}
+                  onContext={(x, y) => openTaskContext(idReal(t.id), x, y)}
                 />
               ))}
               {cell.tasks.length > cabemTarefas && (
@@ -666,6 +953,7 @@ function WeekGrid({
   cursor,
   filtered,
   users,
+  destaque,
   reservasPorDia,
   marcas,
   onReservaClick,
@@ -677,6 +965,7 @@ function WeekGrid({
   cursor: Date;
   filtered: any[];
   users: any[];
+  destaque: Destaque;
   reservasPorDia: Map<string, ReservaDeSala[]>;
   marcas: Map<string, MarcaDoDia>;
   onReservaClick: (iso: string) => void;
@@ -709,7 +998,11 @@ function WeekGrid({
         const today = day.date.toDateString() === new Date().toDateString();
         const iso = dataParaIso(day.date);
         return (
-          <div key={i} className="flex min-h-[26rem] flex-col bg-card">
+          <div
+            key={i}
+            className="flex min-h-[26rem] flex-col bg-card"
+            style={{ background: fundoPintado(destaque.dias[iso]) }}
+          >
             <button
               onClick={() => onSwitchDay(iso)}
               className="border-b border-border bg-secondary/60 px-2 py-1.5 text-left transition hover:bg-secondary"
@@ -748,8 +1041,9 @@ function WeekGrid({
                     key={t.id}
                     t={t}
                     users={users}
+                    destaque={destaque}
                     onClick={() => onTaskClick(t.id)}
-                    onContext={(x, y) => openTaskContext(t.id, x, y)}
+                    onContext={(x, y) => openTaskContext(idReal(t.id), x, y)}
                   />
                 ))}
               </div>
@@ -771,7 +1065,9 @@ function DayView({
   cursor,
   filtered,
   users,
+  destaque,
   reservasDoDia,
+  mostrarSalas,
   onReservaClick,
   onTaskClick,
   onNew,
@@ -780,7 +1076,9 @@ function DayView({
   cursor: Date;
   filtered: any[];
   users: any[];
+  destaque: Destaque;
   reservasDoDia: ReservaDeSala[];
+  mostrarSalas: boolean;
   onReservaClick: (iso: string) => void;
   onTaskClick: (id: string) => void;
   onNew: () => void;
@@ -809,22 +1107,35 @@ function DayView({
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ st: string; index: number } | null>(null);
 
+  const { moveTask } = useFluxo();
+
   const handleDrop = (st: string, insertIdx: number) => {
     if (!dragId) return;
+    /* Soltar em outra coluna muda a situação, como no quadro. Antes só a
+       ordem era gravada e o cartão voltava para a coluna de onde saiu
+       (auditoria de 08/10/2026). `moveTask` cuida de conclusão, pontos e
+       comprovante, igual a qualquer outra tela. */
+    const arrastada = filtered.find((t) => t.id === dragId);
+    if (arrastada && !ehPrevista(dragId) && arrastada.status !== st) {
+      moveTask(dragId, st as "pendente" | "andamento" | "concluida");
+    }
     const list = (byStatus[st] || []).filter((t) => t.id !== dragId);
     const idx = Math.min(insertIdx, list.length);
     const ids = [
       ...list.slice(0, idx).map((t) => t.id),
       dragId,
       ...list.slice(idx).map((t) => t.id),
-    ];
+    ].filter((id) => !ehPrevista(id)); // a prevista não tem ordem a gravar
     onReorder(ids);
     setDragId(null);
     setDropTarget(null);
   };
 
   return (
-    <div className="mt-4 rounded-lg border border-border bg-card">
+    <div
+      className="mt-4 rounded-lg border border-border bg-card"
+      style={{ background: fundoPintado(destaque.dias[dataParaIso(cursor)]) }}
+    >
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="text-sm text-muted-foreground">
           {dayTasks.length} {dayTasks.length === 1 ? "tarefa" : "tarefas"} nesse dia
@@ -833,11 +1144,12 @@ function DayView({
           <Plus className="h-3.5 w-3.5" /> Nova tarefa
         </button>
       </div>
-      <div className="grid grid-cols-1 gap-px bg-border md:grid-cols-4">
+      <div className={`grid grid-cols-1 gap-px bg-border ${mostrarSalas ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
         {(["pendente", "andamento", "concluida"] as const).map((st) => (
           <div
             key={st}
             className="flex flex-col bg-card p-3"
+            style={{ background: fundoPintado(destaque.dias[dataParaIso(cursor)]) }}
             onDragOver={(e) => {
               e.preventDefault();
               if (dragId && !dropTarget) setDropTarget({ st, index: (byStatus[st] || []).length });
@@ -862,7 +1174,7 @@ function DayView({
                   <div key={t.id}>
                     {showBefore && <div className="mb-1 h-0.5 rounded-full bg-primary" />}
                     <button
-                      draggable
+                      draggable={!t.prevista}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", t.id);
                         e.dataTransfer.effectAllowed = "move";
@@ -882,16 +1194,24 @@ function DayView({
                       onClick={() => onTaskClick(t.id)}
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        openTaskContext(t.id, e.clientX, e.clientY);
+                        openTaskContext(idReal(t.id), e.clientX, e.clientY);
                       }}
-                      className="w-full cursor-grab rounded-md border border-border bg-background p-2 text-left transition hover:bg-secondary/60 active:cursor-grabbing"
+                      className={`w-full rounded-md border border-border bg-background p-2 text-left transition hover:bg-secondary/60 ${
+                        t.prevista ? "border-dashed opacity-80" : "cursor-grab active:cursor-grabbing"
+                      } ${t.assigneeId === destaque.euId ? "border-l-[3px]" : ""}`}
+                      style={
+                        t.assigneeId === destaque.euId ? { borderLeftColor: destaque.cor } : undefined
+                      }
                     >
                       <div className="flex items-start gap-2">
                         <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary">
                           {index + 1}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-medium">{t.title}</div>
+                          <div className="flex items-center gap-1 truncate text-xs font-medium">
+                            {t.prevista && <Repeat className="h-3 w-3 shrink-0" aria-label="Recorrente" />}
+                            <span className="truncate">{t.title}</span>
+                          </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
                             <span style={{ color: sec?.color }}>{sec?.name}</span>
                             <span>·</span>
@@ -910,8 +1230,9 @@ function DayView({
 
         {/* A quarta coluna já existia vazia na grade (`md:grid-cols-4` com três
             filhos). As salas do dia cabem exatamente ali, ao lado do quadro de
-            situações, sem mexer na largura de nada. */}
-        <div className="flex flex-col bg-card p-3">
+            situações, sem mexer na largura de nada. Ocultas, a grade volta a três. */}
+        {mostrarSalas && (
+        <div className="flex flex-col bg-card p-3" style={{ background: fundoPintado(destaque.dias[dataParaIso(cursor)]) }}>
           <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <DoorOpen className="h-3 w-3 text-primary" />
             Salas de reunião
@@ -950,6 +1271,7 @@ function DayView({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
@@ -959,12 +1281,14 @@ function ListView({
   cursor,
   filtered,
   users,
+  destaque,
   onTaskClick,
   onReorder,
 }: {
   cursor: Date;
   filtered: any[];
   users: any[];
+  destaque: Destaque;
   onTaskClick: (id: string) => void;
   onReorder: (ids: string[]) => void;
 }) {
@@ -1006,7 +1330,7 @@ function ListView({
       ...list.slice(0, idx).map((t) => t.id),
       dragId,
       ...list.slice(idx).map((t) => t.id),
-    ];
+    ].filter((id) => !ehPrevista(id)); // a prevista não tem ordem a gravar
     onReorder(ids);
     setDragId(null);
     setDropTarget(null);
@@ -1023,7 +1347,11 @@ function ListView({
         const d = new Date(iso + "T00:00:00");
         const today = d.toDateString() === new Date().toDateString();
         return (
-          <div key={iso} className="overflow-hidden rounded-lg border border-border bg-card">
+          <div
+            key={iso}
+            className="overflow-hidden rounded-lg border border-border bg-card"
+            style={{ background: fundoPintado(destaque.dias[iso]) }}
+          >
             <div className="flex items-center justify-between border-b border-border bg-secondary/40 px-3 py-2">
               <div className={`text-xs font-semibold uppercase tracking-wider ${today ? "text-primary" : "text-muted-foreground"}`}>
                 {d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
@@ -1040,7 +1368,7 @@ function ListView({
                 return (
                   <button
                     key={t.id}
-                    draggable
+                    draggable={!t.prevista}
                     onDragStart={(e) => {
                       e.dataTransfer.setData("text/plain", t.id);
                       e.dataTransfer.effectAllowed = "move";
@@ -1063,17 +1391,27 @@ function ListView({
                     onClick={() => onTaskClick(t.id)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      openTaskContext(t.id, e.clientX, e.clientY);
+                      openTaskContext(idReal(t.id), e.clientX, e.clientY);
                     }}
-                    className={`flex w-full cursor-grab items-center gap-3 px-3 py-2 text-left hover:bg-secondary/40 active:cursor-grabbing ${
-                      showBefore ? "border-t-2 border-t-primary" : ""
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-secondary/40 ${
+                      t.prevista ? "opacity-80" : "cursor-grab active:cursor-grabbing"
+                    } ${showBefore ? "border-t-2 border-t-primary" : ""} ${
+                      t.assigneeId === destaque.euId ? "border-l-[3px]" : ""
                     }`}
+                    style={
+                      t.assigneeId === destaque.euId ? { borderLeftColor: destaque.cor } : undefined
+                    }
                   >
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{t.title}</div>
+                      <div className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        {t.prevista && (
+                          <Repeat className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Próxima ocorrência" />
+                        )}
+                        <span className="truncate">{t.title}</span>
+                      </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                         <span style={{ color: sec?.color }}>{sec?.name}</span>
                         <span>·</span>

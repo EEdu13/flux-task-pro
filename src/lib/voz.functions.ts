@@ -79,7 +79,7 @@ type EntradaTranscricao = {
 };
 
 export const transcreverVoz = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         audio: string;
@@ -140,7 +140,7 @@ type EntradaInterpretacao = {
 const PRIORIDADES: Prioridade[] = ["alta", "media", "baixa"];
 
 export const interpretarVoz = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         trechoNovo: string;
@@ -226,7 +226,7 @@ function linhasDaEntrada(v: unknown, maximo: number): LinhaDeFala[] {
 }
 
 export const atualizarAtaDaReuniao = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         titulo: string;

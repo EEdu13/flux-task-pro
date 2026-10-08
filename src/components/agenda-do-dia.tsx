@@ -58,7 +58,7 @@ import {
   type Intervalo,
 } from "@/lib/horario-de-sala";
 import { nomeCurto } from "@/lib/nome-curto";
-import { HORARIO_VALIDO, prazoVencido } from "@/lib/prazo";
+import { HORARIO_VALIDO, tarefaVencida } from "@/lib/prazo";
 import {
   priorityColor,
   priorityLabels,
@@ -743,7 +743,7 @@ function AgendaAberta({
 
   const feitas = doDia.filter((t) => t.status === "concluida").length;
   const atrasadas = doDia.filter(
-    (t) => t.status !== "concluida" && prazoVencido(t.dueDate, agora),
+    (t) => t.status !== "concluida" && tarefaVencida(t, agora),
   ).length;
   const minutosEstimados = doDia
     .filter((t) => t.status !== "concluida")
@@ -1665,7 +1665,7 @@ const CartaoDaTarefa = memo(function CartaoDaTarefa({
   aoAbrir: (id: string) => void;
 }) {
   const feita = t.status === "concluida";
-  const atrasada = !feita && prazoVencido(t.dueDate, agora);
+  const atrasada = !feita && tarefaVencida(t, agora);
   const setor = sectors.find((s) => s.id === t.sector);
   const responsavel = t.assigneeId !== euId ? users.find((u) => u.id === t.assigneeId) : undefined;
   const Icone = feita ? CircleCheck : t.status === "andamento" ? CircleDot : Circle;

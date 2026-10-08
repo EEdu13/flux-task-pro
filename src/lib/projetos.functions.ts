@@ -123,7 +123,7 @@ export const listarProjetos = createServerFn({ method: "POST" }).handler(
  * duplicaria tudo.
  */
 export const salvarProjeto = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         id?: string;
@@ -302,7 +302,7 @@ export const salvarProjeto = createServerFn({ method: "POST" })
   );
 
 export const apagarProjeto = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = typeof e?.id === "string" ? e.id.trim() : "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Projeto inválido");

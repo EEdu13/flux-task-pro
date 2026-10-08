@@ -13,6 +13,10 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { useLancadoresRecolhidos } from "@/lib/lancadores";
 import { useFecharAoSair } from "@/hooks/use-fechar-ao-sair";
+import { AcoesDoChat } from "@/components/acoes-do-chat";
+
+/** Largura da janela de conversa — alargada para caber as ações do cabeçalho. */
+const LARGURA = 380;
 
 /**
  * Dock de chat. Botão no canto inferior direito (ACIMA do FAB ⚡) que expande
@@ -73,6 +77,17 @@ export function ChatDock() {
     if (recolhido) setPanelOpen(false);
   }, [recolhido]);
 
+  /* Chegou um "chamar atenção", trator ou emoji: a conversa com quem mandou
+     abre sozinha — ver `abrirConversa` em avisos-no-chat. */
+  useEffect(() => {
+    const aoPedir = (e: Event) => {
+      const id = (e as CustomEvent<{ pessoaId: string }>).detail?.pessoaId;
+      if (id) openChat(id);
+    };
+    window.addEventListener("fluxo:abrir-chat", aoPedir);
+    return () => window.removeEventListener("fluxo:abrir-chat", aoPedir);
+  }, [openChat]);
+
   const { expanded, collapsed } = useMemo(() => {
     const min = new Set(minimized);
     return {
@@ -122,8 +137,8 @@ export function ChatDock() {
               animate={{ opacity: 1, y: 0, scaleY: 1 }}
               exit={{ opacity: 0, y: 60, scaleY: 0.85 }}
               transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
-              style={{ transformOrigin: "bottom center" }}
-              className="pointer-events-auto flex h-[440px] w-[330px] flex-col overflow-hidden rounded-t-xl border border-border bg-card shadow-2xl"
+              className="pointer-events-auto flex h-[460px] flex-col overflow-hidden rounded-t-xl border border-border bg-card shadow-2xl"
+              style={{ transformOrigin: "bottom center", width: LARGURA }}
             >
               <header className="flex items-center gap-2 border-b border-border bg-sidebar px-3 py-2 text-sidebar-foreground">
                 <div className="relative">
@@ -138,6 +153,8 @@ export function ChatDock() {
                     <RotuloDeSituacao situacao={situacaoDe(u.id)} />
                   </div>
                 </div>
+                <AcoesDoChat peerId={id} />
+                <span className="mx-0.5 h-4 w-px bg-white/20" aria-hidden />
                 <button
                   onClick={() => minimizeChat(id)}
                   className="rounded p-1 opacity-70 hover:bg-white/10 hover:opacity-100"
@@ -169,7 +186,7 @@ export function ChatDock() {
               Animado porque a largura muda a cada janela que abre ou fecha —
               sem isso as barras dão um salto no meio da animação da janela. */}
           <motion.div
-            animate={{ width: expanded.length * (330 + 12) }}
+            animate={{ width: expanded.length * (LARGURA + 12) }}
             initial={false}
             transition={{ type: "spring", stiffness: 380, damping: 34 }}
           />

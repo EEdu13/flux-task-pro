@@ -1,10 +1,11 @@
 import type { CompletionEntry, Task } from "./fluxo-types";
+import { venceEm } from "./prazo";
 
 export function scoreTaskPoints(task: Task, completionAt: string | null): number {
   if (task.status !== "concluida") return 0;
   // Sem prazo não há atraso: concluída vale inteira.
   if (!task.dueDate) return 1;
-  const due = new Date(task.dueDate).getTime();
+  const due = venceEm(task); // o pack vence no fim do dia, não no horário
   const done = completionAt ? new Date(completionAt).getTime() : Date.now();
   return done <= due ? 1 : 0.5;
 }

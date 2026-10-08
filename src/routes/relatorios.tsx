@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { dataParaIso } from "@/lib/data-iso";
 import { useMemo } from "react";
 import { Download, FileSpreadsheet } from "lucide-react";
 import {
@@ -195,7 +196,8 @@ function Relatorios() {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      // Dia local, não UTC: em Brasília, depois das 21h o UTC já é amanhã.
+      const key = dataParaIso(d);
       map.set(key, 0);
       buckets.push({
         label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
@@ -204,7 +206,7 @@ function Relatorios() {
       });
     }
     for (const s of timeLog.sessions) {
-      const key = new Date(s.endedAt).toISOString().slice(0, 10);
+      const key = dataParaIso(new Date(s.endedAt));
       if (map.has(key)) map.set(key, (map.get(key) ?? 0) + s.seconds);
     }
     return buckets.map((b) => ({ ...b, seconds: map.get(b.key) ?? 0, minutes: Math.round((map.get(b.key) ?? 0) / 60) }));

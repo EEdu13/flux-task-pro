@@ -14,6 +14,7 @@ import { TaskTimerControls } from "@/components/task-timer-controls";
 import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
 import { CampoDeTags } from "@/components/campo-de-tags";
+import { ReacoesDaTarefa } from "@/components/reacoes-da-tarefa";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import {
   DIAS_SEMANA,
@@ -797,6 +798,11 @@ export function TaskDialog() {
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-base font-semibold">{editing ? "Editar tarefa" : "Nova tarefa"}</h2>
+          {editing && (
+            <div className="ml-3 mr-auto">
+              <ReacoesDaTarefa task={editing} />
+            </div>
+          )}
           <button
             onClick={() => void fecharComGuarda()}
             className="rounded-md p-1 text-muted-foreground hover:bg-secondary"

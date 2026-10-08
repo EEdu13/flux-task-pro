@@ -35,6 +35,13 @@ export function useCallShortcuts(opts: CallShortcuts) {
           opts.onToggleCam?.();
           break;
         case "e":
+          /* Shift+E, não "e" sozinho: um "e" solto fora de um campo — o
+             cursor perdido depois de clicar na tela — desligava a chamada
+             (auditoria de 08/10/2026). */
+          if (!e.shiftKey) {
+            matched = false;
+            break;
+          }
           opts.onEnd?.();
           break;
         case "c":

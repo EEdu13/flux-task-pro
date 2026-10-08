@@ -75,7 +75,7 @@ export const minhaGrade = createServerFn({ method: "POST" }).handler(
  * é só `apagarColunaDaGrade`, e só quando a pessoa pede.
  */
 export const salvarColunasDaGrade = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: { colunas?: { id: string; nome: string; tipo: string; ordem: number }[] }) => ({
         colunas: (Array.isArray(e?.colunas) ? e.colunas : [])
@@ -121,7 +121,7 @@ export const salvarColunasDaGrade = createServerFn({ method: "POST" })
   );
 
 export const apagarColunaDaGrade = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = guid(e?.id);
       if (!id) throw new Error("Coluna inválida");
@@ -148,7 +148,7 @@ export const apagarColunaDaGrade = createServerFn({ method: "POST" })
  * não precisa: das duas, só a primeira importa para alguém que abre a grade.
  */
 export const salvarCelulasDaGrade = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { celulas?: { tarefaId: string; colunaId: string; valor: string }[] }) => ({
       celulas: (Array.isArray(e?.celulas) ? e.celulas : [])
         .slice(0, 200)

@@ -65,7 +65,7 @@ export const listarNotas = createServerFn({ method: "POST" }).handler(
  * banco — quem digita não pode esperar a rede para ver a letra aparecer.
  */
 export const salvarNota = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string; title: string; content: string; ordem?: number }) => {
       const id = typeof e?.id === "string" ? e.id.trim() : "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Nota inválida");
@@ -111,7 +111,7 @@ export const salvarNota = createServerFn({ method: "POST" })
   );
 
 export const apagarNota = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = typeof e?.id === "string" ? e.id.trim() : "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Nota inválida");

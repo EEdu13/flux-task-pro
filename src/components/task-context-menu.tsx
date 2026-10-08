@@ -5,6 +5,7 @@ import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { toast } from "sonner";
 import { useUndo } from "@/lib/undo-stack";
 import { startFocus } from "@/components/focus-overlay";
+import { emojisRapidos, lembrarEmoji } from "@/lib/emojis";
 
 interface Detail {
   id: string;
@@ -13,7 +14,7 @@ interface Detail {
 }
 
 export function TaskContextMenu() {
-  const { tasks, users, updateTask, deleteTask, createTask, openTask, currentUser } = useFluxo();
+  const { tasks, users, updateTask, deleteTask, createTask, openTask, currentUser, reactToTask } = useFluxo();
   const { push: pushUndo } = useUndo();
   const [ctx, setCtx] = useState<Detail | null>(null);
 
@@ -76,7 +77,8 @@ export function TaskContextMenu() {
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const width = 220;
-  const height = 280;
+  // A altura real do menu, com a fileira de reações — passa disso e ele cortaria embaixo.
+  const height = 440;
   const left = Math.min(ctx.x, vw - width - 8);
   const top = Math.min(ctx.y, vh - height - 8);
 
@@ -118,6 +120,34 @@ export function TaskContextMenu() {
       <div className="border-b border-border px-2 py-1.5">
         <div className="truncate text-[11px] font-semibold">{task.title}</div>
         <div className="text-[10px] text-muted-foreground">Ações rápidas</div>
+      </div>
+      {/* Reagir pelo botão direito, sem abrir o seletor (pedido do usuário,
+          08/10/2026): os recentes e mais usados de quem clica. O mesmo emoji
+          de novo tira a reação — ver `ReacoesDaTarefa`. */}
+      <div className="flex items-center justify-between gap-0.5 border-b border-border px-1 py-1">
+        {emojisRapidos(currentUser.id, 7).map((e) => {
+          const minha = task.reactions?.find((r) => r.userId === currentUser.id)?.emoji === e;
+          return (
+            <button
+              key={e}
+              type="button"
+              title={minha ? "Tirar a reação" : `Reagir com ${e}`}
+              onClick={() => {
+                if (minha) reactToTask(task.id, null);
+                else {
+                  lembrarEmoji(currentUser.id, e);
+                  reactToTask(task.id, e);
+                }
+                setCtx(null);
+              }}
+              className={`grid h-8 w-8 place-items-center rounded-full text-lg transition hover:-translate-y-0.5 hover:scale-125 hover:bg-secondary ${
+                minha ? "bg-primary/20 ring-1 ring-primary" : ""
+              }`}
+            >
+              {e}
+            </button>
+          );
+        })}
       </div>
       <div className="mt-1 flex flex-col">
         {item(Pencil, "Editar", () => openTask(task.id))}

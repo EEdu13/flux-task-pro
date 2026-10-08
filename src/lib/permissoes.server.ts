@@ -15,10 +15,10 @@
  *     supervisor precisa mexer inclusive nas tarefas dos subordinados, para
  *     incluir algo em que ele pensou.
  *
- * "Chefe direto" é o nome gravado em `perfis.supervisor_nome`, vindo de
- * `dbo.COLABORADORES` a cada login — o mesmo dado com que a tela monta a
- * equipe. É por nome porque é o que existe; sem acento e sem caixa, para o
- * "JOÃO" do RH casar com o "João" da IAM.
+ * A chefia é o organograma: quem aparece como SUPERVISOR ou COORDENADOR da
+ * pessoa em `dbo.COLABORADORES` (ver `SQL_MEUS_SUBORDINADOS`). É por nome
+ * porque é o que existe; sem acento e sem caixa, para o "JOÃO" do RH casar
+ * com o "João" da IAM.
  *
  * Arquivo `.server.ts`: só o servidor importa. O SQL daqui é montado com
  * trechos fixos deste arquivo, nunca com valor vindo de fora — os ids entram
@@ -33,13 +33,39 @@ export const SQL_QUEM_SOU = `
     FROM gestor.perfis WHERE pessoa_id = @eu;
   SET @gerente = CASE WHEN @papel_eu = N'gerente' THEN 1 ELSE 0 END;`;
 
-/** @eu é o chefe direto de uma destas pessoas (expressões SQL que dão o id). */
+/** Dois nomes iguais sem espaço nas pontas, caixa e acento. */
+const mesmoNome = (a: string, b: string) =>
+  `LTRIM(RTRIM(${a})) COLLATE Latin1_General_CI_AI = LTRIM(RTRIM(${b})) COLLATE Latin1_General_CI_AI`;
+
+/**
+ * Os ids de quem responde a @eu no organograma: as pessoas de quem @eu é
+ * SUPERVISOR ou COORDENADOR em `dbo.COLABORADORES` (ativos) ou
+ * `dbo.COLABORADORES_EXTERNOS`. Só usa @eu.
+ *
+ * Decisão do usuário, 07/10/2026: a visibilidade sai do organograma, não do
+ * setor da IAM. A Luana, do financeiro e sem equipe na IAM, via as tarefas do
+ * setor inteiro. Agora cada um vê o que é seu e o que é de quem responde a
+ * ele — o coordenador inclusive, que está na mesma linha do subordinado.
+ *
+ * O nome é a chave porque é o que liga `gestor.perfis` ao organograma, igual
+ * a `listarPessoas`. A própria pessoa fica de fora: na tabela muita gente é
+ * supervisora de si mesma.
+ */
+export const SQL_MEUS_SUBORDINADOS = `(SELECT sub.pessoa_id FROM gestor.perfis sub
+    JOIN gestor.perfis chefe ON chefe.pessoa_id = @eu
+   WHERE sub.pessoa_id <> @eu AND chefe.nome IS NOT NULL AND sub.nome IS NOT NULL
+     AND (EXISTS (SELECT 1 FROM dbo.COLABORADORES col
+                   WHERE col.SITUACAO = '1' AND ${mesmoNome("col.NOME", "sub.nome")}
+                     AND (${mesmoNome("col.SUPERVISOR", "chefe.nome")}
+                       OR ${mesmoNome("col.COORDENADOR", "chefe.nome")}))
+       OR EXISTS (SELECT 1 FROM dbo.COLABORADORES_EXTERNOS ext
+                   WHERE ext.ATIVO = 1 AND ${mesmoNome("ext.NOME", "sub.nome")}
+                     AND (${mesmoNome("ext.SUPERVISOR", "chefe.nome")}
+                       OR ${mesmoNome("ext.COORDENADOR", "chefe.nome")}))))`;
+
+/** @eu é supervisor ou coordenador de uma destas pessoas (expressões SQL que dão o id). */
 export function sqlChefeDe(...pessoas: string[]): string {
-  return `(@nome_eu IS NOT NULL AND EXISTS (
-    SELECT 1 FROM gestor.perfis sub
-     WHERE sub.pessoa_id IN (${pessoas.join(", ")})
-       AND LTRIM(RTRIM(sub.supervisor_nome)) COLLATE Latin1_General_CI_AI
-         = LTRIM(RTRIM(@nome_eu)) COLLATE Latin1_General_CI_AI))`;
+  return `(${pessoas.map((p) => `${p} IN ${SQL_MEUS_SUBORDINADOS}`).join(" OR ")})`;
 }
 
 /**
@@ -52,30 +78,30 @@ export const SQL_CONTEUDO_DA_TAREFA = `(@gerente = 1 OR t.criado_por = @eu
 
 /**
  * Vê a tarefa `t` e mexe no dia a dia dela (situação, prazo, responsável,
- * checklist, comentário). A regra da listagem — gerência, o próprio setor,
- * quem criou e quem é responsável —, mais quem foi mencionado e a chefia.
+ * checklist, comentário). A regra da listagem — gerência, quem criou, quem é
+ * responsável e a chefia no organograma —, mais quem foi mencionado.
  */
 export const SQL_VE_A_TAREFA = `(${SQL_CONTEUDO_DA_TAREFA} OR t.responsavel_id = @eu
-  OR (@setor_eu IS NOT NULL AND t.setor = @setor_eu)
   OR EXISTS (SELECT 1 FROM gestor.mencoes m WHERE m.tarefa_id = t.id AND m.pessoa_id = @eu))`;
 
 /**
  * As tarefas que chegam à LISTA de uma pessoa, na tela e no bot do Telegram:
- * a gerência vê todas; os demais, as do próprio setor, as suas (responsável ou
- * criadora) e aquelas em que foram mencionados. Usa @eu e, havendo setor,
- * @setor. Serve com ou sem o apelido `t` na tabela: a menção é um `id IN`.
+ * a gerência vê todas; os demais, as suas (responsável ou criadora), as de
+ * quem responde a elas no organograma e aquelas em que foram mencionados.
+ * Usa só @eu. `alias` é o prefixo da tabela de tarefas ("t."), para quando a
+ * consulta junta outra tabela que também tem `id`.
  *
- * A menção entrou em 02/10/2026. Quem era mencionado numa tarefa de outro
- * setor recebia o aviso e não achava a tarefa: nem em "Mencionaram-me", nem ao
- * tocar no aviso, que abria a janela vazia de "Nova tarefa". `SQL_VE_A_TAREFA`
- * já deixava essa pessoa abrir a tarefa; só a lista não a trazia.
+ * O setor saiu em 07/10/2026: com ele, quem era do setor via a tarefa de todo
+ * mundo do setor. A menção entrou em 02/10/2026 — quem era mencionado numa
+ * tarefa de outra equipe recebia o aviso e não achava a tarefa.
  */
-export function sqlListaDeTarefas(papel: string, setor: string | null): string {
+export function sqlListaDeTarefas(papel: string, alias = ""): string {
   if (papel === "gerente") return "1=1";
-  const mencionada = "id IN (SELECT m.tarefa_id FROM gestor.mencoes m WHERE m.pessoa_id=@eu)";
-  return setor
-    ? `(setor=@setor OR responsavel_id=@eu OR criado_por=@eu OR ${mencionada})`
-    : `(responsavel_id=@eu OR criado_por=@eu OR ${mencionada})`;
+  const a = alias;
+  return `(${a}responsavel_id=@eu OR ${a}criado_por=@eu
+    OR ${a}id IN (SELECT m.tarefa_id FROM gestor.mencoes m WHERE m.pessoa_id=@eu)
+    OR ${a}responsavel_id IN ${SQL_MEUS_SUBORDINADOS}
+    OR ${a}criado_por IN ${SQL_MEUS_SUBORDINADOS})`;
 }
 
 /** Mexe no projeto `p` (nome, situação, foto…) e o apaga: dono, chefe do dono, gerência. */

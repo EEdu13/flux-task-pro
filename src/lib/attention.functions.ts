@@ -15,7 +15,13 @@ const pessoaAlvo = (v: unknown): number => {
 };
 
 /** Tipos de aviso que trafegam pela mesma tabela. */
-export type TipoAviso = "cutucada" | "trator";
+export type TipoAviso = "cutucada" | "trator" | "emoji";
+
+/* O emoji gigante (estilo MSN, 08/10/2026) viaja como cutucada com a
+   mensagem "emoji:❤️". A tabela só aceita os tipos `cutucada` e `trator`
+   (CK_gestor_aviso_tipo), e assim não foi preciso mexer nela — e quem estiver
+   com o app antigo recebe uma cutucada comum, em vez de nada. */
+export const PREFIXO_EMOJI = "emoji:";
 
 /** A resposta compartilhada da sondagem de avisos — ver `listNudgesFn`. */
 const CHAVE_RECENTES = "avisos-de-tela:recentes";
@@ -29,7 +35,7 @@ const CHAVE_RECENTES = "avisos-de-tela:recentes";
  * mensagem. Duplicar a mecânica daria dois laços de polling para manter.
  */
 export const sendNudgeFn = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (input: {
       fromName: string;
       fromAvatar?: string;
@@ -47,12 +53,17 @@ export const sendNudgeFn = createServerFn({ method: "POST" })
           : "";
       const fromAvatar =
         typeof input?.fromAvatar === "string" ? input.fromAvatar.trim().slice(0, 20) : "";
-      const kind: TipoAviso = input?.kind === "trator" ? "trator" : "cutucada";
+      const pedido = input?.kind === "trator" ? "trator" : input?.kind === "emoji" ? "emoji" : "cutucada";
+      const texto = typeof input?.message === "string" ? input.message.trim() : "";
+      if (pedido === "emoji") {
+        // Um emoji só, curto e pictográfico — não vira canal de texto livre.
+        if (!texto || texto.length > 16 || !/\p{Extended_Pictographic}/u.test(texto))
+          throw new Error("Emoji inválido");
+        return { fromName, fromAvatar, targetUserId, kind: "cutucada" as const, message: `${PREFIXO_EMOJI}${texto}` };
+      }
+      const kind: "trator" | "cutucada" = pedido;
       // 200 é o limite da coluna; faixa maior que isso não caberia na tela também.
-      const message =
-        kind === "trator" && typeof input?.message === "string"
-          ? input.message.trim().slice(0, 200)
-          : "";
+      const message = kind === "trator" ? texto.slice(0, 200) : "";
       if (kind === "trator" && !message) throw new Error("O trator precisa de uma mensagem");
       return { fromName, fromAvatar, targetUserId, kind, message };
     },
@@ -97,7 +108,7 @@ export const sendNudgeFn = createServerFn({ method: "POST" })
  * guarda os ids que viu.
  */
 export const listNudgesFn = createServerFn({ method: "POST" })
-  .inputValidator((input: { janelaSegundos?: number }) => {
+  .validator((input: { janelaSegundos?: number }) => {
     // `userId` saiu: ele escolhia de quem eram os avisos lidos. Como a mensagem
     // do trator vai junto na resposta, dava para ler o que foi mandado para
     // qualquer pessoa.

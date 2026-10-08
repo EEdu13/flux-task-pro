@@ -51,25 +51,23 @@ type LinhaConclusao = {
 export const listarConclusoes = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (eu): Promise<{ conclusoes: ConclusaoDoBanco[] }> => {
     const { papelEsetor } = await import("@/lib/perfil.functions");
-    const { papel, setor } = await papelEsetor(eu);
+    const { papel } = await papelEsetor(eu);
 
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
 
-    /* Os mesmos parênteses de `listarTarefas`, pelo mesmo motivo: abaixo vem um
-       `AND` de data, e sem eles ele se ligaria só ao último `OR`. */
-    // Mesmo alcance de `listarTarefas`, e pelo mesmo motivo — ver a nota lá.
-    // Sem isto, o gráfico de "últimos 7 dias · time" contaria só quem está
-    // olhando, e duas pessoas do mesmo setor veriam números diferentes.
+    /* Mesmo alcance de `listarTarefas` — as tarefas que a pessoa enxerga —,
+       mais as conclusões dela e de quem responde a ela. Sem isto, o gráfico de
+       "últimos 7 dias · time" contaria só quem está olhando. Os parênteses
+       existem porque abaixo vem um `AND` de data. */
+    const { sqlListaDeTarefas, SQL_MEUS_SUBORDINADOS } = await import("@/lib/permissoes.server");
     const filtro =
       papel === "gerente"
         ? "1=1"
-        : setor
-          ? "(t.setor=@setor OR c.pessoa_id=@eu OR t.criado_por=@eu)"
-          : "(c.pessoa_id=@eu OR t.criado_por=@eu)";
+        : `(${sqlListaDeTarefas(papel, "t.")} OR c.pessoa_id=@eu
+            OR c.pessoa_id IN ${SQL_MEUS_SUBORDINADOS})`;
 
     const req = pool.request().input("eu", sql.Int, eu);
-    if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);
 
     /* Repare no que NÃO está aqui: `arquivada_em IS NULL`.
        Arquivar tira a tarefa do quadro, não do passado. Filtrar por isso faria

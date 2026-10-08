@@ -190,7 +190,7 @@ type EntradaAta = {
  * abaixo torna a chamada repetida inofensiva.
  */
 export const salvarAta = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         id: string;
@@ -296,7 +296,7 @@ export const salvarAta = createServerFn({ method: "POST" })
  * aberta em duas máquinas, chegariam os dois ao servidor.
  */
 export const ligarTopicoATarefa = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { topicoId: string; tarefaId: string }) => {
       const topicoId = guid(e?.topicoId);
       const tarefaId = guid(e?.tarefaId);
@@ -344,7 +344,7 @@ export const ligarTopicoATarefa = createServerFn({ method: "POST" })
  * registro dela para todo mundo.
  */
 export const apagarAta = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = guid(e?.id);
       if (!id) throw new Error("Ata inválida");
@@ -360,6 +360,102 @@ export const apagarAta = createServerFn({ method: "POST" })
         .input("id", sql.UniqueIdentifier, d.id)
         .input("eu", sql.Int, eu)
         .query(`DELETE FROM gestor.atas WHERE id=@id AND criada_por=@eu`);
+      return { ok: (r.rowsAffected[0] ?? 0) > 0 };
+    }),
+  );
+
+/* ————— Ata escrita à mão (o FUP, 08/10/2026) —————
+ *
+ * A ata nascia inteira, no fim da chamada, e não mudava mais. O FUP escreve a
+ * ata durante a reunião, um tópico de cada vez — daí estas três. A fechadura é
+ * a mesma da leitura: escreve quem gerou a ata ou esteve nela. Apagar um
+ * tópico, como apagar a ata, só quem gerou. */
+
+/** Quem gerou a ata ou foi participante dela (SQL; usa @ata e @eu). */
+const PODE_ESCREVER_NA_ATA = `EXISTS (SELECT 1 FROM gestor.atas a
+   WHERE a.id = @ata AND (a.criada_por = @eu
+     OR EXISTS (SELECT 1 FROM gestor.ata_participantes p
+                 WHERE p.ata_id = a.id AND p.pessoa_id = @eu)))`;
+
+export const adicionarTopicoNaAta = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((e: { ataId: string; id: string; text: string; kind: string }) => {
+      const ataId = guid(e?.ataId);
+      const id = guid(e?.id);
+      const textoDoTopico = texto(e?.text, 600);
+      if (!ataId || !id || !textoDoTopico) throw new Error("Tópico inválido");
+      const tipo = (TIPOS as readonly string[]).includes(e?.kind) ? e.kind : "proximo";
+      return { ataId, id, texto: textoDoTopico, tipo };
+    }),
+  )
+  .handler(
+    comSessao(
+      async (eu, d: { ataId: string; id: string; texto: string; tipo: string }) => {
+        const { getPool, sql } = await import("@/integrations/db.server");
+        const pool = await getPool();
+        const r = await pool
+          .request()
+          .input("ata", sql.UniqueIdentifier, d.ataId)
+          .input("id", sql.UniqueIdentifier, d.id)
+          .input("texto", sql.NVarChar, d.texto)
+          .input("tipo", sql.NVarChar, d.tipo)
+          .input("eu", sql.Int, eu)
+          .query(
+            // Idempotente pelo id: dois cliques não viram dois tópicos.
+            `INSERT INTO gestor.topicos_da_ata (id, ata_id, texto, tipo, ordem)
+             SELECT @id, @ata, @texto, @tipo,
+                    (SELECT ISNULL(MAX(ordem), -1) + 1 FROM gestor.topicos_da_ata WHERE ata_id = @ata)
+              WHERE ${PODE_ESCREVER_NA_ATA}
+                AND NOT EXISTS (SELECT 1 FROM gestor.topicos_da_ata WHERE id = @id)`,
+          );
+        return { ok: (r.rowsAffected[0] ?? 0) > 0 };
+      },
+    ),
+  );
+
+export const apagarTopicoDaAta = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((e: { id: string }) => {
+      const id = guid(e?.id);
+      if (!id) throw new Error("Tópico inválido");
+      return { id };
+    }),
+  )
+  .handler(
+    comSessao(async (eu, d: { id: string }): Promise<{ ok: boolean }> => {
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const r = await pool
+        .request()
+        .input("id", sql.UniqueIdentifier, d.id)
+        .input("eu", sql.Int, eu)
+        .query(
+          `DELETE t FROM gestor.topicos_da_ata t
+             JOIN gestor.atas a ON a.id = t.ata_id
+            WHERE t.id = @id AND a.criada_por = @eu`,
+        );
+      return { ok: (r.rowsAffected[0] ?? 0) > 0 };
+    }),
+  );
+
+export const atualizarTextoDaAta = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((e: { ataId: string; markdown: string }) => {
+      const ataId = guid(e?.ataId);
+      if (!ataId) throw new Error("Ata inválida");
+      return { ataId, markdown: texto(e?.markdown, 1_000_000) };
+    }),
+  )
+  .handler(
+    comSessao(async (eu, d: { ataId: string; markdown: string }): Promise<{ ok: boolean }> => {
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const r = await pool
+        .request()
+        .input("ata", sql.UniqueIdentifier, d.ataId)
+        .input("markdown", sql.NVarChar(sql.MAX), d.markdown)
+        .input("eu", sql.Int, eu)
+        .query(`UPDATE gestor.atas SET markdown = @markdown WHERE id = @ata AND ${PODE_ESCREVER_NA_ATA}`);
       return { ok: (r.rowsAffected[0] ?? 0) > 0 };
     }),
   );

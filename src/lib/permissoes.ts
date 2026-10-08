@@ -10,9 +10,22 @@ import type { PackTemplate, Project, Task, User } from "@/lib/fluxo-types";
  * perfil, o mesmo dado que o servidor compara.
  */
 
-/** `eu` é o chefe direto de alguma destas pessoas. */
+/**
+ * `eu` está acima de alguma destas pessoas no organograma. O servidor aceita o
+ * supervisor e o coordenador; aqui sobe a corrente de chefes, que dá o mesmo
+ * para quem tem o coordenador como chefe do supervisor. O teto de passos
+ * protege de um ciclo no cadastro.
+ */
 export function ehChefeDe(eu: User, users: User[], ...pessoas: (string | undefined)[]): boolean {
-  return pessoas.some((id) => !!id && users.find((u) => u.id === id)?.supervisorId === eu.id);
+  const porId = new Map(users.map((u) => [u.id, u]));
+  return pessoas.some((id) => {
+    let chefe = id ? porId.get(id)?.supervisorId : undefined;
+    for (let passos = 0; chefe && passos < 10; passos++) {
+      if (chefe === eu.id) return true;
+      chefe = porId.get(chefe)?.supervisorId;
+    }
+    return false;
+  });
 }
 
 /** Título, descrição, pontos e "exigir comprovante" da tarefa — e excluí-la. */

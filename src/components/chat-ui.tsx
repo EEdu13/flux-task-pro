@@ -13,6 +13,8 @@ import {
 } from "@/lib/chat-store";
 import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
+import { lerAviso } from "@/lib/avisos-no-chat";
+import { primeiroNome } from "@/integrations/iam/types";
 
 const EMOJIS = [
   "😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😉", "😎", "🤩",
@@ -214,12 +216,17 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
   const { currentUser } = useFluxo();
   const { markRead, registrarNaTela } = useChat();
   const messages = useConversation(peerId);
-  const endRef = useRef<HTMLDivElement>(null);
+  const listaRef = useRef<HTMLDivElement>(null);
 
   // Também quando o balão de "digitando" aparece: ele nasce no fim da lista e,
   // numa conversa já rolada até embaixo, surgiria fora de vista.
+  /* Rola SÓ a lista. Era `scrollIntoView`, que rola todo ancestral que puder
+     — inclusive a página: na tela de Chat, cada mensagem nova (e cada
+     sondagem) puxava a página inteira para baixo, barra lateral junto
+     (relato do usuário, 08/10/2026). */
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    const el = listaRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, messages.peerDigitando]);
 
   // Esta conversa está na tela enquanto este componente existir — é o que o
@@ -271,7 +278,10 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
   const agora = new Date();
 
   return (
-    <div className={`flex flex-1 flex-col gap-1.5 overflow-y-auto ${compact ? "p-2" : "p-4"}`}>
+    <div
+      ref={listaRef}
+      className={`flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto ${compact ? "p-2" : "p-4"}`}
+    >
       {messages.length === 0 && (
         <div className="m-auto text-center text-xs text-muted-foreground">
           Nenhuma mensagem ainda. Diga oi 👋
@@ -291,7 +301,6 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
         </section>
       ))}
       {messages.peerDigitando && <BalaoDigitando />}
-      <div ref={endRef} />
     </div>
   );
 }
@@ -313,7 +322,35 @@ function SeparadorDeDia({ rotulo }: { rotulo: string }) {
   );
 }
 
+/**
+ * "Eduardo chamou sua atenção", o trator e o emoji gigante, no meio da
+ * conversa — como os avisos do WhatsApp, e não como balão. Ver `lerAviso`.
+ */
+function LinhaDeAviso({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
+  const { users } = useFluxo();
+  const aviso = lerAviso(m.body)!;
+  const quem = mine
+    ? "Você"
+    : primeiroNome(users.find((u) => u.id === m.from_user_id)?.name ?? "Alguém");
+  return (
+    <div className="flex flex-col items-center gap-0.5 py-1">
+      {aviso.tipo === "emoji" && <div className="text-5xl leading-none">{aviso.emoji}</div>}
+      <span className="max-w-[90%] rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-center text-[11px] font-medium text-foreground">
+        {aviso.tipo === "cutucada" && `🔔 ${quem} ${mine ? "chamou a atenção" : "chamou sua atenção!"}`}
+        {aviso.tipo === "trator" && (
+          <>
+            🚜 {quem} mandou um trator: <b>“{aviso.texto}”</b>
+          </>
+        )}
+        {aviso.tipo === "emoji" && `${quem} mandou um emoji gigante`}
+        <span className="ml-1.5 text-[9px] text-muted-foreground">{fmtTime(m.created_at)}</span>
+      </span>
+    </div>
+  );
+}
+
 function Balao({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
+  if (lerAviso(m.body)) return <LinhaDeAviso m={m} mine={mine} />;
   const hasImg = m.att_data && m.att_type && isImage(m.att_type);
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -474,7 +511,7 @@ export function Composer({ peerId }: { peerId: string }) {
      não o componente, e sem a dependência o foco ficaria na primeira conversa
      aberta da sessão. */
   useEffect(() => {
-    campoRef.current?.focus();
+    campoRef.current?.focus({ preventScroll: true });
   }, [peerId]);
 
   /* Aviso de "estou digitando", no máximo uma vez a cada 2,5s.
@@ -505,7 +542,7 @@ export function Composer({ peerId }: { peerId: string }) {
     setPending(null);
     // O clique no botão de enviar tira o foco do campo; devolver é o que
     // permite escrever a próxima sem voltar ao mouse.
-    campoRef.current?.focus();
+    campoRef.current?.focus({ preventScroll: true });
 
     filaRef.current = filaRef.current
       .then(() => sendMessage(peerId, corpo, anexo ?? undefined))

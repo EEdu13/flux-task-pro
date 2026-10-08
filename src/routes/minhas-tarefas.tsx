@@ -27,7 +27,6 @@ import {
   CalendarCheck,
   ChevronDown,
   Search,
-  Tag,
   X,
 } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
@@ -70,7 +69,9 @@ import { CampoData } from "@/components/campo-data";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
-import { FiltroPessoa } from "@/components/filtro-pessoa";
+import { FiltroPessoa, FiltroSetor } from "@/components/filtro-pessoa";
+import { BuscaComTags } from "@/components/busca-com-tags";
+import { ReacoesDaTarefa } from "@/components/reacoes-da-tarefa";
 import {
   SEM_SELECAO_DE_PESSOAS,
   passaNoFiltroDePessoas,
@@ -90,7 +91,7 @@ import {
   type User,
 } from "@/lib/fluxo-types";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
-import { chaveDaEtiqueta, comCerquilha } from "@/lib/etiquetas-do-projeto";
+import { comCerquilha } from "@/lib/etiquetas-do-projeto";
 import {
   estiloDoCartaoDoProjeto,
   useEtiquetasDoCartao,
@@ -215,11 +216,6 @@ function naVisaoDoPapel(t: Task, eu: User, equipe: ReadonlySet<string>): boolean
   return true;
 }
 
-/** As etiquetas marcadas no filtro (pela `chaveDaEtiqueta`) e o "Sem tags". */
-type SelecaoDeTags = { semTags: boolean; tags: string[] };
-
-const SEM_SELECAO_DE_TAGS: SelecaoDeTags = { semTags: false, tags: [] };
-
 const scopeLabels: Record<Scope, string> = {
   pack: "Meu pack",
   atribuidas: "Atribuídas a mim",
@@ -237,7 +233,8 @@ function MinhasTarefas() {
   const [freq, setFreq] = useState<Frequency | "todas">("todas");
   const [priority, setPriority] = useState<Priority | "todas">("todas");
   const [filtroPessoas, setFiltroPessoas] = useState<SelecaoDePessoas>(SEM_SELECAO_DE_PESSOAS);
-  const [filtroTags, setFiltroTags] = useState<SelecaoDeTags>(SEM_SELECAO_DE_TAGS);
+  /** O setor dos chips de cima: o do RESPONSÁVEL, não o gravado na tarefa. */
+  const [setorPessoas, setSetorPessoas] = useState<string>("todos");
   const [datePreset, setDatePreset] = useState<DatePreset>("todas");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -295,6 +292,7 @@ function MinhasTarefas() {
        exatamente naquela ordem. */
     const termos = semAcento(search).split(/\s+/).filter(Boolean);
     const nomePorId = new Map(users.map((u) => [u.id, u.name]));
+    const setorPorId = new Map(users.map((u) => [u.id, u.sector]));
     /* Busca e pessoa só filtram onde aparecem. No Meu pack a barra fica
        escondida, e o que tivesse sido digitado ou escolhido em outra aba
        continuava valendo lá: o pack aparecia pela metade, ou vazio, sem nada
@@ -313,6 +311,17 @@ function MinhasTarefas() {
       if (freq !== "todas" && t.frequency !== freq) return false;
       if (priority !== "todas" && t.priority !== priority) return false;
       if (comBarra && !passaNoFiltroDePessoas(filtroPessoas, t.assigneeId)) return false;
+      /* O setor vale enquanto ninguém está marcado. Marcada uma pessoa, ela
+         manda — a marcada de outro setor continua à vista no filtro, e sumir
+         com as tarefas dela por causa do setor seria um filtro brigando com
+         o outro. */
+      if (
+        comBarra &&
+        setorPessoas !== "todos" &&
+        filtroPessoas.ids.length === 0 &&
+        setorPorId.get(t.assigneeId) !== setorPessoas
+      )
+        return false;
       if (range && scope !== "pack") {
         // Filtro de período é sobre o prazo; sem prazo, fora do período.
         if (!t.dueDate) return false;
@@ -334,18 +343,7 @@ function MinhasTarefas() {
       }
       return true;
     });
-    /* Etiquetas: qualquer uma das marcadas basta — marcar mais amplia o
-       recorte, como num filtro de loja. "Sem tags" é mais uma opção do mesmo
-       grupo. Como a busca, só vale onde a barra aparece. */
-    const marcadas = new Set(filtroTags.tags);
-    const filtrando = comBarra && (filtroTags.semTags || marcadas.size > 0);
-    const visible = filtrando
-      ? base.filter((t) =>
-          t.tags.length === 0
-            ? filtroTags.semTags
-            : t.tags.some((g) => marcadas.has(chaveDaEtiqueta(g))),
-        )
-      : base;
+    const visible = base;
     return { visible, base };
   }, [
     tasks,
@@ -357,44 +355,12 @@ function MinhasTarefas() {
     freq,
     priority,
     filtroPessoas,
-    filtroTags,
+    setorPessoas,
     search,
     datePreset,
     dateFrom,
     dateTo,
   ]);
-
-  /* O que o filtro de etiquetas oferece: só as etiquetas das tarefas que a
-     tela mostra agora (`base`, sem o filtro de etiquetas), com quantas são.
-     Listava também as de tarefas fora da aba ou dos filtros, com zero — linhas
-     vazias que pareciam de tarefas excluídas (pedido do usuário, 30/09/2026).
-     As marcadas ficam mesmo sem tarefa, para poder desmarcar. */
-  const opcoesDeTag = useMemo(() => {
-    const porChave = new Map<string, { nome: string; n: number }>();
-    let semTags = 0;
-    for (const t of base) {
-      if (t.tags.length === 0) semTags++;
-      const vistas = new Set<string>();
-      for (const g of t.tags) {
-        const chave = chaveDaEtiqueta(g);
-        if (!chave || vistas.has(chave)) continue;
-        vistas.add(chave);
-        const atual = porChave.get(chave);
-        if (atual) atual.n++;
-        else porChave.set(chave, { nome: g.replace(/^#+/, "").trim(), n: 1 });
-      }
-    }
-    for (const chave of filtroTags.tags) {
-      if (porChave.has(chave)) continue;
-      // O nome como está gravado, se alguma tarefa ainda tiver a etiqueta.
-      const grafia = tasks.flatMap((t) => t.tags).find((g) => chaveDaEtiqueta(g) === chave);
-      porChave.set(chave, { nome: grafia?.replace(/^#+/, "").trim() ?? chave, n: 0 });
-    }
-    const tags = [...porChave]
-      .map(([chave, { nome, n }]) => ({ chave, nome, n }))
-      .sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
-    return { tags, semTags };
-  }, [tasks, base, filtroTags.tags]);
 
   const scopeCounts = useMemo(() => {
     const active = tasks.filter(
@@ -428,6 +394,26 @@ function MinhasTarefas() {
      Quem está marcado no filtro fica, mesmo que as tarefas dessa pessoa tenham
      sumido no meio do caminho: marcada e fora da lista seria um filtro ligado
      sem rosto para desmarcar. */
+  /* As tags que a busca completa: as das tarefas que a pessoa enxerga, as
+     mais usadas primeiro. Uma grafia por etiqueta (a primeira que aparece). */
+  const tagsDaBusca = useMemo(() => {
+    const porChave = new Map<string, { nome: string; n: number }>();
+    for (const t of tasks) {
+      if (!naVisaoDoPapel(t, currentUser, equipe)) continue;
+      for (const g of t.tags) {
+        const nome = g.replace(/^#+/, "").trim();
+        if (!nome) continue;
+        const chave = semAcento(nome);
+        const atual = porChave.get(chave);
+        if (atual) atual.n++;
+        else porChave.set(chave, { nome, n: 1 });
+      }
+    }
+    return [...porChave.values()].sort(
+      (a, b) => b.n - a.n || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }),
+    );
+  }, [tasks, currentUser, equipe]);
+
   const pessoasFiltraveis = useMemo(() => {
     const ids = new Set<string>(filtroPessoas.ids);
     for (const t of tasks) if (naVisaoDoPapel(t, currentUser, equipe)) ids.add(t.assigneeId);
@@ -517,16 +503,21 @@ function MinhasTarefas() {
           </div>
         </div>
 
-        {/* Filter bar (hidden on Meu pack — pack é sempre hoje) */}
+        {/* Filtros em duas linhas, no máximo (pedido do usuário, 07/10/2026).
+            A de cima: datas, setores e a busca com quantas sobraram. A de
+            baixo, os rostos — ver `FiltroPessoa`. Escondidos no Meu pack, que
+            é sempre hoje.
+
+            O filtro de etiquetas saiu: a busca já acha "#tag". */}
         {scope !== "pack" && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex flex-wrap items-center gap-1 rounded-md border border-border bg-secondary/40 p-0.5">
+          <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5">
             {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => setDatePreset(p)}
-                className={`rounded px-2 py-1 text-xs font-medium transition ${
+                className={`whitespace-nowrap rounded px-2 py-1 text-xs font-medium transition ${
                   datePreset === p
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -536,17 +527,8 @@ function MinhasTarefas() {
               </button>
             ))}
           </div>
-          {/* Busca e etiquetas dividem a sobra da linha em 3 para 2: a busca
-              cedeu espaço para o filtro de etiquetas, que fica logo à direita
-              do número de tarefas. */}
-          <input
-            placeholder="Buscar por título, descrição, pessoa ou #tag…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input min-w-56 flex-3 py-1.5"
-          />
           {datePreset === "entre" && (
-            <div className="inline-flex items-center gap-1">
+            <div className="inline-flex shrink-0 items-center gap-1">
               <CampoData
                 value={dateFrom}
                 onChange={setDateFrom}
@@ -564,31 +546,31 @@ function MinhasTarefas() {
               />
             </div>
           )}
-          <span className="text-xs text-muted-foreground">{visible.length} tarefas</span>
-          <FiltroDeTags
-            opcoes={opcoesDeTag.tags}
-            semTagsN={opcoesDeTag.semTags}
-            valor={filtroTags}
-            aoMudar={setFiltroTags}
-            className="min-w-48 flex-2"
+          {pessoasFiltraveis.length > 1 && (
+            <FiltroSetor
+              pessoas={pessoasFiltraveis}
+              setor={setorPessoas}
+              aoMudar={setSetorPessoas}
+            />
+          )}
+          <BuscaComTags
+            valor={search}
+            aoMudar={setSearch}
+            tags={tagsDaBusca}
+            placeholder="Buscar por título, descrição, pessoa ou #tag…"
+            sufixo={`${visible.length} ${visible.length === 1 ? "tarefa" : "tarefas"}`}
+            className="ml-auto w-full min-w-56 max-w-sm flex-1"
           />
         </div>
         )}
 
-        {/* Filtro por pessoa, em faixa própria. Marca várias pessoas, para
-            mostrar só as tarefas delas ou esconder as delas — ver
-            `FiltroPessoa`.
-
-            Fora da barra de cima porque ele tem três linhas (setores, o modo e
-            os rostos) e espremê-lo entre os atalhos de data e a busca quebraria
-            as duas coisas.
-
-            Só para quem enxerga mais de uma pessoa: para um colaborador, a
+        {/* Só para quem enxerga mais de uma pessoa: para um colaborador, a
             lista teria um nome só, o dele, e o filtro não filtraria nada. */}
         {scope !== "pack" && pessoasFiltraveis.length > 1 && (
           <div className="mt-2">
             <FiltroPessoa
               pessoas={pessoasFiltraveis}
+              setor={setorPessoas}
               valor={filtroPessoas}
               aoMudar={setFiltroPessoas}
             />
@@ -647,196 +629,6 @@ function MinhasTarefas() {
         </div>
       </div>
     </FluxoLayout>
-  );
-}
-
-/**
- * O filtro de etiquetas: uma área que abre a lista de todas as etiquetas, com
- * "Sem tags" no topo. Marca quantas quiser; basta a tarefa ter uma delas.
- *
- * O gatilho mostra o que está marcado, para o filtro nunca ficar ligado sem
- * ninguém ver — o erro que a busca tinha no Meu pack.
- */
-function FiltroDeTags({
-  opcoes,
-  semTagsN,
-  valor,
-  aoMudar,
-  className = "",
-}: {
-  opcoes: { chave: string; nome: string; n: number }[];
-  semTagsN: number;
-  valor: SelecaoDeTags;
-  aoMudar: (v: SelecaoDeTags) => void;
-  className?: string;
-}) {
-  const [procura, setProcura] = useState("");
-  const marcadas = new Set(valor.tags);
-  const ativo = valor.semTags || marcadas.size > 0;
-  const nomeDe = new Map(opcoes.map((o) => [o.chave, o.nome]));
-  const rotulos = [
-    ...(valor.semTags ? ["Sem tags"] : []),
-    ...valor.tags.map((chave) => comCerquilha(nomeDe.get(chave) ?? chave)),
-  ];
-  const termo = semAcento(procura);
-  const listadas = termo ? opcoes.filter((o) => semAcento(o.nome).includes(termo)) : opcoes;
-
-  const alternar = (chave: string) =>
-    aoMudar({
-      ...valor,
-      tags: marcadas.has(chave) ? valor.tags.filter((k) => k !== chave) : [...valor.tags, chave],
-    });
-
-  return (
-    <Popover onOpenChange={(aberto) => !aberto && setProcura("")}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={ativo ? `Filtro de tags: ${rotulos.join(", ")}` : "Filtrar por tag"}
-          className={`input flex items-center gap-1.5 py-1.5 text-left ${ativo ? "border-primary/60" : ""} ${className}`}
-        >
-          <Tag
-            className={`h-3.5 w-3.5 shrink-0 ${ativo ? "text-primary" : "text-muted-foreground"}`}
-          />
-          {ativo ? (
-            <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-              {rotulos.slice(0, 2).map((r, i) => (
-                <span
-                  key={`${i}-${r}`}
-                  className="max-w-32 truncate rounded bg-primary/15 px-1.5 text-[11px] font-medium leading-5 text-primary"
-                >
-                  {r}
-                </span>
-              ))}
-              {rotulos.length > 2 && (
-                <span className="shrink-0 text-[11px] text-muted-foreground">
-                  +{rotulos.length - 2}
-                </span>
-              )}
-            </span>
-          ) : (
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">Filtrar por tag</span>
-          )}
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      {/* Mais contraste que o padrão do popover: no tema escuro o painel se
-          confundia com a página por trás, e a letra miúda cansava.
-          `z-140` põe o painel acima do balão do chat e do acesso rápido
-          (120 e 130), que antes o cobriam no canto de baixo. */}
-      <PopoverContent
-        align="end"
-        className="z-140 w-80 overflow-hidden border-primary/30 p-0 shadow-2xl ring-1 ring-black/10"
-      >
-        <div className="flex items-start gap-2 border-b border-border bg-secondary/60 px-3 py-2.5">
-          <Tag className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <div>
-            <div className="text-sm font-semibold text-foreground">Filtrar por tag</div>
-            <div className="text-xs text-muted-foreground">
-              Mostra as tarefas com qualquer uma das marcadas.
-            </div>
-          </div>
-        </div>
-        {opcoes.length > 8 && (
-          <div className="relative border-b border-border px-2.5 py-2">
-            <Search className="pointer-events-none absolute left-5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={procura}
-              onChange={(e) => setProcura(e.target.value)}
-              placeholder="Procurar tag…"
-              aria-label="Procurar tag"
-              className="w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        )}
-        {/* Umas seis linhas e a ponta da seguinte, para se ver que rola
-            (pedido do usuário, 02/10/2026): a lista inteira descia até o
-            rodapé. Cada linha tem 40px, e "Sem tags" vem com o traço embaixo. */}
-        <div className="max-h-68 overflow-y-auto p-1.5">
-          {!termo && (
-            <>
-              <OpcaoDeTag
-                rotulo="Sem tags"
-                n={semTagsN}
-                marcada={valor.semTags}
-                aoAlternar={() => aoMudar({ ...valor, semTags: !valor.semTags })}
-              />
-              <div className="mx-1 my-1.5 h-px bg-border" />
-            </>
-          )}
-          {listadas.map((o) => (
-            <OpcaoDeTag
-              key={o.chave}
-              rotulo={comCerquilha(o.nome)}
-              n={o.n}
-              marcada={marcadas.has(o.chave)}
-              aoAlternar={() => alternar(o.chave)}
-            />
-          ))}
-          {listadas.length === 0 && (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-              {termo ? "Nenhuma tag com esse nome." : "Nenhuma tarefa daqui tem tag."}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-secondary/40 px-3 py-2">
-          <span className="text-xs text-muted-foreground">
-            {ativo
-              ? `${rotulos.length} marcada${rotulos.length > 1 ? "s" : ""}`
-              : "Nenhuma marcada"}
-          </span>
-          <button
-            type="button"
-            onClick={() => aoMudar(SEM_SELECAO_DE_TAGS)}
-            disabled={!ativo}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-primary transition hover:bg-primary/10 disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-50"
-          >
-            <X className="h-3.5 w-3.5" /> Limpar filtros
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** Uma linha do filtro de etiquetas: a caixa, o nome e quantas tarefas. */
-function OpcaoDeTag({
-  rotulo,
-  n,
-  marcada,
-  aoAlternar,
-}: {
-  rotulo: string;
-  n: number;
-  marcada: boolean;
-  aoAlternar: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={marcada}
-      onClick={aoAlternar}
-      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition ${
-        marcada ? "bg-primary/15 font-medium" : "hover:bg-secondary"
-      }`}
-    >
-      <span
-        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border-[1.5px] ${
-          marcada ? "border-primary bg-primary text-primary-foreground" : "border-foreground/45"
-        }`}
-      >
-        {marcada && <Check className="h-3 w-3" />}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{rotulo}</span>
-      <span
-        className={`min-w-6 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums ${
-          marcada ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground/80"
-        }`}
-      >
-        {n}
-      </span>
-    </button>
   );
 }
 
@@ -1070,6 +862,7 @@ function TaskList({
                             </td>
                             <td className="py-2.5 pr-4 text-right">
                               <div className="flex items-center justify-end gap-1">
+                                <ReacoesDaTarefa task={t} compacto />
                                 <TaskTimerControls
                                   taskId={t.id}
                                   estimatedMinutes={t.estimatedMinutes}
@@ -1991,7 +1784,12 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
           que se opera à direita (temporizador e responsável).
           Concluir saiu daqui e virou o círculo na frente do
           título — ver `CirculoDeConcluir`. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      {/* O "visto" de quem recebeu, em emoji, numa linha própria: com as
+          fotinhas e os nomes ele não cabe ao lado do prazo. */}
+      <div className="mt-2.5">
+        <ReacoesDaTarefa task={t} compacto />
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5 whitespace-nowrap">
             <Clock className="h-3 w-3" />

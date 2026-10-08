@@ -57,6 +57,8 @@ export type TarefaDoBanco = {
   completedAt?: string | null;
   /** O dia em que de fato terminou, quando a pessoa informou ("yyyy-MM-dd"). */
   actualCompletionDate?: string | null;
+  /** As reações de cada pessoa — ver `reacoes.functions.ts`. Só na listagem. */
+  reactions?: { userId: string; emoji: string }[];
 };
 
 /* Os valores que o CHECK de gestor.tarefas.frequencia aceita. "quinzenal"
@@ -79,16 +81,15 @@ const guid = (v: unknown): string | null =>
 /**
  * As tarefas que esta pessoa pode ver.
  *
- * A regra é decidida INTEIRAMENTE no servidor, a partir do papel e do setor
- * gravados em `gestor.perfis` no login — que por sua vez vêm de
- * `dbo.COLABORADORES` e `dbo.COLABORADORES_EXTERNOS`, não do navegador:
+ * A regra é decidida INTEIRAMENTE no servidor, a partir do papel gravado em
+ * `gestor.perfis` no login e do organograma de `dbo.COLABORADORES` e
+ * `dbo.COLABORADORES_EXTERNOS`, não do navegador:
  *
  *   gerente     → todas
- *   supervisor  → as do próprio setor, mais as suas
- *   adm         → só as suas (responsável ou criador)
+ *   os demais   → as suas (responsável ou criador), as de quem responde a
+ *                 elas no organograma e as em que foram mencionadas
  *
- * E, para quem não é gerente, também as tarefas em que foi mencionado — ver
- * `sqlListaDeTarefas` em `permissoes.server.ts`.
+ * Ver `sqlListaDeTarefas` em `permissoes.server.ts`.
  *
  * Quem não tem papel registrado cai em `adm`, que é a regra mais restrita.
  * Errar para o lado de mostrar menos é recuperável; errar para o outro lado
@@ -97,31 +98,22 @@ const guid = (v: unknown): string | null =>
 export const listarTarefas = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (eu): Promise<{ tarefas: TarefaDoBanco[] }> => {
     const { papelEsetor } = await import("@/lib/perfil.functions");
-    const { papel, setor } = await papelEsetor(eu);
+    const { papel } = await papelEsetor(eu);
 
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
 
-    /* O filtro é montado aqui, e não passado como parâmetro, porque `papel` e
-       `setor` vieram do banco — não há valor de fora entrando na consulta. Os
-       ids continuam parametrizados. */
-    /* O setor é de todos que estão nele, não só do supervisor.
-       Antes, colaborador recebia apenas o que era dele — e as telas que dizem
-       "do time" (ranking, últimos 7 dias, packs do time) mostravam a pessoa
-       sozinha com o rótulo de time. Duas pessoas da TI viam números diferentes
-       para a mesma coisa, e "Packs do time" dizia "ninguém montou o pack" para
-       sempre, porque as tarefas dos outros nunca chegavam.
+    /* O filtro é montado aqui, e não passado como parâmetro, porque `papel`
+       veio do banco — não há valor de fora entrando na consulta. Os ids
+       continuam parametrizados.
 
-       O que isso abre, dito com todas as letras: quem é da TI passa a ver
-       título, responsável e conclusão das tarefas da TI. Decisão tomada com o
-       usuário — é o comportamento que a tela sempre prometeu.
-
-       A gerência continua vendo tudo, sem hierarquia, como era. */
+       O "time" de cada um é quem responde a ele no organograma, não o setor
+       (decisão do usuário, 07/10/2026): ver o setor inteiro mostrava a tarefa
+       de todo mundo do setor. A gerência continua vendo tudo. */
     const { sqlListaDeTarefas } = await import("@/lib/permissoes.server");
-    const filtro = sqlListaDeTarefas(papel, setor);
+    const filtro = sqlListaDeTarefas(papel, "t.");
 
     const req = pool.request().input("eu", sql.Int, eu);
-    if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);
 
     /* Os parênteses no filtro acima não são enfeite: sem eles, o `OR` interno
        se misturaria com o `AND arquivada_em IS NULL` abaixo, e uma tarefa
@@ -131,13 +123,29 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
        `criada_em` no futuro é a próxima ocorrência de uma recorrente que ainda
        não chegou ao dia dela — ver `nasceEm` em `salvarTarefa`. Ela existe no
        banco, mas só aparece quando nasce. */
+    /* As reações vêm numa coluna só, "467:❤️|512:👍": uma consulta por
+       tarefa para elas seria uma ida ao banco por cartão do quadro. */
     const r = await req.query(
-      `SELECT ${COLUNAS_TAREFA} FROM gestor.tarefas t
+      `SELECT ${COLUNAS_TAREFA},
+              (SELECT STRING_AGG(CAST(CAST(rx.pessoa_id AS varchar(12)) AS nvarchar(12)) + N':' + rx.emoji, N'|')
+                 FROM gestor.reacoes_tarefa rx WHERE rx.tarefa_id = t.id) AS reacoes
+         FROM gestor.tarefas t
         WHERE ${filtro} AND arquivada_em IS NULL AND criada_em <= SYSDATETIMEOFFSET()
         ORDER BY ordem, criada_em DESC`,
     );
 
-    return { tarefas: (r.recordset as LinhaTarefa[]).map(paraApp) };
+    return {
+      tarefas: (r.recordset as (LinhaTarefa & { reacoes: string | null })[]).map((l) => ({
+        ...paraApp(l),
+        reactions: (l.reacoes ?? "")
+          .split("|")
+          .map((par) => {
+            const i = par.indexOf(":");
+            return { userId: par.slice(0, i), emoji: par.slice(i + 1) };
+          })
+          .filter((x) => x.userId && x.emoji),
+      })),
+    };
   }),
 );
 
@@ -320,7 +328,7 @@ type GravacaoDaTarefa = {
 };
 
 export const salvarTarefa = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         id?: string;
@@ -399,7 +407,10 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           prioridade: (PRIORIDADES as readonly string[]).includes(e?.priority ?? "")
             ? e!.priority!
             : "media",
-          pontos: Math.max(0, Math.min(10_000, Math.trunc(Number(e?.score) || 0))),
+          /* Teto de 100 (auditoria de 08/10/2026). Era 10.000: uma tarefa
+             criada para si mesmo já concluída rendia ~11 mil pontos de uma
+             vez. As tarefas de verdade usam 10, 15 ou 20. */
+          pontos: Math.max(0, Math.min(100, Math.trunc(Number(e?.score) || 0))),
           prazo,
           horario,
           recorrente: e?.recurring === true,
@@ -447,6 +458,32 @@ export const salvarTarefa = createServerFn({ method: "POST" })
       const permissao = d.id ? await permissaoNaTarefa(eu, d.id) : null;
       if (permissao?.existe && !permissao.ver) {
         throw new Error("Você não tem acesso a esta tarefa.");
+      }
+      /* Quem só ENXERGA a tarefa — foi mencionado, por exemplo — comenta e
+         acompanha, mas não troca o responsável, não muda a situação nem o
+         prazo. Isso é de quem a tarefa é (o responsável) e de quem manda nela
+         (quem criou, a chefia, a gerência). Antes, o mencionado conseguia
+         passar a tarefa para si, concluir e levar os pontos (auditoria de
+         08/10/2026). */
+      if (permissao?.existe && !permissao.conteudo) {
+        const { getPool, sql } = await import("@/integrations/db.server");
+        const pool = await getPool();
+        const atual = (
+          await pool
+            .request()
+            .input("id", sql.UniqueIdentifier, d.id)
+            .query(`SELECT responsavel_id, situacao, prazo FROM gestor.tarefas WHERE id=@id`)
+        ).recordset[0] as { responsavel_id: number; situacao: string; prazo: Date | null } | undefined;
+        if (atual && atual.responsavel_id !== eu) {
+          const mesmoPrazo =
+            (atual.prazo?.getTime() ?? null) === (d.prazo?.getTime() ?? null) ||
+            // O prazo vai e volta pela tela com o horário acertado no SQL; só
+            // conta como mudança o que muda o dia.
+            (!!atual.prazo && !!d.prazo && atual.prazo.toISOString().slice(0, 10) === d.prazo.toISOString().slice(0, 10));
+          if (d.responsavelId !== atual.responsavel_id || d.situacao !== atual.situacao || !mesmoPrazo) {
+            throw new Error("Só o responsável ou quem criou a tarefa pode mudar responsável, situação ou prazo.");
+          }
+        }
       }
       const r = await gravarNoBanco(eu, d, !permissao?.existe || permissao.conteudo);
       // Nada gravado: era a próxima ocorrência, e ela já existia. Ver o INSERT.
@@ -775,16 +812,26 @@ async function gravarNoBanco(
             Sem prazo é neutra (decisão do usuário, 25/09/2026): pontos cheios,
             sem os 10% de quem cumpre prazo — senão não ter prazo valeria mais
             que ter — e nunca conta como atraso. */
+         /* No prazo: até o instante do prazo — e, no item do pack, até o fim
+            do DIA dele em Brasília. O horário do pack é o plano do dia, não a
+            hora em que o compromisso se perde (decisão do usuário,
+            07/10/2026; a tela faz a mesma conta em venceEm, de prazo.ts). */
          INSERT INTO gestor.conclusoes
            (tarefa_id, pessoa_id, pontos, prioridade, no_prazo, em)
          SELECT e.tarefa, e.responsavel_depois,
                 CAST(ROUND(e.pontos * CASE WHEN e.prazo IS NULL THEN 1.0
-                                           WHEN e.prazo >= e.concluida_depois THEN 1.1
+                                           WHEN np.no_prazo = 1 THEN 1.1
                                            ELSE 0.8 END, 0) AS INT),
                 e.prioridade,
-                CASE WHEN e.prazo IS NULL OR e.prazo >= e.concluida_depois THEN 1 ELSE 0 END,
+                CASE WHEN e.prazo IS NULL OR np.no_prazo = 1 THEN 1 ELSE 0 END,
                 e.concluida_depois
            FROM @efeito e
+          CROSS APPLY (SELECT CASE
+                         WHEN e.prazo >= e.concluida_depois THEN 1
+                         WHEN e.no_pack = 1
+                          AND CAST(e.prazo AT TIME ZONE N'E. South America Standard Time' AS DATE)
+                           >= CAST(e.concluida_depois AT TIME ZONE N'E. South America Standard Time' AS DATE)
+                         THEN 1 ELSE 0 END AS no_prazo) np
           WHERE e.concluida_depois IS NOT NULL AND e.concluida_antes IS NULL;
 
          /* E some quando a tarefa volta atrás — o desfazer, ou o card arrastado
@@ -916,6 +963,9 @@ async function gravarNoBanco(
               SELECT 4, N'concluida',
                      CASE WHEN e.prazo IS NULL THEN N'concluiu a tarefa'
                           WHEN e.prazo >= e.concluida_depois
+                            OR (e.no_pack = 1
+                                AND CAST(e.prazo AT TIME ZONE @fuso AS DATE)
+                                 >= CAST(e.concluida_depois AT TIME ZONE @fuso AS DATE))
                           THEN N'concluiu a tarefa no prazo'
                           ELSE N'concluiu a tarefa com atraso' END
                      /* Marcada hoje, terminada antes: a data que importa vai
@@ -1085,7 +1135,7 @@ async function gravarNoBanco(
  * E há o ganho que não é técnico: arquivar por engano tem volta.
  */
 export const arquivarTarefa = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string; arquivar?: boolean }) => {
       const id = guid(e?.id);
       if (!id) throw new Error("Tarefa inválida");

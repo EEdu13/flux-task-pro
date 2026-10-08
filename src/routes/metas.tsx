@@ -20,7 +20,7 @@ import { rotuloDaFrequencia, sectors, type Task, type User } from "@/lib/fluxo-t
 import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
 import { TravaScroll } from "@/components/trava-scroll";
-import { SEM_PRAZO, rotuloDoPrazo } from "@/lib/prazo";
+import { SEM_PRAZO, rotuloDoPrazo, venceEm } from "@/lib/prazo";
 
 export const Route = createFileRoute("/metas")({
   head: () => ({
@@ -120,7 +120,8 @@ function prazoNoPeriodo(t: Task, range: { start: Date; end: Date }): boolean {
 
 function scoreTask(task: Task, completionAt: string | null): TaskScore {
   // Sem prazo: não há atraso possível. Concluída vale inteira; aberta, pendente.
-  const due = task.dueDate ? new Date(task.dueDate).getTime() : Number.POSITIVE_INFINITY;
+  // O pack vence no fim do dia, não no horário — ver `venceEm`.
+  const due = venceEm(task);
   const now = Date.now();
   if (task.status === "concluida") {
     const done = completionAt ? new Date(completionAt).getTime() : now;

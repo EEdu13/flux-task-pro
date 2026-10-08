@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEscFecha } from "@/hooks/use-esc-fecha";
+import { isoParaData } from "@/lib/data-iso";
 import { useMemo, useState } from "react";
-import { CalendarRange, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CalendarRange, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import {
@@ -19,6 +21,8 @@ import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
 import { SEM_PRAZO, porPrazo, rotuloDoPrazo } from "@/lib/prazo";
 import { toast } from "sonner";
+import { ehChefeDe } from "@/lib/permissoes";
+import { semAcento } from "@/lib/texto-busca";
 
 export const Route = createFileRoute("/equipe")({
   head: () => ({
@@ -112,7 +116,11 @@ function dateRangeFor(preset: DatePreset, from?: string, to?: string): [number, 
   }
   if (preset === "entre") {
     if (!from || !to) return null;
-    return [startOfDay(new Date(from)).getTime(), endOfDay(new Date(to)).getTime()];
+    // `isoParaData`: `new Date("yyyy-MM-dd")` é meia-noite UTC — no Brasil, o dia anterior.
+    const de = isoParaData(from);
+    const ate = isoParaData(to);
+    if (!de || !ate) return null;
+    return [startOfDay(de).getTime(), endOfDay(ate).getTime()];
   }
   return null;
 }
@@ -124,8 +132,55 @@ function EquipePage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [busca, setBusca] = useState("");
+  const [setorFiltro, setSetorFiltro] = useState("todos");
+  const [supervisorFiltro, setSupervisorFiltro] = useState("todos");
 
   const isGerente = currentUser.role === "gerente";
+
+  /** O nome do chefe: o do Fluxo, ou o do organograma quando ele não entrou aqui. */
+  const nomeDoChefe = (u: User) =>
+    users.find((x) => x.id === u.supervisorId)?.name ?? u.supervisorNome ?? null;
+
+  /* Só a minha equipe: eu e quem está abaixo de mim no organograma, em
+     qualquer nível (pedido do usuário, 08/10/2026). A gerência vê todos.
+     Quem não chefia ninguém vê só a si mesmo. */
+  const minhaEquipe = useMemo(
+    () =>
+      isGerente
+        ? users
+        : users.filter((u) => u.id === currentUser.id || ehChefeDe(currentUser, users, u.id)),
+    [users, currentUser, isGerente],
+  );
+
+  const setoresDaEquipe = useMemo(() => {
+    const ids = new Set(minhaEquipe.map((u) => u.sector));
+    return sectors.filter((s) => ids.has(s.id));
+  }, [minhaEquipe]);
+
+  const supervisoresDaEquipe = useMemo(() => {
+    const nomes = new Set<string>();
+    for (const u of minhaEquipe) {
+      const n = nomeDoChefe(u);
+      if (n) nomes.add(n);
+    }
+    return [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minhaEquipe, users]);
+
+  const visiveis = useMemo(() => {
+    const termos = semAcento(busca).split(/\s+/).filter(Boolean);
+    return minhaEquipe.filter((u) => {
+      if (setorFiltro !== "todos" && u.sector !== setorFiltro) return false;
+      if (supervisorFiltro !== "todos" && nomeDoChefe(u) !== supervisorFiltro) return false;
+      if (termos.length) {
+        const alvo = semAcento(`${u.name} ${u.jobTitle} ${nomeDoChefe(u) ?? ""}`);
+        if (!termos.every((t) => alvo.includes(t))) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minhaEquipe, busca, setorFiltro, supervisorFiltro, users]);
 
   const range = useMemo(
     () => dateRangeFor(preset, fromDate, toDate),
@@ -151,7 +206,10 @@ function EquipePage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Equipe</h1>
             <p className="text-sm text-muted-foreground">
-              {users.length} pessoas, {sectors.length} setores.
+              {visiveis.length === minhaEquipe.length
+                ? `${minhaEquipe.length} ${minhaEquipe.length === 1 ? "pessoa" : "pessoas"}`
+                : `${visiveis.length} de ${minhaEquipe.length} pessoas`}
+              {isGerente ? " · a empresa toda" : " · você e quem responde a você"}.
             </p>
           </div>
           {isGerente && (
@@ -164,7 +222,58 @@ function EquipePage() {
           )}
         </div>
 
-        <div className="mt-4 rounded-lg border border-border bg-card p-3 shadow-sm">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-56 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome, cargo ou supervisor…"
+              className="input w-full py-1.5 pl-8"
+            />
+          </div>
+          <select
+            value={setorFiltro}
+            onChange={(e) => setSetorFiltro(e.target.value)}
+            className="input w-auto py-1.5 text-sm"
+            aria-label="Setor"
+          >
+            <option value="todos">Todos os setores</option>
+            {setoresDaEquipe.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={supervisorFiltro}
+            onChange={(e) => setSupervisorFiltro(e.target.value)}
+            className="input w-auto max-w-72 py-1.5 text-sm"
+            aria-label="Supervisor"
+          >
+            <option value="todos">Todos os supervisores</option>
+            {supervisoresDaEquipe.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          {(busca || setorFiltro !== "todos" || supervisorFiltro !== "todos") && (
+            <button
+              type="button"
+              onClick={() => {
+                setBusca("");
+                setSetorFiltro("todos");
+                setSupervisorFiltro("todos");
+              }}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+            >
+              <X className="h-3.5 w-3.5" /> Limpar
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 rounded-lg border border-border bg-card p-3 shadow-sm">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <CalendarRange className="h-3.5 w-3.5" />
             Filtrar tarefas por prazo
@@ -233,8 +342,8 @@ function EquipePage() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => {
-                const sup = users.find((x) => x.id === u.supervisorId);
+              {visiveis.map((u) => {
+                const chefe = nomeDoChefe(u);
                 const sec = sectors.find((s) => s.id === u.sector);
                 const userTasks = filteredTasks.filter((t) => t.assigneeId === u.id);
                 const taskCount = range
@@ -274,7 +383,7 @@ function EquipePage() {
                       </span>
                     </td>
                     <td className="py-2.5 pr-4 text-xs">{roleLabels[u.role]}</td>
-                    <td className="py-2.5 pr-4 text-xs text-muted-foreground">{sup?.name ?? "—"}</td>
+                    <td className="py-2.5 pr-4 text-xs text-muted-foreground">{chefe ?? "—"}</td>
                     <td className="py-2.5 pr-4 text-right">
                       <div className="ml-auto flex w-32 flex-col items-end gap-1">
                         <span className={`text-xs font-semibold tabular-nums ${scoreTextClass(s.pct, s.assigned)}`}>
@@ -382,6 +491,7 @@ function UserTasksDrawer({
     return g;
   }, [tasks]);
   const order: (keyof typeof statusLabels)[] = ["pendente", "andamento", "concluida"];
+  useEscFecha(true, onClose);
 
   return (
     <div
@@ -497,6 +607,7 @@ function UserDialog({
   const [avatar, setAvatar] = useState(user?.avatar ?? "");
 
   const supervisors = users.filter((u) => u.role === "gerente" || u.role === "supervisor");
+  useEscFecha(true, onClose);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>

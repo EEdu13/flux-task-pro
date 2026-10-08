@@ -15,6 +15,7 @@ import type {
   ChecklistItem,
   CompletionEntry,
   MeetingMinute,
+  MinuteTopic,
   Meta,
   Notification,
   PackTemplate,
@@ -35,6 +36,8 @@ import type { PessoaDoQuadro } from "@/lib/perfil.functions";
 import type { ProjetoDoBanco } from "@/lib/projetos.functions";
 import { toast } from "sonner";
 import { empilharDesfazer } from "@/lib/undo-stack";
+import { semAcento } from "@/lib/texto-busca";
+import { venceEm } from "@/lib/prazo";
 import { RECORRENCIA_DO_PACK, proximaOcorrencia, quandoVoltaNoPack } from "./recorrencia";
 import {
   avisarHistoricoMudou,
@@ -191,6 +194,12 @@ interface Store {
   minutes: MeetingMinute[];
   saveMinute: (m: Omit<MeetingMinute, "id" | "createdAt" | "createdBy">) => MeetingMinute;
   deleteMinute: (id: string) => void;
+  /** Reage à tarefa com um emoji; `null` tira a reação. */
+  reactToTask: (taskId: string, emoji: string | null) => void;
+  /** Escreve um tópico numa ata que já existe (a ata à mão do FUP). */
+  addMinuteTopic: (minuteId: string, kind: MinuteTopic["kind"], text: string) => void;
+  removeMinuteTopic: (minuteId: string, topicId: string) => void;
+  setMinuteMarkdown: (minuteId: string, markdown: string) => void;
   minuteTopicToTask: (minuteId: string, topicId: string) => string | undefined;
   visibleMinutes: () => MeetingMinute[];
   // permissions
@@ -408,14 +417,15 @@ const mesmoId = (a: string | null | undefined, b: string | null | undefined) =>
  * ter que sair e voltar. Ver `recarregarPessoas`.
  */
 function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
-  const idPorNome = new Map(pessoas.map((p) => [p.nome.trim().toLowerCase(), p.id]));
+  // Sem acento e sem espaço repetido: o nome do organograma ("LILIANE ...") e
+  // o da IAM nem sempre são grafados igual, e o servidor compara com CI_AI.
+  const chaveNome = (n: string) => semAcento(n).replace(/\s+/g, " ");
+  const idPorNome = new Map(pessoas.map((p) => [chaveNome(p.nome), p.id]));
   const doBanco: User[] = pessoas.map((p) => {
     const existente = s.users.find((u) => u.id === p.id);
     // Mesma rede de segurança do login: chefe apontando para si trava o
     // passeio por ancestrais em Contatos.
-    const chefe = p.supervisorNome
-      ? idPorNome.get(p.supervisorNome.trim().toLowerCase())
-      : undefined;
+    const chefe = p.supervisorNome ? idPorNome.get(chaveNome(p.supervisorNome)) : undefined;
     return {
       // O que é só do navegador sobrevive porque o espalhamento vem primeiro.
       ...existente,
@@ -432,6 +442,7 @@ function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
       phone: p.telefone ?? existente?.phone,
       avatar: p.avatar ?? iniciaisDoNome(p.nome),
       supervisorId: chefe && chefe !== p.id ? chefe : existente?.supervisorId,
+      supervisorNome: p.supervisorNome ?? undefined,
       score: p.pontuacao,
       streak: p.sequencia,
     };
@@ -1313,7 +1324,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       });
     }
     // Sem prazo: neutra nos pontos e nunca atrasada — igual ao servidor.
-    const onTime = next.dueDate ? new Date(next.dueDate).getTime() >= Date.now() : null;
+    // O pack vence no fim do dia, não no horário — ver `venceEm`.
+    const onTime = next.dueDate ? venceEm(next) >= Date.now() : null;
     const points = computeScore(next.score, next.priority, onTime);
 
     // users score + streak recompute (simple: latest completion day)
@@ -2369,6 +2381,76 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       })();
 
       return minute;
+    },
+    addMinuteTopic: (minuteId, kind, text) => {
+      const texto = text.trim();
+      if (!texto) return;
+      const topico: MinuteTopic = { id: novoId(), kind, text: texto };
+      setState((s) => ({
+        ...s,
+        minutes: (s.minutes ?? []).map((m) =>
+          m.id === minuteId ? { ...m, topics: [...m.topics, topico] } : m,
+        ),
+      }));
+      if (!ehGuid(minuteId)) return;
+      void import("@/lib/atas.functions")
+        .then((api) =>
+          api.adicionarTopicoNaAta({ data: { ataId: minuteId, id: topico.id, text: texto, kind } }),
+        )
+        .then((r) => {
+          if (!r.ok) toast.error("O tópico não foi gravado na ata", { description: "Só quem está na ata pode escrever nela." });
+        })
+        .catch((e) => {
+          console.warn("[fluxo] tópico não gravou:", (e as Error)?.message);
+          toast.error("O tópico não foi gravado na ata");
+        });
+    },
+    removeMinuteTopic: (minuteId, topicId) => {
+      setState((s) => ({
+        ...s,
+        minutes: (s.minutes ?? []).map((m) =>
+          m.id === minuteId ? { ...m, topics: m.topics.filter((t) => t.id !== topicId) } : m,
+        ),
+      }));
+      if (!ehGuid(topicId)) return;
+      void import("@/lib/atas.functions")
+        .then((api) => api.apagarTopicoDaAta({ data: { id: topicId } }))
+        .catch((e) => console.warn("[fluxo] tópico não apagou:", (e as Error)?.message));
+    },
+    setMinuteMarkdown: (minuteId, markdown) => {
+      setState((s) => ({
+        ...s,
+        minutes: (s.minutes ?? []).map((m) => (m.id === minuteId ? { ...m, markdown } : m)),
+      }));
+      if (!ehGuid(minuteId)) return;
+      void import("@/lib/atas.functions")
+        .then((api) => api.atualizarTextoDaAta({ data: { ataId: minuteId, markdown } }))
+        .catch((e) => console.warn("[fluxo] texto da ata não gravou:", (e as Error)?.message));
+    },
+    reactToTask: (taskId, emoji) => {
+      const eu = currentUser.id;
+      // Na tela já: a próxima sondagem traz a do banco, que é a mesma.
+      setState((s) => ({
+        ...s,
+        tasks: s.tasks.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                reactions: [
+                  ...(t.reactions ?? []).filter((r) => r.userId !== eu),
+                  ...(emoji ? [{ userId: eu, emoji }] : []),
+                ],
+              }
+            : t,
+        ),
+      }));
+      if (!ehGuid(taskId)) return;
+      void import("@/lib/reacoes.functions")
+        .then((api) => api.reagirNaTarefa({ data: { tarefaId: taskId, emoji } }))
+        .catch((e) => {
+          console.warn("[fluxo] reação não gravou:", (e as Error)?.message);
+          toast.error("A reação não foi gravada");
+        });
     },
     deleteMinute: (id) => {
       setState((s) => ({ ...s, minutes: (s.minutes ?? []).filter((x) => x.id !== id) }));

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Eye, EyeOff, Users2, X } from "lucide-react";
+import { Check, Users2, X } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
 import { sectors, type User } from "@/lib/fluxo-types";
 import type { SelecaoDePessoas } from "@/lib/filtro-de-pessoas";
@@ -13,50 +13,75 @@ function listaDeNomes(nomes: string[]): string {
 }
 
 /**
- * Filtro por pessoa em dois níveis: setores em cima, pessoas embaixo.
+ * Os setores de quem aparece no filtro, como chips. Fica na linha de cima,
+ * junto das datas (pedido do usuário, 07/10/2026), e escolhe duas coisas: as
+ * tarefas de quem é daquele setor e os rostos que o `FiltroPessoa` mostra.
  *
- * Era um menu suspenso com busca. Virou um bloco aberto porque o caminho real
- * é "quero ver as tarefas de alguém do financeiro" — e escolher primeiro o
- * setor corta a lista de rostos antes de ela virar uma parede. Com a lista
- * exposta, escolher alguém é um clique, não abrir-procurar-clicar.
+ * Só os setores que têm gente nesta lista — a lista fixa tem 17 e a maioria
+ * não tem ninguém aqui. Com um setor só, não aparece: seria um botão dizendo
+ * o óbvio.
+ */
+export function FiltroSetor({
+  pessoas,
+  setor,
+  aoMudar,
+}: {
+  pessoas: User[];
+  setor: string;
+  aoMudar: (setor: string) => void;
+}) {
+  const presentes = useMemo(() => {
+    const ids = new Set(pessoas.map((p) => p.sector));
+    return sectors.filter((s) => ids.has(s.id));
+  }, [pessoas]);
+  if (presentes.length <= 1) return null;
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Setor"
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5"
+    >
+      <ChipSetor id="todos" rotulo="Todos" ativo={setor === "todos"} aoClicar={() => aoMudar("todos")} />
+      {presentes.map((s) => (
+        <ChipSetor
+          key={s.id}
+          id={s.id}
+          rotulo={s.name}
+          cor={s.color}
+          ativo={setor === s.id}
+          aoClicar={() => aoMudar(s.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Filtro por pessoa: uma faixa de rostos. Marcar mostra só as tarefas das
+ * marcadas; marca quantas quiser (pedido do usuário, 02/10/2026).
  *
- * Marca quantas pessoas quiser (pedido do usuário, 02/10/2026): "só o que o
- * João e a Mayara fizeram", ou o contrário, "todo mundo menos os dois". O modo
- * fica no seletor de cima, e o rosto marcado mostra qual vale — cheio quando
- * entra, riscado quando sai.
+ * O modo "esconder as marcadas" saiu em 07/10/2026 — não era usado e ocupava
+ * a faixa. O setor escolhido no `FiltroSetor` corta os rostos; quem está
+ * marcado aparece sempre, seja qual for o setor, para o filtro nunca ficar
+ * ligado sem rosto para desmarcar.
  *
  * Foto e não sigla: reconhecer alguém por "LP" exige decorar; o rosto se
- * reconhece sozinho. É a mesma decisão já tomada nos cartões de tarefa.
- *
- * A linha de setores só aparece quando há mais de um — para quem enxerga só o
- * próprio setor, ela seria uma fileira de um botão só, dizendo o óbvio. Ela só
- * escolhe que rostos aparecem; quem filtra as tarefas são os rostos marcados.
+ * reconhece sozinho.
  */
 export function FiltroPessoa({
   pessoas,
+  setor,
   valor,
   aoMudar,
 }: {
   pessoas: User[];
+  setor: string;
   valor: SelecaoDePessoas;
   aoMudar: (valor: SelecaoDePessoas) => void;
 }) {
-  const [setor, setSetor] = useState<string>("todos");
   const marcadas = useMemo(() => new Set(valor.ids), [valor.ids]);
   const ativo = valor.ids.length > 0;
-  const esconde = valor.modo === "exceto";
 
-  /* Só os setores que têm gente nesta lista. A lista fixa tem 17 e a maioria
-     não tem ninguém aqui — botão que só sabe esvaziar a tela não é filtro. */
-  const setoresPresentes = useMemo(() => {
-    const ids = new Set(pessoas.map((p) => p.sector));
-    return sectors.filter((s) => ids.has(s.id));
-  }, [pessoas]);
-
-  /* Quem está marcado aparece sempre, seja qual for o setor escolhido em cima.
-     Antes, trocar de setor desmarcava a pessoa de fora dele; com várias
-     marcadas isso apagaria escolhas sem aviso. Mantê-las à vista evita o
-     contrário, que é pior: um filtro ligado que ninguém vê. */
   const visiveis = useMemo(() => {
     const lista = [...pessoas].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
     return setor === "todos"
@@ -66,80 +91,29 @@ export function FiltroPessoa({
 
   const alternar = (id: string) =>
     aoMudar({
-      ...valor,
+      modo: "so",
       ids: marcadas.has(id) ? valor.ids.filter((x) => x !== id) : [...valor.ids, id],
     });
+  const limpar = () => aoMudar({ modo: "so", ids: [] });
 
   const nomesMarcados = valor.ids
     .map((id) => pessoas.find((p) => p.id === id)?.name.split(" ")[0])
     .filter((n): n is string => !!n);
 
   return (
-    <div className="rounded-lg border border-border bg-secondary/30 p-2">
-      {setoresPresentes.length > 1 && (
-        <div className="mb-2 flex flex-wrap items-center gap-1">
-          <span className="mr-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Setor
-          </span>
-          <ChipSetor
-            id="todos"
-            rotulo="Todos"
-            ativo={setor === "todos"}
-            aoClicar={() => setSetor("todos")}
-          />
-          {setoresPresentes.map((s) => (
-            <ChipSetor
-              key={s.id}
-              id={s.id}
-              rotulo={s.name}
-              cor={s.color}
-              ativo={setor === s.id}
-              aoClicar={() => setSetor(s.id)}
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <SeletorDeModo modo={valor.modo} aoMudar={(modo) => aoMudar({ ...valor, modo })} />
-        <span className="min-w-0 text-[11px] text-muted-foreground">
-          {ativo ? (
-            <>
-              {esconde ? "Escondendo as tarefas de " : "Mostrando só as tarefas de "}
-              <span className="font-semibold text-foreground">{listaDeNomes(nomesMarcados)}</span>
-            </>
-          ) : (
-            "Marque uma ou mais pessoas abaixo."
-          )}
-        </span>
-        {ativo && (
-          <button
-            type="button"
-            onClick={() => aoMudar({ ...valor, ids: [] })}
-            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-primary transition hover:bg-primary/10"
-          >
-            <X className="h-3.5 w-3.5" /> Limpar pessoas
-          </button>
-        )}
-      </div>
-
+    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg border border-border bg-secondary/30 px-2 py-1">
       {/* `layout` em cada chip: quando o setor muda, quem fica desliza para a
           posição nova em vez de saltar. O AnimatePresence cuida de quem entra e
           de quem sai, e `popLayout` tira quem está saindo do fluxo na hora —
           sem isso, os que ficam só se reorganizam depois da saída terminar, e o
           movimento sai em duas etapas. */}
-      <motion.div layout className="flex flex-wrap items-center gap-1.5">
-        <BotaoPessoa
-          rotulo="Todas as pessoas"
-          ativo={!ativo}
-          aoClicar={() => aoMudar({ ...valor, ids: [] })}
-        />
+      <motion.div layout className="flex flex-1 flex-wrap items-center gap-1">
+        <BotaoPessoa rotulo="Todas" ativo={!ativo} aoClicar={limpar} />
         <AnimatePresence mode="popLayout" initial={false}>
           {visiveis.map((p) => {
             const marcada = marcadas.has(p.id);
-            /* Quem a tela não mostra fica apagado: os não marcados no "só as
-               marcadas", e os marcados no "esconder". */
-            const fora = ativo && (esconde ? marcada : !marcada);
+            // Com alguém marcado, quem não está fica apagado: não aparece.
+            const fora = ativo && !marcada;
             return (
               <motion.button
                 key={p.id}
@@ -152,99 +126,40 @@ export function FiltroPessoa({
                 exit={{ opacity: 0, scale: 0.85 }}
                 transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.6 }}
                 title={`${p.name}${p.jobTitle ? ` · ${p.jobTitle}` : ""}${
-                  marcada
-                    ? esconde
-                      ? " — escondida (clique para mostrar)"
-                      : " — marcada (clique para desmarcar)"
-                    : ""
+                  marcada ? " — marcada (clique para desmarcar)" : ""
                 }`}
-                className={`flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-xs transition-[background-color,border-color,color,opacity] ${
+                className={`flex items-center gap-1 rounded-full border py-0.5 pl-0.5 pr-2 text-[11px] transition-[background-color,border-color,color,opacity] ${
                   marcada
-                    ? esconde
-                      ? "border-destructive/60 bg-destructive/10 text-destructive"
-                      : "border-primary bg-primary text-primary-foreground shadow-sm"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
                     : `border-border bg-card text-foreground hover:border-primary/50 ${
                         fora ? "opacity-50 hover:opacity-100" : ""
                       }`
                 }`}
               >
-                <span className={marcada && esconde ? "opacity-60 grayscale" : ""}>
-                  <UserAvatar nome={p.name} iniciais={p.avatar} className="h-6 w-6 text-[9px]" />
-                </span>
-                <span
-                  className={`max-w-32 truncate font-medium ${marcada && esconde ? "line-through" : ""}`}
-                >
-                  {p.name.split(" ")[0]}
-                </span>
-                {marcada &&
-                  (esconde ? <EyeOff className="h-3 w-3" /> : <Check className="h-3 w-3" />)}
+                <UserAvatar nome={p.name} iniciais={p.avatar} className="h-5 w-5 text-[8px]" />
+                <span className="max-w-28 truncate font-medium">{p.name.split(" ")[0]}</span>
+                {marcada && <Check className="h-3 w-3" />}
               </motion.button>
             );
           })}
         </AnimatePresence>
+        {visiveis.length === 0 && (
+          <span className="px-1 text-[11px] text-muted-foreground">
+            Ninguém deste setor tem tarefa visível para você.
+          </span>
+        )}
       </motion.div>
 
-      {visiveis.length === 0 && (
-        <p className="py-2 text-center text-[11px] text-muted-foreground">
-          Ninguém deste setor tem tarefa visível para você.
-        </p>
+      {ativo && (
+        <button
+          type="button"
+          onClick={limpar}
+          title={`Mostrando só as tarefas de ${listaDeNomes(nomesMarcados)}`}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-primary transition hover:bg-primary/10"
+        >
+          <X className="h-3.5 w-3.5" /> Limpar
+        </button>
       )}
-    </div>
-  );
-}
-
-/**
- * "Só as marcadas" ou "Esconder as marcadas", num trilho com a marca que
- * desliza — o mesmo recurso dos chips de setor e do item ativo da sidebar.
- */
-function SeletorDeModo({
-  modo,
-  aoMudar,
-}: {
-  modo: SelecaoDePessoas["modo"];
-  aoMudar: (modo: SelecaoDePessoas["modo"]) => void;
-}) {
-  const opcoes = [
-    { id: "so" as const, rotulo: "Só as marcadas", Icone: Eye },
-    { id: "exceto" as const, rotulo: "Esconder as marcadas", Icone: EyeOff },
-  ];
-  return (
-    <div
-      role="radiogroup"
-      aria-label="O que fazer com as pessoas marcadas"
-      className="inline-flex shrink-0 rounded-full border border-border bg-card p-0.5"
-    >
-      {opcoes.map(({ id, rotulo, Icone }) => {
-        const ativo = modo === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            role="radio"
-            aria-checked={ativo}
-            onClick={() => aoMudar(id)}
-            className={`relative flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-              ativo
-                ? id === "exceto"
-                  ? "text-destructive-foreground"
-                  : "text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {ativo && (
-              <motion.span
-                layoutId="filtro-pessoa-modo"
-                className={`absolute inset-0 rounded-full ${
-                  id === "exceto" ? "bg-destructive" : "bg-primary"
-                }`}
-                transition={{ type: "spring", stiffness: 400, damping: 33 }}
-              />
-            )}
-            <Icone className="relative h-3.5 w-3.5 shrink-0" />
-            <span className="relative whitespace-nowrap">{rotulo}</span>
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -265,8 +180,10 @@ function ChipSetor({
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={ativo}
       onClick={aoClicar}
-      className={`relative flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+      className={`relative flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs font-medium transition-colors ${
         ativo ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
       }`}
     >
@@ -275,7 +192,7 @@ function ChipSetor({
         // ativo da sidebar. Trocar de setor move a marca, não pisca duas.
         <motion.span
           layoutId="filtro-setor-ativo"
-          className="absolute inset-0 rounded-full bg-primary"
+          className="absolute inset-0 rounded bg-primary shadow-sm"
           transition={{ type: "spring", stiffness: 400, damping: 33 }}
         />
       )}
@@ -287,7 +204,7 @@ function ChipSetor({
       ) : (
         <Users2 className="relative h-3 w-3 shrink-0" />
       )}
-      <span className="relative whitespace-nowrap">{rotulo}</span>
+      <span className="relative">{rotulo}</span>
       <span className="sr-only">{id}</span>
     </button>
   );
@@ -306,13 +223,13 @@ function BotaoPessoa({
     <button
       type="button"
       onClick={aoClicar}
-      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
         ativo
           ? "border-primary bg-primary text-primary-foreground"
           : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
       }`}
     >
-      <Users2 className="h-3.5 w-3.5" />
+      <Users2 className="h-3 w-3" />
       {rotulo}
     </button>
   );

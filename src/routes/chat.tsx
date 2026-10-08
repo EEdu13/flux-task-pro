@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, Search } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
+import { AcoesDoChat } from "@/components/acoes-do-chat";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
 import {
@@ -70,9 +71,26 @@ function ChatPage() {
     markRead(id);
   };
 
+  /* A página de Chat não rola: o quadro dela já ocupa a altura da tela, e
+     quem rola são as duas listas por dentro. Qualquer coisa que pedisse
+     rolagem — foco no campo, mensagem nova — descia a página inteira,
+     barra lateral junto (relato do usuário, 08/10/2026). Trava ao entrar e
+     devolve ao sair. */
+  useEffect(() => {
+    const raiz = document.documentElement;
+    const antes = { html: raiz.style.overflow, body: document.body.style.overflow };
+    window.scrollTo(0, 0);
+    raiz.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      raiz.style.overflow = antes.html;
+      document.body.style.overflow = antes.body;
+    };
+  }, []);
+
   return (
     <FluxoLayout title="Chat" breadcrumb="Conversas">
-      <div className="mx-auto flex h-[calc(100vh-8.5rem)] w-full max-w-[2200px] overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="mx-auto flex h-[calc(100dvh-8.5rem)] w-full max-w-[2200px] overflow-hidden rounded-2xl border border-border bg-card">
         {/* Lista de conversas */}
         <aside className="flex w-full max-w-[360px] flex-col border-r border-border">
           <div className="border-b border-border p-3">
@@ -154,12 +172,14 @@ function ChatPage() {
             <>
               <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-2.5">
                 <ChatAvatar user={peer} size={40} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{peer.name}</div>
                   <div className="text-[11px] text-muted-foreground">
                     <RotuloDeSituacao situacao={situacaoDe(peer.id)} />
                   </div>
                 </div>
+                {/* As mesmas três do cabeçalho do dock, no topo da conversa. */}
+                <AcoesDoChat peerId={peer.id} claro />
               </header>
               <MessageList peerId={peer.id} />
               <Composer peerId={peer.id} />

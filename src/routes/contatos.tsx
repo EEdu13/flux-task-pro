@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEscFecha } from "@/hooks/use-esc-fecha";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -153,6 +154,35 @@ function ContactCard({
   );
 }
 
+/** O chefe que está no organograma mas nunca entrou no Fluxo: só o nome. */
+function ChefeForaDoFluxo({ nome }: { nome: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -16 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex w-full max-w-md items-center gap-3 rounded-2xl border border-dashed border-border bg-secondary/30 p-4"
+      title="Está no organograma, mas ainda não entrou no SGL - CONECTA"
+    >
+      <UserAvatar
+        nome={nome}
+        iniciais={nome
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((p) => p[0])
+          .slice(0, 2)
+          .join("")}
+        className="h-14 w-14 text-lg opacity-70"
+      />
+      <div className="min-w-0">
+        <div className="truncate text-base font-bold text-muted-foreground">{nome}</div>
+        <div className="text-[11px] text-muted-foreground">
+          No organograma · ainda não entrou no SGL - CONECTA
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function HierarchyNode({
   user,
   level,
@@ -265,6 +295,9 @@ function ContatosPage() {
   const [sectorFilter, setSectorFilter] = useState<string>("todos");
   const [callMenu, setCallMenu] = useState<User | null>(null);
   const [roomPicker, setRoomPicker] = useState<User | null>(null);
+  // Esc fecha as duas janelas, além do clique fora.
+  useEscFecha(!!callMenu, () => setCallMenu(null));
+  useEscFecha(!!roomPicker, () => setRoomPicker(null));
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   // Guarda de onde o arraste começou e onde o conteúdo estava, para o
@@ -371,6 +404,19 @@ function ContatosPage() {
     [selectedId, users],
   );
   const selected = users.find((u) => u.id === selectedId) ?? null;
+
+  /* O chefe de quem está no alto da linha, quando ele nunca entrou no Fluxo.
+     A linha sobe pelos ids, e só tem id quem já logou: Aline, Rodrigo e
+     Leandro, coordenadores no organograma, não estavam aqui, e a Jessica, o
+     João e o Medalha apareciam "no topo da hierarquia" (08/10/2026). O nome
+     vem do organograma; o cartão mostra só o que se sabe dele. */
+  const chefeFora = useMemo(() => {
+    const topo = chain[0];
+    const nome = topo?.supervisorNome?.trim();
+    if (!topo || !nome || topo.supervisorId) return null;
+    const chave = nome.toLowerCase();
+    return users.some((u) => u.name.trim().toLowerCase() === chave) ? null : nome;
+  }, [chain, users]);
 
   return (
     <FluxoLayout
@@ -571,6 +617,12 @@ function ContatosPage() {
                       transformOrigin: "top center",
                     }}
                   >
+                    {chefeFora && (
+                      <div className="flex w-full flex-col items-center">
+                        <ChefeForaDoFluxo nome={chefeFora} />
+                        <div className="my-2 h-8 w-0.5 bg-gradient-to-b from-border to-primary/40" />
+                      </div>
+                    )}
                     <AnimatePresence>
                       {chain.map((u, idx) => (
                         <div key={u.id} className="flex w-full flex-col items-center">
@@ -592,7 +644,7 @@ function ContatosPage() {
                         </div>
                       ))}
                     </AnimatePresence>
-                    {chain.length === 1 && (
+                    {chain.length === 1 && !chefeFora && (
                       <div className="mt-4 text-center text-[11px] text-muted-foreground">
                         Esta pessoa está no topo da hierarquia.
                       </div>

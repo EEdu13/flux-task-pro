@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEscFecha } from "@/hooks/use-esc-fecha";
 import { useMemo, useState } from "react";
 import { Check, Flame, Send, Sparkles, Trash2, Users, Layers, ArrowLeftRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -508,6 +509,7 @@ function ModelosSection({
     itemsText: "",
   });
   const [applyOpen, setApplyOpen] = useState<{ templateId: string } | null>(null);
+  useEscFecha(!!applyOpen, () => setApplyOpen(null));
   const [applyTargetId, setApplyTargetId] = useState(currentUserId);
   const [transferFrom, setTransferFrom] = useState("");
   const [transferTo, setTransferTo] = useState("");

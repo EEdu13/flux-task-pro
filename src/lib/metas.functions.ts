@@ -78,7 +78,7 @@ export const listarMetas = createServerFn({ method: "POST" }).handler(
  * qual delas a consulta devolvesse primeiro.
  */
 export const salvarMeta = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         scope: string;
@@ -144,7 +144,7 @@ export const salvarMeta = createServerFn({ method: "POST" })
   );
 
 export const removerMeta = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string }) => {
       const id = typeof e?.id === "string" ? e.id.trim() : "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Meta inválida");

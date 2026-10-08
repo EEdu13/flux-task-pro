@@ -24,7 +24,7 @@ const guid = (v: unknown): string | null =>
   typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
 
 export const registrarSessaoDeFoco = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { tarefaId?: string | null; minutos: number }) => {
       const minutos = Math.round(Number(e?.minutos));
       if (!Number.isFinite(minutos) || minutos < 1 || minutos > 180) {

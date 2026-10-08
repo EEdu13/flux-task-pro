@@ -27,7 +27,7 @@ type Entrada = {
 const texto = (v: unknown, teto: number) => (typeof v === "string" ? v.trim().slice(0, teto) : "");
 
 export const sugerirTarefasDaNota = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         titulo?: string;

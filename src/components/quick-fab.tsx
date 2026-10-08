@@ -26,7 +26,7 @@ import { useFecharAoSair } from "@/hooks/use-fechar-ao-sair";
 import { TarefaPorVoz } from "@/components/tarefa-por-voz";
 import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
 
-type Mode = "menu" | "quick" | "mention" | "pack" | "attention";
+type Mode = "menu" | "quick" | "mention" | "pack";
 type PackTab = "concluir" | "meu" | "outro";
 
 function todayEnd() {
@@ -54,8 +54,6 @@ export function QuickFab() {
   const [mentionText, setMentionText] = useState("");
   const [packTab, setPackTab] = useState<PackTab>("concluir");
   const [packBulk, setPackBulk] = useState("");
-  /** Texto da faixa do trator. Vazio = cutucada comum. */
-  const [faixa, setFaixa] = useState("");
   const [packTarget, setPackTarget] = useState<string>("");
   /* Fora do `mode` de propósito: os modos são painéis que moram DENTRO do
      menu do raio, e a voz abre uma tela inteira por cima do app. Fechar o menu
@@ -144,32 +142,6 @@ export function QuickFab() {
 
   // Concluir no pack é concluir a tarefa, como no Pack diário.
   const concluirDoPack = (id: string) => updateTask(id, { status: "concluida" });
-
-  const nudgeUser = async (uid: string) => {
-    const target = users.find((u) => u.id === uid);
-    const primeiroNome = target?.name?.split(" ")[0] ?? "alguém";
-    const mensagem = faixa.trim();
-    setOpen(false);
-    setMode("menu");
-    setFaixa("");
-    try {
-      await sendNudge(
-        uid,
-        currentUser.name,
-        currentUser.avatar,
-        currentUser.id,
-        mensagem ? "trator" : "cutucada",
-        mensagem || undefined,
-      );
-      toast.success(
-        mensagem
-          ? `🚜 O trator saiu para ${primeiroNome}`
-          : `Você chamou a atenção de ${primeiroNome}`,
-      );
-    } catch {
-      toast.error("Não foi possível enviar agora");
-    }
-  };
 
   const submitQuick = () => {
     if (!title.trim()) {
@@ -287,12 +259,6 @@ export function QuickFab() {
               setMode("pack");
               setPackTab(packItems.length === 0 ? "meu" : "concluir");
             }}
-          />
-          <FabItem
-            icon={Sparkles}
-            label="Chamar atenção"
-            hint="treme a tela da pessoa"
-            onClick={() => setMode("attention")}
           />
           <FabItem
             icon={StickyNote}
@@ -505,72 +471,6 @@ export function QuickFab() {
               </button>
             </>
           )}
-        </div>
-      )}
-
-      {mode === "attention" && (
-        <div className="w-[300px] rounded-xl border border-border bg-card p-3 shadow-2xl">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs font-semibold">
-              <Sparkles className="h-3.5 w-3.5 text-lime-500" /> Chamar atenção
-            </div>
-            <button
-              onClick={() => setMode("menu")}
-              className="rounded p-0.5 text-muted-foreground hover:bg-muted"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <p className="mb-2 text-[10px] text-muted-foreground">
-            {faixa.trim()
-              ? "O trator vai atravessar a tela da pessoa puxando essa faixa."
-              : "Estilo MSN — treme a tela da pessoa por 1 segundo. Use com moderação."}
-          </p>
-          {/* Acima da lista de propósito: a lista rola, e um campo embaixo dela
-              sumiria da vista justamente enquanto se procura a pessoa. */}
-          <div className="mb-2">
-            <input
-              value={faixa}
-              onChange={(e) => setFaixa(e.target.value.slice(0, 200))}
-              placeholder="Mensagem na faixa (opcional) 🚜"
-              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
-            />
-            {faixa.trim() && (
-              <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                <span>{faixa.length}/200</span>
-                <button onClick={() => setFaixa("")} className="hover:text-foreground">
-                  limpar
-                </button>
-              </div>
-            )}
-          </div>
-          <ul className="max-h-72 space-y-1 overflow-y-auto">
-            {users
-              .filter((u) => u.id !== currentUser.id)
-              .map((u) => (
-                <li key={u.id}>
-                  <button
-                    onClick={() => nudgeUser(u.id)}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
-                  >
-                    <UserAvatar
-                      nome={u.name}
-                      iniciais={u.avatar || u.name.slice(0, 1)}
-                      className="h-7 w-7 text-[10px]"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{u.name}</span>
-                      <span className="block truncate text-[10px] text-muted-foreground">
-                        {u.jobTitle}
-                      </span>
-                    </span>
-                    {/* O ícone acompanha o campo: dá para ver o que vai
-                        acontecer ANTES de clicar, não depois. */}
-                    <span className="text-sm">{faixa.trim() ? "🚜" : "✨"}</span>
-                  </button>
-                </li>
-              ))}
-          </ul>
         </div>
       )}
 

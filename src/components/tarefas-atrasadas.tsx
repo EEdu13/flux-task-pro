@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useEscFecha } from "@/hooks/use-esc-fecha";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "@tanstack/react-router";
 import { AlarmClock, ArrowRight, CalendarX2, X } from "lucide-react";
@@ -115,6 +116,8 @@ export function TarefasAtrasadas() {
     fechar();
     openTask(id);
   };
+
+  useEscFecha(aberto, fechar);
 
   const ontem = atrasadas.filter((t) => diasDeAtraso(t.dueDate) === 1);
   const antes = atrasadas.filter((t) => diasDeAtraso(t.dueDate) > 1);

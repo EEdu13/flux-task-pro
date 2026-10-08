@@ -29,6 +29,30 @@ export function porPrazo(a: { dueDate: string | null }, b: { dueDate: string | n
   return x === y ? 0 : x < y ? -1 : 1;
 }
 
+/**
+ * Quando a tarefa passa a contar como atrasada, em ms. Sem prazo, +∞.
+ *
+ * O item do pack é do DIA: o horário que a pessoa põe nele é o plano ("faço
+ * às 10h"), não a hora em que ela perde o compromisso. Contar o horário como
+ * prazo fazia o item virar atrasado/perdido às 10h01 e a conclusão da tarde
+ * valer menos — o pack era perdido por ter horário. Decisão do usuário,
+ * 07/10/2026. O servidor faz a mesma conta em `gravarNoBanco`.
+ */
+export function venceEm(t: { dueDate: string | null | undefined; inPack?: boolean }): number {
+  if (!t.dueDate) return Number.POSITIVE_INFINITY;
+  const d = new Date(t.dueDate);
+  if (!t.inPack) return d.getTime();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+}
+
+/** A tarefa aberta já está atrasada em `agora` — com a regra do pack. */
+export function tarefaVencida(
+  t: { dueDate: string | null | undefined; inPack?: boolean },
+  agora: number = Date.now(),
+): boolean {
+  return venceEm(t) < agora;
+}
+
 /** O prazo já passou em `agora`? Sem prazo, nunca. */
 export function prazoVencido(
   dueDate: string | null | undefined,

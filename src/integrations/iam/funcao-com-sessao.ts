@@ -10,7 +10,7 @@
  * `semIdentidade` fecha a entrada, `comSessao` entrega a pessoa pronta:
  *
  *     export const concluirTarefa = createServerFn({ method: "POST" })
- *       .inputValidator(semIdentidade((e: { tarefaId: string }) => ({
+ *       .validator(semIdentidade((e: { tarefaId: string }) => ({
  *         tarefaId: String(e.tarefaId),
  *       })))
  *       .handler(comSessao(async (eu, dados) => { ... }));

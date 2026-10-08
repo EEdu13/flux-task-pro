@@ -4,6 +4,25 @@ export const Route = createFileRoute("/api/public/whatsapp-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        /* Segredo obrigatório (auditoria de 08/10/2026). Sem ele, qualquer um
+           com a URL gastava IA, enchia `entrada_whatsapp` e fazia o número da
+           empresa responder para o telefone que quisesse — risco de
+           banimento. Aceita o cabeçalho `x-webhook-token` ou `?token=` na URL,
+           porque a Evolution API manda o que estiver na URL configurada.
+           Sem WHATSAPP_WEBHOOK_SECRET no servidor, recusa tudo. */
+        const { conferirCabecalhoSecreto, ipDaRequisicao } = await import("@/lib/segredo.server");
+        const cabecalhos = new Headers(request.headers);
+        const naUrl = new URL(request.url).searchParams.get("token");
+        if (naUrl && !cabecalhos.get("x-webhook-token")) cabecalhos.set("x-webhook-token", naUrl);
+        const auth = conferirCabecalhoSecreto(
+          cabecalhos,
+          "x-webhook-token",
+          process.env.WHATSAPP_WEBHOOK_SECRET,
+        );
+        if (!auth.ok) {
+          console.warn(`[whatsapp-webhook] recusado (${auth.motivo}) de ${ipDaRequisicao(request)}`);
+          return new Response("não autorizado", { status: 401 });
+        }
         const bodyText = await request.text();
         try {
           await processWebhook(bodyText);

@@ -728,6 +728,26 @@
    Quase-preto esverdeado em camadas + lima elétrico usado com parcimônia:
    só na ação primária e no estado "agora". Status ganham cor saturada
    porque no kanban a cor é informação, não decoração. */
+/* As cores de status no escuro valem para TODA paleta (auditoria de
+   08/10/2026). Cada paleta redefine as suas no claro, e `:root[data-palette]`
+   pesa mais que `.dark`: no escuro de 7 das 8 paletas ficavam o vermelho, o
+   verde e o amarelo do modo claro. Esta regra tem o mesmo peso dos blocos
+   escuros das paletas e vem depois deles — então ganha. Os valores são os do
+   `.dark` padrão, logo abaixo. */
+:root[data-palette].dark {
+  --destructive: oklch(0.712 0.174 15);
+  --destructive-foreground: oklch(0.16 0.02 158);
+  --success: oklch(0.792 0.181 146);
+  --warning: oklch(0.828 0.171 84);
+  --info: oklch(0.746 0.148 233);
+}
+
+/* O amarelo de aviso como TEXTO, no claro: na cor de fundo dos selos ele
+   quase some sobre o cartão. Fundo e borda seguem com a cor do token. */
+:root:not(.dark) .text-warning {
+  color: oklch(0.56 0.13 70);
+}
+
 .dark {
   --background: oklch(0.145 0.014 158);
   --foreground: oklch(0.945 0.012 150);
@@ -1419,33 +1439,43 @@ html.fluxo-nudge-shake body {
   --cursor-seta: url("/cursor-arrow-escuro.svg") 3 2;
   --cursor-mao: url("/cursor-pointer-escuro.svg") 10 2;
 }
-body {
-  cursor: var(--cursor-seta), auto;
+/* Em `@layer base` (auditoria de 08/10/2026): fora da camada, estas regras
+   venciam os utilitários do Tailwind — um botão arrastável com `cursor-grab`
+   mostrava a mão de clicar, e `disabled:cursor-default` virava proibido.
+   Na base, a classe da tela ganha; sem classe, vale o padrão daqui. */
+@layer base {
+  body {
+    cursor: var(--cursor-seta), auto;
+  }
+  /* Clicáveis: mão com o indicador apontando.
+     O hotspot é (10, 2) e não (3, 2) da seta — a ponta do dedo fica no meio da
+     imagem, não no canto. Manter o valor da seta faria o clique cair à esquerda
+     de onde o dedo aponta. */
+  a,
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"],
+  select,
+  summary,
+  label {
+    cursor: var(--cursor-mao), pointer;
+  }
+  input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
+  }
+  :disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
-/* Clicáveis: mão com o indicador apontando.
-   O hotspot é (10, 2) e não (3, 2) da seta — a ponta do dedo fica no meio da
-   imagem, não no canto. Manter o valor da seta faria o clique cair à esquerda
-   de onde o dedo aponta. */
-a,
-button,
-[role="button"],
-[role="tab"],
-[role="option"],
-[role="menuitem"],
-select,
-summary,
-label,
+/* A mão personalizada para quem pede `cursor-pointer` — fora da camada de
+   propósito, para vencer o utilitário de mesmo nome (que daria a mão comum). */
 .cursor-pointer {
   cursor: var(--cursor-mao), pointer;
-}
-input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]),
-textarea,
-[contenteditable="true"] {
-  cursor: text;
-}
-:disabled,
-[aria-disabled="true"] {
-  cursor: not-allowed;
 }
 
 @media (prefers-reduced-motion: reduce) {

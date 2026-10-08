@@ -76,7 +76,45 @@ function SettingsPage() {
     weeklyDigest: true,
   });
 
-  const savePerfil = () => {
+  /* As escolhas de notificação ficam em `gestor.preferencias` ("notificacoes").
+     Eram só estado da tela: voltavam ao padrão a cada recarga (auditoria de
+     08/10/2026). Lidas uma vez; cada toque grava na hora. */
+  useEffect(() => {
+    let vivo = true;
+    import("@/lib/perfil.functions")
+      .then((m) => m.minhasPreferencias())
+      .then((p) => {
+        if (!vivo || !p.notificacoes) return;
+        try {
+          const v = JSON.parse(p.notificacoes) as Partial<typeof notif>;
+          setNotif((n) => ({
+            email: typeof v.email === "boolean" ? v.email : n.email,
+            whatsapp: typeof v.whatsapp === "boolean" ? v.whatsapp : n.whatsapp,
+            push: typeof v.push === "boolean" ? v.push : n.push,
+            weeklyDigest: typeof v.weeklyDigest === "boolean" ? v.weeklyDigest : n.weeklyDigest,
+          }));
+        } catch {
+          /* valor torto no banco: fica o padrão */
+        }
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const alternarNotif = (chave: keyof typeof notif) => {
+    const nova = { ...notif, [chave]: !notif[chave] };
+    setNotif(nova);
+    void import("@/lib/perfil.functions")
+      .then((m) => m.salvarPreferencia({ data: { chave: "notificacoes", valor: JSON.stringify(nova) } }))
+      .catch(() => {
+        setNotif(notif);
+        toast.error("Não foi possível salvar a preferência");
+      });
+  };
+
+  const savePerfil = async () => {
     setErr(null);
     const trimmedEmail = email.trim();
     const trimmedPhone = phone.trim();
@@ -103,12 +141,16 @@ function SettingsPage() {
        mexe no estado local, e o próximo login lia `contato_confirmado` do
        servidor ainda como false — o modal de boas-vindas voltava sempre,
        mesmo para quem já tinha preenchido tudo aqui. */
-    void (async () => {
+    /* "Salvo!" só depois de o servidor confirmar. Aparecia mesmo quando a
+       gravação falhava — o erro ia só para o console (auditoria de 08/10/2026). */
+    try {
       const { salvarMeuPerfil } = await import("@/lib/perfil.functions");
-      await salvarMeuPerfil({ data: { contatoConfirmado: contactCompleted } }).catch((e) =>
-        console.warn("[fluxo] confirmação de contato não gravou:", (e as Error)?.message),
-      );
-    })();
+      await salvarMeuPerfil({ data: { contatoConfirmado: contactCompleted } });
+    } catch (e) {
+      console.warn("[fluxo] confirmação de contato não gravou:", (e as Error)?.message);
+      setErr("Não foi possível salvar agora. Tente de novo em instantes.");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -255,7 +297,7 @@ function SettingsPage() {
                   )}
                 </div>
                 <button
-                  onClick={savePerfil}
+                  onClick={() => void savePerfil()}
                   className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
                 >
                   <Save className="h-4 w-4" /> {saved ? "Salvo!" : "Salvar alterações"}
@@ -368,7 +410,7 @@ function SettingsPage() {
                       <div className="text-[11px] text-muted-foreground">{row.desc}</div>
                     </div>
                     <button
-                      onClick={() => setNotif((n) => ({ ...n, [row.key]: !n[row.key] }))}
+                      onClick={() => alternarNotif(row.key)}
                       className={`relative h-5 w-9 rounded-full transition ${
                         notif[row.key] ? "bg-primary" : "bg-secondary"
                       }`}
@@ -420,6 +462,8 @@ function SettingsPage() {
                   >
                     <LogOut className="h-3.5 w-3.5" /> Sair da conta
                   </button>
+                  {/* Só a gerência — o servidor também barra; ver `purgeAllRooms`. */}
+                  {currentUser.role === "gerente" && (
                   <button
                     disabled={fechandoSalas}
                     onClick={() =>
@@ -456,6 +500,7 @@ function SettingsPage() {
                     )}
                     {fechandoSalas ? "Fechando…" : "Fechar todas as salas"}
                   </button>
+                  )}
                   <button
                     onClick={async () => {
                       const ok = await confirmar({

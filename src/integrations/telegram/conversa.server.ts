@@ -13,7 +13,7 @@
 // `editarMensagem` saiu daqui: estava importado e nunca usado.
 import { enviarMensagem, escaparMd, removerTeclado, responderCallback } from "./client.server";
 import { desvincular, pessoaPorTelegram, vincularPorContato } from "./contas.server";
-import { sqlListaDeTarefas } from "@/lib/permissoes.server";
+import { SQL_MEUS_SUBORDINADOS, sqlListaDeTarefas } from "@/lib/permissoes.server";
 /* `hojeEmBrasilia` e `fimDoDiaBr` saíram: eram do prazo por botão em linha, que
    virou etapa de texto. Quem monta a data agora é o `lerPrazo`, que já entende
    "hoje" e "amanhã" — os dois atalhos que restaram, como botões de texto. */
@@ -62,8 +62,8 @@ const POR_PRAZO = "CASE WHEN prazo IS NULL THEN 1 ELSE 0 END, prazo, ordem";
  * `permissoes.server.ts`. Era uma cópia, e a cópia ficou para trás quando a
  * lista do app passou a trazer as tarefas em que a pessoa foi mencionada.
  */
-function filtroPorPapel(papel: string, setor: string | null): string {
-  return sqlListaDeTarefas(papel, setor);
+function filtroPorPapel(papel: string): string {
+  return sqlListaDeTarefas(papel);
 }
 
 async function perfilDe(pessoaId: number) {
@@ -123,18 +123,14 @@ async function minhasTarefas(pessoaId: number, recorte: Recorte) {
   return r.recordset as TarefaResumo[];
 }
 
-/** Pessoas que eu posso acompanhar: o meu setor (gerência vê todos). */
+/** Pessoas que eu posso acompanhar: quem responde a mim no organograma (gerência vê todos). */
 async function pessoasDoMeuEscopo(pessoaId: number) {
-  const { papel, setor } = await perfilDe(pessoaId);
+  const { papel } = await perfilDe(pessoaId);
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
   const req = pool.request().input("eu", sql.Int, pessoaId);
   let onde = "p.nome IS NOT NULL AND p.pessoa_id <> @eu";
-  if (papel !== "gerente") {
-    if (!setor) return [];
-    req.input("setor", sql.NVarChar, setor);
-    onde += " AND p.setor=@setor";
-  }
+  if (papel !== "gerente") onde += ` AND p.pessoa_id IN ${SQL_MEUS_SUBORDINADOS}`;
   const r = await req.query(
     `SELECT TOP 30 p.pessoa_id, p.nome,
             (SELECT COUNT(*) FROM gestor.tarefas t
@@ -151,12 +147,11 @@ async function pessoasDoMeuEscopo(pessoaId: number) {
 
 /** Tarefas abertas de alguém — só se o solicitante puder enxergá-las. */
 async function tarefasDe(solicitante: number, alvo: number) {
-  const { papel, setor } = await perfilDe(solicitante);
+  const { papel } = await perfilDe(solicitante);
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
-  const filtro = filtroPorPapel(papel, setor);
+  const filtro = filtroPorPapel(papel);
   const req = pool.request().input("eu", sql.Int, solicitante).input("alvo", sql.Int, alvo);
-  if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);
   const r = await req.query(
     `SELECT TOP 15 id, titulo, prazo, situacao, prioridade
        FROM gestor.tarefas
@@ -186,15 +181,14 @@ const EH_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 async function podeMexer(pessoaId: number, tarefaId: string): Promise<TarefaResumo | null> {
   if (!EH_GUID.test(tarefaId)) return null;
-  const { papel, setor } = await perfilDe(pessoaId);
+  const { papel } = await perfilDe(pessoaId);
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
-  const filtro = filtroPorPapel(papel, setor);
+  const filtro = filtroPorPapel(papel);
   const req = pool
     .request()
     .input("eu", sql.Int, pessoaId)
     .input("id", sql.UniqueIdentifier, tarefaId);
-  if (filtro.includes("@setor")) req.input("setor", sql.NVarChar, setor);
   const r = await req.query(
     `SELECT TOP 1 id, titulo, prazo, situacao, prioridade
        FROM gestor.tarefas
@@ -967,7 +961,7 @@ async function mandarMinhas(pessoaId: number, chatId: number, recorte: Recorte) 
 async function mandarEquipe(pessoaId: number, chatId: number) {
   const pessoas = await pessoasDoMeuEscopo(pessoaId);
   if (pessoas.length === 0) {
-    await enviarMensagem(chatId, "Não há mais ninguém no seu setor para acompanhar por aqui\\.", {
+    await enviarMensagem(chatId, "Não há ninguém na sua equipe para acompanhar por aqui\\.", {
       teclado: VOLTAR_AO_MENU,
     });
     return;

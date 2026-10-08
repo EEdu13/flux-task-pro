@@ -1577,7 +1577,7 @@ export function CallContents({
                         ["C", "Abrir / fechar chat"],
                         ["H", "Levantar a mão"],
                         ["P", "Alternar modo apresentador"],
-                        ["E", "Sair da chamada"],
+                        ["Shift+E", "Sair da chamada"],
                       ].map(([key, desc]) => (
                         <li key={key} className="flex items-center justify-between gap-2 text-[11px]">
                           <span className="text-white/70">{desc}</span>

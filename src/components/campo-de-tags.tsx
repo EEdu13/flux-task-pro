@@ -220,6 +220,16 @@ export function CampoDeTags({
       e.preventDefault();
       e.stopPropagation();
       escolher(o.nome);
+    } else if (e.key === "Tab" && !e.shiftKey && procura) {
+      /* Tab completa, como no autocompletar de qualquer editor (pedido do
+         usuário, 08/10/2026): "#aguar" + Tab vira "#Aguardando Rodrigo". Só
+         com algo digitado — com o trecho vazio, Tab segue para o próximo
+         campo, como sempre. */
+      const o = opcoes[Math.max(ativa, 0)];
+      if (!o) return;
+      e.preventDefault();
+      e.stopPropagation();
+      escolher(o.nome);
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -275,7 +285,7 @@ export function CampoDeTags({
                   <Tag className="h-3.5 w-3.5 text-primary" />
                   Suas tags
                   <span className="ml-auto font-normal text-muted-foreground">
-                    ↑↓ e Enter escolhem
+                    ↑↓, Enter ou Tab escolhem
                   </span>
                 </div>
                 {/* Seis linhas e uma ponta da sétima, para se ver que rola: a

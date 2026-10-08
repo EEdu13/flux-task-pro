@@ -104,19 +104,43 @@ export function chefeDireto(p: PerfilColaborador): string | null {
   return null;
 }
 
+/**
+ * O setor de um externo: a `AREA` dele ou, vazia, o setor do supervisor.
+ *
+ * Quem cadastra o externo no organograma costuma preencher só o supervisor
+ * ("pôr na equipe da Liliane") e deixar a `AREA` em branco. Sem este recuo, a
+ * pessoa ficava "Sem setor" no Fluxo mesmo estando na equipe de alguém.
+ * `ext` é o apelido da linha de `COLABORADORES_EXTERNOS`.
+ */
+export const SQL_SETOR_DO_EXTERNO = sqlSetorOuDoSupervisor("ext.AREA", "ext.SUPERVISOR");
+
+/**
+ * O mesmo recuo para o efetivo: há gente em `COLABORADORES` com `SETOR` vazio
+ * (a Elisama, analista contábil do Paulo, 07/10/2026). `col` é o apelido.
+ */
+export const SQL_SETOR_DO_INTERNO = sqlSetorOuDoSupervisor("col.SETOR", "col.SUPERVISOR");
+
+function sqlSetorOuDoSupervisor(setor: string, supervisor: string): string {
+  return `COALESCE(NULLIF(LTRIM(RTRIM(${setor})), ''),
+    (SELECT TOP 1 NULLIF(LTRIM(RTRIM(cs.SETOR)), '') FROM dbo.COLABORADORES cs
+      WHERE cs.SITUACAO = '1'
+        AND LTRIM(RTRIM(cs.NOME)) COLLATE Latin1_General_CI_AI
+          = LTRIM(RTRIM(${supervisor})) COLLATE Latin1_General_CI_AI))`;
+}
+
 const COL_INTERNO = `
   SELECT TOP 1
-    LTRIM(RTRIM(NOME)) AS nome, LTRIM(RTRIM(FUNCAO)) AS funcao,
-    LTRIM(RTRIM(SETOR)) AS setor, LTRIM(RTRIM(SUPERVISOR)) AS supervisor,
-    LTRIM(RTRIM(COORDENADOR)) AS coordenador
-  FROM dbo.COLABORADORES`;
+    LTRIM(RTRIM(col.NOME)) AS nome, LTRIM(RTRIM(col.FUNCAO)) AS funcao,
+    ${SQL_SETOR_DO_INTERNO} AS setor, LTRIM(RTRIM(col.SUPERVISOR)) AS supervisor,
+    LTRIM(RTRIM(col.COORDENADOR)) AS coordenador
+  FROM dbo.COLABORADORES col`;
 
 const COL_EXTERNO = `
   SELECT TOP 1
-    LTRIM(RTRIM(NOME)) AS nome, LTRIM(RTRIM(FUNCAO)) AS funcao,
-    LTRIM(RTRIM(AREA)) AS setor, LTRIM(RTRIM(SUPERVISOR)) AS supervisor,
-    LTRIM(RTRIM(COORDENADOR)) AS coordenador
-  FROM dbo.COLABORADORES_EXTERNOS`;
+    LTRIM(RTRIM(ext.NOME)) AS nome, LTRIM(RTRIM(ext.FUNCAO)) AS funcao,
+    ${SQL_SETOR_DO_EXTERNO} AS setor, LTRIM(RTRIM(ext.SUPERVISOR)) AS supervisor,
+    LTRIM(RTRIM(ext.COORDENADOR)) AS coordenador
+  FROM dbo.COLABORADORES_EXTERNOS ext`;
 
 /** Busca o perfil por CPF (efetivos) e, se não achar, por nome (externos). */
 export async function buscarColaborador(
@@ -131,7 +155,7 @@ export async function buscarColaborador(
     const r = await pool
       .request()
       .input("cpf", sql.VarChar, cpfLimpo)
-      .query(`${COL_INTERNO} WHERE REPLACE(REPLACE(CPF,'.',''),'-','') = @cpf AND SITUACAO = '1'`);
+      .query(`${COL_INTERNO} WHERE REPLACE(REPLACE(col.CPF,'.',''),'-','') = @cpf AND col.SITUACAO = '1'`);
     const row = r.recordset[0];
     if (row) return { ...row, origem: "interno" as const };
   }
@@ -142,8 +166,8 @@ export async function buscarColaborador(
     .input("nome", sql.NVarChar, nome.trim())
     .query(
       `${COL_EXTERNO}
-        WHERE NOME COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI
-          AND ATIVO = 1`,
+        WHERE LTRIM(RTRIM(ext.NOME)) COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI
+          AND ext.ATIVO = 1`,
     );
   const row2 = r2.recordset[0];
   if (row2) return { ...row2, origem: "externo" as const };

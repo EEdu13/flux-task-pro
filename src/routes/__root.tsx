@@ -1,4 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { GlobaisDoApp } from "@/components/globais-do-app";
+import { UndoProvider } from "@/lib/undo-stack";
 import {
   Outlet,
   Link,
@@ -242,7 +244,11 @@ function RootComponent() {
               {/* Barra de título nativa do app desktop; no navegador não renderiza. */}
               <TitleBar />
               {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+              <UndoProvider>
               <Outlet />
+              {/* Janelas globais montadas uma vez, fora da troca de página. */}
+              <GlobaisDoApp />
+              </UndoProvider>
               <ActiveCallWidget />
               <QuickFab />
               {/* Fora do <Outlet />: precisa sobreviver à troca de rota, que é

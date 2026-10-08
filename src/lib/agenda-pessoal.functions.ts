@@ -49,7 +49,7 @@ const DIAS_MAX = 62;
  * dia seguinte, que é o que ele já é em UTC.
  */
 export const listarAgendaPessoal = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { de: string; ate: string }) => {
       const de = data(e?.de);
       const ate = data(e?.ate);
@@ -114,7 +114,7 @@ export const listarAgendaPessoal = createServerFn({ method: "POST" })
  * existe" — ela então só atualiza. Mesmo raciocínio de `meuPerfil`.
  */
 export const salvarAnotacao = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { dia: string; texto: string }) => ({
       dia: data(e?.dia),
       texto: typeof e?.texto === "string" ? e.texto.slice(0, 20_000) : "",
@@ -165,7 +165,7 @@ export const salvarAnotacao = createServerFn({ method: "POST" })
  * A folga de um minuto cobre o relógio da máquina um pouco atrás do servidor.
  */
 export const criarLembrete = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { quando: string; texto: string }) => {
       const quando = new Date(typeof e?.quando === "string" ? e.quando : NaN);
       if (Number.isNaN(quando.getTime())) throw new Error("Horário inválido");
@@ -198,7 +198,7 @@ export const criarLembrete = createServerFn({ method: "POST" })
 
 /** Apaga um lembrete. O `pessoa_id=@eu` é a fechadura: o id sozinho não prova de quem é. */
 export const apagarLembrete = createServerFn({ method: "POST" })
-  .inputValidator(semIdentidade((e: { id: string }) => ({ id: guid(e?.id) })))
+  .validator(semIdentidade((e: { id: string }) => ({ id: guid(e?.id) })))
   .handler(
     comSessao(async (eu, d: { id: string }): Promise<{ ok: boolean }> => {
       const { getPool, sql } = await import("@/integrations/db.server");

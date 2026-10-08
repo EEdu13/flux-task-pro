@@ -3,6 +3,7 @@ import { X, UserPlus, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusLabels } from "@/lib/fluxo-types";
+import { ehChefeDe } from "@/lib/permissoes";
 import { toast } from "sonner";
 import { TravaScroll } from "@/components/trava-scroll";
 import { porPrazo, rotuloDoPrazo } from "@/lib/prazo";
@@ -106,7 +107,16 @@ export function TeamDelegatePanel() {
 
   const todos = useMemo(
     () => {
-      const all = visibleUsersForAssign();
+      /* Só a minha equipe: eu e quem está abaixo de mim no organograma, em
+         qualquer nível (pedido do usuário, 07/10/2026). Este painel é para
+         distribuir o trabalho do time; mandar para outra área continua
+         possível pela própria tarefa. A gerência vê todo mundo. */
+      const all = visibleUsersForAssign().filter(
+        (u) =>
+          currentUser.role === "gerente" ||
+          u.id === currentUser.id ||
+          ehChefeDe(currentUser, users, u.id),
+      );
       const me = all.find((u) => u.id === currentUser.id);
       const others = all.filter((u) => u.id !== currentUser.id);
       return me ? [me, ...others] : others;

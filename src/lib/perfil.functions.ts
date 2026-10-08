@@ -210,55 +210,99 @@ export type PessoaDoQuadro = {
 export const listarPessoas = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (): Promise<{ pessoas: PessoaDoQuadro[] }> => {
     const { getPool } = await import("@/integrations/db.server");
+    const { SQL_SETOR_DO_EXTERNO, SQL_SETOR_DO_INTERNO, chefeDireto, setorParaId } = await import(
+      "@/integrations/iam/colaborador.server"
+    );
     const pool = await getPool();
+    /* Setor e chefe também vêm daqui, ao vivo, e não só da cópia que o login
+       grava em `perfis`. A cópia envelhecia: quem era posto na equipe de
+       alguém no organograma (caso do Kaun, externo, na equipe da Liliane,
+       07/10/2026) seguia "Sem setor" e fora da equipe até o próprio login
+       seguinte. A cópia continua valendo para quem não está em nenhuma das
+       duas tabelas. Só a linha ATIVA conta para setor e chefe. */
     const r = await pool.request().query(
       `SELECT p.pessoa_id, p.nome, p.email, p.telefone, p.setor, p.papel,
               p.supervisor_nome, p.pontuacao, p.sequencia, p.avatar,
-              COALESCE(c.funcao, x.funcao) AS funcao
+              COALESCE(c.funcao, x.funcao) AS funcao,
+              c.ativo AS c_ativo, c.nome AS c_nome, c.setor AS c_setor,
+              c.supervisor AS c_sup, c.coordenador AS c_coord,
+              x.ativo AS x_ativo, x.nome AS x_nome, x.setor AS x_setor,
+              x.supervisor AS x_sup, x.coordenador AS x_coord
          FROM gestor.perfis p
         OUTER APPLY (
-          SELECT TOP 1 LTRIM(RTRIM(FUNCAO)) AS funcao
-            FROM dbo.COLABORADORES
-           WHERE LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI
-                 = p.nome COLLATE Latin1_General_CI_AI
+          SELECT TOP 1 LTRIM(RTRIM(col.NOME)) AS nome, LTRIM(RTRIM(col.FUNCAO)) AS funcao,
+                 ${SQL_SETOR_DO_INTERNO} AS setor, LTRIM(RTRIM(col.SUPERVISOR)) AS supervisor,
+                 LTRIM(RTRIM(col.COORDENADOR)) AS coordenador,
+                 CASE WHEN col.SITUACAO = '1' THEN 1 ELSE 0 END AS ativo
+            FROM dbo.COLABORADORES col
+           WHERE LTRIM(RTRIM(col.NOME)) COLLATE Latin1_General_CI_AI
+                 = LTRIM(RTRIM(p.nome)) COLLATE Latin1_General_CI_AI
+           ORDER BY CASE WHEN col.SITUACAO = '1' THEN 0 ELSE 1 END
         ) c
         OUTER APPLY (
-          SELECT TOP 1 LTRIM(RTRIM(FUNCAO)) AS funcao
-            FROM dbo.COLABORADORES_EXTERNOS
-           WHERE LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI
-                 = p.nome COLLATE Latin1_General_CI_AI
+          SELECT TOP 1 LTRIM(RTRIM(ext.NOME)) AS nome, LTRIM(RTRIM(ext.FUNCAO)) AS funcao,
+                 ${SQL_SETOR_DO_EXTERNO} AS setor,
+                 LTRIM(RTRIM(ext.SUPERVISOR)) AS supervisor,
+                 LTRIM(RTRIM(ext.COORDENADOR)) AS coordenador,
+                 CASE WHEN ext.ATIVO = 1 THEN 1 ELSE 0 END AS ativo
+            FROM dbo.COLABORADORES_EXTERNOS ext
+           WHERE LTRIM(RTRIM(ext.NOME)) COLLATE Latin1_General_CI_AI
+                 = LTRIM(RTRIM(p.nome)) COLLATE Latin1_General_CI_AI
+           ORDER BY ext.ATIVO DESC
         ) x
         WHERE p.nome IS NOT NULL
         ORDER BY p.nome`,
     );
+    type Linha = {
+      pessoa_id: number;
+      nome: string;
+      email: string | null;
+      telefone: string | null;
+      setor: string | null;
+      papel: string | null;
+      supervisor_nome: string | null;
+      pontuacao: number;
+      sequencia: number;
+      avatar: string | null;
+      funcao: string | null;
+      c_ativo: number | null;
+      c_nome: string | null;
+      c_setor: string | null;
+      c_sup: string | null;
+      c_coord: string | null;
+      x_ativo: number | null;
+      x_nome: string | null;
+      x_setor: string | null;
+      x_sup: string | null;
+      x_coord: string | null;
+    };
+    /** O cadastro ativo da pessoa no organograma: efetivo manda, como no login. */
+    const noOrganograma = (p: Linha) =>
+      p.c_ativo === 1
+        ? { nome: p.c_nome ?? p.nome, setor: p.c_setor, supervisor: p.c_sup, coordenador: p.c_coord }
+        : p.x_ativo === 1
+          ? { nome: p.x_nome ?? p.nome, setor: p.x_setor, supervisor: p.x_sup, coordenador: p.x_coord }
+          : null;
     return {
-      pessoas: (
-        r.recordset as {
-          pessoa_id: number;
-          nome: string;
-          email: string | null;
-          telefone: string | null;
-          setor: string | null;
-          papel: string | null;
-          supervisor_nome: string | null;
-          pontuacao: number;
-          sequencia: number;
-          avatar: string | null;
-          funcao: string | null;
-        }[]
-      ).map((p) => ({
-        id: String(p.pessoa_id),
-        nome: p.nome,
-        email: p.email,
-        telefone: p.telefone,
-        funcao: p.funcao,
-        setor: p.setor,
-        papel: p.papel,
-        supervisorNome: p.supervisor_nome,
-        pontuacao: p.pontuacao,
-        sequencia: p.sequencia,
-        avatar: p.avatar,
-      })),
+      pessoas: (r.recordset as Linha[]).map((p) => {
+        const org = noOrganograma(p);
+        const setorVivo = org ? setorParaId(org.setor) : null;
+        return {
+          id: String(p.pessoa_id),
+          nome: p.nome,
+          email: p.email,
+          telefone: p.telefone,
+          funcao: p.funcao,
+          setor: setorVivo && setorVivo !== "sem-setor" ? setorVivo : p.setor,
+          papel: p.papel,
+          supervisorNome: org
+            ? chefeDireto({ ...org, funcao: null, origem: "interno" })
+            : p.supervisor_nome,
+          pontuacao: p.pontuacao,
+          sequencia: p.sequencia,
+          avatar: p.avatar,
+        };
+      }),
     };
   }),
 );
@@ -271,19 +315,14 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
  * ter esquecido um campo no objeto.
  */
 export const salvarMeuPerfil = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
-      (entrada: {
-        pontuacao?: number;
-        sequencia?: number;
-        avatar?: string | null;
-        contatoConfirmado?: boolean;
-      }) => {
-        const inteiro = (v: unknown) =>
-          typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : null;
+      /* Pontuação e sequência saíram daqui (auditoria de 08/10/2026): vinham
+         do navegador e iam direto para `perfis`, e qualquer um se dava a nota
+         que quisesse. Ninguém no app as mandava mais — quem conta ponto é o
+         servidor, na conclusão da tarefa. */
+      (entrada: { avatar?: string | null; contatoConfirmado?: boolean }) => {
         return {
-          pontuacao: inteiro(entrada?.pontuacao),
-          sequencia: inteiro(entrada?.sequencia),
           avatar:
             typeof entrada?.avatar === "string"
               ? entrada.avatar.trim().slice(0, 200) || null
@@ -301,8 +340,6 @@ export const salvarMeuPerfil = createServerFn({ method: "POST" })
       async (
         eu,
         dados: {
-          pontuacao: number | null;
-          sequencia: number | null;
           avatar: string | null;
           contatoConfirmado: boolean | null;
         },
@@ -312,8 +349,6 @@ export const salvarMeuPerfil = createServerFn({ method: "POST" })
         await pool
           .request()
           .input("pessoa", sql.Int, eu)
-          .input("pontuacao", sql.Int, dados.pontuacao)
-          .input("sequencia", sql.Int, dados.sequencia)
           .input("avatar", sql.NVarChar, dados.avatar)
           .input("contato", sql.Bit, dados.contatoConfirmado)
           .query(
@@ -325,9 +360,7 @@ export const salvarMeuPerfil = createServerFn({ method: "POST" })
               WHERE NOT EXISTS (SELECT 1 FROM gestor.perfis WHERE pessoa_id=@pessoa);
 
              UPDATE gestor.perfis
-                SET pontuacao          = COALESCE(@pontuacao, pontuacao),
-                    sequencia          = COALESCE(@sequencia, sequencia),
-                    avatar             = COALESCE(@avatar, avatar),
+                SET avatar             = COALESCE(@avatar, avatar),
                     contato_confirmado = COALESCE(@contato, contato_confirmado),
                     atualizado_em      = SYSDATETIMEOFFSET()
               WHERE pessoa_id=@pessoa;`,
@@ -350,7 +383,9 @@ export const salvarMeuPerfil = createServerFn({ method: "POST" })
  * navegador. São preferências de tela, por máquina — quem usa um monitor grande
  * no escritório e um notebook em casa quer os dois diferentes.
  */
-const CHAVES = ["tema", "paleta"] as const;
+/* "calendario" guarda as cores e as salas ocultas do calendário, num JSON
+   curto — ver `use-prefs-do-calendario.ts`. */
+const CHAVES = ["tema", "paleta", "calendario", "calendario_dias", "notificacoes"] as const;
 type Chave = (typeof CHAVES)[number];
 const chaveValida = (v: unknown): v is Chave =>
   typeof v === "string" && (CHAVES as readonly string[]).includes(v);
@@ -370,7 +405,7 @@ export const minhasPreferencias = createServerFn({ method: "POST" }).handler(
 );
 
 export const salvarPreferencia = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((entrada: { chave: string; valor: string }) => {
       if (!chaveValida(entrada?.chave)) throw new Error("Preferência desconhecida");
       const valor = typeof entrada?.valor === "string" ? entrada.valor.trim().slice(0, 400) : "";

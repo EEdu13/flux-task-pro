@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { useEscFecha } from "@/hooks/use-esc-fecha";
 import { useNavigate } from "@tanstack/react-router";
 import { X, Lock, LockOpen } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -58,6 +59,9 @@ export function CallInviterProvider({ children }: { children: ReactNode }) {
       setBusy(false);
     }
   }
+
+  // Esc é "agora não" — o mesmo que fechar sem chamar.
+  useEscFecha(!!pending, () => setPending(null));
 
   const targetName = pending
     ? users.find((u) => u.id === pending.userId)?.name ?? "convidado"

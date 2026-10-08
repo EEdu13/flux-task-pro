@@ -48,8 +48,33 @@ async function blobDoAnexo(dataUrl: string): Promise<Blob> {
   // Caminho relativo resolve contra a origem atual — que no app de mesa é o
   // mesmo site que a janela principal carrega.
   const res = await fetch(dataUrl);
-  if (!res.ok) throw new Error(`anexo indisponível (${res.status})`);
+  if (!res.ok) throw new Error(await motivoDaFalha(res));
   return res.blob();
+}
+
+/**
+ * Por que o anexo não abriu, em português — o que a rota `/api/anexo` disse.
+ *
+ * Antes a falha ia só para o console, e quem clicava não via nada: "não abre"
+ * era tudo o que dava para relatar (08/10/2026). As três respostas da rota
+ * querem dizer coisas diferentes, e cada uma tem um conserto diferente.
+ */
+async function motivoDaFalha(res: Response): Promise<string> {
+  if (res.status === 401) return "Sua sessão expirou. Entre de novo para abrir o anexo.";
+  const texto = (await res.text().catch(() => "")).trim();
+  if (texto === "anexo indisponível")
+    return "O arquivo não pôde ser lido do armazenamento (Blob). Avise o TI.";
+  if (res.status === 404) return "Anexo não encontrado, ou você não tem acesso a esta tarefa.";
+  return `O anexo não abriu (${res.status}).`;
+}
+
+function avisarFalha(e: unknown) {
+  console.error("Falha ao abrir anexo", e);
+  void import("sonner").then(({ toast }) =>
+    toast.error("Não foi possível abrir o anexo", {
+      description: e instanceof Error ? e.message : undefined,
+    }),
+  );
 }
 
 // Abre o anexo. No app desktop (Tauri), grava um arquivo temporário e abre com
@@ -64,19 +89,23 @@ export function openAttachment(a: { dataUrl: string; name: string }) {
         await invoke("open_attachment_file", { name: a.name, data: Array.from(bytes) });
         return;
       }
-      /* No navegador, um anexo que já está no Blob pode ser aberto pelo próprio
-         endereço: a rota responde com `content-disposition: inline`, então o
-         navegador exibe em vez de baixar. Baixar os bytes só para recriar um
-         blob URL seria trabalho a mais para o mesmo resultado. */
-      if (!ehDataUrl(a.dataUrl)) {
-        window.open(a.dataUrl, "_blank", "noopener,noreferrer");
-        return;
+      /* No navegador também passa pelos bytes: abrir o endereço direto numa
+         aba nova mostrava a página crua de erro ("anexo indisponível") sem
+         dizer o que fazer, e no erro de rede não mostrava nada. Assim a falha
+         vira aviso na própria tela. A janela é aberta ANTES da espera, no
+         clique — aberta depois do `await`, o bloqueador de pop-up a barra. */
+      const janela = window.open("", "_blank");
+      try {
+        const url = URL.createObjectURL(await blobDoAnexo(a.dataUrl));
+        if (janela) janela.location.href = url;
+        else window.open(url, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        janela?.close();
+        throw e;
       }
-      const url = URL.createObjectURL(dataUrlToBlob(a.dataUrl));
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      console.error("Falha ao abrir anexo", e);
+      avisarFalha(e);
     }
   })();
 }
@@ -93,7 +122,7 @@ export function downloadAttachment(a: { dataUrl: string; name: string }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      console.error("Falha ao baixar anexo", e);
+      avisarFalha(e);
     }
   })();
 }

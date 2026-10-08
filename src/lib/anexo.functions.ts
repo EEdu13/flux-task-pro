@@ -39,7 +39,7 @@ type Dono = (typeof DONOS)[number];
  * o Blob não mudam.
  */
 export const enviarAnexo = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (entrada: {
         donoTipo: string;
@@ -196,7 +196,7 @@ export const enviarAnexo = createServerFn({ method: "POST" })
  * nenhuma.
  */
 export const removerAnexo = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((entrada: { id: string }) => {
       const id = typeof entrada?.id === "string" ? entrada.id.trim() : "";
       if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Anexo inválido");
@@ -252,7 +252,7 @@ export const removerAnexo = createServerFn({ method: "POST" })
 
 /** Anexos de uma tarefa, comentário, projeto ou mensagem. */
 export const listarAnexos = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((entrada: { donoTipo: string; donoId: string }) => {
       if (!(DONOS as readonly string[]).includes(entrada?.donoTipo)) {
         throw new Error("Tipo de dono inválido");

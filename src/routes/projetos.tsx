@@ -25,6 +25,7 @@ import {
   Check,
   AtSign,
   TrendingUp,
+  Presentation,
 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
@@ -32,6 +33,7 @@ import { confirmar } from "@/components/confirm-dialog";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { ProjectTracking } from "@/components/project-tracking";
 import { ProjectPortfolio } from "@/components/project-portfolio";
+import { FupSemanal } from "@/components/fup-semanal";
 import { CampoData } from "@/components/campo-data";
 import { useFluxo } from "@/lib/fluxo-store";
 import { podeEditarProjeto } from "@/lib/permissoes";
@@ -149,6 +151,7 @@ function ProjetosPage() {
     users,
     currentUser,
     completions,
+    minutes,
   } = useFluxo();
 
   // Todos da empresa podem ser chamados / atribuídos — sem limite por setor.
@@ -159,7 +162,7 @@ function ProjetosPage() {
   }, [users, currentUser.id]);
   const projects = visibleProjects();
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id ?? null);
-  const [topView, setTopView] = useState<"portfolio" | "detalhe">("portfolio");
+  const [topView, setTopView] = useState<"portfolio" | "detalhe" | "fup">("portfolio");
 
   /* Veio de um aviso de projeto: abre ele. Pelo efeito, e não só no estado
      inicial, por dois motivos — clicar no aviso com a tela de Projetos já
@@ -207,7 +210,17 @@ function ProjetosPage() {
 
   const handleQuickAdd = () => {
     if (!selected) return;
-    if (!quickTitle.trim()) {
+    /* Escreveu só na caixa de baixo: a primeira linha vira o título e o resto,
+       a observação. Antes o Adicionar ficava apagado e o Enter só quebrava a
+       linha — parecia que o projeto não salvava (pedido do usuário, 08/10/2026). */
+    let titulo = quickTitle.trim();
+    let observacao = quickDescription.trim();
+    if (!titulo && observacao) {
+      const [primeira, ...resto] = observacao.split(/\r?\n/);
+      titulo = primeira!.trim().slice(0, 200);
+      observacao = resto.join("\n").trim();
+    }
+    if (!titulo) {
       quickInputRef.current?.focus();
       return;
     }
@@ -224,8 +237,8 @@ function ProjetosPage() {
     if (assignee.id !== currentUser.id) mentionSet.add(assignee.id);
     mentionSet.delete(currentUser.id);
     createTask({
-      title: quickTitle.trim(),
-      description: quickDescription.trim() || undefined,
+      title: titulo,
+      description: observacao || undefined,
       sector: assignee.sector,
       createdBy: currentUser.id,
       assigneeId: assignee.id,
@@ -287,6 +300,18 @@ function ProjetosPage() {
                 <ListIcon className="h-3.5 w-3.5" />
                 Projetos
               </button>
+              <button
+                onClick={() => setTopView("fup")}
+                title="Painel da reunião semanal de acompanhamento"
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  topView === "fup"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Presentation className="h-3.5 w-3.5" />
+                FUP
+              </button>
             </div>
             {topView === "detalhe" && (
               <>
@@ -321,7 +346,20 @@ function ProjetosPage() {
           </div>
         </header>
 
-        {topView === "portfolio" ? (
+        {topView === "fup" ? (
+          <FupSemanal
+            projects={projects}
+            getTasks={projectTasks}
+            completions={completions}
+            users={users}
+            minutes={minutes}
+            onOpenTask={openTask}
+            onOpenProject={(id) => {
+              setSelectedId(id);
+              setTopView("detalhe");
+            }}
+          />
+        ) : topView === "portfolio" ? (
           <ProjectPortfolio
             projects={projects}
             getTasks={projectTasks}
@@ -809,25 +847,24 @@ function ProjectDetail({
           />
           <button
             onClick={onQuickAdd}
-            disabled={!quickTitle.trim()}
+            disabled={!quickTitle.trim() && !quickDescription.trim()}
             className="rounded-md bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground disabled:opacity-40 hover:brightness-110"
           >
             Adicionar
           </button>
           {/* Linha própria (`basis-full`): a observação costuma ter mais de uma
               frase, e espremida ao lado do título não daria para ler. Enter
-              aqui quebra a linha, como em qualquer texto longo; Ctrl+Enter
-              adiciona, como o Enter do título. */}
+              adiciona, como no título; Shift+Enter quebra a linha. */}
           <textarea
             value={quickDescription}
             onChange={(e) => setQuickDescription(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 onQuickAdd();
               }
             }}
-            placeholder="Observação (opcional) — Ctrl+Enter para salvar"
+            placeholder="Observação (opcional) — Enter salva, Shift+Enter quebra a linha"
             rows={1}
             className="basis-full resize-y rounded-md border border-border bg-background px-2 py-1 text-[12px] outline-none placeholder:text-muted-foreground focus:border-primary"
           />
@@ -1671,8 +1708,8 @@ function ShareProjectModal({
 
   const shareLink =
     typeof window !== "undefined"
-      ? `${window.location.origin}/projetos?p=${project.id}`
-      : `/projetos?p=${project.id}`;
+      ? `${window.location.origin}/projetos?projeto=${project.id}`
+      : `/projetos?projeto=${project.id}`;
 
   const copyLink = async () => {
     try {

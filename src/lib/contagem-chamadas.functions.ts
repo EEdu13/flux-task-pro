@@ -78,7 +78,7 @@ export const minhasContagens = createServerFn({ method: "POST" }).handler(
  * derrubar uma ligação.
  */
 export const somarChamada = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { sala: string; paraPessoaId: string }) => ({
       sala: sala(e?.sala),
       paraPessoaId: pessoaAlvo(e?.paraPessoaId),

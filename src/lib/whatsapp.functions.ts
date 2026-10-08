@@ -297,7 +297,7 @@ export const entradasDoWhatsapp = createServerFn({ method: "POST" }).handler(
  * sentido ser mais frouxa por a tarefa ter entrado pelo WhatsApp.
  */
 export const encaminharEntrada = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { id: string; paraPessoaId: string | number }) => {
       const id = guid(e?.id);
       if (!id) throw new Error("Entrada inválida");

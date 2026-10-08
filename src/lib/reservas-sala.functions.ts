@@ -96,7 +96,7 @@ export const listarSalasDeReuniao = createServerFn({ method: "POST" }).handler(
  * gravar — sem ela, a pessoa só descobre o choque depois de tentar.
  */
 export const listarAgendaDeSalas = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade((e: { data: string; dataFim?: string; salaId?: number }) => ({
       data: data(e.data),
       dataFim: e.dataFim === undefined ? undefined : data(e.dataFim),
@@ -131,7 +131,7 @@ export const listarAgendaDeSalas = createServerFn({ method: "POST" })
  *   • "indisponivel"→ Agendador fora do ar ou com a IAM desligada
  */
 export const reservarSalaDeReuniao = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     semIdentidade(
       (e: {
         data: string;

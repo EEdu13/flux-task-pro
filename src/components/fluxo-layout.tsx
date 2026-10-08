@@ -39,28 +39,14 @@ import { roleLabels, type Notification as Aviso } from "@/lib/fluxo-types";
 import { tituloDoAviso } from "@/lib/aviso";
 import { avisarNoSistema } from "@/lib/aviso-do-sistema";
 import { formatRelative, useTheme } from "@/lib/use-theme";
-import { TaskDialog } from "@/components/task-dialog";
-import { QuickTaskModal } from "@/components/quick-task-modal";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
 import { ATALHOS_GRADE } from "@/lib/grade-atalhos";
-import { AttentionOverlay } from "@/components/attention-overlay";
-import { TaskContextMenu } from "@/components/task-context-menu";
-import { TarefasAtrasadas } from "@/components/tarefas-atrasadas";
 import { tocarNotificacao } from "@/lib/sons";
 import { desktopFlashTaskbar } from "@/lib/desktop";
-import { CommandPalette } from "@/components/command-palette";
-import { ReservaDeSalaModal } from "@/components/reserva-de-sala-modal";
-import { TeamDelegatePanel } from "@/components/team-delegate-panel";
-import { FocusOverlay } from "@/components/focus-overlay";
-import { UndoProvider } from "@/lib/undo-stack";
 import { X, Lock, Loader2 } from "lucide-react";
 import { PlacarDoTopo } from "@/components/placar-do-topo";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { listRoomsPresence } from "@/lib/livekit-token.functions";
-import { IncomingCall } from "@/components/incoming-call";
-import { OutgoingCallWatcher } from "@/components/outgoing-call-watcher";
-import { TractorBanner } from "@/components/tractor-banner";
-import { ChatDock } from "@/components/chat-dock";
 import { UserAvatar } from "@/components/user-avatar";
 import { transicionar } from "@/components/transition-veil";
 import { toast } from "sonner";
@@ -87,6 +73,11 @@ function openNotepad() {
     window.dispatchEvent(new CustomEvent("fluxo:notepad-open"));
   }
 }
+
+type Presenca = Record<string, { identity: string; name: string }[]>;
+
+/** A última leitura de quem está em cada sala — sobrevive à troca de página. */
+let presencaGuardada: { valor: Presenca; em: number } = { valor: {}, em: 0 };
 
 export function FluxoLayout({
   title,
@@ -174,7 +165,7 @@ export function FluxoLayout({
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem("fluxo:rooms-open") !== "0";
   });
-  const [presence, setPresence] = useState<Record<string, { identity: string; name: string }[]>>({});
+  const [presence, setPresence] = useState<Presenca>(() => presencaGuardada.valor);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -187,12 +178,16 @@ export function FluxoLayout({
     async function poll() {
       try {
         const res = await listRoomsPresence({ data: { rooms: roomNames } });
+        presencaGuardada = { valor: res.presence, em: Date.now() };
         if (!cancelled) setPresence(res.presence);
       } catch {
         /* silent */
       }
     }
-    poll();
+    /* O layout é montado a cada troca de página. Sem a memória de fora do
+       componente, cada clique no menu disparava uma leitura na hora; agora
+       só lê de imediato se a última passou dos 6 s do intervalo. */
+    if (Date.now() - presencaGuardada.em > 6000) void poll();
     const id = window.setInterval(poll, 6000);
     return () => {
       cancelled = true;
@@ -502,7 +497,6 @@ export function FluxoLayout({
   if (!isAuthenticated) return null;
 
   return (
-  <UndoProvider>
     <div className="fluxo-app-root flex min-h-screen w-full bg-background text-foreground">
       {/* Mobile drawer backdrop */}
       {mobileOpen && (
@@ -1296,30 +1290,8 @@ export function FluxoLayout({
         </div>
       )}
 
-      <TaskDialog />
-      <QuickTaskModal />
-      {/* O "Complete seu contato" saiu daqui.
-          Quem entra com senha provisória já preenche telefone e e-mail no
-          primeiro acesso, e quem entra normalmente tem esses dados vindos da
-          IAM a cada login. Nos dois casos o modal pedia de novo o que o sistema
-          já sabia — e como ele trava o painel, virava um pedágio na entrada.
-          O componente `OnboardingModal` continua no arquivo, agora sem uso — e
-          o arquivo NÃO pode ser apagado junto: `phoneValidator` sai dele e é
-          usado pelo primeiro acesso e pelas configurações. */}
-      <IncomingCall />
-      <AttentionOverlay />
-      <OutgoingCallWatcher />
-      <TractorBanner />
-      <ChatDock />
-      <TaskContextMenu />
-      <TarefasAtrasadas />
-      <CommandPalette />
-      {/* Montado aqui, e não no raio: o calendário e a paleta também abrem
-          este modal, e um só lugar montando evita duas instâncias disputando
-          o mesmo evento. */}
-      <ReservaDeSalaModal />
-      <TeamDelegatePanel />
-      <FocusOverlay />
+      {/* Chat, avisos, chamadas, paleta, menu e janela da tarefa: montados uma
+          vez na raiz, em `GlobaisDoApp`, e não a cada página — ver lá. */}
       {/* O respiro do topo sai da própria --titlebar-h: a barra de título é
           fixed com z-index acima deste modal, então sem isso o card desliza por
           baixo dela. E o card ganha teto de altura com rolagem interna, em vez
@@ -1380,6 +1352,5 @@ export function FluxoLayout({
         </div>
       )}
     </div>
-  </UndoProvider>
   );
 }

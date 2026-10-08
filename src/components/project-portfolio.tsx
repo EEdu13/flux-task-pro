@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   eachDayOfInterval,
   endOfMonth,
@@ -24,7 +24,9 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-import type { CompletionEntry, Project, Task, User } from "@/lib/fluxo-types";
+import { statusColor, statusLabels, type CompletionEntry, type Project, type Task, type User } from "@/lib/fluxo-types";
+import { useFluxo } from "@/lib/fluxo-store";
+import { tarefaVencida } from "@/lib/prazo";
 import {
   forecastProject,
   riskLabels,
@@ -92,6 +94,7 @@ export function ProjectPortfolio({
 }) {
   const [granularity, setGranularity] = useState<Granularity>("semana");
   const [filesId, setFilesId] = useState<string | null>(null);
+  const { openTask } = useFluxo();
   const now = new Date();
 
   const enriched = useMemo<Enriched[]>(() => {
@@ -144,6 +147,30 @@ export function ProjectPortfolio({
       ),
     [enriched, days],
   );
+
+  /* As subtarefas de cada projeto na linha do tempo, abaixo da barra dele
+     (pedido do usuário, 08/10/2026): a barra do projeto sozinha não dizia o
+     que estava acontecendo dentro dele. Cada uma vai da criação ao prazo —
+     ou à conclusão — e só entra a que cruza a janela mostrada. */
+  const tarefasNaJanela = useMemo(() => {
+    const ini = days[0].getTime();
+    const fim = days[days.length - 1].getTime();
+    const m = new Map<string, { t: Task; start: Date; end: Date }[]>();
+    for (const e of timelineRows) {
+      const lista = e.tasks
+        .map((t) => {
+          const start = startOfDay(new Date(t.createdAt));
+          const ref = t.dueDate ?? t.completedAt ?? t.createdAt;
+          let end = startOfDay(new Date(ref));
+          if (end.getTime() < start.getTime()) end = start;
+          return { t, start, end };
+        })
+        .filter(({ start, end }) => end.getTime() >= ini && start.getTime() <= fim)
+        .sort((a, b) => a.end.getTime() - b.end.getTime());
+      m.set(e.project.id, lista);
+    }
+    return m;
+  }, [timelineRows, days]);
 
   if (projects.length === 0) {
     return (
@@ -239,8 +266,8 @@ export function ProjectPortfolio({
               timelineRows.map(({ project, forecast, start, end }) => {
                 const owner = users.find((u) => u.id === project.ownerId);
                 return (
+                  <Fragment key={project.id}>
                   <button
-                    key={project.id}
                     onClick={() => onOpen(project.id)}
                     className="group flex w-full border-b border-border/60 text-left transition last:border-b-0 hover:bg-secondary/30"
                   >
@@ -305,6 +332,60 @@ export function ProjectPortfolio({
                       );
                     })}
                   </button>
+                  {(tarefasNaJanela.get(project.id) ?? []).map(({ t, start: ti, end: tf }) => {
+                    const resp = users.find((u) => u.id === t.assigneeId);
+                    const atrasada = t.status !== "concluida" && tarefaVencida(t, now.getTime());
+                    const cor = atrasada ? "var(--color-destructive)" : statusColor[t.status];
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => openTask(t.id)}
+                        title={`${t.title} · ${statusLabels[t.status]}${atrasada ? " · atrasada" : ""}`}
+                        className="group flex w-full border-b border-border/40 text-left transition last:border-b-0 hover:bg-secondary/30"
+                      >
+                        <div className="sticky left-0 z-10 flex w-56 shrink-0 items-center gap-1.5 border-r border-border bg-card py-1.5 pl-6 pr-2.5 transition group-hover:bg-secondary/60">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cor }} />
+                          <span
+                            className={`min-w-0 flex-1 truncate text-[11px] ${
+                              t.status === "concluida" ? "text-muted-foreground line-through" : ""
+                            }`}
+                          >
+                            {t.title}
+                          </span>
+                          {resp && (
+                            <span className="shrink-0 text-[9px] text-muted-foreground">
+                              {resp.name.split(" ")[0]}
+                            </span>
+                          )}
+                        </div>
+                        {days.map((day) => {
+                          const ativo = isWithinInterval(day, { start: ti, end: tf });
+                          const ehIni = isSameDay(day, ti);
+                          const ehFim = isSameDay(day, tf);
+                          return (
+                            <div
+                              key={day.toISOString()}
+                              className={`relative min-w-[64px] flex-1 border-r border-border/30 last:border-r-0 ${
+                                isSameDay(day, now) ? "bg-primary/5" : ""
+                              }`}
+                              style={{ minHeight: 30 }}
+                            >
+                              {ativo && (
+                                <div
+                                  className={`absolute top-1/2 h-2.5 -translate-y-1/2 ${ehIni ? "left-1.5 rounded-l-full" : "left-0"} ${
+                                    ehFim ? "right-1.5 rounded-r-full" : "right-0"
+                                  }`}
+                                  style={{ background: cor, opacity: t.status === "concluida" ? 0.45 : 0.8 }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </button>
+                    );
+                  })}
+                  </Fragment>
                 );
               })
             )}
