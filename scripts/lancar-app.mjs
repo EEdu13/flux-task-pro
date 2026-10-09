@@ -42,14 +42,26 @@ if (!existsSync(chave)) {
 
 if (!semBuild) {
   console.log("→ tauri build (alguns minutos)…");
-  const r = spawnSync(process.execPath, ["node_modules/@tauri-apps/cli/tauri.js", "build"], {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      TAURI_SIGNING_PRIVATE_KEY_PATH: chave,
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? "",
+  /* A CLI só assina com a chave no CONTEÚDO de TAURI_SIGNING_PRIVATE_KEY (o
+     _PATH ela ignora: a 0.2.2 saiu sem .sig por isso). E o build do site vai
+     direto pelo node: o `vite` do node_modules/.bin some de vez em quando. */
+  const r = spawnSync(
+    process.execPath,
+    [
+      "node_modules/@tauri-apps/cli/tauri.js",
+      "build",
+      "--config",
+      JSON.stringify({ build: { beforeBuildCommand: "node node_modules/vite/bin/vite.js build" } }),
+    ],
+    {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        TAURI_SIGNING_PRIVATE_KEY: readFileSync(chave, "utf8"),
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? "",
+      },
     },
-  });
+  );
   if (r.status !== 0) {
     console.error("✗ o build falhou");
     process.exit(1);
