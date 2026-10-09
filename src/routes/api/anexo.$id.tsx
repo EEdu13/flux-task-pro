@@ -19,7 +19,7 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/anexo/$id")({
   server: {
     handlers: {
-      GET: async ({ params }) => {
+      GET: async ({ params, request }) => {
         const id = String(params.id ?? "");
         if (!/^[0-9a-f-]{36}$/i.test(id)) {
           return new Response("anexo inválido", { status: 400 });
@@ -53,8 +53,7 @@ export const Route = createFileRoute("/api/anexo/$id")({
           .query(`SELECT nome, tipo_mime, url FROM gestor.anexos WHERE id=@id`);
 
         const linha = r.recordset[0] as
-          | { nome: string; tipo_mime: string; url: string }
-          | undefined;
+          { nome: string; tipo_mime: string; url: string } | undefined;
         if (!linha) return new Response("anexo não encontrado", { status: 404 });
 
         const { lerDoBlob } = await import("@/integrations/blob.server");
@@ -68,7 +67,11 @@ export const Route = createFileRoute("/api/anexo/$id")({
                O nome vai entre aspas e com as aspas internas escapadas — nome de
                arquivo é dado de fora, e uma aspa solta aqui quebraria o
                cabeçalho e deixaria a pessoa baixar com o nome errado. */
-            "content-disposition": `inline; filename="${linha.nome.replace(/"/g, "'")}"`,
+            /* `?baixar=1` pede `attachment`: é o download que o app de mesa
+               (WebView2) entende e grava em Downloads — o link de blob, ele
+               ignorava. O nome vai também em UTF-8 (filename*), para acento
+               não virar lixo no arquivo salvo. */
+            "content-disposition": `${new URL(request.url).searchParams.has("baixar") ? "attachment" : "inline"}; filename="${linha.nome.replace(/"/g, "'").replace(/[^ -~]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(linha.nome)}`,
             /* `private` porque a resposta depende de quem está logado: um cache
                compartilhado no caminho não pode guardar isto e entregar para
                outra pessoa. Uma hora é o bastante — o arquivo não muda, e o id

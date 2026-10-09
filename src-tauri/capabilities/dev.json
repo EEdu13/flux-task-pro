@@ -17,6 +17,8 @@
   },
   "permissions": [
     "allow-open-attachment-file",
+    "allow-save-attachment-file",
+    "allow-show-in-folder",
     "allow-tempo-ocioso-segundos",
     "core:default",
     "notification:default",

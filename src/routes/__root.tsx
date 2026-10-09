@@ -36,6 +36,8 @@ import { InteractionFX } from "@/components/interaction-fx";
 import { Celebration } from "@/components/celebration";
 import { TransitionVeil } from "@/components/transition-veil";
 import { ConfirmHost } from "@/components/confirm-dialog";
+import { PreviaDoAnexoHost } from "@/components/previa-anexo";
+import { AvisoDeAppNovo } from "@/components/aviso-app-novo";
 import { MotionConfig } from "framer-motion";
 import { ChatProvider } from "@/lib/chat-store";
 import { isTauri } from "@/lib/desktop";
@@ -109,10 +111,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "SGL - CONECTA · Painel de desempenho" },
-      { name: "description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
+      {
+        name: "description",
+        content: "Visão executiva com foco de hoje, ranking e metas do time.",
+      },
       { name: "author", content: "Larsil" },
       { property: "og:title", content: "SGL - CONECTA · Painel de desempenho" },
-      { property: "og:description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
+      {
+        property: "og:description",
+        content: "Visão executiva com foco de hoje, ranking e metas do time.",
+      },
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "SGL - CONECTA" },
       { property: "og:locale", content: "pt_BR" },
@@ -127,7 +135,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:image:alt", content: "SGL - CONECTA, da Larsil" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "SGL - CONECTA · Painel de desempenho" },
-      { name: "twitter:description", content: "Visão executiva com foco de hoje, ranking e metas do time." },
+      {
+        name: "twitter:description",
+        content: "Visão executiva com foco de hoje, ranking e metas do time.",
+      },
       { name: "twitter:image", content: `${ENDERECO_PUBLICO}/og-sgl.png` },
     ],
     links: [
@@ -234,43 +245,45 @@ function RootComponent() {
     // preferência do sistema — as transições novas de página e aba, e também as
     // que já existiam. O CSS já tinha esses blocos; as de JS não tinham.
     <MotionConfig reducedMotion="user">
-    <QueryClientProvider client={queryClient}>
-      <FluxoProvider>
-        <ChatProvider>
-        <TaskTimerProvider>
-        <RoomPresenceProvider>
-          <ActiveCallProvider>
-            <CallInviterProvider>
-              {/* Barra de título nativa do app desktop; no navegador não renderiza. */}
-              <TitleBar />
-              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-              <UndoProvider>
-              <Outlet />
-              {/* Janelas globais montadas uma vez, fora da troca de página. */}
-              <GlobaisDoApp />
-              </UndoProvider>
-              <ActiveCallWidget />
-              <QuickFab />
-              {/* Fora do <Outlet />: precisa sobreviver à troca de rota, que é
+      <QueryClientProvider client={queryClient}>
+        <FluxoProvider>
+          <ChatProvider>
+            <TaskTimerProvider>
+              <RoomPresenceProvider>
+                <ActiveCallProvider>
+                  <CallInviterProvider>
+                    {/* Barra de título nativa do app desktop; no navegador não renderiza. */}
+                    <TitleBar />
+                    {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+                    <UndoProvider>
+                      <Outlet />
+                      {/* Janelas globais montadas uma vez, fora da troca de página. */}
+                      <GlobaisDoApp />
+                    </UndoProvider>
+                    <ActiveCallWidget />
+                    <QuickFab />
+                    {/* Fora do <Outlet />: precisa sobreviver à troca de rota, que é
                   justamente quando o crachá dentro do cartão sai de vista. */}
-              <TimerFlutuante />
-              <FloatingNotepad />
-              <InteractionFX />
-              <Celebration />
-              {/* Fora do <Outlet /> de propósito: precisa sobreviver à troca de
+                    <TimerFlutuante />
+                    <FloatingNotepad />
+                    <InteractionFX />
+                    <Celebration />
+                    {/* Fora do <Outlet /> de propósito: precisa sobreviver à troca de
                   rota entre o login e o painel, que é justamente o que ele cobre. */}
-              <TransitionVeil />
-              {/* Também fora do <Outlet />: a confirmação é chamada de
+                    <TransitionVeil />
+                    {/* Também fora do <Outlet />: a confirmação é chamada de
                   qualquer tela e precisa sobreviver à troca de rota. */}
-              <ConfirmHost />
-              <Toaster />
-            </CallInviterProvider>
-          </ActiveCallProvider>
-        </RoomPresenceProvider>
-        </TaskTimerProvider>
-        </ChatProvider>
-      </FluxoProvider>
-    </QueryClientProvider>
+                    <ConfirmHost />
+                    <PreviaDoAnexoHost />
+                    <AvisoDeAppNovo />
+                    <Toaster />
+                  </CallInviterProvider>
+                </ActiveCallProvider>
+              </RoomPresenceProvider>
+            </TaskTimerProvider>
+          </ChatProvider>
+        </FluxoProvider>
+      </QueryClientProvider>
     </MotionConfig>
   );
 }

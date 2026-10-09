@@ -35,7 +35,9 @@ import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/pur
 import { Route as ApiPublicTelegramDiarioRouteImport } from './routes/api/public/telegram-diario'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram-webhook'
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
+import { Route as ApiPublicAppLatestRouteImport } from './routes/api/public/app/latest'
 import { Route as ApiPublicFotoNomeRouteImport } from './routes/api/public/foto/$nome'
+import { Route as ApiPublicAppBaixarArquivoRouteImport } from './routes/api/public/app/baixar.$arquivo'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -169,11 +171,22 @@ const ApiPublicWhatsappWebhookRoute =
     path: '/api/public/whatsapp-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicAppLatestRoute = ApiPublicAppLatestRouteImport.update({
+  id: '/api/public/app/latest',
+  path: '/api/public/app/latest',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicFotoNomeRoute = ApiPublicFotoNomeRouteImport.update({
   id: '/api/public/foto/$nome',
   path: '/api/public/foto/$nome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAppBaixarArquivoRoute =
+  ApiPublicAppBaixarArquivoRouteImport.update({
+    id: '/api/public/app/baixar/$arquivo',
+    path: '/api/public/app/baixar/$arquivo',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -202,7 +215,9 @@ export interface FileRoutesByFullPath {
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
+  '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -231,7 +246,9 @@ export interface FileRoutesByTo {
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
+  '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -261,7 +278,9 @@ export interface FileRoutesById {
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
+  '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -292,7 +311,9 @@ export interface FileRouteTypes {
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/public/app/latest'
     | '/api/public/foto/$nome'
+    | '/api/public/app/baixar/$arquivo'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -321,7 +342,9 @@ export interface FileRouteTypes {
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/public/app/latest'
     | '/api/public/foto/$nome'
+    | '/api/public/app/baixar/$arquivo'
   id:
     | '__root__'
     | '/'
@@ -350,7 +373,9 @@ export interface FileRouteTypes {
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/public/app/latest'
     | '/api/public/foto/$nome'
+    | '/api/public/app/baixar/$arquivo'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -380,7 +405,9 @@ export interface RootRouteChildren {
   ApiPublicTelegramDiarioRoute: typeof ApiPublicTelegramDiarioRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
+  ApiPublicAppLatestRoute: typeof ApiPublicAppLatestRoute
   ApiPublicFotoNomeRoute: typeof ApiPublicFotoNomeRoute
+  ApiPublicAppBaixarArquivoRoute: typeof ApiPublicAppBaixarArquivoRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -567,11 +594,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/app/latest': {
+      id: '/api/public/app/latest'
+      path: '/api/public/app/latest'
+      fullPath: '/api/public/app/latest'
+      preLoaderRoute: typeof ApiPublicAppLatestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/foto/$nome': {
       id: '/api/public/foto/$nome'
       path: '/api/public/foto/$nome'
       fullPath: '/api/public/foto/$nome'
       preLoaderRoute: typeof ApiPublicFotoNomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/app/baixar/$arquivo': {
+      id: '/api/public/app/baixar/$arquivo'
+      path: '/api/public/app/baixar/$arquivo'
+      fullPath: '/api/public/app/baixar/$arquivo'
+      preLoaderRoute: typeof ApiPublicAppBaixarArquivoRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -604,7 +645,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicTelegramDiarioRoute: ApiPublicTelegramDiarioRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
+  ApiPublicAppLatestRoute: ApiPublicAppLatestRoute,
   ApiPublicFotoNomeRoute: ApiPublicFotoNomeRoute,
+  ApiPublicAppBaixarArquivoRoute: ApiPublicAppBaixarArquivoRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

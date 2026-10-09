@@ -107,7 +107,10 @@ export const Route = createFileRoute("/minhas-tarefas")({
   head: () => ({
     meta: [
       { title: "Minhas tarefas · SGL - CONECTA" },
-      { name: "description", content: "Kanban e lista de tarefas com filtros por responsável, prioridade e prazo." },
+      {
+        name: "description",
+        content: "Kanban e lista de tarefas com filtros por responsável, prioridade e prazo.",
+      },
     ],
   }),
   component: MinhasTarefas,
@@ -116,14 +119,7 @@ export const Route = createFileRoute("/minhas-tarefas")({
 type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas" | "pack";
 type ViewMode = "quadro" | "lista" | "minha-visao";
 type DatePreset =
-  | "todas"
-  | "ontem"
-  | "hoje"
-  | "amanha"
-  | "esta-semana"
-  | "prox-semana"
-  | "este-mes"
-  | "entre";
+  "todas" | "ontem" | "hoje" | "amanha" | "esta-semana" | "prox-semana" | "este-mes" | "entre";
 
 const datePresetLabels: Record<DatePreset, string> = {
   todas: "Qualquer data",
@@ -453,10 +449,10 @@ function MinhasTarefas() {
                       s === "pack"
                         ? "bg-amber-500 text-white"
                         : s === "mencionadas"
-                        ? "bg-primary text-primary-foreground"
-                        : scope === s
-                          ? "bg-primary/15 text-primary"
-                          : "bg-secondary text-muted-foreground"
+                          ? "bg-primary text-primary-foreground"
+                          : scope === s
+                            ? "bg-primary/15 text-primary"
+                            : "bg-secondary text-muted-foreground"
                     }`}
                   >
                     {scopeCounts[s]}
@@ -510,58 +506,58 @@ function MinhasTarefas() {
 
             O filtro de etiquetas saiu: a busca já acha "#tag". */}
         {scope !== "pack" && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5">
-            {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setDatePreset(p)}
-                className={`whitespace-nowrap rounded px-2 py-1 text-xs font-medium transition ${
-                  datePreset === p
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {datePresetLabels[p]}
-              </button>
-            ))}
-          </div>
-          {datePreset === "entre" && (
-            <div className="inline-flex shrink-0 items-center gap-1">
-              <CampoData
-                value={dateFrom}
-                onChange={setDateFrom}
-                placeholder="Início"
-                title="Data inicial"
-                className="bg-secondary py-1 text-xs"
-              />
-              <span className="text-xs text-muted-foreground">até</span>
-              <CampoData
-                value={dateTo}
-                onChange={setDateTo}
-                placeholder="Fim"
-                title="Data final"
-                className="bg-secondary py-1 text-xs"
-              />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5">
+              {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setDatePreset(p)}
+                  className={`whitespace-nowrap rounded px-2 py-1 text-xs font-medium transition ${
+                    datePreset === p
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {datePresetLabels[p]}
+                </button>
+              ))}
             </div>
-          )}
-          {pessoasFiltraveis.length > 1 && (
-            <FiltroSetor
-              pessoas={pessoasFiltraveis}
-              setor={setorPessoas}
-              aoMudar={setSetorPessoas}
+            {datePreset === "entre" && (
+              <div className="inline-flex shrink-0 items-center gap-1">
+                <CampoData
+                  value={dateFrom}
+                  onChange={setDateFrom}
+                  placeholder="Início"
+                  title="Data inicial"
+                  className="bg-secondary py-1 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">até</span>
+                <CampoData
+                  value={dateTo}
+                  onChange={setDateTo}
+                  placeholder="Fim"
+                  title="Data final"
+                  className="bg-secondary py-1 text-xs"
+                />
+              </div>
+            )}
+            {pessoasFiltraveis.length > 1 && (
+              <FiltroSetor
+                pessoas={pessoasFiltraveis}
+                setor={setorPessoas}
+                aoMudar={setSetorPessoas}
+              />
+            )}
+            <BuscaComTags
+              valor={search}
+              aoMudar={setSearch}
+              tags={tagsDaBusca}
+              placeholder="Buscar por título, descrição, pessoa ou #tag…"
+              sufixo={`${visible.length} ${visible.length === 1 ? "tarefa" : "tarefas"}`}
+              className="ml-auto w-full min-w-56 max-w-sm flex-1"
             />
-          )}
-          <BuscaComTags
-            valor={search}
-            aoMudar={setSearch}
-            tags={tagsDaBusca}
-            placeholder="Buscar por título, descrição, pessoa ou #tag…"
-            sufixo={`${visible.length} ${visible.length === 1 ? "tarefa" : "tarefas"}`}
-            className="ml-auto w-full min-w-56 max-w-sm flex-1"
-          />
-        </div>
+          </div>
         )}
 
         {/* Só para quem enxerga mais de uma pessoa: para um colaborador, a
@@ -590,10 +586,11 @@ function MinhasTarefas() {
                 const due = new Date(t.dueDate);
                 const now = new Date();
                 return (
-                  due.getFullYear() === now.getFullYear() &&
-                  due.getMonth() === now.getMonth() &&
-                  due.getDate() === now.getDate()
-                ) || due.getTime() < now.setHours(0, 0, 0, 0); // hoje ou atrasadas
+                  (due.getFullYear() === now.getFullYear() &&
+                    due.getMonth() === now.getMonth() &&
+                    due.getDate() === now.getDate()) ||
+                  due.getTime() < now.setHours(0, 0, 0, 0)
+                ); // hoje ou atrasadas
               })}
               onEdit={openTask}
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
@@ -602,7 +599,14 @@ function MinhasTarefas() {
               onMove={(id, status) => moveTask(id, status)}
             />
           ) : view === "quadro" ? (
-            <KanbanBoard tasks={visible} onEdit={openTask} onCreate={(status) => openNewTask({ status })} onMove={moveTask} onQuickComplete={(id) => updateTask(id, { status: "concluida" })} onTogglePack={(id, v) => updateTask(id, { inPack: v })} />
+            <KanbanBoard
+              tasks={visible}
+              onEdit={openTask}
+              onCreate={(status) => openNewTask({ status })}
+              onMove={moveTask}
+              onQuickComplete={(id) => updateTask(id, { status: "concluida" })}
+              onTogglePack={(id, v) => updateTask(id, { inPack: v })}
+            />
           ) : view === "minha-visao" ? (
             <MyView tasks={visible} onEdit={openTask} />
           ) : (
@@ -617,7 +621,9 @@ function MinhasTarefas() {
             <div className="mt-4 rounded-lg border border-dashed border-border bg-card py-16 text-center">
               <Filter className="mx-auto h-6 w-6 text-muted-foreground" />
               <p className="mt-2 text-sm font-medium">Nenhuma tarefa neste recorte</p>
-              <p className="text-xs text-muted-foreground">Ajuste os filtros ou crie uma nova (atalho N).</p>
+              <p className="text-xs text-muted-foreground">
+                Ajuste os filtros ou crie uma nova (atalho N).
+              </p>
               <button
                 onClick={() => openNewTask()}
                 className="mt-3 inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
@@ -832,6 +838,19 @@ function TaskList({
                                   </div>
                                 </div>
                               </button>
+                              {/* As reações moram embaixo do título: na coluna de
+                                  ações (136px) elas quebravam linha e cobriam o
+                                  cronômetro (relato de 09/10/2026). Sem reação
+                                  nenhuma, o "Reagir" só aparece ao passar o mouse. */}
+                              <div
+                                className={`mt-1 pl-6 transition-opacity ${
+                                  t.reactions?.length
+                                    ? ""
+                                    : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+                                }`}
+                              >
+                                <ReacoesDaTarefa task={t} compacto />
+                              </div>
                             </td>
                             <td className="py-2.5 pr-4">
                               <div className="flex min-w-0 items-center gap-2">
@@ -861,8 +880,7 @@ function TaskList({
                               />
                             </td>
                             <td className="py-2.5 pr-4 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <ReacoesDaTarefa task={t} compacto />
+                              <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                                 <TaskTimerControls
                                   taskId={t.id}
                                   estimatedMinutes={t.estimatedMinutes}
@@ -1908,7 +1926,9 @@ function CirculoDeConcluir({
           : "border-muted-foreground/40 hover:border-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-500"
       }`}
     >
-      <Check className={`h-3 w-3 ${concluida ? "" : "opacity-0 transition-opacity hover:opacity-60"}`} />
+      <Check
+        className={`h-3 w-3 ${concluida ? "" : "opacity-0 transition-opacity hover:opacity-60"}`}
+      />
     </motion.button>
   );
 }
@@ -2128,8 +2148,7 @@ function ExternalRow({
   onTogglePack: (id: string, v: boolean) => void;
 }) {
   const sec = sectors.find((s) => s.id === task.sector);
-  const isMention =
-    task.mentions.includes(currentUserId) && task.assigneeId !== currentUserId;
+  const isMention = task.mentions.includes(currentUserId) && task.assigneeId !== currentUserId;
   const isMine = task.assigneeId === currentUserId;
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -2239,10 +2258,7 @@ function PackRow({
       >
         {isDone && <CheckCircle2 className="h-4 w-4" />}
       </button>
-      <button
-        onClick={() => onEdit(task.id)}
-        className="flex-1 text-left"
-      >
+      <button onClick={() => onEdit(task.id)} className="flex-1 text-left">
         <div className={`text-sm font-medium ${isDone ? "line-through" : ""}`}>
           <SeloDoProjeto projectId={task.projectId} />
           {task.title}

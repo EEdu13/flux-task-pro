@@ -86,6 +86,11 @@ export async function enviarParaOBlob(
   return alvo;
 }
 
+/** Endereço (sem assinatura) de um caminho dentro do contêiner — para `lerDoBlob`. */
+export function enderecoNoBlob(caminho: string): string {
+  return `${contêiner().base}/${caminho}`;
+}
+
 /** Lê o arquivo de volta, para o proxy devolver ao navegador. */
 export async function lerDoBlob(
   url: string,

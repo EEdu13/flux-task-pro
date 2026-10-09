@@ -12,7 +12,12 @@ fn main() {
      Comando novo em `lib.rs` = entrada nova aqui E na capability. */
   tauri_build::try_build(
     tauri_build::Attributes::new().app_manifest(
-      tauri_build::AppManifest::new().commands(&["open_attachment_file", "tempo_ocioso_segundos"]),
+      tauri_build::AppManifest::new().commands(&[
+        "open_attachment_file",
+        "save_attachment_file",
+        "show_in_folder",
+        "tempo_ocioso_segundos",
+      ]),
     ),
   )
   .expect("falha ao rodar o tauri-build");

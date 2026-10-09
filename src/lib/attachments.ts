@@ -21,7 +21,7 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
-function isTauri(): boolean {
+export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
@@ -43,7 +43,7 @@ function ehDataUrl(u: string): boolean {
 }
 
 /** Os bytes do anexo, venha ele de onde vier. */
-async function blobDoAnexo(dataUrl: string): Promise<Blob> {
+export async function blobDoAnexo(dataUrl: string): Promise<Blob> {
   if (ehDataUrl(dataUrl)) return dataUrlToBlob(dataUrl);
   // Caminho relativo resolve contra a origem atual — que no app de mesa é o
   // mesmo site que a janela principal carrega.
@@ -77,45 +77,35 @@ function avisarFalha(e: unknown) {
   );
 }
 
-// Abre o anexo. No app desktop (Tauri), grava um arquivo temporário e abre com
-// o app padrão do Windows (visualizador de imagem, PDF…). No navegador, o
-// window.open não funciona com data: URL grande, então usamos um blob URL.
-export function openAttachment(a: { dataUrl: string; name: string }) {
+/** Evento que a `PreviaDoAnexoHost` (montada na raiz) escuta. */
+export const EVENTO_PREVIA = "fluxo:previa-anexo";
+export type AnexoParaPrevia = { dataUrl: string; name: string; type?: string; size?: number };
+
+/**
+ * Abre o anexo numa PRÉVIA dentro do app (imagem, PDF e texto aparecem ali;
+ * o resto mostra o cartão do arquivo), com "Baixar" e, no app de mesa,
+ * "Abrir no programa". Pedido do usuário, 09/10/2026: abrir direto no
+ * programa do Windows piscava janelas de terminal e jogava a pessoa para fora.
+ */
+export function openAttachment(a: AnexoParaPrevia) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<AnexoParaPrevia>(EVENTO_PREVIA, { detail: a }));
+}
+
+/** App de mesa: grava num temporário e abre no programa padrão do Windows. */
+export function abrirNoPrograma(a: { dataUrl: string; name: string }) {
   void (async () => {
     try {
-      if (isTauri()) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const bytes = new Uint8Array(await (await blobDoAnexo(a.dataUrl)).arrayBuffer());
-        const data = Array.from(bytes);
-        try {
-          await invoke("open_attachment_file", { name: a.name, data });
-        } catch (e) {
-          /* "os error 32": a cópia anterior ainda está aberta no Excel/leitor
-             e o Windows trava o arquivo. Grava com outro nome e abre esse. */
-          if (!/os error 32|being used|sendo usado/i.test(String(e))) throw e;
-          const ponto = a.name.lastIndexOf(".");
-          const outro =
-            ponto > 0
-              ? `${a.name.slice(0, ponto)} (${Date.now() % 100000})${a.name.slice(ponto)}`
-              : `${a.name} (${Date.now() % 100000})`;
-          await invoke("open_attachment_file", { name: outro, data });
-        }
-        return;
-      }
-      /* No navegador também passa pelos bytes: abrir o endereço direto numa
-         aba nova mostrava a página crua de erro ("anexo indisponível") sem
-         dizer o que fazer, e no erro de rede não mostrava nada. Assim a falha
-         vira aviso na própria tela. A janela é aberta ANTES da espera, no
-         clique — aberta depois do `await`, o bloqueador de pop-up a barra. */
-      const janela = window.open("", "_blank");
+      const { invoke } = await import("@tauri-apps/api/core");
+      const bytes = new Uint8Array(await (await blobDoAnexo(a.dataUrl)).arrayBuffer());
+      const data = Array.from(bytes);
       try {
-        const url = URL.createObjectURL(await blobDoAnexo(a.dataUrl));
-        if (janela) janela.location.href = url;
-        else window.open(url, "_blank", "noopener,noreferrer");
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        await invoke("open_attachment_file", { name: a.name, data });
       } catch (e) {
-        janela?.close();
-        throw e;
+        /* "os error 32": a cópia anterior ainda está aberta no Excel/leitor
+           e o Windows trava o arquivo. Grava com outro nome e abre esse. */
+        if (!/os error 32|being used|sendo usado/i.test(String(e))) throw e;
+        await invoke("open_attachment_file", { name: comSufixo(a.name), data });
       }
     } catch (e) {
       avisarFalha(e);
@@ -123,18 +113,75 @@ export function openAttachment(a: { dataUrl: string; name: string }) {
   })();
 }
 
+function comSufixo(nome: string): string {
+  const ponto = nome.lastIndexOf(".");
+  const n = Date.now() % 100000;
+  return ponto > 0 ? `${nome.slice(0, ponto)} (${n})${nome.slice(ponto)}` : `${nome} (${n})`;
+}
+
+/**
+ * Baixa o anexo e AVISA onde ele foi parar (pedido do usuário, 09/10/2026).
+ *
+ * No app de mesa a 0.2.2 grava direto em Downloads pelo comando
+ * `save_attachment_file` e devolve o caminho — o aviso mostra o caminho e
+ * oferece "Mostrar na pasta". O app instalado antes da 0.2.2 não tem o
+ * comando: aí cai no "abrir no programa", de onde a pessoa salva.
+ *
+ * No navegador o download é do próprio navegador, que não conta o caminho;
+ * o aviso diz o nome e a pasta de costume.
+ */
+/** Download comum (attachment) pelo endereço do servidor — ver `?baixar` em `api/anexo.$id`. */
+function baixarPeloServidor(endereco: string) {
+  const link = document.createElement("a");
+  link.href = `${endereco}${endereco.includes("?") ? "&" : "?"}baixar=1`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 export function downloadAttachment(a: { dataUrl: string; name: string }) {
-  /* No app de mesa o "baixar" do navegador não existe: o WebView ignora o
-     link de download de um blob, e o clique não fazia nada — para PDF e
-     planilha era o único botão, então o anexo simplesmente não abria no app
-     (relato de 09/10/2026; no navegador baixava). Lá, baixar = abrir no
-     programa padrão do Windows (Excel, leitor de PDF), de onde dá para salvar. */
-  if (isTauri()) {
-    openAttachment(a);
-    return;
-  }
   void (async () => {
+    const { toast } = await import("sonner");
     try {
+      if (isTauri()) {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const data = Array.from(new Uint8Array(await (await blobDoAnexo(a.dataUrl)).arrayBuffer()));
+        let caminho: string;
+        try {
+          caminho = await invoke<string>("save_attachment_file", { name: a.name, data });
+        } catch (e) {
+          if (/not allowed|not found|unknown|denied|permiss/i.test(String(e))) {
+            /* App instalado antes da 0.2.2 (sem o comando). O download comum
+               do servidor ele entende: o WebView2 grava em Downloads e mostra
+               o próprio balão. Só o anexo recém-escolhido, que ainda não subiu
+               (data:), não tem endereço — esse abre no programa. */
+            if (!ehDataUrl(a.dataUrl)) {
+              baixarPeloServidor(a.dataUrl);
+              toast.success(`Baixando: ${a.name}`, {
+                description: "O arquivo vai para a pasta Downloads do computador.",
+                duration: 6000,
+              });
+            } else {
+              abrirNoPrograma(a);
+            }
+            return;
+          }
+          throw e;
+        }
+        const pasta = caminho.slice(
+          0,
+          Math.max(caminho.lastIndexOf("\\"), caminho.lastIndexOf("/")),
+        );
+        toast.success(`Baixado: ${caminho.slice(pasta.length + 1)}`, {
+          description: `Salvo na pasta ${pasta}`,
+          duration: 8000,
+          action: {
+            label: "Mostrar na pasta",
+            onClick: () => void invoke("show_in_folder", { path: caminho }).catch(avisarFalha),
+          },
+        });
+        return;
+      }
       const url = URL.createObjectURL(await blobDoAnexo(a.dataUrl));
       const link = document.createElement("a");
       link.href = url;
@@ -143,6 +190,10 @@ export function downloadAttachment(a: { dataUrl: string; name: string }) {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast.success(`Baixado: ${a.name}`, {
+        description: "Está na pasta de downloads do navegador (normalmente “Downloads”).",
+        duration: 6000,
+      });
     } catch (e) {
       avisarFalha(e);
     }
