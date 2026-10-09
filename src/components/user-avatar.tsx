@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
+import { assinarFotos, carimboDaFoto } from "@/lib/foto-versao";
 
 /**
  * Foto da pessoa, com as iniciais como reserva.
@@ -35,9 +36,14 @@ export function UserAvatar({
   style?: React.CSSProperties;
 }) {
   const [falhou, setFalhou] = useState(false);
+  const carimbo = useSyncExternalStore(
+    assinarFotos,
+    () => carimboDaFoto(nome),
+    () => 0,
+  );
 
-  // Pessoa diferente: tenta de novo, senão o 404 de uma gruda na próxima.
-  useEffect(() => setFalhou(false), [nome]);
+  // Pessoa diferente (ou foto nova): tenta de novo, senão o 404 de uma gruda na próxima.
+  useEffect(() => setFalhou(false), [nome, carimbo]);
 
   const temNome = nome.trim().length >= 3;
 
@@ -54,7 +60,7 @@ export function UserAvatar({
       <span>{iniciais}</span>
       {temNome && !falhou && (
         <img
-          src={`/api/public/foto/${encodeURIComponent(nome.trim())}?v=${FOTO_V}`}
+          src={`/api/public/foto/${encodeURIComponent(nome.trim())}?v=${FOTO_V}${carimbo ? `&t=${carimbo}` : ""}`}
           alt=""
           aria-hidden
           loading="lazy"

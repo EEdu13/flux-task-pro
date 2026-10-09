@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { fotoEmCache, guardarFoto } from "@/integrations/foto-cache.server";
 
 /**
  * Foto de perfil servida pelo NOSSO domínio, já reduzida.
@@ -13,6 +14,9 @@ import { createFileRoute } from "@tanstack/react-router";
  *
  * Público de propósito: a tela de login precisa da foto ANTES de autenticar,
  * e o endpoint de origem também é público.
+ *
+ * A foto que a pessoa escolhe em Configurações (`foto.functions.ts`) vem
+ * primeiro; sem ela, vale a da IAM.
  */
 
 const LADO = 192;
@@ -28,16 +32,32 @@ const TTL_MS = 6 * 3600 * 1000;
  * download e o `Jimp`. O que fica no cache é sempre a miniatura de 192px,
  * na casa dos 15 KB. */
 const TETO_BYTES = 12 * 1024 * 1024;
-const MAX_ENTRADAS = 400;
 
-type Entrada = { at: number; buf: Buffer | null; tipo: string };
-const cache = new Map<string, Entrada>();
-
-function guardar(nome: string, buf: Buffer | null, tipo: string) {
-  // Guarda também a ausência: sem isso, cada rosto sem foto viraria uma ida à
-  // IAM a cada render.
-  if (cache.size > MAX_ENTRADAS) cache.clear();
-  cache.set(nome, { at: Date.now(), buf, tipo });
+/** A foto que a própria pessoa escolheu no app, se houver. */
+async function fotoPropria(nome: string): Promise<Buffer | null> {
+  try {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("nome", sql.NVarChar, nome)
+      .query(
+        `SELECT TOP 1 pr.valor
+           FROM gestor.preferencias pr
+           JOIN gestor.perfis p ON p.pessoa_id = pr.pessoa_id
+          WHERE pr.chave = N'foto'
+            AND LTRIM(RTRIM(p.nome)) COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI`,
+      );
+    const url = (r.recordset[0] as { valor: string } | undefined)?.valor;
+    if (!url) return null;
+    const { lerDoBlob } = await import("@/integrations/blob.server");
+    const arquivo = await lerDoBlob(url);
+    return arquivo ? Buffer.from(arquivo.corpo) : null;
+  } catch (e) {
+    // Sem a foto própria, cai na da IAM — rosto antigo é melhor que nenhum.
+    console.warn("[foto] foto própria indisponível:", (e as Error)?.message);
+    return null;
+  }
 }
 
 function resposta(buf: Buffer, tipo: string): Response {
@@ -45,8 +65,11 @@ function resposta(buf: Buffer, tipo: string): Response {
     status: 200,
     headers: {
       "content-type": tipo,
-      // Privado: é o rosto de uma pessoa, não deve ficar em cache compartilhado.
-      "cache-control": "private, max-age=86400",
+      /* Privado: é o rosto de uma pessoa, não deve ficar em cache compartilhado.
+         Uma hora, e não um dia: quem troca a foto em Configurações quer que os
+         colegas a vejam no mesmo dia. O servidor guarda a miniatura em memória,
+         então a ida extra custa quase nada. */
+      "cache-control": "private, max-age=3600",
     },
   });
 }
@@ -119,7 +142,7 @@ export const Route = createFileRoute("/api/public/foto/$nome")({
         const nome = decodeURIComponent(cru).trim().slice(0, 120);
         if (!nome) return new Response("", { status: 404 });
 
-        const hit = cache.get(nome);
+        const hit = fotoEmCache(nome);
         if (hit && Date.now() - hit.at < TTL_MS) {
           return hit.buf ? resposta(hit.buf, hit.tipo) : new Response("", { status: 404 });
         }
@@ -127,35 +150,36 @@ export const Route = createFileRoute("/api/public/foto/$nome")({
         const base = (process.env.IAM_URL ?? "").replace(/\/$/, "");
         if (!base) return new Response("", { status: 404 });
 
-        let bruto: Buffer | null = null;
+        let bruto: Buffer | null = await fotoPropria(nome);
         let tipo = "image/jpeg";
-        try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 12_000);
-          const r = await fetch(`${base}/api/foto/${encodeURIComponent(nome)}`, {
-            signal: ctrl.signal,
-          });
-          clearTimeout(timer);
-          if (r.ok) {
-            const ab = await r.arrayBuffer();
-            if (ab.byteLength <= TETO_BYTES) {
-              bruto = Buffer.from(ab);
-              tipo = r.headers.get("content-type") ?? tipo;
+        if (!bruto)
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 12_000);
+            const r = await fetch(`${base}/api/foto/${encodeURIComponent(nome)}`, {
+              signal: ctrl.signal,
+            });
+            clearTimeout(timer);
+            if (r.ok) {
+              const ab = await r.arrayBuffer();
+              if (ab.byteLength <= TETO_BYTES) {
+                bruto = Buffer.from(ab);
+                tipo = r.headers.get("content-type") ?? tipo;
+              }
             }
+          } catch {
+            // Sem foto é situação normal, não erro.
           }
-        } catch {
-          // Sem foto é situação normal, não erro.
-        }
 
         if (!bruto) {
-          guardar(nome, null, tipo);
+          guardarFoto(nome, null, tipo);
           return new Response("", { status: 404 });
         }
 
         const pequena = await miniatura(bruto);
         const final = pequena?.buf ?? bruto;
         const finalTipo = pequena?.tipo ?? tipo;
-        guardar(nome, final, finalTipo);
+        guardarFoto(nome, final, finalTipo);
         return resposta(final, finalTipo);
       },
     },

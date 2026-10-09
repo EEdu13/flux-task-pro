@@ -86,7 +86,20 @@ export function openAttachment(a: { dataUrl: string; name: string }) {
       if (isTauri()) {
         const { invoke } = await import("@tauri-apps/api/core");
         const bytes = new Uint8Array(await (await blobDoAnexo(a.dataUrl)).arrayBuffer());
-        await invoke("open_attachment_file", { name: a.name, data: Array.from(bytes) });
+        const data = Array.from(bytes);
+        try {
+          await invoke("open_attachment_file", { name: a.name, data });
+        } catch (e) {
+          /* "os error 32": a cópia anterior ainda está aberta no Excel/leitor
+             e o Windows trava o arquivo. Grava com outro nome e abre esse. */
+          if (!/os error 32|being used|sendo usado/i.test(String(e))) throw e;
+          const ponto = a.name.lastIndexOf(".");
+          const outro =
+            ponto > 0
+              ? `${a.name.slice(0, ponto)} (${Date.now() % 100000})${a.name.slice(ponto)}`
+              : `${a.name} (${Date.now() % 100000})`;
+          await invoke("open_attachment_file", { name: outro, data });
+        }
         return;
       }
       /* No navegador também passa pelos bytes: abrir o endereço direto numa
@@ -111,6 +124,15 @@ export function openAttachment(a: { dataUrl: string; name: string }) {
 }
 
 export function downloadAttachment(a: { dataUrl: string; name: string }) {
+  /* No app de mesa o "baixar" do navegador não existe: o WebView ignora o
+     link de download de um blob, e o clique não fazia nada — para PDF e
+     planilha era o único botão, então o anexo simplesmente não abria no app
+     (relato de 09/10/2026; no navegador baixava). Lá, baixar = abrir no
+     programa padrão do Windows (Excel, leitor de PDF), de onde dá para salvar. */
+  if (isTauri()) {
+    openAttachment(a);
+    return;
+  }
   void (async () => {
     try {
       const url = URL.createObjectURL(await blobDoAnexo(a.dataUrl));

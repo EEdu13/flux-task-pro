@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
+  Camera,
   Check,
   Laptop,
   Loader2,
@@ -34,6 +35,8 @@ import {
 } from "@/lib/desktop";
 import { triggerTractor } from "@/components/tractor-banner";
 import { UserAvatar } from "@/components/user-avatar";
+import { fotoTrocada } from "@/lib/foto-versao";
+import { reduzirFoto } from "@/lib/foto-reduzida";
 import { formatarTelefone, mascararTelefone, telefoneParaGuardar } from "@/lib/telefone";
 import { transicionar } from "@/components/transition-veil";
 import { confirmar } from "@/components/confirm-dialog";
@@ -45,7 +48,10 @@ export const Route = createFileRoute("/configuracoes")({
   head: () => ({
     meta: [
       { title: "Configurações · SGL - CONECTA" },
-      { name: "description", content: "Ajuste seu perfil, contato, aparência e preferências do painel." },
+      {
+        name: "description",
+        content: "Ajuste seu perfil, contato, aparência e preferências do painel.",
+      },
     ],
   }),
   component: SettingsPage,
@@ -107,7 +113,9 @@ function SettingsPage() {
     const nova = { ...notif, [chave]: !notif[chave] };
     setNotif(nova);
     void import("@/lib/perfil.functions")
-      .then((m) => m.salvarPreferencia({ data: { chave: "notificacoes", valor: JSON.stringify(nova) } }))
+      .then((m) =>
+        m.salvarPreferencia({ data: { chave: "notificacoes", valor: JSON.stringify(nova) } }),
+      )
       .catch(() => {
         setNotif(notif);
         toast.error("Não foi possível salvar a preferência");
@@ -213,19 +221,11 @@ function SettingsPage() {
         >
           {tab === "perfil" && (
             <section className="rounded-lg border border-border bg-card p-6">
-              <div className="mb-4 flex items-center gap-3">
-                <UserAvatar
-                  nome={currentUser.name}
-                  iniciais={currentUser.avatar}
-                  className="h-12 w-12 text-sm"
-                />
-                <div>
-                  <div className="text-sm font-semibold">{currentUser.name}</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {roleLabels[currentUser.role]}
-                  </div>
-                </div>
-              </div>
+              <MinhaFoto
+                nome={currentUser.name}
+                iniciais={currentUser.avatar}
+                papel={roleLabels[currentUser.role]}
+              />
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Nome">
@@ -247,7 +247,9 @@ function SettingsPage() {
                     title="Definido pelo gestor — fale com ele para alterar."
                   >
                     {sectors.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
                     ))}
                   </select>
                 </Field>
@@ -325,7 +327,9 @@ function SettingsPage() {
                       // independente do que o componente pensa que está valendo.
                       onClick={() => setTheme(t)}
                       className={`flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition ${
-                        active ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+                        active
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/40"
                       }`}
                     >
                       <div
@@ -350,7 +354,8 @@ function SettingsPage() {
                   <Palette className="h-4 w-4" /> Paleta de cores
                 </h3>
                 <p className="mb-4 text-[11px] text-muted-foreground">
-                  Escolha a identidade visual do seu SGL - CONECTA. Vale para claro e escuro, e é salva neste dispositivo.
+                  Escolha a identidade visual do seu SGL - CONECTA. Vale para claro e escuro, e é
+                  salva neste dispositivo.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {paletteOptions.map((p) => {
@@ -360,7 +365,9 @@ function SettingsPage() {
                         key={p.id}
                         onClick={() => setPalette(p.id)}
                         className={`flex items-center gap-3 rounded-lg border p-4 text-left text-sm transition ${
-                          active ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:border-primary/40"
+                          active
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                            : "border-border hover:border-primary/40"
                         }`}
                       >
                         <div className="flex h-12 w-12 shrink-0 overflow-hidden rounded-md border border-border">
@@ -399,10 +406,26 @@ function SettingsPage() {
               </p>
               <ul className="divide-y divide-border">
                 {[
-                  { key: "push" as const, label: "Notificações no painel", desc: "Alertas em tempo real dentro do SGL - CONECTA." },
-                  { key: "email" as const, label: "Email", desc: currentUser.email || "Preencha o email no perfil." },
-                  { key: "whatsapp" as const, label: "WhatsApp", desc: formatarTelefone(currentUser.phone) || "Preencha o telefone no perfil." },
-                  { key: "weeklyDigest" as const, label: "Resumo semanal", desc: "Toda segunda pela manhã." },
+                  {
+                    key: "push" as const,
+                    label: "Notificações no painel",
+                    desc: "Alertas em tempo real dentro do SGL - CONECTA.",
+                  },
+                  {
+                    key: "email" as const,
+                    label: "Email",
+                    desc: currentUser.email || "Preencha o email no perfil.",
+                  },
+                  {
+                    key: "whatsapp" as const,
+                    label: "WhatsApp",
+                    desc: formatarTelefone(currentUser.phone) || "Preencha o telefone no perfil.",
+                  },
+                  {
+                    key: "weeklyDigest" as const,
+                    label: "Resumo semanal",
+                    desc: "Toda segunda pela manhã.",
+                  },
                 ].map((row) => (
                   <li key={row.key} className="flex items-center justify-between py-3">
                     <div>
@@ -464,42 +487,42 @@ function SettingsPage() {
                   </button>
                   {/* Só a gerência — o servidor também barra; ver `purgeAllRooms`. */}
                   {currentUser.role === "gerente" && (
-                  <button
-                    disabled={fechandoSalas}
-                    onClick={() =>
-                      fecharSalas(async () => {
-                        const ok = await confirmar({
-                          titulo: "Fechar todas as salas?",
-                          descricao:
-                            "Todo mundo que estiver em chamada agora será desconectado na hora, sem aviso prévio. Não dá para desfazer.",
-                          confirmar: "Fechar todas",
-                          perigo: true,
-                        });
-                        if (!ok) return;
-                        try {
-                          const r = await purgeAllRooms();
-                          const n = r.deleted.length;
-                          toast.success(
-                            n === 0
-                              ? "Nenhuma sala estava aberta"
-                              : `${n} sala${n > 1 ? "s" : ""} fechada${n > 1 ? "s" : ""}`,
-                          );
-                        } catch {
-                          toast.error("Não foi possível fechar as salas", {
-                            description: "Verifique a conexão e tente de novo.",
+                    <button
+                      disabled={fechandoSalas}
+                      onClick={() =>
+                        fecharSalas(async () => {
+                          const ok = await confirmar({
+                            titulo: "Fechar todas as salas?",
+                            descricao:
+                              "Todo mundo que estiver em chamada agora será desconectado na hora, sem aviso prévio. Não dá para desfazer.",
+                            confirmar: "Fechar todas",
+                            perigo: true,
                           });
-                        }
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {fechandoSalas ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <PowerOff className="h-3.5 w-3.5" />
-                    )}
-                    {fechandoSalas ? "Fechando…" : "Fechar todas as salas"}
-                  </button>
+                          if (!ok) return;
+                          try {
+                            const r = await purgeAllRooms();
+                            const n = r.deleted.length;
+                            toast.success(
+                              n === 0
+                                ? "Nenhuma sala estava aberta"
+                                : `${n} sala${n > 1 ? "s" : ""} fechada${n > 1 ? "s" : ""}`,
+                            );
+                          } catch {
+                            toast.error("Não foi possível fechar as salas", {
+                              description: "Verifique a conexão e tente de novo.",
+                            });
+                          }
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {fechandoSalas ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <PowerOff className="h-3.5 w-3.5" />
+                      )}
+                      {fechandoSalas ? "Fechando…" : "Fechar todas as salas"}
+                    </button>
                   )}
                   <button
                     onClick={async () => {
@@ -611,8 +634,8 @@ function AcessosEDispositivos() {
         <ShieldCheck className="h-4 w-4" /> Acessos e dispositivos
       </h3>
       <p className="mb-4 text-[11px] text-muted-foreground">
-        Quando e de onde sua conta entrou no SGL - CONECTA. Se aparecer algo que não foi você, troque a
-        senha e avise a TI.
+        Quando e de onde sua conta entrou no SGL - CONECTA. Se aparecer algo que não foi você,
+        troque a senha e avise a TI.
       </p>
 
       {carregando && <p className="text-xs text-muted-foreground">Carregando…</p>}
@@ -870,8 +893,8 @@ function TractorControl() {
     <div>
       <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">🚜 Trator da Larsil</h3>
       <p className="mb-3 text-[11px] text-muted-foreground">
-        Um trator atravessa a tela puxando uma faixa com a sua mensagem. Depois a gente
-        configura de quanto em quanto tempo ele passa sozinho.
+        Um trator atravessa a tela puxando uma faixa com a sua mensagem. Depois a gente configura de
+        quanto em quanto tempo ele passa sozinho.
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex-1 text-xs">
@@ -913,6 +936,120 @@ function TractorControl() {
           Passar o trator agora
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A foto do perfil, com "Trocar foto" e "Voltar à foto da IAM".
+ *
+ * A foto é reduzida no navegador antes de subir (1024px) e recortada em
+ * quadrado no servidor — ver `foto.functions.ts`.
+ */
+function MinhaFoto({ nome, iniciais, papel }: { nome: string; iniciais: string; papel: string }) {
+  const entrada = useRef<HTMLInputElement>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [propria, setPropria] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    import("@/lib/foto.functions")
+      .then((m) => m.tenhoFotoPropria())
+      .then((r) => vivo && setPropria(r.tem))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const escolher = async (arquivo: File | undefined) => {
+    if (!arquivo) return;
+    setEnviando(true);
+    try {
+      const reduzida = await reduzirFoto(arquivo, 1024);
+      const { trocarMinhaFoto } = await import("@/lib/foto.functions");
+      await trocarMinhaFoto({ data: { conteudo: reduzida.dataUrl } });
+      fotoTrocada(nome);
+      setPropria(true);
+      toast.success("Foto atualizada", {
+        description: "Seus colegas veem a nova foto em até 1 hora.",
+      });
+    } catch (e) {
+      toast.error("Não foi possível trocar a foto", { description: (e as Error)?.message });
+    } finally {
+      setEnviando(false);
+      if (entrada.current) entrada.current.value = "";
+    }
+  };
+
+  const remover = async () => {
+    const ok = await confirmar({
+      titulo: "Remover sua foto?",
+      descricao:
+        "Volta a aparecer a foto do cadastro da empresa (IAM), ou suas iniciais se não houver.",
+      confirmar: "Remover foto",
+      perigo: true,
+    });
+    if (!ok) return;
+    setEnviando(true);
+    try {
+      const { removerMinhaFoto } = await import("@/lib/foto.functions");
+      await removerMinhaFoto();
+      fotoTrocada(nome);
+      setPropria(false);
+      toast.success("Foto removida");
+    } catch (e) {
+      toast.error("Não foi possível remover a foto", { description: (e as Error)?.message });
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 flex items-center gap-4">
+      <button
+        type="button"
+        onClick={() => entrada.current?.click()}
+        disabled={enviando}
+        title="Trocar foto"
+        className="group relative shrink-0 rounded-full"
+      >
+        <UserAvatar nome={nome} iniciais={iniciais} className="h-16 w-16 text-base" />
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition group-hover:opacity-100">
+          {enviando ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+        </span>
+      </button>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold">{nome}</div>
+        <div className="text-[11px] text-muted-foreground">{papel}</div>
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => entrada.current?.click()}
+            disabled={enviando}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-secondary disabled:opacity-60"
+          >
+            <Camera className="h-3.5 w-3.5" /> {enviando ? "Enviando…" : "Trocar foto"}
+          </button>
+          {propria && (
+            <button
+              type="button"
+              onClick={() => void remover()}
+              disabled={enviando}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-60"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Remover foto
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        ref={entrada}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => void escolher(e.target.files?.[0])}
+      />
     </div>
   );
 }

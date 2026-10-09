@@ -1,7 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEscFecha } from "@/hooks/use-esc-fecha";
 import { useMemo, useState } from "react";
-import { Check, Flame, Send, Sparkles, Trash2, Users, Layers, ArrowLeftRight, Plus, X } from "lucide-react";
+import {
+  Check,
+  Flame,
+  Send,
+  Sparkles,
+  Trash2,
+  Users,
+  Layers,
+  ArrowLeftRight,
+  Plus,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { RECORRENCIA_DO_PACK } from "@/lib/recorrencia";
 import { confirmar } from "@/components/confirm-dialog";
@@ -9,7 +20,7 @@ import { motion } from "framer-motion";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { podeEditarModeloDePack } from "@/lib/permissoes";
+import { ehChefeDe, podeEditarModeloDePack } from "@/lib/permissoes";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import type { PackTemplateScope } from "@/lib/fluxo-types";
@@ -43,7 +54,8 @@ function parsePackLines(text: string) {
     .filter((l) => l.length > 0);
 }
 
-type Tab = "meu" | "outro" | "concluir" | "modelos";
+type Tab = "meu" | "equipe" | "outro" | "modelos";
+type FiltroEquipe = "todos" | "pendentes" | "sem" | "feitos";
 
 function PackPage() {
   const {
@@ -58,8 +70,7 @@ function PackPage() {
     applyPackTemplate,
     transferPack,
   } = useFluxo();
-  const initialMyPack = tasks.filter((t) => noPackDeHoje(t, currentUser.id));
-  const [tab, setTab] = useState<Tab>(initialMyPack.length > 0 ? "concluir" : "meu");
+  const [tab, setTab] = useState<Tab>("meu");
   const [meuText, setMeuText] = useState("");
   const [outroText, setOutroText] = useState("");
   const [targetId, setTargetId] = useState<string>("");
@@ -71,22 +82,40 @@ function PackPage() {
   );
   const pending = myPack.filter((t) => !concluidaHoje(t));
 
-  const teamPacks = useMemo(() => {
-    const map = new Map<string, typeof tasks>();
-    for (const u of users) {
-      if (u.id === currentUser.id) continue;
-      const list = tasks.filter((t) => noPackDeHoje(t, u.id));
-      if (list.length > 0) map.set(u.id, list);
-    }
-    return map;
-  }, [tasks, users, currentUser.id]);
+  /* A minha equipe: quem está abaixo de mim no organograma, em qualquer nível
+     — a mesma regra do Delegar e da Equipe. A gerência pode abrir a empresa
+     toda pelo filtro. Pedido do usuário, 09/10/2026: ver o pack do time. */
+  const isGerente = currentUser.role === "gerente";
+  const [empresaToda, setEmpresaToda] = useState(false);
+  const equipe = useMemo(
+    () =>
+      users
+        .filter((u) => u.id !== currentUser.id)
+        .filter((u) => (isGerente && empresaToda) || ehChefeDe(currentUser, users, u.id))
+        .sort((x, y) => x.name.localeCompare(y.name, "pt-BR")),
+    [users, currentUser, isGerente, empresaToda],
+  );
+  const temEquipe = isGerente || users.some((u) => ehChefeDe(currentUser, users, u.id));
+
+  /* Para quem dá para montar pack: a minha equipe (a gerência, todo mundo).
+     Mandar trabalho para outra área continua possível pela própria tarefa. */
+  const paraQuem = useMemo(
+    () =>
+      users
+        .filter((u) => u.id !== currentUser.id)
+        .filter((u) => isGerente || ehChefeDe(currentUser, users, u.id))
+        .sort((x, y) => x.name.localeCompare(y.name, "pt-BR")),
+    [users, currentUser, isGerente],
+  );
 
   const targetUser = users.find((u) => u.id === targetId);
   const targetPack = useMemo(
     () => (targetId ? tasks.filter((t) => noPackDeHoje(t, targetId)) : []),
     [tasks, targetId],
   );
-  const [lastSent, setLastSent] = useState<{ to: string; items: string[]; at: number } | null>(null);
+  const [lastSent, setLastSent] = useState<{ to: string; items: string[]; at: number } | null>(
+    null,
+  );
 
   const submit = (assigneeId: string, text: string, clear: () => void) => {
     const lines = parsePackLines(text);
@@ -116,10 +145,13 @@ function PackPage() {
     });
     clear();
     if (assigneeId === currentUser.id) {
-      toast.success(`Adicionado ao seu pack (${lines.length} ${lines.length === 1 ? "item" : "itens"})`);
-      setTab("concluir");
+      toast.success(
+        `Adicionado ao seu pack (${lines.length} ${lines.length === 1 ? "item" : "itens"})`,
+      );
     } else {
-      toast.success(`Pack enviado para ${target?.name?.split(" ")[0] ?? "a pessoa"} (${lines.length})`);
+      toast.success(
+        `Pack enviado para ${target?.name?.split(" ")[0] ?? "a pessoa"} (${lines.length})`,
+      );
       setLastSent({ to: assigneeId, items: lines, at: Date.now() });
     }
   };
@@ -132,6 +164,23 @@ function PackPage() {
   const meuCount = parsePackLines(meuText).length;
   const outroCount = parsePackLines(outroText).length;
 
+  /** Abre "Montar para alguém" já com a pessoa escolhida. */
+  const montarPara = (id: string) => {
+    setTargetId(id);
+    setTab("outro");
+  };
+
+  const abas = [
+    {
+      id: "meu" as const,
+      label: `Meu pack (${myPack.length - pending.length}/${myPack.length})`,
+      icon: Flame,
+    },
+    ...(temEquipe ? [{ id: "equipe" as const, label: "Pack da equipe", icon: Users }] : []),
+    { id: "outro" as const, label: "Montar para alguém", icon: Send },
+    { id: "modelos" as const, label: "Modelos & transferência", icon: Layers },
+  ];
+
   return (
     <FluxoLayout title="Pack diário" breadcrumb="Rotinas">
       <div className="mx-auto flex w-full max-w-[2200px] flex-col gap-6 py-2">
@@ -143,20 +192,14 @@ function PackPage() {
             <div>
               <h1 className="text-lg font-semibold">Pack diário</h1>
               <p className="text-xs text-muted-foreground">
-                Compromissos rápidos para o dia. Ideal para supervisores e PCP montarem a rotina do time em segundos.
+                Compromissos rápidos para o dia. Ideal para supervisores e PCP montarem a rotina do
+                time em segundos.
               </p>
             </div>
           </div>
 
           <nav className="mt-2 flex gap-1 rounded-lg bg-secondary p-1 text-xs font-semibold">
-            {(
-              [
-                { id: "meu" as const, label: "Criar meu pack", icon: Sparkles },
-                { id: "outro" as const, label: "Criar pack para alguém", icon: Send },
-                { id: "concluir" as const, label: `Concluir hoje (${pending.length}/${myPack.length})`, icon: Check },
-                { id: "modelos" as const, label: "Modelos & transferência", icon: Layers },
-              ]
-            ).map((t) => {
+            {abas.map((t) => {
               const active = tab === t.id;
               return (
                 <button
@@ -183,48 +226,156 @@ function PackPage() {
         </header>
 
         {tab === "meu" && (
-          <section className="rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Meu pack de hoje</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Uma linha por tarefa. Tudo entra como prioridade média e vence hoje.
-            </p>
-            <textarea
-              autoFocus
-              value={meuText}
-              onChange={(e) => setMeuText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(currentUser.id, meuText, () => setMeuText(""));
-              }}
-              placeholder={"Ex:\nResponder e-mails prioritários\nRevisar proposta ACME\nLigar para fornecedor X"}
-              rows={10}
-              className="mt-3 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-            />
-            <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{meuCount} {meuCount === 1 ? "item" : "itens"} · ⌘/Ctrl+Enter envia</span>
-              <button
-                onClick={() => submit(currentUser.id, meuText, () => setMeuText(""))}
-                className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
-              >
-                Adicionar ao meu pack
-              </button>
-            </div>
-          </section>
+          /* "Criar" e "Concluir" eram duas abas para a mesma lista: agora o dia
+             fica à esquerda e a caixa de acrescentar, ao lado. */
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+            <section className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Meu pack de hoje</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Marque o que já foi feito. O que você concluir hoje fica riscado até amanhã.
+                  </p>
+                </div>
+                {myPack.length > 0 && (
+                  <Progresso feitos={myPack.length - pending.length} total={myPack.length} />
+                )}
+              </div>
+              {myPack.length === 0 ? (
+                <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-10 text-center text-xs text-muted-foreground">
+                  Nenhum item no seu pack de hoje. Escreva ao lado, uma linha por tarefa.
+                </div>
+              ) : (
+                <>
+                  <ul className="mt-3 space-y-1">
+                    {myPack.map((t) => {
+                      const done = concluidaHoje(t);
+                      return (
+                        <li key={t.id}>
+                          <div
+                            className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                              done
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-muted-foreground"
+                                : "border-border hover:bg-secondary"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => concluir(t.id)}
+                              disabled={done}
+                              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border disabled:cursor-default ${
+                                done
+                                  ? "border-emerald-500 bg-emerald-500 text-white"
+                                  : "border-border bg-background"
+                              }`}
+                              title={done ? "Concluída hoje" : "Concluir"}
+                            >
+                              {done && <Check className="h-3 w-3" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => concluir(t.id)}
+                              disabled={done}
+                              className={`flex-1 text-left disabled:cursor-default ${done ? "line-through" : ""}`}
+                            >
+                              {t.title}
+                            </button>
+                            {done ? (
+                              <span className="shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                Concluída hoje
+                              </span>
+                            ) : (
+                              <TaskTimerControls
+                                taskId={t.id}
+                                estimatedMinutes={t.estimatedMinutes}
+                              />
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {pending.length > 0 && (
+                    <div className="mt-3 flex justify-end text-[11px]">
+                      <button
+                        onClick={() => {
+                          pending.forEach((t) => concluir(t.id));
+                          toast.success("Pack concluído — bom trabalho!");
+                        }}
+                        className="font-semibold text-primary hover:underline"
+                      >
+                        Marcar tudo como feito
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+
+            <section className="h-fit rounded-xl border border-border bg-card p-4">
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+                <Sparkles className="h-3.5 w-3.5" /> Acrescentar ao meu pack
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Uma linha por tarefa. Tudo entra como prioridade média e vence hoje.
+              </p>
+              <textarea
+                autoFocus
+                value={meuText}
+                onChange={(e) => setMeuText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                    submit(currentUser.id, meuText, () => setMeuText(""));
+                }}
+                placeholder={
+                  "Ex:\nResponder e-mails prioritários\nRevisar proposta ACME\nLigar para fornecedor X"
+                }
+                rows={7}
+                className="mt-3 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>
+                  {meuCount} {meuCount === 1 ? "item" : "itens"} · Ctrl+Enter envia
+                </span>
+                <button
+                  onClick={() => submit(currentUser.id, meuText, () => setMeuText(""))}
+                  className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
+                >
+                  Adicionar
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {tab === "equipe" && (
+          <PackDaEquipe
+            equipe={equipe}
+            tasks={tasks}
+            isGerente={isGerente}
+            empresaToda={empresaToda}
+            setEmpresaToda={setEmpresaToda}
+            montarPara={montarPara}
+          />
         )}
 
         {tab === "outro" && (
           <section className="rounded-xl border border-border bg-card p-4">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-              <Users className="h-3.5 w-3.5" /> Montar pack para alguém do time
+              <Users className="h-3.5 w-3.5" /> Montar pack para alguém da equipe
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Escolha a pessoa e cole a rotina do dia. Ela recebe tudo já no pack, com menção.
             </p>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-[220px_1fr]">
-              <div className="flex max-h-[420px] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-background p-2">
-                {users
-                  .filter((u) => u.id !== currentUser.id)
-                  .map((u) => {
+            {paraQuem.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
+                Ninguém responde a você no organograma — não há para quem montar pack.
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-3 md:grid-cols-[240px_1fr]">
+                <div className="flex max-h-[420px] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-background p-2">
+                  {paraQuem.map((u) => {
                     const active = targetId === u.id;
                     const count = tasks.filter((t) => noPackDeHoje(t, u.id)).length;
                     return (
@@ -254,202 +405,89 @@ function PackPage() {
                       </button>
                     );
                   })}
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {targetUser && (
-                  <div className="rounded-lg border border-border bg-background p-3">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar
-                        nome={targetUser.name}
-                        iniciais={targetUser.avatar}
-                        className="h-8 w-8 text-[11px]"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-semibold">
-                          Pack de {targetUser.name.split(" ")[0]} hoje
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {targetPack.length === 0
-                            ? "Nenhum item ainda — você vai ser o primeiro"
-                            : `${targetPack.length} ${targetPack.length === 1 ? "item já enviado" : "itens já enviados"}`}
-                        </div>
-                      </div>
-                      {lastSent && lastSent.to === targetId && Date.now() - lastSent.at < 8000 && (
-                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
-                          ✓ enviado agora
-                        </span>
-                      )}
-                    </div>
-                    {targetPack.length > 0 && (
-                      <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto">
-                        {targetPack.map((t) => {
-                          const isNew =
-                            lastSent && lastSent.to === targetId && lastSent.items.includes(t.title);
-                          return (
-                            <li
-                              key={t.id}
-                              className={`truncate text-[11px] ${
-                                isNew ? "font-semibold text-emerald-500" : "text-muted-foreground"
-                              }`}
-                            >
-                              {isNew ? "✓" : "•"} {t.title}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
-                <textarea
-                  value={outroText}
-                  onChange={(e) => setOutroText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && targetId)
-                      submit(targetId, outroText, () => setOutroText(""));
-                  }}
-                  placeholder={
-                    targetId
-                      ? "Ex:\nFechar caixa do dia\nEnviar relatório semanal\nConfirmar reuniões de amanhã"
-                      : "Escolha uma pessoa ao lado para começar…"
-                  }
-                  disabled={!targetId}
-                  rows={9}
-                  className="w-full flex-1 resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-60"
-                />
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>
-                    {outroCount} {outroCount === 1 ? "item" : "itens"} · ⌘/Ctrl+Enter envia
-                  </span>
-                  <button
-                    onClick={() => targetId && submit(targetId, outroText, () => setOutroText(""))}
-                    disabled={!targetId}
-                    className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
-                  >
-                    {targetUser ? `Enviar para ${targetUser.name.split(" ")[0]}` : "Enviar pack"}
-                  </button>
                 </div>
-              </div>
-            </div>
 
-            {teamPacks.size > 0 && (
-              <div className="mt-6">
-                <h3 className="text-xs font-semibold text-muted-foreground">Packs ativos do time hoje</h3>
-                <ul className="mt-2 grid gap-2 md:grid-cols-2">
-                  {Array.from(teamPacks.entries()).map(([uid, list]) => {
-                    const u = users.find((x) => x.id === uid);
-                    if (!u) return null;
-                    return (
-                      <li key={uid} className="rounded-lg border border-border bg-background p-3">
-                        <div className="flex items-center gap-2">
-                          <UserAvatar
-                            nome={u.name}
-                            iniciais={u.avatar}
-                            className="h-7 w-7 text-[10px]"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-xs font-semibold">{u.name}</div>
-                            <div className="truncate text-[10px] text-muted-foreground">
-                              {list.length} {list.length === 1 ? "item" : "itens"}
-                            </div>
+                <div className="flex flex-col gap-3">
+                  {targetUser && (
+                    <div className="rounded-lg border border-border bg-background p-3">
+                      <div className="flex items-center gap-2">
+                        <UserAvatar
+                          nome={targetUser.name}
+                          iniciais={targetUser.avatar}
+                          className="h-8 w-8 text-[11px]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-xs font-semibold">
+                            Pack de {targetUser.name.split(" ")[0]} hoje
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {targetPack.length === 0
+                              ? "Nenhum item ainda — você vai ser o primeiro"
+                              : `${targetPack.length} ${targetPack.length === 1 ? "item já enviado" : "itens já enviados"}`}
                           </div>
                         </div>
-                        <ul className="mt-2 space-y-0.5">
-                          {list.slice(0, 4).map((t) => (
-                            <li key={t.id} className="truncate text-[11px] text-muted-foreground">
-                              • {t.title}
-                            </li>
-                          ))}
-                          {list.length > 4 && (
-                            <li className="text-[10px] text-muted-foreground">+{list.length - 4} outros</li>
-                          )}
-                        </ul>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
-
-        {tab === "concluir" && (
-          <section className="rounded-xl border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">Concluir meu pack de hoje</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Marque o que já foi feito. O que você concluir hoje fica riscado até amanhã.
-            </p>
-            {myPack.length === 0 ? (
-              <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
-                Você ainda não tem itens no pack de hoje. Abra a aba <b>Criar meu pack</b>.
-              </div>
-            ) : (
-              <>
-                <ul className="mt-3 space-y-1">
-                  {myPack.map((t) => {
-                    const done = concluidaHoje(t);
-                    return (
-                      <li key={t.id}>
-                        <div
-                          className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
-                            done
-                              ? "border-emerald-500/40 bg-emerald-500/10 text-muted-foreground"
-                              : "border-border hover:bg-secondary"
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => concluir(t.id)}
-                            disabled={done}
-                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border disabled:cursor-default ${
-                              done
-                                ? "border-emerald-500 bg-emerald-500 text-white"
-                                : "border-border bg-background"
-                            }`}
-                            title={done ? "Concluída hoje" : "Concluir"}
-                          >
-                            {done && <Check className="h-3 w-3" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => concluir(t.id)}
-                            disabled={done}
-                            className={`flex-1 text-left disabled:cursor-default ${done ? "line-through" : ""}`}
-                          >
-                            {t.title}
-                          </button>
-                          {done ? (
-                            <span className="shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                              Concluída hoje
+                        {lastSent &&
+                          lastSent.to === targetId &&
+                          Date.now() - lastSent.at < 8000 && (
+                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
+                              ✓ enviado agora
                             </span>
-                          ) : (
-                            <TaskTimerControls
-                              taskId={t.id}
-                              estimatedMinutes={t.estimatedMinutes}
-                            />
                           )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>
-                    {myPack.length - pending.length}/{myPack.length} feitos
-                  </span>
-                  {pending.length > 0 && (
-                    <button
-                      onClick={() => {
-                        pending.forEach((t) => concluir(t.id));
-                        toast.success("Pack concluído — bom trabalho!");
-                      }}
-                      className="font-semibold text-primary hover:underline"
-                    >
-                      Marcar tudo
-                    </button>
+                      </div>
+                      {targetPack.length > 0 && (
+                        <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto">
+                          {targetPack.map((t) => {
+                            const isNew =
+                              lastSent &&
+                              lastSent.to === targetId &&
+                              lastSent.items.includes(t.title);
+                            return (
+                              <li
+                                key={t.id}
+                                className={`truncate text-[11px] ${
+                                  isNew ? "font-semibold text-emerald-500" : "text-muted-foreground"
+                                }`}
+                              >
+                                {isNew ? "✓" : "•"} {t.title}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
                   )}
+                  <textarea
+                    value={outroText}
+                    onChange={(e) => setOutroText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && targetId)
+                        submit(targetId, outroText, () => setOutroText(""));
+                    }}
+                    placeholder={
+                      targetId
+                        ? "Ex:\nFechar caixa do dia\nEnviar relatório semanal\nConfirmar reuniões de amanhã"
+                        : "Escolha uma pessoa ao lado para começar…"
+                    }
+                    disabled={!targetId}
+                    rows={9}
+                    className="w-full flex-1 resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-60"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>
+                      {outroCount} {outroCount === 1 ? "item" : "itens"} · Ctrl+Enter envia
+                    </span>
+                    <button
+                      onClick={() =>
+                        targetId && submit(targetId, outroText, () => setOutroText(""))
+                      }
+                      disabled={!targetId}
+                      className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+                    >
+                      {targetUser ? `Enviar para ${targetUser.name.split(" ")[0]}` : "Enviar pack"}
+                    </button>
+                  </div>
                 </div>
-              </>
+              </div>
             )}
           </section>
         )}
@@ -468,6 +506,224 @@ function PackPage() {
         )}
       </div>
     </FluxoLayout>
+  );
+}
+
+/** "3/5" com uma barrinha — verde quando completa. */
+function Progresso({ feitos, total }: { feitos: number; total: number }) {
+  const pct = total ? Math.round((feitos / total) * 100) : 0;
+  const completo = total > 0 && feitos === total;
+  return (
+    <div className="flex shrink-0 items-center gap-2" title={`${pct}% concluído`}>
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-secondary">
+        <div
+          className={`h-full rounded-full transition-all ${completo ? "bg-emerald-500" : "bg-amber-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span
+        className={`text-[11px] font-semibold ${
+          completo ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+        }`}
+      >
+        {feitos}/{total}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * O pack de hoje de cada pessoa da equipe: quanto já foi feito, o que falta e
+ * quem está sem pack. Só leitura — concluir é com a própria pessoa; para
+ * acrescentar itens, o botão leva à aba de montar já com ela escolhida.
+ */
+function PackDaEquipe({
+  equipe,
+  tasks,
+  isGerente,
+  empresaToda,
+  setEmpresaToda,
+  montarPara,
+}: {
+  equipe: ReturnType<typeof useFluxo>["users"];
+  tasks: ReturnType<typeof useFluxo>["tasks"];
+  isGerente: boolean;
+  empresaToda: boolean;
+  setEmpresaToda: (v: boolean) => void;
+  montarPara: (id: string) => void;
+}) {
+  const [filtro, setFiltro] = useState<FiltroEquipe>("todos");
+  const [busca, setBusca] = useState("");
+
+  const linhas = useMemo(
+    () =>
+      equipe.map((u) => {
+        const pack = tasks.filter((t) => noPackDeHoje(t, u.id));
+        const feitos = pack.filter((t) => concluidaHoje(t)).length;
+        return { u, pack, feitos };
+      }),
+    [equipe, tasks],
+  );
+  type Linha = (typeof linhas)[number];
+  const situacao = (l: Linha): FiltroEquipe =>
+    l.pack.length === 0 ? "sem" : l.feitos < l.pack.length ? "pendentes" : "feitos";
+
+  const conta: Record<FiltroEquipe, number> = {
+    todos: linhas.length,
+    pendentes: linhas.filter((l) => situacao(l) === "pendentes").length,
+    sem: linhas.filter((l) => situacao(l) === "sem").length,
+    feitos: linhas.filter((l) => situacao(l) === "feitos").length,
+  };
+  const totalItens = linhas.reduce((n, l) => n + l.pack.length, 0);
+  const totalFeitos = linhas.reduce((n, l) => n + l.feitos, 0);
+
+  const termo = busca.trim().toLowerCase();
+  // Quem tem pendência primeiro, depois quem está sem pack, por último quem terminou.
+  const ORDEM: Record<FiltroEquipe, number> = { pendentes: 0, sem: 1, feitos: 2, todos: 3 };
+  const visiveis = linhas
+    .filter(
+      (l) =>
+        !termo ||
+        l.u.name.toLowerCase().includes(termo) ||
+        (l.u.jobTitle ?? "").toLowerCase().includes(termo),
+    )
+    .filter((l) => filtro === "todos" || situacao(l) === filtro)
+    .sort(
+      (a, b) =>
+        ORDEM[situacao(a)] - ORDEM[situacao(b)] || a.u.name.localeCompare(b.u.name, "pt-BR"),
+    );
+
+  const FILTROS: { id: FiltroEquipe; label: string }[] = [
+    { id: "todos", label: "Todos" },
+    { id: "pendentes", label: "Com pendência" },
+    { id: "sem", label: "Sem pack hoje" },
+    { id: "feitos", label: "Concluíram" },
+  ];
+
+  return (
+    <section className="flex flex-col gap-4">
+      {/* Resumo do time */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Itens do time hoje
+          </div>
+          <div className="mt-1 flex items-end justify-between gap-2">
+            <span className="text-2xl font-bold">
+              {totalFeitos}
+              <span className="text-base font-semibold text-muted-foreground">/{totalItens}</span>
+            </span>
+            {totalItens > 0 && <Progresso feitos={totalFeitos} total={totalItens} />}
+          </div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Com pendência
+          </div>
+          <div className="mt-1 text-2xl font-bold text-amber-500">{conta.pendentes}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Sem pack hoje
+          </div>
+          <div className="mt-1 text-2xl font-bold text-muted-foreground">{conta.sem}</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-2">
+        {FILTROS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => setFiltro(f.id)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              filtro === f.id
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border hover:border-primary/50"
+            }`}
+          >
+            {f.label} ({conta[f.id]})
+          </button>
+        ))}
+        {isGerente && (
+          <button
+            onClick={() => setEmpresaToda(!empresaToda)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              empresaToda
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:border-primary/50"
+            }`}
+            title="A gerência pode ver o pack de todo mundo"
+          >
+            {empresaToda ? "Empresa toda" : "Só minha equipe"}
+          </button>
+        )}
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar pessoa…"
+          className="ml-auto w-48 rounded-md border border-border bg-background px-3 py-1.5 text-xs outline-none focus:border-primary"
+        />
+      </div>
+
+      {visiveis.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-xs text-muted-foreground">
+          {equipe.length === 0
+            ? "Ninguém responde a você no organograma."
+            : "Ninguém neste filtro."}
+        </div>
+      ) : (
+        <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+          {visiveis.map(({ u, pack, feitos }) => (
+            <li key={u.id} className="flex flex-col rounded-xl border border-border bg-card p-3">
+              <div className="flex items-center gap-2">
+                <UserAvatar nome={u.name} iniciais={u.avatar} className="h-9 w-9 text-[11px]" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-semibold">{u.name}</div>
+                  <div className="truncate text-[10px] text-muted-foreground">{u.jobTitle}</div>
+                </div>
+                {pack.length > 0 ? (
+                  <Progresso feitos={feitos} total={pack.length} />
+                ) : (
+                  <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                    Sem pack
+                  </span>
+                )}
+              </div>
+              {pack.length > 0 && (
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+                  {pack.map((t) => {
+                    const done = concluidaHoje(t);
+                    return (
+                      <li key={t.id} className="flex items-center gap-2 text-[12px]">
+                        <span
+                          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                            done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border"
+                          }`}
+                        >
+                          {done && <Check className="h-2.5 w-2.5" />}
+                        </span>
+                        <span
+                          className={`truncate ${done ? "text-muted-foreground line-through" : ""}`}
+                        >
+                          {t.title}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <button
+                onClick={() => montarPara(u.id)}
+                className="mt-3 inline-flex items-center justify-center gap-1 self-start rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <Plus className="h-3 w-3" /> {pack.length ? "Acrescentar itens" : "Montar pack"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -618,7 +874,9 @@ function ModelosSection({
                     key={s}
                     onClick={() => setDraft((d) => ({ ...d, scope: s }))}
                     className={`flex-1 rounded-md px-2 py-1 transition ${
-                      draft.scope === s ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+                      draft.scope === s
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground"
                     }`}
                   >
                     {s === "cargo" ? "Para um cargo" : "Para uma pessoa"}
@@ -734,9 +992,7 @@ function ModelosSection({
                 onClick={() => {
                   setApplyOpen({ templateId: tpl.id });
                   setApplyTargetId(
-                    tpl.scope === "pessoa" && tpl.targetUserId
-                      ? tpl.targetUserId
-                      : currentUserId,
+                    tpl.scope === "pessoa" && tpl.targetUserId ? tpl.targetUserId : currentUserId,
                   );
                 }}
                 className="mt-2 w-full rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20"

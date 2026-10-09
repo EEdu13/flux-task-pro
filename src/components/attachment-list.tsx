@@ -26,21 +26,28 @@ export function AttachmentList({
               className="shrink-0"
               title="Abrir imagem"
             >
-              <img
-                src={a.dataUrl}
-                alt={a.name}
-                className="h-10 w-10 rounded object-cover"
-              />
+              <img src={a.dataUrl} alt={a.name} className="h-10 w-10 rounded object-cover" />
             </button>
           ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-secondary">
+            <button
+              type="button"
+              onClick={() => openAttachment(a)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-secondary hover:bg-secondary/70"
+              title="Abrir arquivo"
+            >
               <FileText className="h-4 w-4 text-muted-foreground" />
-            </div>
+            </button>
           )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-medium">{a.name}</div>
+          {/* O nome também abre: antes, PDF e planilha só tinham o "baixar". */}
+          <button
+            type="button"
+            onClick={() => openAttachment(a)}
+            className="min-w-0 flex-1 text-left"
+            title="Abrir"
+          >
+            <div className="truncate font-medium hover:underline">{a.name}</div>
             <div className="text-[10px] text-muted-foreground">{formatBytes(a.size)}</div>
-          </div>
+          </button>
           <button
             type="button"
             onClick={() => downloadAttachment(a)}
