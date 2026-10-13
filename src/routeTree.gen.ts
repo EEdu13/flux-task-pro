@@ -31,6 +31,7 @@ import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomN
 import { Route as SalasIndexRouteImport } from './routes/salas.index'
 import { Route as SalasRoomNameRouteImport } from './routes/salas.$roomName'
 import { Route as ApiAnexoIdRouteImport } from './routes/api/anexo.$id'
+import { Route as ApiPresencasIdRouteImport } from './routes/api/presencas.$id'
 import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/purge-rooms'
 import { Route as ApiPublicTelegramDiarioRouteImport } from './routes/api/public/telegram-diario'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram-webhook'
@@ -149,6 +150,11 @@ const ApiAnexoIdRoute = ApiAnexoIdRouteImport.update({
   path: '/api/anexo/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPresencasIdRoute = ApiPresencasIdRouteImport.update({
+  id: '/api/presencas/$id',
+  path: '/api/presencas/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicPurgeRoomsRoute = ApiPublicPurgeRoomsRouteImport.update({
   id: '/api/public/purge-rooms',
   path: '/api/public/purge-rooms',
@@ -211,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/anexo/$id': typeof ApiAnexoIdRoute
+  '/api/presencas/$id': typeof ApiPresencasIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
@@ -242,6 +249,7 @@ export interface FileRoutesByTo {
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas': typeof SalasIndexRoute
   '/api/anexo/$id': typeof ApiAnexoIdRoute
+  '/api/presencas/$id': typeof ApiPresencasIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
@@ -274,6 +282,7 @@ export interface FileRoutesById {
   '/salas/$roomName': typeof SalasRoomNameRoute
   '/salas/': typeof SalasIndexRoute
   '/api/anexo/$id': typeof ApiAnexoIdRoute
+  '/api/presencas/$id': typeof ApiPresencasIdRoute
   '/api/public/purge-rooms': typeof ApiPublicPurgeRoomsRoute
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
@@ -307,6 +316,7 @@ export interface FileRouteTypes {
     | '/salas/$roomName'
     | '/salas/'
     | '/api/anexo/$id'
+    | '/api/presencas/$id'
     | '/api/public/purge-rooms'
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
@@ -338,6 +348,7 @@ export interface FileRouteTypes {
     | '/salas/$roomName'
     | '/salas'
     | '/api/anexo/$id'
+    | '/api/presencas/$id'
     | '/api/public/purge-rooms'
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '/salas/$roomName'
     | '/salas/'
     | '/api/anexo/$id'
+    | '/api/presencas/$id'
     | '/api/public/purge-rooms'
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
@@ -401,6 +413,7 @@ export interface RootRouteChildren {
   SalasRoomNameRoute: typeof SalasRoomNameRoute
   SalasIndexRoute: typeof SalasIndexRoute
   ApiAnexoIdRoute: typeof ApiAnexoIdRoute
+  ApiPresencasIdRoute: typeof ApiPresencasIdRoute
   ApiPublicPurgeRoomsRoute: typeof ApiPublicPurgeRoomsRoute
   ApiPublicTelegramDiarioRoute: typeof ApiPublicTelegramDiarioRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
@@ -566,6 +579,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAnexoIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/presencas/$id': {
+      id: '/api/presencas/$id'
+      path: '/api/presencas/$id'
+      fullPath: '/api/presencas/$id'
+      preLoaderRoute: typeof ApiPresencasIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/purge-rooms': {
       id: '/api/public/purge-rooms'
       path: '/api/public/purge-rooms'
@@ -641,6 +661,7 @@ const rootRouteChildren: RootRouteChildren = {
   SalasRoomNameRoute: SalasRoomNameRoute,
   SalasIndexRoute: SalasIndexRoute,
   ApiAnexoIdRoute: ApiAnexoIdRoute,
+  ApiPresencasIdRoute: ApiPresencasIdRoute,
   ApiPublicPurgeRoomsRoute: ApiPublicPurgeRoomsRoute,
   ApiPublicTelegramDiarioRoute: ApiPublicTelegramDiarioRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,

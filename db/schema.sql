@@ -1,4 +1,4 @@
--- Schema `gestor` do SGL - CONECTA (flux-task-pro), gerado do banco em 2026-10-08.
+-- Schema `gestor` do SGL - CONECTA (flux-task-pro), gerado do banco em 2026-10-13.
 -- Fonte da verdade do que existe no Azure SQL. Ao criar ou alterar uma tabela,
 -- atualize este arquivo junto (scripts/exportar-schema.mjs gera de novo).
 -- Só o schema `gestor` — as tabelas `dbo.*` e `iam.*` são de outros sistemas.
@@ -409,6 +409,32 @@ CREATE TABLE gestor.registros_de_acesso (
 );
 CREATE NONCLUSTERED INDEX IX_acesso_falhas ON gestor.registros_de_acesso (em DESC) INCLUDE (pessoa_id, ip) WHERE ([sucesso]=(0));
 CREATE NONCLUSTERED INDEX IX_acesso_pessoa ON gestor.registros_de_acesso (pessoa_id, em DESC);
+
+CREATE TABLE gestor.reuniao_presencas (
+  id UNIQUEIDENTIFIER NOT NULL CONSTRAINT DF_reuniao_presencas_id DEFAULT (newsequentialid()),
+  reuniao_id UNIQUEIDENTIFIER NOT NULL,
+  identidade NVARCHAR(120) NOT NULL,
+  pessoa_id INT NULL,
+  nome NVARCHAR(160) NOT NULL,
+  convidado BIT NOT NULL CONSTRAINT DF_reuniao_presencas_conv DEFAULT ((0)),
+  entrou_em DATETIMEOFFSET(3) NOT NULL CONSTRAINT DF_reuniao_presencas_entrou DEFAULT (sysdatetimeoffset()),
+  ultimo_sinal DATETIMEOFFSET(3) NOT NULL CONSTRAINT DF_reuniao_presencas_sinal DEFAULT (sysdatetimeoffset()),
+  CONSTRAINT PK_gestor_reuniao_presencas PRIMARY KEY CLUSTERED (id),
+  CONSTRAINT FK_reuniao_presencas_reuniao FOREIGN KEY (reuniao_id) REFERENCES gestor.reunioes(id) ON DELETE CASCADE
+);
+CREATE NONCLUSTERED INDEX IX_reuniao_presencas_reuniao ON gestor.reuniao_presencas (reuniao_id, identidade, ultimo_sinal DESC);
+
+CREATE TABLE gestor.reunioes (
+  id UNIQUEIDENTIFIER NOT NULL CONSTRAINT DF_reunioes_id DEFAULT (newsequentialid()),
+  sala NVARCHAR(80) NOT NULL,
+  titulo_da_sala NVARCHAR(120) NULL,
+  criada_por INT NOT NULL,
+  inicio DATETIMEOFFSET(3) NOT NULL CONSTRAINT DF_reunioes_inicio DEFAULT (sysdatetimeoffset()),
+  ultimo_sinal DATETIMEOFFSET(3) NOT NULL CONSTRAINT DF_reunioes_sinal DEFAULT (sysdatetimeoffset()),
+  CONSTRAINT PK_gestor_reunioes PRIMARY KEY CLUSTERED (id)
+);
+CREATE NONCLUSTERED INDEX IX_reunioes_criador ON gestor.reunioes (criada_por, inicio DESC);
+CREATE NONCLUSTERED INDEX IX_reunioes_sala_sinal ON gestor.reunioes (sala, ultimo_sinal DESC);
 
 CREATE TABLE gestor.sala_participantes (
   sala NVARCHAR(80) NOT NULL,

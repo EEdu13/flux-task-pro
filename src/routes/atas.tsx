@@ -16,6 +16,7 @@ import { useFluxo } from "@/lib/fluxo-store";
 import type { MeetingMinute, MinuteTopic } from "@/lib/fluxo-types";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
+import { PresencasDasReunioes } from "@/components/presencas-reuniao";
 
 export const Route = createFileRoute("/atas")({
   component: AtasPage,
@@ -49,6 +50,9 @@ function AtasPage() {
   const minutes = visibleMinutes();
   const [selectedId, setSelectedId] = useState<string | null>(minutes[0]?.id ?? null);
   const [q, setQ] = useState("");
+  /* "Presenças" (10/10/2026): o relatório de quem participou de cada reunião
+     que você abriu — o mesmo lugar das atas, que é onde a reunião "fica". */
+  const [aba, setAba] = useState<"atas" | "presencas">("atas");
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -61,108 +65,129 @@ function AtasPage() {
     );
   }, [minutes, q]);
 
-  const selected =
-    filtered.find((m) => m.id === selectedId) ?? filtered[0] ?? null;
+  const selected = filtered.find((m) => m.id === selectedId) ?? filtered[0] ?? null;
 
   return (
-    <FluxoLayout
-      title="Atas & Planos"
-      breadcrumb="Reuniões / Atas geradas por IA"
-    >
-      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
-        {/* List */}
-        <div className="flex flex-col rounded-xl border border-border bg-card">
-          <div className="border-b border-border p-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar por sala, participante ou conteúdo…"
-                className="w-full rounded-md border border-border bg-background py-2 pl-8 pr-2 text-sm outline-none focus:border-primary"
-              />
+    <FluxoLayout title="Atas & Planos" breadcrumb="Reuniões / Atas geradas por IA">
+      <div className="mb-4 inline-flex gap-1 rounded-lg bg-secondary p-1 text-xs font-semibold">
+        {(
+          [
+            { id: "atas", rotulo: "Atas", Icone: FileText },
+            { id: "presencas", rotulo: "Presenças", Icone: UsersIcon },
+          ] as const
+        ).map(({ id, rotulo, Icone }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setAba(id)}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+              aba === id
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icone className="h-3.5 w-3.5" /> {rotulo}
+          </button>
+        ))}
+      </div>
+      {aba === "presencas" ? (
+        <PresencasDasReunioes />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+          {/* List */}
+          <div className="flex flex-col rounded-xl border border-border bg-card">
+            <div className="border-b border-border p-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar por sala, participante ou conteúdo…"
+                  className="w-full rounded-md border border-border bg-background py-2 pl-8 pr-2 text-sm outline-none focus:border-primary"
+                />
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {minutes.length} ata{minutes.length === 1 ? "" : "s"} · você é participante
+              </div>
             </div>
-            <div className="mt-2 text-xs text-muted-foreground">
-              {minutes.length} ata{minutes.length === 1 ? "" : "s"} · você é participante
+            <div className="max-h-[70vh] flex-1 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  <FileText className="mx-auto mb-2 h-8 w-8 opacity-40" />
+                  Nenhuma ata ainda. Gere uma ao final de uma reunião.
+                </div>
+              ) : (
+                filtered.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => setSelectedId(m.id)}
+                    className={`flex w-full flex-col items-start gap-1 border-b border-border/60 px-3 py-2.5 text-left transition hover:bg-muted/60 ${
+                      selected?.id === m.id ? "bg-muted/80" : ""
+                    }`}
+                  >
+                    <div className="flex w-full items-center gap-2">
+                      <FileText className="h-3.5 w-3.5 text-primary" />
+                      <span className="flex-1 truncate text-sm font-semibold">{m.roomLabel}</span>
+                    </div>
+                    <div className="flex w-full items-center gap-2 text-[11px] text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {new Date(m.createdAt).toLocaleString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      <span>·</span>
+                      <UsersIcon className="h-3 w-3" />
+                      {m.participantNames.length}
+                    </div>
+                    {m.topics.length > 0 && (
+                      <div className="text-[11px] text-muted-foreground">
+                        {m.topics.length} tópico{m.topics.length === 1 ? "" : "s"} ·{" "}
+                        {m.topics.filter((t) => t.taskId).length} viraram tarefa
+                      </div>
+                    )}
+                  </button>
+                ))
+              )}
             </div>
           </div>
-          <div className="max-h-[70vh] flex-1 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                <FileText className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                Nenhuma ata ainda. Gere uma ao final de uma reunião.
-              </div>
+
+          {/* Detail */}
+          <div className="rounded-xl border border-border bg-card">
+            {selected ? (
+              <MinuteDetail
+                key={selected.id}
+                minute={selected}
+                usersLookup={Object.fromEntries(users.map((u) => [u.id, u.name]))}
+                currentUserId={currentUser.id}
+                onConvert={(topicId) => {
+                  const taskId = minuteTopicToTask(selected.id, topicId);
+                  if (taskId) toast.success("Tópico virou tarefa");
+                }}
+                onOpenTask={(taskId) => openTask(taskId)}
+                onDelete={async () => {
+                  const ok = await confirmar({
+                    titulo: "Excluir esta ata?",
+                    descricao: `A ata de "${selected.roomLabel}" some com todos os tópicos e decisões registrados. Não dá para desfazer.`,
+                    confirmar: "Excluir",
+                    perigo: true,
+                  });
+                  if (!ok) return;
+                  deleteMinute(selected.id);
+                  toast.success("Ata excluída");
+                  setSelectedId(null);
+                }}
+              />
             ) : (
-              filtered.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedId(m.id)}
-                  className={`flex w-full flex-col items-start gap-1 border-b border-border/60 px-3 py-2.5 text-left transition hover:bg-muted/60 ${
-                    selected?.id === m.id ? "bg-muted/80" : ""
-                  }`}
-                >
-                  <div className="flex w-full items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-primary" />
-                    <span className="flex-1 truncate text-sm font-semibold">{m.roomLabel}</span>
-                  </div>
-                  <div className="flex w-full items-center gap-2 text-[11px] text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {new Date(m.createdAt).toLocaleString("pt-BR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                    <span>·</span>
-                    <UsersIcon className="h-3 w-3" />
-                    {m.participantNames.length}
-                  </div>
-                  {m.topics.length > 0 && (
-                    <div className="text-[11px] text-muted-foreground">
-                      {m.topics.length} tópico{m.topics.length === 1 ? "" : "s"} ·{" "}
-                      {m.topics.filter((t) => t.taskId).length} viraram tarefa
-                    </div>
-                  )}
-                </button>
-              ))
+              <div className="flex h-full min-h-[400px] flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
+                <FileText className="h-12 w-12 opacity-30" />
+                Selecione uma ata para ver o conteúdo e transformar tópicos em tarefas.
+              </div>
             )}
           </div>
         </div>
-
-        {/* Detail */}
-        <div className="rounded-xl border border-border bg-card">
-          {selected ? (
-            <MinuteDetail
-              key={selected.id}
-              minute={selected}
-              usersLookup={Object.fromEntries(users.map((u) => [u.id, u.name]))}
-              currentUserId={currentUser.id}
-              onConvert={(topicId) => {
-                const taskId = minuteTopicToTask(selected.id, topicId);
-                if (taskId) toast.success("Tópico virou tarefa");
-              }}
-              onOpenTask={(taskId) => openTask(taskId)}
-              onDelete={async () => {
-                const ok = await confirmar({
-                  titulo: "Excluir esta ata?",
-                  descricao: `A ata de "${selected.roomLabel}" some com todos os tópicos e decisões registrados. Não dá para desfazer.`,
-                  confirmar: "Excluir",
-                  perigo: true,
-                });
-                if (!ok) return;
-                deleteMinute(selected.id);
-                toast.success("Ata excluída");
-                setSelectedId(null);
-              }}
-            />
-          ) : (
-            <div className="flex h-full min-h-[400px] flex-col items-center justify-center gap-2 p-8 text-center text-sm text-muted-foreground">
-              <FileText className="h-12 w-12 opacity-30" />
-              Selecione uma ata para ver o conteúdo e transformar tópicos em tarefas.
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </FluxoLayout>
   );
 }

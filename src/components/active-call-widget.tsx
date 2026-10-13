@@ -11,7 +11,13 @@ import {
   useRoomContext,
   useTrackToggle,
 } from "@livekit/components-react";
-import { DisconnectReason, RemoteParticipant, Track, RoomEvent } from "livekit-client";
+import {
+  AudioPresets,
+  DisconnectReason,
+  RemoteParticipant,
+  Track,
+  RoomEvent,
+} from "livekit-client";
 import type { LocalParticipant, LocalVideoTrack, Room } from "livekit-client";
 import { BackgroundProcessor, type BackgroundProcessorWrapper } from "@livekit/track-processors";
 import "@livekit/components-styles";
@@ -48,8 +54,10 @@ import {
   Power,
   MoreHorizontal,
   Volume2,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
+import { JanelaDePresenca, usePresencaNaReuniao } from "@/components/presencas-reuniao";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
@@ -134,8 +142,7 @@ function ToolBtn({
   /** Vermelho só na borda: o "Encerrar", ao lado do "Sair" cheio. */
   outline?: boolean;
 }) {
-  const base =
-    "relative inline-flex items-center justify-center transition disabled:opacity-40";
+  const base = "relative inline-flex items-center justify-center transition disabled:opacity-40";
   const size = danger
     ? wide
       ? "h-11 rounded-full px-6"
@@ -149,7 +156,7 @@ function ToolBtn({
       ? "bg-red-500/90 text-white hover:bg-red-500"
       : active
         ? "bg-white/25 text-white"
-        : "bg-white/10 text-white/90 hover:bg-white/20"
+        : "bg-white/10 text-white/90 hover:bg-white/20";
   return (
     <button
       type="button"
@@ -194,9 +201,53 @@ function MediaToggle({
       exceção quando há um `onError` para entregá-la. */
   onDeviceError?: (e: Error) => void;
 }) {
+  const room = useRoomContext();
+  const tela = source === Track.Source.ScreenShare;
   const { enabled, pending, toggle } = useTrackToggle({
     source,
-    onChange: onEnabledChange,
+    /* A tela vai COM o som do computador (pedido do usuário, 10/10/2026:
+       mostrar um vídeo e ninguém ouvir). Sem processamento de voz — eco,
+       ruído e ganho automáticos estragam música e vídeo — e com
+       `restrictOwnAudio`, que tira do som capturado o que esta própria aba
+       toca: sem isso as vozes da chamada voltariam para todo mundo em eco.
+       (O tipo do LiveKit ainda não conhece a opção; o navegador que não a
+       conhece simplesmente a ignora.) */
+    ...(tela
+      ? {
+          captureOptions: {
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+              restrictOwnAudio: true,
+            } as MediaTrackConstraints,
+            systemAudio: "include" as const,
+            selfBrowserSurface: "exclude" as const,
+            surfaceSwitching: "include" as const,
+          },
+          publishOptions: {
+            audioPreset: AudioPresets.musicHighQualityStereo,
+            dtx: false,
+            red: false,
+          },
+        }
+      : {}),
+    onChange: (ligado: boolean) => {
+      onEnabledChange?.(ligado);
+      if (!tela || !ligado) return;
+      /* O som só vem se a pessoa marcar a caixinha na janela do navegador — e
+         só existe para "Tela inteira" ou uma aba (janela solta não tem som no
+         Windows). Se a tela subiu sem áudio, explica como fazer. */
+      window.setTimeout(() => {
+        if (!room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)) {
+          toast.info("Tela compartilhada SEM o som do computador", {
+            description:
+              "Para mostrar vídeo com som: pare, compartilhe de novo escolhendo “Tela inteira” (ou uma aba) e marque “Compartilhar áudio do sistema”.",
+            duration: 12000,
+          });
+        }
+      }, 2500);
+    },
     onDeviceError,
   });
   return (
@@ -641,6 +692,11 @@ export function CallContents({
   );
   const { localParticipant } = useLocalParticipant();
   const room = useRoomContext();
+  /* Presença: quem está na chamada manda o sinal; quem abriu a reunião ganha
+     o botão "Presenças" (pedido do usuário, 10/10/2026). Convidado por link
+     não tem sessão — aparece no relatório pelo servidor, que olha o LiveKit. */
+  const presenca = usePresencaNaReuniao(room, roomName, roomLabel, !convidado);
+  const [verPresenca, setVerPresenca] = useState(false);
 
   /* O volume que você já escolheu para cada pessoa, reaplicado sozinho.
      `setVolume` só "gruda" no objeto RemoteParticipant de agora — um objeto
@@ -666,8 +722,8 @@ export function CallContents({
     setMenuVolume({ participant, x, y });
   };
 
-  const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)
-    ?.videoTrack as LocalVideoTrack | undefined;
+  const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera)?.videoTrack as
+    LocalVideoTrack | undefined;
   const [effect, setEffect] = useVideoEffect(cameraTrack);
   const [effectMenu, setEffectMenu] = useState(false);
   const { users, currentUser } = useFluxo();
@@ -1059,8 +1115,7 @@ export function CallContents({
   const screenTracks = tracks.filter((t) => t.source === Track.Source.ScreenShare);
   const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
   const hasScreen = screenTracks.length > 0;
-  const useFocus =
-    hasScreen && (presenterMode === "auto" || presenterMode === "focus") && !mini;
+  const useFocus = hasScreen && (presenterMode === "auto" || presenterMode === "focus") && !mini;
 
   /* Os atalhos M e V mexem direto no LiveKit, por fora do botão — e por isso
      também precisam avisar `aoMudarMidia`. Esquecer isto aqui reabriria o
@@ -1294,20 +1349,18 @@ export function CallContents({
             labelOff="Compartilhar tela"
             onDeviceError={avisarErroDeDispositivo("o compartilhamento de tela")}
           />
+          {presenca.souCriador && presenca.reuniaoId && (
+            <ToolBtn icon={ClipboardList} label="Presenças" onClick={() => setVerPresenca(true)} />
+          )}
+          {verPresenca && presenca.reuniaoId && (
+            <JanelaDePresenca id={presenca.reuniaoId} onClose={() => setVerPresenca(false)} />
+          )}
           {mini && onMaximize && (
-            <ToolBtn
-              icon={Maximize2}
-              label="Voltar à sala"
-              onClick={onMaximize}
-            />
+            <ToolBtn icon={Maximize2} label="Voltar à sala" onClick={onMaximize} />
           )}
           {!mini && (
             <>
-              <ToolBtn
-                icon={Hand}
-                label="Levantar a mão"
-                onClick={raiseHand}
-              />
+              <ToolBtn icon={Hand} label="Levantar a mão" onClick={raiseHand} />
               <div className="relative">
                 <ToolBtn
                   icon={Sparkles}
@@ -1322,11 +1375,13 @@ export function CallContents({
                 />
                 {effectMenu && (
                   <div className="absolute bottom-full left-1/2 z-30 mb-2 w-48 -translate-x-1/2 overflow-hidden rounded-md border border-white/10 bg-neutral-900 text-xs shadow-xl">
-                    {([
-                      { id: "none", label: "Sem efeito" },
-                      { id: "blur", label: "Fundo desfocado" },
-                      { id: "office", label: "Escritório" },
-                    ] as { id: VideoEffect; label: string }[]).map((o) => (
+                    {(
+                      [
+                        { id: "none", label: "Sem efeito" },
+                        { id: "blur", label: "Fundo desfocado" },
+                        { id: "office", label: "Escritório" },
+                      ] as { id: VideoEffect; label: string }[]
+                    ).map((o) => (
                       <button
                         key={o.id}
                         type="button"
@@ -1525,14 +1580,7 @@ export function CallContents({
               text="Encerrar"
             />
           )}
-          {mini && (
-            <ToolBtn
-              icon={PhoneOff}
-              label="Sair da chamada"
-              onClick={requestEnd}
-              danger
-            />
-          )}
+          {mini && <ToolBtn icon={PhoneOff} label="Sair da chamada" onClick={requestEnd} danger />}
         </div>
 
         {/* Right: chat / more (Meet-style) */}
@@ -1579,7 +1627,10 @@ export function CallContents({
                         ["P", "Alternar modo apresentador"],
                         ["Shift+E", "Sair da chamada"],
                       ].map(([key, desc]) => (
-                        <li key={key} className="flex items-center justify-between gap-2 text-[11px]">
+                        <li
+                          key={key}
+                          className="flex items-center justify-between gap-2 text-[11px]"
+                        >
                           <span className="text-white/70">{desc}</span>
                           <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[10px]">
                             {key}
@@ -1927,7 +1978,12 @@ export function ActiveCallWidget() {
     } catch {}
     return DEFAULT_MINI;
   });
-  const dragRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; box: typeof DEFAULT_MINI } | null>(null);
+  const dragRef = useRef<{
+    mode: "move" | "resize";
+    startX: number;
+    startY: number;
+    box: typeof DEFAULT_MINI;
+  } | null>(null);
 
   const roomPath = active ? `/salas/${active.roomName}` : null;
   const onRoomRoute = !!roomPath && location.pathname === roomPath;
@@ -2026,19 +2082,21 @@ export function ActiveCallWidget() {
 
   if (!active) return null;
 
-  const miniStyle: React.CSSProperties = box.x < 0 || box.y < 0
-    ? { position: "fixed", bottom: 16, right: 16, width: box.w, height: box.h, zIndex: 90 }
-    : { position: "fixed", top: box.y, left: box.x, width: box.w, height: box.h, zIndex: 90 };
-  const style: React.CSSProperties = docked && rect
-    ? {
-        position: "fixed",
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-        zIndex: 40,
-      }
-    : miniStyle;
+  const miniStyle: React.CSSProperties =
+    box.x < 0 || box.y < 0
+      ? { position: "fixed", bottom: 16, right: 16, width: box.w, height: box.h, zIndex: 90 }
+      : { position: "fixed", top: box.y, left: box.x, width: box.w, height: box.h, zIndex: 90 };
+  const style: React.CSSProperties =
+    docked && rect
+      ? {
+          position: "fixed",
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+          zIndex: 40,
+        }
+      : miniStyle;
 
   const containerClass = docked
     ? "overflow-hidden rounded-xl border border-border bg-black shadow-lg"
@@ -2094,10 +2152,14 @@ export function ActiveCallWidget() {
           roomLabel={active.roomLabel}
           roomName={active.roomName}
           onDragStart={!docked ? startDrag("move") : undefined}
-          onMinimize={docked ? () => {
-            setMinimized(true);
-            navigate({ to: "/salas" });
-          } : undefined}
+          onMinimize={
+            docked
+              ? () => {
+                  setMinimized(true);
+                  navigate({ to: "/salas" });
+                }
+              : undefined
+          }
           onMaximize={() => {
             setMinimized(false);
             if (!onRoomRoute) {
