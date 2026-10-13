@@ -26,6 +26,13 @@ import {
 import { AGENDA_PESSOAL_MUDOU, AgendaDoDia } from "@/components/agenda-do-dia";
 import { listarAgendaPessoal } from "@/lib/agenda-pessoal.functions";
 import { FluxoLayout } from "@/components/fluxo-layout";
+import { FiltroPessoa } from "@/components/filtro-pessoa";
+import { ehChefeDe } from "@/lib/permissoes";
+import {
+  SEM_SELECAO_DE_PESSOAS,
+  passaNoFiltroDePessoas,
+  type SelecaoDePessoas,
+} from "@/lib/filtro-de-pessoas";
 import { useFluxo } from "@/lib/fluxo-store";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
 import { openTaskContext } from "@/components/task-context-menu";
@@ -38,7 +45,10 @@ export const Route = createFileRoute("/calendario")({
   head: () => ({
     meta: [
       { title: "Calendário · SGL - CONECTA" },
-      { name: "description", content: "Visão mensal, semanal, diária e lista de todas as tarefas por prazo." },
+      {
+        name: "description",
+        content: "Visão mensal, semanal, diária e lista de todas as tarefas por prazo.",
+      },
     ],
   }),
   component: CalendarioPage,
@@ -85,7 +95,8 @@ const startOfWeek = (d: Date) => {
 };
 
 function CalendarioPage() {
-  const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate, reorderTasks } = useFluxo();
+  const { tasks, currentUser, users, openTask, openNewTask, openQuickCreate, reorderTasks } =
+    useFluxo();
   const [view, setView] = useState<ViewMode>("mes");
   /** A largura da visão em linhas: uma semana ou o mês inteiro. */
   const [escalaLinhas, setEscalaLinhas] = useState<"semana" | "mes">("semana");
@@ -93,7 +104,12 @@ function CalendarioPage() {
   const [scope, setScope] = useState<"eu" | "todos">("eu");
   const [prefs, mudarPrefs, pintarDia] = usePrefsDoCalendario(currentUser.id);
   const corMinhas = prefs.minhas ?? "var(--primary)";
-  const [dayCtx, setDayCtx] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
+  const [dayCtx, setDayCtx] = useState<{
+    x: number;
+    y: number;
+    date: string;
+    count: number;
+  } | null>(null);
   /** O dia em que a agenda abriu ("yyyy-MM-dd"), ou `null`. Aberta, ela troca
    *  de dia sozinha — o calendário por trás não é redesenhado a cada seta. */
   const [agendaDia, setAgendaDia] = useState<string | null>(null);
@@ -112,9 +128,28 @@ function CalendarioPage() {
     };
   }, [dayCtx]);
 
+  /* Filtro por pessoa da equipe (pedido do usuário, 12/10/2026: "só tem o
+     todos"). Em "Equipe" aparece a faixa de rostos — eu e quem está abaixo de
+     mim no organograma (a gerência, todo mundo que tem tarefa visível) — e dá
+     para marcar uma ou mais pessoas, como na lista de tarefas. */
+  const [filtroPessoas, setFiltroPessoas] = useState<SelecaoDePessoas>(SEM_SELECAO_DE_PESSOAS);
+  const equipe = useMemo(() => {
+    const comTarefa = new Set(tasks.map((t) => t.assigneeId));
+    return users.filter(
+      (u) =>
+        comTarefa.has(u.id) &&
+        (u.id === currentUser.id ||
+          currentUser.role === "gerente" ||
+          ehChefeDe(currentUser, users, u.id)),
+    );
+  }, [tasks, users, currentUser]);
+
   const filtered = useMemo(
-    () => (scope === "eu" ? tasks.filter((t) => t.assigneeId === currentUser.id) : tasks),
-    [tasks, scope, currentUser.id],
+    () =>
+      scope === "eu"
+        ? tasks.filter((t) => t.assigneeId === currentUser.id)
+        : tasks.filter((t) => passaNoFiltroDePessoas(filtroPessoas, t.assigneeId)),
+    [tasks, scope, currentUser.id, filtroPessoas],
   );
 
   /* Reservas de sala física por cima do calendário de tarefas.
@@ -316,7 +351,12 @@ function CalendarioPage() {
       return `${s.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })} – ${e.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })}`;
     }
     if (view === "dia") {
-      return cursor.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+      return cursor.toLocaleDateString("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
     }
     return "Próximas tarefas";
   }, [view, cursor, escalaLinhas]);
@@ -344,7 +384,11 @@ function CalendarioPage() {
             <p className="text-sm text-muted-foreground">Visualize prazos e distribua carga.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Visão">
+            <div
+              className="inline-flex rounded-md border border-border p-0.5 text-xs"
+              role="group"
+              aria-label="Visão"
+            >
               {(["mes", "semana", "dia", "lista", "linhas"] as ViewMode[]).map((v) => (
                 <button
                   key={v}
@@ -358,7 +402,11 @@ function CalendarioPage() {
               ))}
             </div>
             {view === "linhas" && (
-              <div className="inline-flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Período das linhas">
+              <div
+                className="inline-flex rounded-md border border-border p-0.5 text-xs"
+                role="group"
+                aria-label="Período das linhas"
+              >
                 {(["semana", "mes"] as const).map((e) => (
                   <button
                     key={e}
@@ -377,7 +425,9 @@ function CalendarioPage() {
                 type="button"
                 aria-pressed={prefs.ocultarSalas}
                 onClick={() => mudarPrefs({ ocultarSalas: !prefs.ocultarSalas })}
-                title={prefs.ocultarSalas ? "Mostrar as reservas de sala" : "Ocultar as reservas de sala"}
+                title={
+                  prefs.ocultarSalas ? "Mostrar as reservas de sala" : "Ocultar as reservas de sala"
+                }
                 className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${
                   prefs.ocultarSalas
                     ? "border-primary/50 bg-primary/10 text-primary"
@@ -401,20 +451,40 @@ function CalendarioPage() {
                 onClick={() => setScope("todos")}
                 className={`rounded px-2 py-1 ${scope === "todos" ? "bg-secondary" : "text-muted-foreground"}`}
               >
-                Todos
+                Equipe
               </button>
             </div>
-            <button onClick={goPrev} className="rounded-md border border-border p-1.5 hover:bg-secondary">
+            <button
+              onClick={goPrev}
+              className="rounded-md border border-border p-1.5 hover:bg-secondary"
+            >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button onClick={goToday} className="rounded-md border border-border px-2 py-1 text-xs hover:bg-secondary">
+            <button
+              onClick={goToday}
+              className="rounded-md border border-border px-2 py-1 text-xs hover:bg-secondary"
+            >
               Hoje
             </button>
-            <button onClick={goNext} className="rounded-md border border-border p-1.5 hover:bg-secondary">
+            <button
+              onClick={goNext}
+              className="rounded-md border border-border p-1.5 hover:bg-secondary"
+            >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
+
+        {scope === "todos" && equipe.length > 1 && (
+          <div className="mb-3">
+            <FiltroPessoa
+              pessoas={equipe}
+              setor="todos"
+              valor={filtroPessoas}
+              aoMudar={setFiltroPessoas}
+            />
+          </div>
+        )}
 
         {view === "mes" && (
           <MonthGridMemo
@@ -481,7 +551,8 @@ function CalendarioPage() {
                 x,
                 y,
                 iso,
-                comPrevistas.filter((t) => t.dueDate && dataParaIso(new Date(t.dueDate)) === iso).length,
+                comPrevistas.filter((t) => t.dueDate && dataParaIso(new Date(t.dueDate)) === iso)
+                  .length,
               )
             }
             inicio={faixaDasLinhas.inicio}
@@ -495,8 +566,14 @@ function CalendarioPage() {
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
           style={{
-            left: Math.min(dayCtx.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240),
-            top: Math.min(dayCtx.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 200),
+            left: Math.min(
+              dayCtx.x,
+              (typeof window !== "undefined" ? window.innerWidth : 1200) - 240,
+            ),
+            top: Math.min(
+              dayCtx.y,
+              (typeof window !== "undefined" ? window.innerHeight : 800) - 200,
+            ),
             width: 220,
           }}
           className="fixed z-[300] animate-in fade-in-0 zoom-in-95 rounded-lg border border-border bg-card p-1 shadow-2xl"
@@ -791,14 +868,20 @@ function TaskPill({
         minha ? "border-l-[3px] font-medium" : ""
       } ${prevista ? "border border-dashed opacity-80" : ""}`}
       style={{
-        background: prevista ? "transparent" : `color-mix(in oklab, ${cor} ${minha ? 24 : 12}%, transparent)`,
+        background: prevista
+          ? "transparent"
+          : `color-mix(in oklab, ${cor} ${minha ? 24 : 12}%, transparent)`,
         borderColor: cor,
       }}
       title={`${t.title} · ${u?.name}${prevista ? " · próxima ocorrência" : ""}`}
     >
-      {prevista && <Repeat className="h-2.5 w-2.5 shrink-0" style={{ color: cor }} aria-label="Recorrente" />}
+      {prevista && (
+        <Repeat className="h-2.5 w-2.5 shrink-0" style={{ color: cor }} aria-label="Recorrente" />
+      )}
       <span className="truncate">{t.title}</span>
-      <span className="ml-auto shrink-0" style={{ color: sec?.color }}>•</span>
+      <span className="ml-auto shrink-0" style={{ color: sec?.color }}>
+        •
+      </span>
     </button>
   );
 }
@@ -875,7 +958,10 @@ function MonthGrid({
   return (
     <div className="mt-4 grid grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
       {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
-        <div key={d} className="bg-secondary/60 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div
+          key={d}
+          className="bg-secondary/60 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           {d}
         </div>
       ))}
@@ -1093,9 +1179,7 @@ function DayView({
         const dt = new Date(t.dueDate).getTime();
         return dt >= s && dt < e;
       })
-      .sort(
-        (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.dueDate.localeCompare(b.dueDate),
-      );
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.dueDate.localeCompare(b.dueDate));
   }, [cursor, filtered]);
 
   const byStatus = useMemo(() => {
@@ -1140,11 +1224,16 @@ function DayView({
         <div className="text-sm text-muted-foreground">
           {dayTasks.length} {dayTasks.length === 1 ? "tarefa" : "tarefas"} nesse dia
         </div>
-        <button onClick={onNew} className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90">
+        <button
+          onClick={onNew}
+          className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:opacity-90"
+        >
           <Plus className="h-3.5 w-3.5" /> Nova tarefa
         </button>
       </div>
-      <div className={`grid grid-cols-1 gap-px bg-border ${mostrarSalas ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+      <div
+        className={`grid grid-cols-1 gap-px bg-border ${mostrarSalas ? "md:grid-cols-4" : "md:grid-cols-3"}`}
+      >
         {(["pendente", "andamento", "concluida"] as const).map((st) => (
           <div
             key={st}
@@ -1156,7 +1245,10 @@ function DayView({
             }}
             onDrop={(e) => {
               e.preventDefault();
-              handleDrop(st, dropTarget?.st === st ? dropTarget.index : (byStatus[st] || []).length);
+              handleDrop(
+                st,
+                dropTarget?.st === st ? dropTarget.index : (byStatus[st] || []).length,
+              );
             }}
           >
             <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1197,10 +1289,14 @@ function DayView({
                         openTaskContext(idReal(t.id), e.clientX, e.clientY);
                       }}
                       className={`w-full rounded-md border border-border bg-background p-2 text-left transition hover:bg-secondary/60 ${
-                        t.prevista ? "border-dashed opacity-80" : "cursor-grab active:cursor-grabbing"
+                        t.prevista
+                          ? "border-dashed opacity-80"
+                          : "cursor-grab active:cursor-grabbing"
                       } ${t.assigneeId === destaque.euId ? "border-l-[3px]" : ""}`}
                       style={
-                        t.assigneeId === destaque.euId ? { borderLeftColor: destaque.cor } : undefined
+                        t.assigneeId === destaque.euId
+                          ? { borderLeftColor: destaque.cor }
+                          : undefined
                       }
                     >
                       <div className="flex items-start gap-2">
@@ -1209,7 +1305,9 @@ function DayView({
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1 truncate text-xs font-medium">
-                            {t.prevista && <Repeat className="h-3 w-3 shrink-0" aria-label="Recorrente" />}
+                            {t.prevista && (
+                              <Repeat className="h-3 w-3 shrink-0" aria-label="Recorrente" />
+                            )}
                             <span className="truncate">{t.title}</span>
                           </div>
                           <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -1223,7 +1321,9 @@ function DayView({
                   </div>
                 );
               })}
-              {byStatus[st].length === 0 && <div className="text-[11px] text-muted-foreground/60">Vazio</div>}
+              {byStatus[st].length === 0 && (
+                <div className="text-[11px] text-muted-foreground/60">Vazio</div>
+              )}
             </div>
           </div>
         ))}
@@ -1232,45 +1332,48 @@ function DayView({
             filhos). As salas do dia cabem exatamente ali, ao lado do quadro de
             situações, sem mexer na largura de nada. Ocultas, a grade volta a três. */}
         {mostrarSalas && (
-        <div className="flex flex-col bg-card p-3" style={{ background: fundoPintado(destaque.dias[dataParaIso(cursor)]) }}>
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <DoorOpen className="h-3 w-3 text-primary" />
-            Salas de reunião
-            <span className="ml-auto">{reservasDoDia.length}</span>
-          </div>
-          <div className="space-y-1.5">
-            {reservasDoDia.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => onReservaClick(r.data)}
-                title={`${r.sala} · ${r.motivo} · ${r.responsavel}`}
-                className="w-full rounded-md border border-primary/40 bg-primary/5 p-2 text-left transition hover:bg-primary/10"
-              >
-                <div className="flex items-center gap-1.5 text-xs font-semibold tabular-nums">
-                  {r.inicio}–{r.fim}
-                  <span className="truncate text-[10px] font-medium text-muted-foreground">
-                    {r.sala}
-                  </span>
-                </div>
-                <div className="mt-0.5 truncate text-[11px]">{r.motivo}</div>
-                {/* `nomeCurto` porque o cadastro vem TODO EM MAIÚSCULAS da IAM,
+          <div
+            className="flex flex-col bg-card p-3"
+            style={{ background: fundoPintado(destaque.dias[dataParaIso(cursor)]) }}
+          >
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <DoorOpen className="h-3 w-3 text-primary" />
+              Salas de reunião
+              <span className="ml-auto">{reservasDoDia.length}</span>
+            </div>
+            <div className="space-y-1.5">
+              {reservasDoDia.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => onReservaClick(r.data)}
+                  title={`${r.sala} · ${r.motivo} · ${r.responsavel}`}
+                  className="w-full rounded-md border border-primary/40 bg-primary/5 p-2 text-left transition hover:bg-primary/10"
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-semibold tabular-nums">
+                    {r.inicio}–{r.fim}
+                    <span className="truncate text-[10px] font-medium text-muted-foreground">
+                      {r.sala}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px]">{r.motivo}</div>
+                  {/* `nomeCurto` porque o cadastro vem TODO EM MAIÚSCULAS da IAM,
                     e "EDUARDO FERREIRA DA SILVA" gritando numa coluna estreita
                     rouba a atenção do motivo, que é o que se lê primeiro. */}
-                <div className="truncate text-[10px] text-muted-foreground">
-                  {nomeCurto(r.para_nome || r.responsavel)}
-                </div>
-              </button>
-            ))}
-            {reservasDoDia.length === 0 && (
-              <button
-                onClick={() => onReservaClick(dataParaIso(cursor))}
-                className="w-full rounded-md border border-dashed border-border p-3 text-[11px] text-muted-foreground transition hover:bg-secondary"
-              >
-                Nenhuma sala reservada — reservar
-              </button>
-            )}
+                  <div className="truncate text-[10px] text-muted-foreground">
+                    {nomeCurto(r.para_nome || r.responsavel)}
+                  </div>
+                </button>
+              ))}
+              {reservasDoDia.length === 0 && (
+                <button
+                  onClick={() => onReservaClick(dataParaIso(cursor))}
+                  className="w-full rounded-md border border-dashed border-border p-3 text-[11px] text-muted-foreground transition hover:bg-secondary"
+                >
+                  Nenhuma sala reservada — reservar
+                </button>
+              )}
+            </div>
           </div>
-        </div>
         )}
       </div>
     </div>
@@ -1301,10 +1404,7 @@ function ListView({
         const dt = new Date(t.dueDate).getTime();
         return dt >= start && dt < end;
       })
-      .sort(
-        (a, b) =>
-          a.dueDate.localeCompare(b.dueDate) || (a.order ?? 0) - (b.order ?? 0),
-      );
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || (a.order ?? 0) - (b.order ?? 0));
     const map = new Map<string, any[]>();
     list.forEach((t) => {
       // Dia local: pelo UTC, o prazo de hoje às 23:59 ia para o grupo de amanhã.
@@ -1353,9 +1453,15 @@ function ListView({
             style={{ background: fundoPintado(destaque.dias[iso]) }}
           >
             <div className="flex items-center justify-between border-b border-border bg-secondary/40 px-3 py-2">
-              <div className={`text-xs font-semibold uppercase tracking-wider ${today ? "text-primary" : "text-muted-foreground"}`}>
+              <div
+                className={`text-xs font-semibold uppercase tracking-wider ${today ? "text-primary" : "text-muted-foreground"}`}
+              >
                 {d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
-                {today && <span className="ml-2 rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">Hoje</span>}
+                {today && (
+                  <span className="ml-2 rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">
+                    Hoje
+                  </span>
+                )}
               </div>
               <div className="text-[11px] text-muted-foreground">{items.length}</div>
             </div>
@@ -1364,7 +1470,10 @@ function ListView({
                 const u = users.find((x) => x.id === t.assigneeId);
                 const sec = sectors.find((s) => s.id === t.sector);
                 const showBefore =
-                  dropTarget?.iso === iso && dropTarget.index === index && dragId && dragId !== t.id;
+                  dropTarget?.iso === iso &&
+                  dropTarget.index === index &&
+                  dragId &&
+                  dragId !== t.id;
                 return (
                   <button
                     key={t.id}
@@ -1408,7 +1517,10 @@ function ListView({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 truncate text-sm font-medium">
                         {t.prevista && (
-                          <Repeat className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Próxima ocorrência" />
+                          <Repeat
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                            aria-label="Próxima ocorrência"
+                          />
                         )}
                         <span className="truncate">{t.title}</span>
                       </div>

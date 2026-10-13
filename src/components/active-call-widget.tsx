@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { JanelaDePresenca, usePresencaNaReuniao } from "@/components/presencas-reuniao";
+import { EscolhaDeAparelho } from "@/components/escolha-de-aparelho";
 import { useActiveCall } from "@/lib/active-call-context";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useCallInviter } from "@/lib/call-inviter-context";
@@ -1332,6 +1333,8 @@ export function CallContents({
             onEnabledChange={(enabled) => aoMudarMidia({ micOn: enabled })}
             onDeviceError={avisarErroDeDispositivo("o microfone")}
           />
+          {/* Qual microfone/alto-falante está em uso, e trocar (como no Teams). */}
+          <EscolhaDeAparelho tipo="audio" room={room} />
           <MediaToggle
             source={Track.Source.Camera}
             IconOn={Video}
@@ -1341,6 +1344,7 @@ export function CallContents({
             onEnabledChange={(enabled) => aoMudarMidia({ camOn: enabled })}
             onDeviceError={avisarErroDeDispositivo("a câmera")}
           />
+          <EscolhaDeAparelho tipo="video" room={room} />
           <MediaToggle
             source={Track.Source.ScreenShare}
             IconOn={MonitorOff}
