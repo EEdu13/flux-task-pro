@@ -204,6 +204,9 @@ function MediaToggle({
 }) {
   const room = useRoomContext();
   const tela = source === Track.Source.ScreenShare;
+  const avisouSemSom = useRef(false);
+  const checagemDoSom = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(checagemDoSom.current), []);
   const { enabled, pending, toggle } = useTrackToggle({
     source,
     /* A tela vai COM o som do computador (pedido do usuário, 10/10/2026:
@@ -235,18 +238,32 @@ function MediaToggle({
       : {}),
     onChange: (ligado: boolean) => {
       onEnabledChange?.(ligado);
-      if (!tela || !ligado) return;
+      if (!tela) return;
+      if (!ligado) {
+        // Parou de compartilhar: nada de aviso atrasado, e o próximo
+        // compartilhamento pode avisar de novo.
+        avisouSemSom.current = false;
+        window.clearTimeout(checagemDoSom.current);
+        return;
+      }
       /* O som só vem se a pessoa marcar a caixinha na janela do navegador — e
          só existe para "Tela inteira" ou uma aba (janela solta não tem som no
-         Windows). Se a tela subiu sem áudio, explica como fazer. */
-      window.setTimeout(() => {
-        if (!room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)) {
-          toast.info("Tela compartilhada SEM o som do computador", {
-            description:
-              "Para mostrar vídeo com som: pare, compartilhe de novo escolhendo “Tela inteira” (ou uma aba) e marque “Compartilhar áudio do sistema”.",
-            duration: 12000,
-          });
-        }
+         Windows). Se a tela subiu sem áudio, explica como fazer — UMA vez por
+         compartilhamento: o LiveKit avisa "ligado" mais de uma vez, e a
+         checagem atrasada disparava depois de a tela já ter sido fechada,
+         empilhando avisos (relato de 12/10/2026). */
+      window.clearTimeout(checagemDoSom.current);
+      checagemDoSom.current = window.setTimeout(() => {
+        const lp = room.localParticipant;
+        if (avisouSemSom.current || !lp.isScreenShareEnabled) return;
+        if (lp.getTrackPublication(Track.Source.ScreenShareAudio)) return;
+        avisouSemSom.current = true;
+        toast.info("Tela compartilhada SEM o som do computador", {
+          id: "tela-sem-som",
+          description:
+            "Para mostrar vídeo com som: pare, compartilhe de novo escolhendo “Tela inteira” (ou uma aba) e marque “Compartilhar áudio do sistema”.",
+          duration: 12000,
+        });
       }, 2500);
     },
     onDeviceError,
