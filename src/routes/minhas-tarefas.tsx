@@ -99,6 +99,8 @@ import {
 } from "@/lib/projeto-da-tarefa";
 import { semAcento } from "@/lib/texto-busca";
 import { SEM_PRAZO, porPrazo, prazoMs, prazoVencido, rotuloDoPrazo } from "@/lib/prazo";
+import { entregueNoPrazo } from "@/lib/dias-uteis";
+import { BotaoAtribuirProjeto } from "@/components/escolher-projeto";
 
 export const Route = createFileRoute("/minhas-tarefas")({
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
@@ -749,7 +751,8 @@ function TaskList({
                     <col className="w-32" />
                     <col className="w-30" />
                     <col className="w-34" />
-                    <col className="w-34" />
+                    {/* Ações: pasta do projeto + cronômetro + estrela + lápis. */}
+                    <col className="w-46" />
                   </colgroup>
                   <thead>
                     <tr className="border-b border-border bg-secondary/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -881,6 +884,8 @@ function TaskList({
                             </td>
                             <td className="py-2.5 pr-4 text-right">
                               <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                                {/* Ligar a tarefa a um projeto ativo daqui mesmo (13/10/2026). */}
+                                <BotaoAtribuirProjeto task={t} />
                                 <TaskTimerControls
                                   taskId={t.id}
                                   estimatedMinutes={t.estimatedMinutes}
@@ -1851,11 +1856,10 @@ function LinhaDaEntrega({ task: t }: { task: Task }) {
         minute: "2-digit",
       })
     : quando.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
-  const atrasada =
-    !!t.dueDate &&
-    (doClique
-      ? clique.getTime() > new Date(t.dueDate).getTime()
-      : dia > dataParaIso(new Date(t.dueDate)));
+  /* Pelo DIA, não pelo instante: concluir no dia do prazo é no prazo, seja
+     qual for o horário, e prazo em feriado/fim de semana vale até o próximo
+     dia útil — ver `dias-uteis.ts` (13/10/2026). */
+  const atrasada = !entregueNoPrazo(t.dueDate, dia);
   const dica = [
     atrasada ? "Entregue depois do prazo" : "Entregue no prazo",
     clique && !doClique ? `marcada como concluída em ${clique.toLocaleString("pt-BR")}` : null,

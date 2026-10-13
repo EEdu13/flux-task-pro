@@ -1,3 +1,5 @@
+import { fimDoPrazoEfetivo } from "./dias-uteis";
+
 /**
  * As regras do prazo que valem em toda tela.
  *
@@ -32,20 +34,20 @@ export function porPrazo(a: { dueDate: string | null }, b: { dueDate: string | n
 /**
  * Quando a tarefa passa a contar como atrasada, em ms. Sem prazo, +∞.
  *
- * O item do pack é do DIA: o horário que a pessoa põe nele é o plano ("faço
- * às 10h"), não a hora em que ela perde o compromisso. Contar o horário como
- * prazo fazia o item virar atrasado/perdido às 10h01 e a conclusão da tarde
- * valer menos — o pack era perdido por ter horário. Decisão do usuário,
- * 07/10/2026. O servidor faz a mesma conta em `gravarNoBanco`.
+ * O prazo é um DIA: vence no fim do dia (Brasília), seja qual for o horário —
+ * o horário é o plano ("começo às 8h40"), não a hora em que o compromisso se
+ * perde. Era assim só no pack (07/10/2026); valia o instante nas outras
+ * tarefas, e a Luana, que marcou 8h40 com 45 min e concluiu às 9h16, ficou
+ * "com atraso" (13/10/2026). E prazo em feriado ou fim de semana vence no
+ * próximo dia útil — ver `dias-uteis.ts`. O servidor faz a mesma conta.
+ *
+ * `inPack` ficou na assinatura só por compatibilidade: a regra é uma só.
  */
 export function venceEm(t: { dueDate: string | null | undefined; inPack?: boolean }): number {
-  if (!t.dueDate) return Number.POSITIVE_INFINITY;
-  const d = new Date(t.dueDate);
-  if (!t.inPack) return d.getTime();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  return t.dueDate ? fimDoPrazoEfetivo(t.dueDate) : Number.POSITIVE_INFINITY;
 }
 
-/** A tarefa aberta já está atrasada em `agora` — com a regra do pack. */
+/** A tarefa aberta já está atrasada em `agora`. */
 export function tarefaVencida(
   t: { dueDate: string | null | undefined; inPack?: boolean },
   agora: number = Date.now(),
@@ -53,12 +55,12 @@ export function tarefaVencida(
   return venceEm(t) < agora;
 }
 
-/** O prazo já passou em `agora`? Sem prazo, nunca. */
+/** O prazo já passou em `agora`? Sem prazo, nunca. Mesma regra de `venceEm`. */
 export function prazoVencido(
   dueDate: string | null | undefined,
   agora: number = Date.now(),
 ): boolean {
-  return !!dueDate && new Date(dueDate).getTime() < agora;
+  return !!dueDate && fimDoPrazoEfetivo(dueDate) < agora;
 }
 
 /**

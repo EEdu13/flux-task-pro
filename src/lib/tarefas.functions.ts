@@ -1,3 +1,4 @@
+import { ultimoDiaUtilAntesDeHoje } from "./dias-uteis";
 import { createServerFn } from "@tanstack/react-start";
 import {
   comSessao,
@@ -609,7 +610,10 @@ async function gravarNoBanco(
     .input("data_real", sql.NVarChar(10), d.dataReal)
     .input("nasce_em", sql.DateTimeOffset, d.nasceEm)
     .input("anterior", sql.UniqueIdentifier, d.anteriorId)
-    .input("por", sql.Int, eu);
+    .input("por", sql.Int, eu)
+    /* Último dia útil antes de hoje (Brasília): a conclusão de hoje é no prazo
+       se o DIA do prazo vem depois dele — ver `dias-uteis.ts`. */
+    .input("ultimo_dia_util", sql.VarChar(10), ultimoDiaUtilAntesDeHoje());
 
   /* `concluida_em` é derivado da situação, não recebido.
          Se viesse do cliente, uma tarefa poderia ser marcada como concluída
@@ -813,10 +817,12 @@ async function gravarNoBanco(
             Sem prazo é neutra (decisão do usuário, 25/09/2026): pontos cheios,
             sem os 10% de quem cumpre prazo — senão não ter prazo valeria mais
             que ter — e nunca conta como atraso. */
-         /* No prazo: até o instante do prazo — e, no item do pack, até o fim
-            do DIA dele em Brasília. O horário do pack é o plano do dia, não a
-            hora em que o compromisso se perde (decisão do usuário,
-            07/10/2026; a tela faz a mesma conta em venceEm, de prazo.ts). */
+         /* No prazo: concluir até o fim do DIA ÚTIL do prazo em Brasília. O
+            horário é o plano do dia, não a hora em que o compromisso se perde
+            (07/10/2026 no pack, 13/10/2026 em todas), e prazo em feriado ou
+            fim de semana vale até o próximo dia útil. A conclusão é hoje: no
+            prazo se o dia do prazo vem depois do último dia útil antes de
+            hoje. A tela faz a mesma conta em venceEm (prazo.ts). */
          INSERT INTO gestor.conclusoes
            (tarefa_id, pessoa_id, pontos, prioridade, no_prazo, em)
          SELECT e.tarefa, e.responsavel_depois,
@@ -828,10 +834,8 @@ async function gravarNoBanco(
                 e.concluida_depois
            FROM @efeito e
           CROSS APPLY (SELECT CASE
-                         WHEN e.prazo >= e.concluida_depois THEN 1
-                         WHEN e.no_pack = 1
-                          AND CAST(e.prazo AT TIME ZONE N'E. South America Standard Time' AS DATE)
-                           >= CAST(e.concluida_depois AT TIME ZONE N'E. South America Standard Time' AS DATE)
+                         WHEN CAST(e.prazo AT TIME ZONE N'E. South America Standard Time' AS DATE)
+                              > CAST(@ultimo_dia_util AS DATE)
                          THEN 1 ELSE 0 END AS no_prazo) np
           WHERE e.concluida_depois IS NOT NULL AND e.concluida_antes IS NULL;
 
@@ -963,10 +967,7 @@ async function gravarNoBanco(
               UNION ALL
               SELECT 4, N'concluida',
                      CASE WHEN e.prazo IS NULL THEN N'concluiu a tarefa'
-                          WHEN e.prazo >= e.concluida_depois
-                            OR (e.no_pack = 1
-                                AND CAST(e.prazo AT TIME ZONE @fuso AS DATE)
-                                 >= CAST(e.concluida_depois AT TIME ZONE @fuso AS DATE))
+                          WHEN CAST(e.prazo AT TIME ZONE @fuso AS DATE) > CAST(@ultimo_dia_util AS DATE)
                           THEN N'concluiu a tarefa no prazo'
                           ELSE N'concluiu a tarefa com atraso' END
                      /* Marcada hoje, terminada antes: a data que importa vai

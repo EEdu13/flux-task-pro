@@ -1,5 +1,10 @@
+import { ultimoDiaUtilAntesDeHoje } from "./dias-uteis";
 import { createServerFn } from "@tanstack/react-start";
-import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import {
+  comSessao,
+  comSessaoSemEntrada,
+  semIdentidade,
+} from "@/integrations/iam/funcao-com-sessao";
 
 /* A sineta — bloco E.
  *
@@ -206,10 +211,16 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
     const r = await pool
       .request()
       .input("eu", sql.Int, eu)
+      /* Atrasada = o DIA do prazo é o último dia útil antes de hoje, ou antes
+         dele: prazo em feriado/fim de semana vence no próximo dia útil e o
+         horário não conta — a mesma regra da tela (ver `dias-uteis.ts`). O
+         12/10/2026, feriado, virou "Tarefa atrasada" no dia 13 sem isto. */
+      .input("ultimo_dia_util", sql.VarChar(10), ultimoDiaUtilAntesDeHoje())
       .query(
-        `INSERT INTO gestor.notificacoes (destinatario_id, tipo, titulo, descricao, tarefa_id)
+        `DECLARE @atraso DATE = CAST(@ultimo_dia_util AS DATE);
+         INSERT INTO gestor.notificacoes (destinatario_id, tipo, titulo, descricao, tarefa_id)
          SELECT @eu, 'prazo',
-                CASE WHEN t.prazo < SYSDATETIMEOFFSET()
+                CASE WHEN CAST(t.prazo AT TIME ZONE N'E. South America Standard Time' AS DATE) <= @atraso
                      THEN 'Tarefa atrasada' ELSE 'Prazo se aproximando' END,
                 t.titulo, t.id
            FROM gestor.tarefas t
@@ -221,7 +232,8 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
             AND t.prazo < DATEADD(DAY, 1, SYSDATETIMEOFFSET())
             -- O pack vence todo dia e é feito todo dia: "prazo se aproximando"
             -- nele era aviso diário de rotina. Atrasado, ele ainda avisa.
-            AND (t.no_pack = 0 OR t.prazo < SYSDATETIMEOFFSET())
+            AND (t.no_pack = 0
+                 OR CAST(t.prazo AT TIME ZONE N'E. South America Standard Time' AS DATE) <= @atraso)
             AND NOT EXISTS (
                   SELECT 1 FROM gestor.notificacoes n
                    WHERE n.tarefa_id = t.id
@@ -230,7 +242,7 @@ export const gerarAvisosDePrazo = createServerFn({ method: "POST" }).handler(
                      -- O mesmo aviso, não qualquer um: quem já recebeu
                      -- "Prazo se aproximando" ainda precisa receber "Tarefa
                      -- atrasada" quando vencer (auditoria de 08/10/2026).
-                     AND n.titulo = CASE WHEN t.prazo < SYSDATETIMEOFFSET()
+                     AND n.titulo = CASE WHEN CAST(t.prazo AT TIME ZONE N'E. South America Standard Time' AS DATE) <= @atraso
                                          THEN 'Tarefa atrasada' ELSE 'Prazo se aproximando' END)`,
       );
     return { criados: r.rowsAffected[0] ?? 0 };
@@ -302,7 +314,8 @@ export const avisar = createServerFn({ method: "POST" })
               atribuição, chamada) fica muito abaixo disso. */
         if (d.tarefaId) {
           const { permissaoNaTarefa } = await import("@/lib/permissoes.server");
-          if (!(await permissaoNaTarefa(eu, d.tarefaId)).ver) throw new Error("Tarefa não encontrada");
+          if (!(await permissaoNaTarefa(eu, d.tarefaId)).ver)
+            throw new Error("Tarefa não encontrada");
         }
         const { getPool, sql } = await import("@/integrations/db.server");
         const pool = await getPool();
@@ -324,7 +337,8 @@ export const avisar = createServerFn({ method: "POST" })
               WHERE (SELECT COUNT(*) FROM gestor.notificacoes
                       WHERE de_pessoa_id=@de AND em > DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())) < 30`,
           );
-        if ((gravou.rowsAffected[0] ?? 0) === 0) throw new Error("Muitos avisos em pouco tempo. Espere um minuto.");
+        if ((gravou.rowsAffected[0] ?? 0) === 0)
+          throw new Error("Muitos avisos em pouco tempo. Espere um minuto.");
         return { ok: true };
       },
     ),

@@ -1,3 +1,5 @@
+import { diasDeAtraso } from "@/lib/dias-uteis";
+
 // Tarefas vistas pelo bot: criar uma, e montar o dia de alguém.
 // EXCLUSIVO do servidor — carregue dentro do handler.
 //
@@ -66,10 +68,9 @@ export function diaBr(d: Date): string {
  * UTC. O sinal de "⚠️ N dias de atraso" simplesmente não aparecia.
  */
 export function atrasoEmDiasBr(prazo: Date): number {
-  const p = new Date(new Date(prazo).getTime() - OFFSET_BR_MS);
-  const inicioDoPrazo = Date.UTC(p.getUTCFullYear(), p.getUTCMonth(), p.getUTCDate());
-  const h = hojeEmBrasilia();
-  return Math.round((Date.UTC(h.ano, h.mes, h.dia) - inicioDoPrazo) / 86_400_000);
+  /* Conta a partir do dia ÚTIL do prazo: prazo em feriado/fim de semana vence
+     no próximo dia útil (13/10/2026) — a mesma regra da tela. */
+  return diasDeAtraso(prazo);
 }
 
 /** Os campos de calendário de hoje em Brasília, lidos pelos getters UTC. */

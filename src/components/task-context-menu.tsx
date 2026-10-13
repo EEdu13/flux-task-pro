@@ -1,5 +1,20 @@
 import { useEffect, useState } from "react";
-import { Pencil, CheckCircle2, RotateCcw, Star, Copy, Trash2, AtSign, Sunrise, Clock, CalendarDays, Play } from "lucide-react";
+import {
+  Pencil,
+  CheckCircle2,
+  RotateCcw,
+  Star,
+  Copy,
+  Trash2,
+  AtSign,
+  Sunrise,
+  Clock,
+  CalendarDays,
+  Play,
+  FolderKanban,
+  ChevronLeft,
+} from "lucide-react";
+import { ListaDeProjetos } from "@/components/escolher-projeto";
 import { useFluxo } from "@/lib/fluxo-store";
 import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { toast } from "sonner";
@@ -14,9 +29,14 @@ interface Detail {
 }
 
 export function TaskContextMenu() {
-  const { tasks, users, updateTask, deleteTask, createTask, openTask, currentUser, reactToTask } = useFluxo();
+  const { tasks, users, updateTask, deleteTask, createTask, openTask, currentUser, reactToTask } =
+    useFluxo();
   const { push: pushUndo } = useUndo();
   const [ctx, setCtx] = useState<Detail | null>(null);
+  /* "Atribuir ao projeto" troca o conteúdo do menu pela lista de projetos
+     (13/10/2026); volta ao normal a cada abertura. */
+  const [verProjetos, setVerProjetos] = useState(false);
+  useEffect(() => setVerProjetos(false), [ctx]);
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -64,7 +84,7 @@ export function TaskContextMenu() {
   const nextMonday = () => {
     const d = new Date();
     const day = d.getDay();
-    const add = ((8 - day) % 7) || 7;
+    const add = (8 - day) % 7 || 7;
     d.setDate(d.getDate() + add);
     d.setHours(9, 0, 0, 0);
     return d;
@@ -82,12 +102,7 @@ export function TaskContextMenu() {
   const left = Math.min(ctx.x, vw - width - 8);
   const top = Math.min(ctx.y, vh - height - 8);
 
-  const item = (
-    icon: typeof Pencil,
-    label: string,
-    onClick: () => void,
-    danger?: boolean,
-  ) => (
+  const item = (icon: typeof Pencil, label: string, onClick: () => void, danger?: boolean) => (
     <button
       onClick={(e) => {
         e.stopPropagation();
@@ -95,9 +110,7 @@ export function TaskContextMenu() {
         setCtx(null);
       }}
       className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition ${
-        danger
-          ? "text-destructive hover:bg-destructive/10"
-          : "hover:bg-secondary"
+        danger ? "text-destructive hover:bg-destructive/10" : "hover:bg-secondary"
       }`}
     >
       {(() => {
@@ -149,68 +162,89 @@ export function TaskContextMenu() {
           );
         })}
       </div>
-      <div className="mt-1 flex flex-col">
-        {item(Pencil, "Editar", () => openTask(task.id))}
-        {task.assigneeId === currentUser.id && !isDone && (
-          item(Play, "Iniciar modo foco (25min)", () => startFocus(task.id))
-        )}
-        {isDone
-          ? item(RotateCcw, "Reabrir", () =>
-              updateTask(task.id, { status: "pendente" }),
-            )
-          : item(CheckCircle2, "Concluir", () =>
-              updateTask(task.id, { status: "concluida" }),
-            )}
-        {!isDone && (
-          <>
-            <div className="my-1 h-px bg-border" />
-            {item(Sunrise, "Deixar pra amanhã (9h)", () => snooze("amanhã 9h", tomorrow9()))}
-            {item(Clock, "Adiar 1 hora", () => snooze("+1h", plusOneHour()))}
-            {item(CalendarDays, "Próxima segunda", () => snooze("próxima segunda", nextMonday()))}
-            <div className="my-1 h-px bg-border" />
-          </>
-        )}
-        {item(
-          Star,
-          task.inPack ? "Remover do pack" : "Adicionar ao pack",
-          () => updateTask(task.id, { inPack: !task.inPack }),
-        )}
-        {item(AtSign, "Atribuir a mim", () =>
-          updateTask(task.id, { assigneeId: currentUser.id }),
-        )}
-        {item(Copy, "Duplicar", () => {
-          createTask({
-            title: `${task.title} (cópia)`,
-            description: task.description,
-            sector: task.sector,
-            createdBy: currentUser.id,
-            assigneeId: task.assigneeId,
-            mentions: task.mentions,
-            frequency: task.frequency,
-            status: "pendente",
-            score: task.score,
-            dueDate: task.dueDate,
-            dueTime: task.dueTime,
-            recurring: task.recurring,
-            priority: task.priority,
-            tags: task.tags,
-          });
-          toast.success("Tarefa duplicada");
-        })}
-        <div className="my-1 h-px bg-border" />
-        {/* O desfazer vem de `deleteTask`, que devolve a própria tarefa. Este
+      {verProjetos ? (
+        <div className="mt-1 flex flex-col">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setVerProjetos(false);
+            }}
+            className="mb-1 flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-secondary"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" /> Atribuir ao projeto
+          </button>
+          <ListaDeProjetos task={task} aoEscolher={() => setCtx(null)} />
+        </div>
+      ) : (
+        <div className="mt-1 flex flex-col">
+          {item(Pencil, "Editar", () => openTask(task.id))}
+          {task.assigneeId === currentUser.id &&
+            !isDone &&
+            item(Play, "Iniciar modo foco (25min)", () => startFocus(task.id))}
+          {isDone
+            ? item(RotateCcw, "Reabrir", () => updateTask(task.id, { status: "pendente" }))
+            : item(CheckCircle2, "Concluir", () => updateTask(task.id, { status: "concluida" }))}
+          {!isDone && (
+            <>
+              <div className="my-1 h-px bg-border" />
+              {item(Sunrise, "Deixar pra amanhã (9h)", () => snooze("amanhã 9h", tomorrow9()))}
+              {item(Clock, "Adiar 1 hora", () => snooze("+1h", plusOneHour()))}
+              {item(CalendarDays, "Próxima segunda", () => snooze("próxima segunda", nextMonday()))}
+              <div className="my-1 h-px bg-border" />
+            </>
+          )}
+          {item(Star, task.inPack ? "Remover do pack" : "Adicionar ao pack", () =>
+            updateTask(task.id, { inPack: !task.inPack }),
+          )}
+          {item(AtSign, "Atribuir a mim", () =>
+            updateTask(task.id, { assigneeId: currentUser.id }),
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setVerProjetos(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-secondary"
+          >
+            <FolderKanban className="h-3.5 w-3.5" />
+            <span className="flex-1">
+              {task.projectId ? "Trocar o projeto" : "Atribuir ao projeto"}
+            </span>
+            <span className="text-muted-foreground">›</span>
+          </button>
+          {item(Copy, "Duplicar", () => {
+            createTask({
+              title: `${task.title} (cópia)`,
+              description: task.description,
+              sector: task.sector,
+              createdBy: currentUser.id,
+              assigneeId: task.assigneeId,
+              mentions: task.mentions,
+              frequency: task.frequency,
+              status: "pendente",
+              score: task.score,
+              dueDate: task.dueDate,
+              dueTime: task.dueTime,
+              recurring: task.recurring,
+              priority: task.priority,
+              tags: task.tags,
+            });
+            toast.success("Tarefa duplicada");
+          })}
+          <div className="my-1 h-px bg-border" />
+          {/* O desfazer vem de `deleteTask`, que devolve a própria tarefa. Este
             menu empilhava um segundo, por cima, que recriava a tarefa como
             outra — sem comentários, checklist nem histórico, e com a original
             ainda arquivada. Era esse que o aviso e o Ctrl+Z executavam. */}
-        {canDelete && item(Trash2, "Excluir", () => deleteTask(task.id), true)}
-      </div>
+          {canDelete && item(Trash2, "Excluir", () => deleteTask(task.id), true)}
+        </div>
+      )}
     </div>
   );
 }
 
 export function openTaskContext(id: string, x: number, y: number) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent("fluxo:task-context", { detail: { id, x, y } }),
-  );
+  window.dispatchEvent(new CustomEvent("fluxo:task-context", { detail: { id, x, y } }));
 }
