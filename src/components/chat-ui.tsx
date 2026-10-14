@@ -562,26 +562,86 @@ export function Composer({ peerId }: { peerId: string }) {
       });
   };
 
-  const attach = async (files: FileList | null) => {
+  const attach = async (files: FileList | File[] | null) => {
     if (!files?.length) return;
     const { ok, rejected } = await filesToAttachments(files, currentUser.id);
     if (rejected.length) toast.error(`Muito grande: ${rejected.join(", ")}`);
     const a = ok[0];
-    if (a) setPending({ name: a.name, type: a.type, dataUrl: a.dataUrl });
+    if (a) {
+      setPending({ name: a.name, type: a.type, dataUrl: a.dataUrl });
+      campoRef.current?.focus({ preventScroll: true });
+    }
   };
 
+  /* Colar um print (Ctrl+V), como no WhatsApp (pedido do usuário, 14/10/2026).
+     A imagem da área de transferência vira o anexo pendente, com a prévia em
+     cima do campo; Enter manda junto com o texto, se houver. Se o que foi
+     copiado também tem texto (uma célula do Excel, um trecho do Word), o texto
+     cola normal — só imagem pura é tratada como print. */
+  const colar = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const dados = e.clipboardData;
+    const imagens = Array.from(dados.items)
+      .filter((i) => i.kind === "file" && i.type.startsWith("image/"))
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => !!f);
+    if (imagens.length === 0 || dados.getData("text/plain")) return;
+    e.preventDefault();
+    const agora = new Date();
+    const hora = `${String(agora.getHours()).padStart(2, "0")}${String(agora.getMinutes()).padStart(2, "0")}`;
+    const f = imagens[0]!;
+    const ext = f.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+    void attach([new File([f], `print-${hora}.${ext}`, { type: f.type })]);
+  };
+
+  /* Arrastar um arquivo ou print para cima do campo também anexa. */
+  const [arrastando, setArrastando] = useState(false);
+
   return (
-    <div className="relative border-t border-border bg-card p-2">
+    <div
+      className="relative border-t border-border bg-card p-2"
+      onDragOver={(e) => {
+        if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+        e.preventDefault();
+        setArrastando(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setArrastando(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setArrastando(false);
+        void attach(e.dataTransfer.files);
+      }}
+    >
+      {arrastando && (
+        <div className="pointer-events-none absolute inset-1 z-20 grid place-items-center rounded-xl border-2 border-dashed border-primary bg-primary/10 text-sm font-semibold text-primary">
+          Solte para anexar
+        </div>
+      )}
       {pending && (
-        <div className="mb-2 flex items-center gap-2 rounded-md border border-border bg-secondary/50 p-1.5 text-xs">
+        <div className="mb-2 flex items-start gap-2 rounded-xl border border-border bg-secondary/50 p-2 text-xs">
           {isImage(pending.type) ? (
-            <img src={pending.dataUrl} alt="" className="h-10 w-10 rounded object-cover" />
+            <img
+              src={pending.dataUrl}
+              alt="Prévia da imagem"
+              className="max-h-40 max-w-[60%] rounded-lg border border-border object-contain shadow-sm"
+            />
           ) : (
             <Paperclip className="h-4 w-4" />
           )}
-          <span className="flex-1 truncate">{pending.name}</span>
-          <button onClick={() => setPending(null)} className="text-muted-foreground hover:text-destructive">
-            <X className="h-3.5 w-3.5" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium">{pending.name}</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              Escreva uma legenda se quiser e aperte Enter para enviar.
+            </div>
+          </div>
+          <button
+            onClick={() => setPending(null)}
+            title="Tirar o anexo"
+            className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
       )}
@@ -645,8 +705,9 @@ export function Composer({ peerId }: { peerId: string }) {
               send();
             }
           }}
+          onPaste={colar}
           rows={1}
-          placeholder="Mensagem…"
+          placeholder={pending ? "Legenda (opcional)…" : "Mensagem… (Ctrl+V cola um print)"}
           className="max-h-28 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
         />
         <button

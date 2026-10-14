@@ -94,103 +94,96 @@ export function AneisDoPlacar({ dia, semana, mes }: { dia: Placar; semana: Placa
 
 const SEMANAS = 12;
 const DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const DIAS_EXTENSO = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"];
 
 /**
- * Quais dias da semana são os mais cheios (pedido do usuário, 13/10/2026):
- * um mapa de calor de segunda a domingo com duas linhas — as tarefas que
- * vencem em cada dia e as que a pessoa conclui em cada dia, somadas nas
- * últimas 12 semanas. A cor é relativa ao dia mais forte de cada linha.
+ * Quais dias da semana concentram as suas tarefas: um mapa de calor só, de
+ * segunda a domingo (pedido do usuário, 14/10/2026 — a versão com duas linhas,
+ * "vencem" e "concluo", ficou confusa). Conta as tarefas com prazo em cada dia
+ * da semana nas últimas 12 semanas e nas próximas 2; o dia mais cheio ganha
+ * destaque. A cor é relativa a esse dia.
  */
-export function DiasDaSemana({
-  tasks,
-  completions,
-  userId,
-}: {
-  tasks: Task[];
-  completions: CompletionEntry[];
-  userId: string;
-}) {
-  const { linhas, maisCheio } = useMemo(() => {
-    const desde = Date.now() - SEMANAS * 7 * DIA_MS;
-    // getDay: 0 = domingo; aqui a semana começa na segunda.
-    const indice = (d: Date) => (d.getDay() + 6) % 7;
-    const prazos = Array<number>(7).fill(0);
-    const feitas = Array<number>(7).fill(0);
+export function DiasDaSemana({ tasks, userId }: { tasks: Task[]; userId: string }) {
+  const { valores, pico, total } = useMemo(() => {
+    const agora = Date.now();
+    const desde = agora - SEMANAS * 7 * DIA_MS;
+    const ate = agora + 14 * DIA_MS;
+    const valores = Array<number>(7).fill(0);
     for (const t of tasks) {
       if (t.assigneeId !== userId || !t.dueDate) continue;
       const d = new Date(t.dueDate);
-      if (d.getTime() < desde) continue;
-      prazos[indice(d)]++;
+      const ms = d.getTime();
+      if (ms < desde || ms > ate) continue;
+      // getDay: 0 = domingo; aqui a semana começa na segunda.
+      valores[(d.getDay() + 6) % 7]++;
     }
-    for (const c of completions) {
-      if (c.userId !== userId) continue;
-      const d = new Date(c.at);
-      if (d.getTime() < desde) continue;
-      feitas[indice(d)]++;
-    }
-    const maior = prazos.indexOf(Math.max(...prazos));
+    const maior = Math.max(...valores);
     return {
-      linhas: [
-        { rotulo: "Vencem", valores: prazos, cor: "var(--color-warning)" },
-        { rotulo: "Concluo", valores: feitas, cor: "var(--color-primary)" },
-      ],
-      maisCheio: prazos[maior]! > 0 ? maior : -1,
+      valores,
+      pico: maior > 0 ? valores.indexOf(maior) : -1,
+      total: valores.reduce((a, v) => a + v, 0),
     };
-  }, [tasks, completions, userId]);
+  }, [tasks, userId]);
+
+  const max = Math.max(1, ...valores);
+
+  if (total === 0)
+    return (
+      <p className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-xs text-muted-foreground">
+        Nenhuma tarefa com prazo nas últimas semanas.
+      </p>
+    );
 
   return (
     <div>
-      <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] gap-1.5">
-        <span />
-        {DIAS.map((d, i) => (
-          <span
-            key={d}
-            className={`text-center text-[10px] font-semibold ${i === maisCheio ? "text-foreground" : "text-muted-foreground"}`}
-          >
-            {d}
-          </span>
-        ))}
-        {linhas.map((l) => {
-          const max = Math.max(1, ...l.valores);
+      <div className="grid grid-cols-7 gap-1.5">
+        {valores.map((n, i) => {
+          const forca = n === 0 ? 0 : 0.15 + (n / max) * 0.85;
+          const forte = forca > 0.55;
+          const ehPico = i === pico;
           return (
-            <div key={l.rotulo} className="contents">
-              <span className="flex items-center text-[11px] font-medium text-muted-foreground">
-                {l.rotulo}
+            <motion.div
+              key={DIAS[i]}
+              title={`${DIAS_EXTENSO[i]}: ${n} ${n === 1 ? "tarefa" : "tarefas"} (${(n / (SEMANAS + 2)).toFixed(1).replace(".", ",")} por semana)`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: i * 0.04 }}
+              className={`relative flex h-20 flex-col items-center justify-between rounded-lg py-2 ${
+                ehPico ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""
+              }`}
+              style={{
+                background:
+                  n === 0
+                    ? "var(--color-secondary)"
+                    : `color-mix(in oklab, var(--color-primary) ${Math.round(forca * 100)}%, var(--color-secondary))`,
+                color: forte ? "white" : "var(--color-foreground)",
+              }}
+            >
+              <span
+                className={`text-[10px] font-semibold uppercase ${forte ? "text-white/85" : "text-muted-foreground"}`}
+              >
+                {DIAS[i]}
               </span>
-              {l.valores.map((n, i) => {
-                const forca = n === 0 ? 0 : 0.18 + (n / max) * 0.82;
-                return (
-                  <motion.div
-                    key={i}
-                    title={`${DIAS[i]}: ${n} ${n === 1 ? "tarefa" : "tarefas"}`}
-                    className="flex h-10 items-center justify-center rounded-md text-xs font-bold tabular-nums"
-                    style={{
-                      background:
-                        n === 0
-                          ? "var(--color-secondary)"
-                          : `color-mix(in oklab, ${l.cor} ${Math.round(forca * 100)}%, var(--color-secondary))`,
-                      // No amarelo a letra escura lê melhor; no azul, branca quando a cor é forte.
-                      color:
-                        forca > 0.6 && l.cor !== "var(--color-warning)"
-                          ? "white"
-                          : "var(--color-foreground)",
-                    }}
-                    initial={{ opacity: 0, scale: 0.85 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.3, delay: i * 0.03 }}
-                  >
-                    {n > 0 ? n : ""}
-                  </motion.div>
-                );
-              })}
-            </div>
+              <span className="font-display text-xl font-bold tabular-nums leading-none">
+                {n > 0 ? n : "–"}
+              </span>
+              {ehPico ? (
+                <span className="text-[9px] font-bold uppercase tracking-wide">pico</span>
+              ) : (
+                <span className="h-3" />
+              )}
+            </motion.div>
           );
         })}
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        {maisCheio >= 0
-          ? `Seu dia mais cheio de prazos é ${["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"][maisCheio]}. Somado das últimas 12 semanas.`
-          : "Somado das últimas 12 semanas."}
+      <p className="mt-3 text-[11px] text-muted-foreground">
+        {pico >= 0 && (
+          <>
+            <span className="font-semibold text-foreground">{DIAS_EXTENSO[pico]}</span> é o seu dia
+            mais cheio.{" "}
+          </>
+        )}
+        Tarefas com prazo em cada dia, das últimas 12 semanas às próximas 2.
       </p>
     </div>
   );

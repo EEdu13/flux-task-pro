@@ -381,36 +381,67 @@ export function FluxoLayout({
      Falha em silêncio de propósito — é uma atualização de fundo, e um aviso de
      erro a cada minuto sem rede seria pior que a defasagem. O botão de
      sincronizar na barra é o caminho que avisa. */
+  /* Ritmo da releitura (14/10/2026). O banco estourou 5 vezes num dia: a lista
+     completa (tarefas + conclusões + a equipe) era relida a cada minuto E a
+     cada foco da janela — no app de mesa, todo alt-tab — e somou 15 mil
+     leituras completas no dia. Agora:
+       - a sineta (leve) segue a cada minuto, oculta ou não;
+       - a lista completa, no máximo a cada 5 min com a janela à vista;
+       - voltar para o app depois de 90 s fora relê na hora (alt-tab rápido não);
+       - aviso novo que mexe nas tarefas pede a releitura na hora (ver
+         `sincronizarAvisos`), então a tarefa delegada continua aparecendo em
+         até um minuto. */
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelado = false;
+    const COMPLETA_A_CADA_MS = 5 * 60_000;
+    const FORA_PARA_RELER_MS = 90_000;
+    const ENTRE_PEDIDOS_MS = 10_000;
+    // O login acabou de carregar tudo.
+    let ultimaCompleta = Date.now();
+    let saiuEm = 0;
 
-    const sincronizarSilencioso = () => {
+    const completa = () => {
       if (cancelado) return;
-      /* Oculta, a janela lê só a sineta. Antes não lia nada, e quem estava em
-         outra aba só descobria a tarefa nova ao voltar — agora é ela que vira
-         a notificação do Windows (ver `avisarNoSistema` logo abaixo). A lista
-         de tarefas, que é a consulta pesada, continua esperando a volta. */
-      if (document.hidden) {
-        void acoesRef.current.sincronizarAvisos().catch(() => {});
-        return;
-      }
+      ultimaCompleta = Date.now();
       void acoesRef.current.sincronizar().catch(() => {});
     };
+    const soAvisos = () => {
+      if (cancelado) return;
+      void acoesRef.current.sincronizarAvisos().catch(() => {});
+    };
 
+    const relogio = () => {
+      if (!document.hidden && Date.now() - ultimaCompleta >= COMPLETA_A_CADA_MS) completa();
+      else soAvisos();
+    };
+    const aoSair = () => {
+      if (!saiuEm) saiuEm = Date.now();
+    };
     const aoFocar = () => {
-      if (!document.hidden) sincronizarSilencioso();
+      if (document.hidden) return aoSair();
+      const longe = saiuEm ? Date.now() - saiuEm : 0;
+      saiuEm = 0;
+      if (longe >= FORA_PARA_RELER_MS && Date.now() - ultimaCompleta >= ENTRE_PEDIDOS_MS)
+        completa();
+    };
+    // Pedido de fora do layout: o "Descartar" do aviso de falha de gravação e
+    // o aviso novo que mexe nas tarefas.
+    const aoPedir = () => {
+      if (document.hidden) return soAvisos();
+      if (Date.now() - ultimaCompleta >= ENTRE_PEDIDOS_MS) completa();
     };
     document.addEventListener("visibilitychange", aoFocar);
     window.addEventListener("focus", aoFocar);
-    // Pedido de fora do layout: o "Descartar" do aviso de falha de gravação.
-    window.addEventListener("fluxo:sincronizar", sincronizarSilencioso);
-    const id = window.setInterval(sincronizarSilencioso, 60_000);
+    window.addEventListener("blur", aoSair);
+    window.addEventListener("fluxo:sincronizar", aoPedir);
+    const id = window.setInterval(relogio, 60_000);
     return () => {
       cancelado = true;
       document.removeEventListener("visibilitychange", aoFocar);
       window.removeEventListener("focus", aoFocar);
-      window.removeEventListener("fluxo:sincronizar", sincronizarSilencioso);
+      window.removeEventListener("blur", aoSair);
+      window.removeEventListener("fluxo:sincronizar", aoPedir);
       window.clearInterval(id);
     };
   }, [isAuthenticated]);

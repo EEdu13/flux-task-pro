@@ -136,7 +136,11 @@ export const chatConversation = createServerFn({ method: "POST" })
            propósito: com `att_data` apontando para a rota do proxy, o
            `chat-ui` funciona sem uma linha de mudança, porque uma tag `<img>`
            não distingue `/api/anexo/x` de um data URL. */
-        `SELECT TOP 200 m.id,
+        `-- O que eu limpei some para mim; ver chatLimparConversa.
+         DECLARE @limpa DATETIMEOFFSET = ISNULL(
+           (SELECT cl.limpa_em FROM gestor.conversas_limpas cl WHERE cl.pessoa_id=@me AND cl.outro_id=@peer),
+           '19000101');
+         SELECT TOP 200 m.id,
                 m.de_pessoa_id   AS from_user_id,
                 m.para_pessoa_id AS to_user_id,
                 m.corpo          AS body,
@@ -145,17 +149,27 @@ export const chatConversation = createServerFn({ method: "POST" })
                 a.id             AS anexo_id,
                 a.nome           AS att_name,
                 a.tipo_mime      AS att_type
-           FROM gestor.mensagens m
+           -- Os dois sentidos como duas buscas exatas no IX_msg_conversa
+           -- (de, para, em), em vez de um OR que lia o índice inteiro: era a
+           -- 2ª consulta mais pesada do banco em 14/10/2026 (conversa aberta
+           -- relida a cada 1,5 s).
+           FROM (
+             SELECT TOP 200 id, de_pessoa_id, para_pessoa_id, corpo, em, lida_em
+               FROM gestor.mensagens
+              WHERE de_pessoa_id=@me AND para_pessoa_id=@peer AND em > @limpa
+              ORDER BY em DESC
+             UNION ALL
+             SELECT TOP 200 id, de_pessoa_id, para_pessoa_id, corpo, em, lida_em
+               FROM gestor.mensagens
+              WHERE de_pessoa_id=@peer AND para_pessoa_id=@me AND em > @limpa
+              ORDER BY em DESC
+           ) m
            OUTER APPLY (
              SELECT TOP 1 x.id, x.nome, x.tipo_mime
                FROM gestor.anexos x
               WHERE x.dono_tipo = 'mensagem' AND x.dono_id = m.id
               ORDER BY x.enviado_em
            ) a
-          WHERE ((m.de_pessoa_id=@me AND m.para_pessoa_id=@peer)
-              OR (m.de_pessoa_id=@peer AND m.para_pessoa_id=@me))
-            -- O que eu limpei some para mim; ver chatLimparConversa.
-            AND m.em > ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl WHERE cl.pessoa_id=@me AND cl.outro_id=@peer), '19000101')
           ORDER BY m.em DESC;
 
          -- Digitando: a marca vale 6 segundos. O cliente reavisa a cada 2,5s

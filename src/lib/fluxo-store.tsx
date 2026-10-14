@@ -493,6 +493,18 @@ function naFilaDoProjeto(id: string, gravar: () => Promise<unknown>): void {
 const gravacoesFalhadas = new Map<string, Task>();
 let toastDeFalhaAberto = false;
 
+/** Avisos que significam "a lista de tarefas mudou" — ver `sincronizarAvisos`. */
+const TIPOS_QUE_MEXEM_NAS_TAREFAS = new Set<string>([
+  "atribuida",
+  "mencao",
+  "concluida",
+  "prazo",
+  "projeto",
+]);
+
+/** Os avisos já vistos pela sineta, para notar o que é novo. Ver `sincronizarAvisos`. */
+let avisosConhecidos: Set<string> | null = null;
+
 /** Quando os avisos de prazo foram gerados pela última vez. Ver `sincronizar`. */
 let avisosDePrazoGeradosEm = 0;
 const AVISOS_DE_PRAZO_A_CADA_MS = 10 * 60_000;
@@ -2003,7 +2015,21 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     sincronizarAvisos: async () => {
       const { listarNotificacoes } = await import("@/lib/notificacoes.functions");
       const { notificacoes } = await listarNotificacoes();
+      /* Aviso novo de algo que mexe nas tarefas (atribuída, menção, prazo,
+         concluída, projeto): pede a releitura completa na hora. É isso que
+         permite a lista completa rodar só a cada 5 minutos (14/10/2026: o
+         minuto fixo somava 15 mil leituras completas por dia e estourava o
+         banco) sem a tarefa nova demorar a aparecer. */
+      // A primeira leitura só aprende o que já existe: o login trouxe tudo.
+      const mexeuNasTarefas =
+        avisosConhecidos !== null &&
+        notificacoes.some(
+          (n) => !avisosConhecidos!.has(n.id) && TIPOS_QUE_MEXEM_NAS_TAREFAS.has(n.type),
+        );
+      avisosConhecidos = new Set(notificacoes.map((n) => n.id));
       setState((s) => ({ ...s, notifications: notificacoes }));
+      if (mexeuNasTarefas && typeof window !== "undefined")
+        window.dispatchEvent(new CustomEvent("fluxo:sincronizar"));
     },
 
     /* Tarefas, sineta e conclusões só eram lidas no login.
@@ -2042,6 +2068,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         notif.listarNotificacoes(),
         conc.listarConclusoes(),
       ]);
+      avisosConhecidos = new Set(nt.notificacoes.map((n) => n.id));
 
       setState((s) => {
         // Chave sem caixa: ver `novoId`.

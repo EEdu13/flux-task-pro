@@ -582,7 +582,12 @@ export function useConversation(peerId: string | null): Conversa {
       return;
     }
     let cancelled = false;
-    const load = async () => {
+    const load = async (forcar = false) => {
+      /* Janela escondida: não relê a conversa (14/10/2026 — ela ficava aberta
+         o dia inteiro relendo a cada 1,5 s e pesava no banco). A lista de
+         conversas continua lendo e avisando no Windows; ao voltar, relê na
+         hora (ver `aoVoltar`). */
+      if (!forcar && document.hidden) return;
       try {
         const { chatConversation } = await import("@/lib/chat.functions");
         const res = await chatConversation({ data: { peerId } });
@@ -598,11 +603,16 @@ export function useConversation(peerId: string | null): Conversa {
       setDigitando(false);
       seenPeer.current = peerId;
     }
-    void load();
-    const id = window.setInterval(load, 1500);
+    void load(true);
+    const id = window.setInterval(() => void load(), 1500);
+    const aoVoltar = () => {
+      if (!document.hidden) void load(true);
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", aoVoltar);
     };
   }, [peerId, meId, pulse]);
 

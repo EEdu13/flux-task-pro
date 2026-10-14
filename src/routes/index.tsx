@@ -311,9 +311,9 @@ function Home() {
             <div className="border-t border-border pt-4">
               <h2 className="text-sm font-semibold">Dias mais cheios</h2>
               <p className="mb-3 text-xs text-muted-foreground">
-                De segunda a domingo: quando as suas tarefas vencem e quando você conclui.
+                De segunda a domingo, onde as suas tarefas se concentram.
               </p>
-              <DiasDaSemana tasks={tasks} completions={completions} userId={currentUser.id} />
+              <DiasDaSemana tasks={tasks} userId={currentUser.id} />
             </div>
           </section>
         </BlocoEntrada>

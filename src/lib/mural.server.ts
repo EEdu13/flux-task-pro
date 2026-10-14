@@ -136,6 +136,12 @@ export type PessoaDoMural = {
   ativa: boolean;
   /** Data de admissão (yyyy-mm-dd), só para efetivo ativo em dbo.COLABORADORES. */
   admissao: string | null;
+  /**
+   * Dia e mês do nascimento, do cadastro do RH (dbo.COLABORADORES.DATA_NASCIMENTO,
+   * preenchida pelo RH em 14/10/2026). O ano é descartado aqui mesmo: o mural
+   * nunca mostra idade.
+   */
+  nascimento: { dia: number; mes: number } | null;
 };
 
 /**
@@ -152,10 +158,10 @@ export async function pessoasDoMural(): Promise<PessoaDoMural[]> {
     const { getPool } = await import("@/integrations/db.server");
     const pool = await getPool();
     const r = await pool.request().query(
-      `SELECT p.pessoa_id, p.nome, c.adm, c.ativo AS c_ativo, x.ativo AS x_ativo
+      `SELECT p.pessoa_id, p.nome, c.adm, c.nasc, c.ativo AS c_ativo, x.ativo AS x_ativo
          FROM gestor.perfis p
         OUTER APPLY (
-          SELECT TOP 1 col.DATA_ADMISSAO AS adm,
+          SELECT TOP 1 col.DATA_ADMISSAO AS adm, col.DATA_NASCIMENTO AS nasc,
                  CASE WHEN col.SITUACAO = '1' THEN 1 ELSE 0 END AS ativo
             FROM dbo.COLABORADORES col
            WHERE LTRIM(RTRIM(col.NOME)) COLLATE Latin1_General_CI_AI
@@ -175,6 +181,7 @@ export async function pessoasDoMural(): Promise<PessoaDoMural[]> {
       pessoa_id: number;
       nome: string;
       adm: Date | null;
+      nasc: Date | null;
       c_ativo: number | null;
       x_ativo: number | null;
     };
@@ -189,6 +196,11 @@ export async function pessoasDoMural(): Promise<PessoaDoMural[]> {
         ativa,
         // `date` volta como Date à meia-noite UTC: o dia certo sai do ISO.
         admissao: l.c_ativo === 1 && l.adm ? l.adm.toISOString().slice(0, 10) : null,
+        // `date` volta como meia-noite UTC: dia e mês saem dos campos UTC.
+        nascimento:
+          l.c_ativo === 1 && l.nasc
+            ? { dia: l.nasc.getUTCDate(), mes: l.nasc.getUTCMonth() + 1 }
+            : null,
       };
     });
   });
@@ -201,31 +213,52 @@ export async function idsAtivos(): Promise<number[]> {
 
 export type AniversarioGuardado = { pessoaId: number; dia: number; mes: number };
 
+/** O que a pessoa escolheu em Configurações: outra data, ou não aparecer. */
+export type AniversarioEscolhido = { dia: number; mes: number; mostrar: boolean };
+
+/** As escolhas de todos — a tabela é pequena (só quem mexeu no cartão). */
+async function aniversariosEscolhidos(): Promise<Map<number, AniversarioEscolhido>> {
+  const { getPool } = await import("@/integrations/db.server");
+  const pool = await getPool();
+  const r = await pool
+    .request()
+    .query(`SELECT pessoa_id, dia, mes, mostrar FROM gestor.aniversarios`);
+  return new Map(
+    (r.recordset as { pessoa_id: number; dia: number; mes: number; mostrar: boolean }[]).map(
+      (l) => [l.pessoa_id, { dia: l.dia, mes: l.mes, mostrar: !!l.mostrar }],
+    ),
+  );
+}
+
 /**
  * Os aniversários visíveis deste mês e do mês em que cai daqui a 7 dias (a
- * "semana" pode atravessar a virada do mês). Busca no índice (mes, dia), uma
- * vez por dia por servidor; quem salva o próprio aniversário apaga o guardado.
+ * "semana" pode atravessar a virada do mês). Uma vez por dia por servidor.
+ *
+ * A data vem do cadastro do RH (`pessoasDoMural().nascimento`, desde
+ * 14/10/2026). `gestor.aniversarios` só guarda exceções: quem corrigiu a data
+ * ou pediu para não aparecer — e quem não está no RH (externos), que conta o
+ * seu à mão. Quem salva o próprio aniversário apaga o guardado.
  */
 export async function aniversariosProximos(): Promise<AniversarioGuardado[]> {
   const { compartilhado } = await import("@/lib/cache-compartilhado.server");
   return compartilhado(CHAVE_ANIVERSARIOS, validadeAteMeiaNoite(), async () => {
     const hoje = diaNoBrasil();
     const daquiSete = diaNoBrasil(new Date(Date.now() + 7 * 86_400_000));
-    const { getPool, sql } = await import("@/integrations/db.server");
-    const pool = await getPool();
-    const r = await pool
-      .request()
-      .input("m1", sql.TinyInt, hoje.mes)
-      .input("m2", sql.TinyInt, daquiSete.mes)
-      .query(
-        `SELECT pessoa_id, dia, mes FROM gestor.aniversarios
-          WHERE mostrar = 1 AND mes IN (@m1, @m2)`,
-      );
-    return (r.recordset as { pessoa_id: number; dia: number; mes: number }[]).map((l) => ({
-      pessoaId: l.pessoa_id,
-      dia: l.dia,
-      mes: l.mes,
-    }));
+    const meses = new Set([hoje.mes, daquiSete.mes]);
+    const [pessoas, escolhas] = await Promise.all([pessoasDoMural(), aniversariosEscolhidos()]);
+    const saida: AniversarioGuardado[] = [];
+    const vistos = new Set<number>();
+    for (const p of pessoas) {
+      vistos.add(p.id);
+      const escolha = escolhas.get(p.id);
+      const data = escolha ? (escolha.mostrar ? escolha : null) : p.nascimento;
+      if (data && meses.has(data.mes)) saida.push({ pessoaId: p.id, dia: data.dia, mes: data.mes });
+    }
+    // Escolha de alguém que não veio em `pessoasDoMural` (raro): vale como está.
+    for (const [id, e] of escolhas)
+      if (!vistos.has(id) && e.mostrar && meses.has(e.mes))
+        saida.push({ pessoaId: id, dia: e.dia, mes: e.mes });
+    return saida;
   });
 }
 

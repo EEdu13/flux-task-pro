@@ -147,8 +147,13 @@ export type PainelDoMural = {
   mes: AniversarianteNoPainel[];
   tempoDeCasa: (PessoaNoPainel & { anos: number; dia: number; jaFez: boolean })[];
   boasVindas: (PessoaNoPainel & { desde: string })[];
-  /** O aniversário de quem pergunta, ou null se ainda não contou. */
-  meu: { dia: number; mes: number; mostrar: boolean } | null;
+  /**
+   * O aniversário de quem pergunta: o do RH, ou o que a pessoa escolheu
+   * (`origem: "manual"`). null = não há data em lugar nenhum.
+   */
+  meu: { dia: number; mes: number; mostrar: boolean; origem: "rh" | "manual" } | null;
+  /** A data do cadastro do RH, mesmo quando a pessoa escolheu outra. */
+  meuRH: { dia: number; mes: number } | null;
   /** Os eventos dos próximos 30 dias (fase 3, 14/10/2026). */
   eventos: EventoNoPainel[];
 };
@@ -1214,6 +1219,7 @@ export const painelDoMural = createServerFn({ method: "POST" }).handler(
     let ativo = true;
     let aniversarios: Awaited<ReturnType<typeof aniversariosProximos>> = [];
     let meu: PainelDoMural["meu"] = null;
+    const meuRH = porId.get(eu)?.nascimento ?? null;
     let eventos: EventoNoPainel[] = [];
     try {
       aniversarios = await aniversariosProximos();
@@ -1225,7 +1231,11 @@ export const painelDoMural = createServerFn({ method: "POST" }).handler(
         .input("eu", sql.Int, eu)
         .query(`SELECT dia, mes, mostrar FROM gestor.aniversarios WHERE pessoa_id = @eu`);
       const l = r.recordset[0] as { dia: number; mes: number; mostrar: boolean } | undefined;
-      meu = l ? { dia: l.dia, mes: l.mes, mostrar: !!l.mostrar } : null;
+      meu = l
+        ? { dia: l.dia, mes: l.mes, mostrar: !!l.mostrar, origem: "manual" }
+        : meuRH
+          ? { ...meuRH, mostrar: true, origem: "rh" }
+          : null;
     } catch (e) {
       // Sem a migração, o tempo de casa (que vem do RH) aparece do mesmo jeito.
       if (!ehMuralInativo(e)) throw e;
@@ -1290,6 +1300,7 @@ export const painelDoMural = createServerFn({ method: "POST" }).handler(
       tempoDeCasa: tempoDeCasa.sort((a, b) => a.dia - b.dia || porNome(a, b)),
       boasVindas: boasVindas.sort((a, b) => b.desde.localeCompare(a.desde) || porNome(a, b)),
       meu,
+      meuRH,
       eventos,
     };
   }),
