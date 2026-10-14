@@ -4,17 +4,17 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
-  BellRing,
-  Eraser,
-  MessageCircle,
-  Minus,
-  Send,
-  Smile,
-  SmilePlus,
+  BarChart3,
+  CalendarClock,
+  Check,
+  Flame,
+  Home,
+  Lock,
   Sparkles,
-  Tractor,
+  Tag,
+  Users,
+  Wrench,
   X,
-  Zap,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { primeiroNome } from "@/integrations/iam/types";
@@ -35,7 +35,7 @@ import { primeiroNome } from "@/integrations/iam/types";
  * prints: seguem o tema e a paleta de cada pessoa e não envelhecem quando a
  * tela muda de cor.
  */
-const VERSAO = "2026-10-08-chat";
+const VERSAO = "2026-10-14-repaginada";
 
 const chaveLocal = (pessoaId: string) => `fluxo:novidades:${pessoaId}`;
 
@@ -45,36 +45,50 @@ type Tela = {
   Ilustracao: () => React.ReactElement;
 };
 
+/* A leva de 14/10/2026: o que mudou desde as novidades do chat (08/10) —
+   telas repaginadas, a agenda travada, o pack mais fácil e as correções. */
 const TELAS: Tela[] = [
   {
-    titulo: "Novidades no SGL - CONECTA",
+    titulo: "O CONECTA ficou de cara nova",
     texto:
-      "Chamar a atenção de alguém agora mora no chat — junto com o trator e uma brincadeira nova. Vem ver onde ficou.",
+      "Início, Calendário, Pack, Relatórios e Metas foram repaginados — e chegou a agenda travada. São 6 telinhas rápidas para mostrar onde está cada coisa.",
     Ilustracao: IlustracaoAbertura,
   },
   {
-    titulo: "Chamar atenção agora é no chat",
+    titulo: "Um Início que mostra o seu dia",
     texto:
-      "Saiu das Ações rápidas (o raio ⚡). Abra a conversa com a pessoa e clique no sininho, no topo da janela. A tela dela treme, a conversa abre sozinha do lado de lá e fica registrado: “Eduardo chamou sua atenção”.",
-    Ilustracao: () => <JanelaDoChat destaque="atencao" />,
+      "Seu placar de hoje, da semana e do mês em anéis, o seu ritmo dos últimos 30 dias, a carga dos próximos dias e o tempo trabalhado ontem — com as tarefas que mais tomaram tempo.",
+    Ilustracao: IlustracaoInicio,
   },
   {
-    titulo: "O trator também",
+    titulo: "Travar agenda, como no Outlook",
     texto:
-      "No mesmo lugar, o tratorzinho: escreva o recado e ele atravessa a tela da pessoa puxando a faixa. O recado também fica na conversa.",
-    Ilustracao: () => <JanelaDoChat destaque="trator" />,
+      "O calendário ganhou linhas de horário. Clique com o botão direito num horário → Travar agenda, escolha as pessoas e o assunto. 30 e 10 minutos antes, o CONECTA vem para a frente da tela e avisa — quem criou também é avisado.",
+    Ilustracao: IlustracaoAgenda,
   },
   {
-    titulo: "Novo: emoji gigante 🎉",
+    titulo: "Pack tão fácil quanto criar tarefa",
     texto:
-      "Clique na carinha e escolha um emoji: ele toma a tela inteira da pessoa, com o seu nome embaixo — como no velho MSN. Use para comemorar, agradecer… ou só para alegrar o dia.",
-    Ilustracao: IlustracaoEmojiGigante,
+      "No Pack diário, escreva e dê Enter: o item já entra, com horário, prioridade e tags se quiser. Em “Montar para alguém” dá para escolher várias pessoas de uma vez e ver o que cada uma já tem no dia.",
+    Ilustracao: IlustracaoPack,
   },
   {
-    titulo: "E dá para reagir às tarefas",
+    titulo: "Minhas tarefas mais limpa",
     texto:
-      "Recebeu uma tarefa? Em vez de só “visto”, clique em Reagir e escolha um emoji. Quem mandou fica sabendo — e todo mundo vê quem reagiu. Também dá pelo botão direito na tarefa.",
-    Ilustracao: IlustracaoReacao,
+      "Tarefa que chegou hoje ganha o selo NOVA no próprio cartão — amanhã ele some sozinho. Setor e tags viraram listas suspensas, com busca. E dá para ligar a tarefa a um projeto seu pela pastinha.",
+    Ilustracao: IlustracaoTarefas,
+  },
+  {
+    titulo: "Relatórios e Metas de verdade",
+    texto:
+      "Relatórios virou uma análise: comparação com o período anterior, pendências, atrasos por dia, tempo por projeto e a tabela da equipe. Metas & Score ganhou medidor, evolução, pódio e alertas. E tudo exporta em Excel.",
+    Ilustracao: IlustracaoRelatorios,
+  },
+  {
+    titulo: "E o que consertamos",
+    texto:
+      "Feriado não conta mais atraso, e concluir no dia do prazo é no prazo — o horário é só o plano. Também acertamos o som do computador ao mostrar a tela, a escolha de microfone e câmera e o tempo que aparecia 0m.",
+    Ilustracao: IlustracaoCorrecoes,
   },
 ];
 
@@ -180,7 +194,11 @@ export function Novidades() {
 
             <div className="mt-4 flex items-center gap-3">
               {/* Os pontinhos: onde a pessoa está, e atalho para qualquer tela. */}
-              <div className="flex items-center gap-1.5" role="tablist" aria-label="Telas de novidades">
+              <div
+                className="flex items-center gap-1.5"
+                role="tablist"
+                aria-label="Telas de novidades"
+              >
                 {TELAS.map((t, i) => (
                   <button
                     key={t.titulo}
@@ -225,205 +243,286 @@ export function Novidades() {
 
 /* ————— Ilustrações ————— */
 
-/** O anel que pulsa em volta do que a pessoa precisa achar. */
-function Destaque({ children, ativo }: { children: React.ReactNode; ativo: boolean }) {
-  if (!ativo) return <span className="opacity-60">{children}</span>;
+/** A moldura de uma "tela" em miniatura. */
+function Janela({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <span className="relative grid place-items-center">
-      <motion.span
-        className="absolute -inset-1.5 rounded-lg ring-2 ring-primary"
-        animate={{ scale: [1, 1.25, 1], opacity: [1, 0.3, 1] }}
-        transition={{ duration: 1.4, repeat: Infinity }}
-      />
-      <span className="relative rounded-md bg-primary p-1 text-primary-foreground">{children}</span>
-    </span>
-  );
-}
-
-/** A janelinha do chat, com o cabeçalho preto e os botões do jeito que estão no app. */
-function JanelaDoChat({ destaque }: { destaque: "atencao" | "trator" }) {
-  return (
-    <div className="relative">
-      <div className="w-72 overflow-hidden rounded-t-xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center gap-2 bg-sidebar px-2.5 py-2 text-sidebar-foreground">
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/30 text-[10px] font-bold">
-            SO
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[11px] font-semibold">SOPHIA</div>
-            <div className="text-[9px] text-emerald-400">Disponível</div>
-          </div>
-          <span className="flex items-center gap-1.5">
-            <Destaque ativo={destaque === "atencao"}>
-              <BellRing className="h-3.5 w-3.5" />
-            </Destaque>
-            <Destaque ativo={destaque === "trator"}>
-              <Tractor className="h-3.5 w-3.5" />
-            </Destaque>
-            <span className="opacity-60">
-              <Smile className="h-3.5 w-3.5" />
-            </span>
-            <span className="text-red-400">
-              <Eraser className="h-3.5 w-3.5" />
-            </span>
-            <span className="h-3 w-px bg-white/20" />
-            <Minus className="h-3.5 w-3.5 opacity-60" />
-            <X className="h-3.5 w-3.5 opacity-60" />
-          </span>
-        </div>
-        <div className="space-y-1.5 p-2.5">
-          <div className="w-fit rounded-xl rounded-bl-sm bg-secondary px-2.5 py-1 text-[10px]">
-            Bom dia! Viu o relatório?
-          </div>
-          {destaque === "atencao" ? (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-              className="mx-auto w-fit rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium"
-            >
-              🔔 Você chamou a atenção
-            </motion.div>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="flex items-center gap-1 rounded-md border border-border bg-background p-1"
-            >
-              <span className="flex-1 truncate px-1 text-[10px] text-muted-foreground">
-                Reunião às 14h, não esquece! 🚜
-              </span>
-              <span className="grid h-5 w-5 place-items-center rounded bg-primary text-primary-foreground">
-                <Send className="h-2.5 w-2.5" />
-              </span>
-            </motion.div>
-          )}
-        </div>
-      </div>
-      {destaque === "trator" && (
-        <motion.div
-          className="absolute -bottom-6 left-0 flex items-center gap-1 text-2xl"
-          initial={{ x: -120 }}
-          animate={{ x: 260 }}
-          transition={{ duration: 3.2, repeat: Infinity, ease: "linear" }}
-        >
-          <span className="rounded bg-amber-300 px-1.5 py-0.5 text-[9px] font-bold text-amber-950">
-            Reunião às 14h!
-          </span>
-          🚜
-        </motion.div>
-      )}
-      {destaque === "atencao" && (
-        <motion.span
-          className="absolute -right-6 -top-5 text-3xl"
-          animate={{ rotate: [0, -18, 18, -12, 12, 0] }}
-          transition={{ duration: 0.8, repeat: Infinity, repeatDelay: 0.8 }}
-        >
-          🔔
-        </motion.span>
-      )}
+    <div
+      className={`overflow-hidden rounded-xl border border-border bg-card p-3 shadow-2xl ${className}`}
+    >
+      {children}
     </div>
   );
 }
 
 function IlustracaoAbertura() {
+  const itens = [
+    { Icone: Home, rotulo: "Início" },
+    { Icone: CalendarClock, rotulo: "Agenda" },
+    { Icone: Flame, rotulo: "Pack" },
+    { Icone: BarChart3, rotulo: "Relatórios" },
+  ];
   return (
-    <div className="flex items-center gap-4">
-      <span className="grid h-14 w-14 place-items-center rounded-2xl bg-card text-muted-foreground shadow-lg">
-        <Zap className="h-6 w-6" />
-      </span>
-      <motion.span
-        animate={{ x: [0, 8, 0] }}
-        transition={{ duration: 1.2, repeat: Infinity }}
-        className="text-primary"
-      >
-        <ArrowRight className="h-7 w-7" />
-      </motion.span>
-      <span className="relative grid h-16 w-16 place-items-center rounded-full bg-primary text-primary-foreground shadow-xl">
-        <MessageCircle className="h-8 w-8" />
-        <motion.span
-          className="absolute -right-2 -top-2 text-xl"
-          animate={{ scale: [1, 1.3, 1] }}
-          transition={{ duration: 1, repeat: Infinity }}
+    <div className="relative flex items-center gap-3">
+      {itens.map(({ Icone, rotulo }, i) => (
+        <motion.div
+          key={rotulo}
+          initial={{ opacity: 0, y: 16, scale: 0.8 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ delay: 0.15 + i * 0.12, type: "spring", stiffness: 260, damping: 18 }}
+          className="flex flex-col items-center gap-1.5"
         >
-          <Sparkles className="h-5 w-5 text-amber-400" />
-        </motion.span>
-      </span>
-    </div>
-  );
-}
-
-function IlustracaoEmojiGigante() {
-  return (
-    <div className="relative flex h-full w-full items-center justify-center">
-      {Array.from({ length: 9 }, (_, i) => (
-        <motion.span
-          key={i}
-          className="absolute text-xl"
-          style={{ left: `${8 + i * 10.5}%` }}
-          initial={{ y: 140, opacity: 0 }}
-          animate={{ y: -140, opacity: [0, 1, 0] }}
-          transition={{ duration: 2.4, delay: i * 0.25, repeat: Infinity }}
-        >
-          🎉
-        </motion.span>
-      ))}
-      <div className="flex flex-col items-center">
-        <motion.span
-          className="text-7xl leading-none drop-shadow-lg"
-          animate={{ scale: [0.4, 1.15, 1], rotate: [-15, 6, 0] }}
-          transition={{ duration: 1, repeat: Infinity, repeatDelay: 1.4 }}
-        >
-          🎉
-        </motion.span>
-        <span className="mt-2 rounded-full bg-gradient-to-r from-primary via-lime-500 to-amber-400 px-4 py-1 text-xs font-black uppercase text-white shadow">
-          Eduardo mandou!
-        </span>
-      </div>
-      <span className="absolute bottom-3 right-4 flex items-center gap-1 rounded-md bg-sidebar px-2 py-1 text-sidebar-foreground shadow">
-        <Destaque ativo>
-          <Smile className="h-3.5 w-3.5" />
-        </Destaque>
-        <span className="text-[10px] font-semibold">Emoji</span>
-      </span>
-    </div>
-  );
-}
-
-function IlustracaoReacao() {
-  return (
-    <div className="w-72 rounded-xl border border-border bg-card p-3 shadow-xl">
-      <div className="mb-1 flex items-center gap-1.5">
-        <span className="rounded bg-sky-500/15 px-1.5 text-[9px] font-semibold text-sky-600">TI</span>
-      </div>
-      <div className="text-sm font-medium">Conferir os boletins de hoje</div>
-      <div className="mt-2.5 flex items-center gap-1.5">
-        <span className="relative inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-          <motion.span
-            className="absolute -inset-1 rounded-full ring-2 ring-primary"
-            animate={{ scale: [1, 1.15, 1], opacity: [1, 0.3, 1] }}
-            transition={{ duration: 1.4, repeat: Infinity }}
-          />
-          <SmilePlus className="h-3 w-3" /> Reagir
-        </span>
-        <span className="flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px]">
-          <span>👍❤️</span>
-          <span className="text-muted-foreground">Você e Sophia</span>
-        </span>
-      </div>
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className="mt-2.5 flex gap-1 rounded-full border border-border bg-background p-1 shadow"
-      >
-        {["👍", "❤️", "😂", "🙏", "🔥", "✅"].map((e) => (
-          <span key={e} className="grid h-6 w-6 place-items-center text-base">
-            {e}
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-card text-primary shadow-lg">
+            <Icone className="h-6 w-6" />
           </span>
+          <span className="text-[10px] font-semibold text-muted-foreground">{rotulo}</span>
+        </motion.div>
+      ))}
+      <motion.span
+        className="absolute -right-5 -top-6"
+        animate={{ scale: [1, 1.3, 1], rotate: [0, 15, 0] }}
+        transition={{ duration: 1.4, repeat: Infinity }}
+      >
+        <Sparkles className="h-6 w-6 text-amber-400" />
+      </motion.span>
+    </div>
+  );
+}
+
+function IlustracaoInicio() {
+  const aneis = [
+    { r: 30, p: 0.8, cor: "var(--color-primary)" },
+    { r: 22, p: 0.55, cor: "var(--color-success)" },
+    { r: 14, p: 0.35, cor: "var(--color-warning)" },
+  ];
+  return (
+    <Janela className="flex w-80 items-center gap-4">
+      <svg viewBox="0 0 70 70" className="h-20 w-20 -rotate-90">
+        {aneis.map((a, i) => {
+          const volta = 2 * Math.PI * a.r;
+          return (
+            <g key={a.r}>
+              <circle
+                cx={35}
+                cy={35}
+                r={a.r}
+                fill="none"
+                strokeWidth={6}
+                stroke="var(--color-secondary)"
+              />
+              <motion.circle
+                cx={35}
+                cy={35}
+                r={a.r}
+                fill="none"
+                strokeWidth={6}
+                strokeLinecap="round"
+                stroke={a.cor}
+                strokeDasharray={volta}
+                initial={{ strokeDashoffset: volta }}
+                animate={{ strokeDashoffset: volta * (1 - a.p) }}
+                transition={{ duration: 1, delay: 0.2 + i * 0.15 }}
+              />
+            </g>
+          );
+        })}
+      </svg>
+      <div className="min-w-0 flex-1">
+        <div className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Seu ritmo
+        </div>
+        <svg viewBox="0 0 120 40" className="mt-1 h-10 w-full">
+          <motion.path
+            d="M0,32 C10,30 15,20 25,24 C35,28 40,10 50,14 C60,18 65,30 75,22 C85,14 95,6 105,12 C112,16 116,10 120,8"
+            fill="none"
+            stroke="var(--color-primary)"
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 1.4, ease: "easeOut" }}
+          />
+        </svg>
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="text-[9px] text-muted-foreground">Ontem</span>
+          <span className="font-display text-base font-bold text-primary">6h 40m</span>
+        </div>
+      </div>
+    </Janela>
+  );
+}
+
+function IlustracaoAgenda() {
+  return (
+    <div className="relative">
+      <Janela className="w-72 p-0">
+        {["13:00", "14:00", "15:00"].map((h, i) => (
+          <div key={h} className="flex h-9 border-b border-border last:border-0">
+            <span className="w-11 shrink-0 px-1.5 pt-0.5 text-[9px] text-muted-foreground">
+              {h}
+            </span>
+            <div className="relative flex-1 border-l border-border">
+              {i === 1 && (
+                <motion.div
+                  initial={{ opacity: 0, scaleY: 0.4 }}
+                  animate={{ opacity: 1, scaleY: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="absolute inset-x-1 top-0.5 flex h-8 origin-top items-center gap-1 rounded-md bg-violet-500/90 px-1.5 text-[9px] font-semibold text-white"
+                >
+                  <Lock className="h-2.5 w-2.5" /> Alinhamento PCP
+                </motion.div>
+              )}
+            </div>
+          </div>
         ))}
+      </Janela>
+      <motion.div
+        initial={{ opacity: 0, x: 30, y: 10 }}
+        animate={{ opacity: 1, x: 0, y: 0 }}
+        transition={{ delay: 1, type: "spring", stiffness: 200, damping: 18 }}
+        className="absolute -bottom-8 -right-12 w-44 rounded-xl border border-violet-500/40 bg-card p-2 shadow-2xl"
+      >
+        <div className="text-[9px] font-bold uppercase text-violet-600">Em 10 minutos · 14:00</div>
+        <div className="text-[11px] font-semibold">Alinhamento PCP</div>
+        <div className="mt-1 flex -space-x-1.5">
+          {["bg-sky-400", "bg-amber-400", "bg-emerald-400"].map((c) => (
+            <span key={c} className={`h-5 w-5 rounded-full ring-2 ring-card ${c}`} />
+          ))}
+        </div>
       </motion.div>
     </div>
+  );
+}
+
+function IlustracaoPack() {
+  return (
+    <Janela className="w-80">
+      <div className="flex items-center gap-1.5 rounded-lg border border-primary/50 bg-background px-2 py-1.5">
+        <Flame className="h-3.5 w-3.5 text-amber-500" />
+        <motion.span
+          className="flex-1 overflow-hidden whitespace-nowrap text-[11px]"
+          initial={{ width: 0 }}
+          animate={{ width: "100%" }}
+          transition={{ duration: 1.2, ease: "linear" }}
+        >
+          Conferir boletins do 820
+        </motion.span>
+        <span className="rounded border border-border px-1 text-[9px] text-muted-foreground">
+          Enter
+        </span>
+      </div>
+      <div className="mt-2 flex gap-1">
+        {["08:00", "Alta", "#campo"].map((c) => (
+          <span key={c} className="rounded-full bg-secondary px-2 py-0.5 text-[9px] font-medium">
+            {c}
+          </span>
+        ))}
+      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1.4 }}
+        className="mt-3 flex items-center gap-2 rounded-lg bg-primary px-2.5 py-1.5 text-[10px] font-semibold text-primary-foreground"
+      >
+        <Users className="h-3.5 w-3.5" /> Enviar pack para 3 pessoas
+      </motion.div>
+    </Janela>
+  );
+}
+
+function IlustracaoTarefas() {
+  return (
+    <div className="flex w-80 flex-col gap-2">
+      <div className="flex gap-2">
+        {[
+          { Icone: Users, t: "Todos os setores" },
+          { Icone: Tag, t: "Filtrar por tag" },
+        ].map(({ Icone, t }) => (
+          <span
+            key={t}
+            className="inline-flex flex-1 items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[10px] text-muted-foreground shadow"
+          >
+            <Icone className="h-3 w-3" /> {t}
+          </span>
+        ))}
+      </div>
+      <Janela>
+        <div className="flex items-center gap-1.5 text-sm font-medium">
+          Revisar apontamentos da equipe
+          <motion.span
+            initial={{ scale: 0 }}
+            animate={{ scale: [0, 1.25, 1] }}
+            transition={{ delay: 0.5, duration: 0.5 }}
+            className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold uppercase text-white"
+          >
+            <Sparkles className="h-2.5 w-2.5" /> Nova
+          </motion.span>
+        </div>
+        <div className="mt-0.5 text-[10px] font-medium text-emerald-600">chegou hoje 14/10</div>
+      </Janela>
+    </div>
+  );
+}
+
+function IlustracaoRelatorios() {
+  const barras = [40, 65, 52, 80, 70, 92];
+  return (
+    <Janela className="flex w-80 items-end gap-3">
+      <div className="flex h-20 flex-1 items-end gap-1.5">
+        {barras.map((h, i) => (
+          <motion.span
+            key={i}
+            className="flex-1 rounded-t"
+            style={{
+              background:
+                i === barras.length - 1
+                  ? "var(--color-primary)"
+                  : "color-mix(in oklab, var(--color-primary) 45%, var(--color-secondary))",
+            }}
+            initial={{ height: 2 }}
+            animate={{ height: `${h}%` }}
+            transition={{ delay: 0.1 + i * 0.08, duration: 0.5 }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-col items-end gap-1">
+        <span className="font-display text-2xl font-bold text-success">92%</span>
+        <span className="text-[9px] text-muted-foreground">no prazo · +8 pts</span>
+        <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-bold text-white">
+          Excel
+        </span>
+      </div>
+    </Janela>
+  );
+}
+
+function IlustracaoCorrecoes() {
+  const itens = [
+    "Feriado não conta atraso",
+    "No dia do prazo = no prazo",
+    "Som do computador na tela",
+    "Escolher microfone e câmera",
+  ];
+  return (
+    <Janela className="w-72">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Wrench className="h-3 w-3" /> Corrigido
+      </div>
+      <ul className="space-y-1.5">
+        {itens.map((t, i) => (
+          <motion.li
+            key={t}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 + i * 0.2 }}
+            className="flex items-center gap-2 text-[11px]"
+          >
+            <span className="grid h-4 w-4 place-items-center rounded-full bg-success text-white">
+              <Check className="h-2.5 w-2.5" />
+            </span>
+            {t}
+          </motion.li>
+        ))}
+      </ul>
+    </Janela>
   );
 }

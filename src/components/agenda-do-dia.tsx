@@ -28,6 +28,7 @@ import {
   DoorOpen,
   ListTodo,
   Loader2,
+  Lock,
   NotebookPen,
   Plus,
   Timer,
@@ -68,6 +69,7 @@ import {
   type Priority,
   type Status,
   type Task,
+  type User,
 } from "@/lib/fluxo-types";
 import {
   listarAgendaDeSalas,
@@ -83,6 +85,13 @@ import {
   type AnotacaoDoDia,
   type Lembrete,
 } from "@/lib/agenda-pessoal.functions";
+import {
+  COMPROMISSOS_MUDARAM,
+  COR_DA_AGENDA_TRAVADA,
+  faixaDeHorario,
+  type Compromisso,
+} from "@/lib/compromisso";
+import { compromissosPorDia, lerCompromissos } from "@/lib/compromissos-cliente";
 
 /* A agenda de um dia, aberta ao clicar numa data do calendário.
  *
@@ -123,6 +132,8 @@ export interface AgendaDoDiaProps {
   aoFechar: () => void;
   /** Troca o calendário para o modo Dia nesta data (e fecha a agenda). */
   aoVerNoCalendario: (dia: string) => void;
+  /** Agenda travada (14/10/2026): abre o detalhe do compromisso clicado. */
+  aoAbrirCompromisso?: (c: Compromisso) => void;
 }
 
 export function AgendaDoDia(props: AgendaDoDiaProps) {
@@ -292,6 +303,24 @@ async function buscarPessoal(de: string, ate: string): Promise<Map<string, Pesso
   return mapa;
 }
 
+/* Agenda travada (14/10/2026): os compromissos chegam nos mesmos blocos de 28
+   dias, pela leitura com memória de `compromissos-cliente.ts` — o calendário
+   e a agenda dividem o que já foi lido. "Só minhas" lê os meus; "Todos", os
+   da equipe também (a régua do servidor). */
+const SEM_COMPROMISSOS: Compromisso[] = [];
+
+async function buscarCompromissosMeus(de: string, ate: string) {
+  const r = await lerCompromissos(de, ate, false);
+  return compromissosPorDia(r.compromissos, de, ate);
+}
+
+async function buscarCompromissosDaEquipe(de: string, ate: string) {
+  const r = await lerCompromissos(de, ate, true);
+  return compromissosPorDia(r.compromissos, de, ate);
+}
+
+const falhaDosCompromissos = () => "Não deu para ler a agenda travada agora.";
+
 /* ------------------------------ Relógio ------------------------------ */
 
 /**
@@ -345,8 +374,9 @@ const minutoLocal = (iso: string) => {
    está nas mãos) e, dentro dela, pela prioridade. */
 const ORDEM_SITUACAO: Record<Status, number> = { andamento: 0, pendente: 1, concluida: 2 };
 const ORDEM_PRIORIDADE: Record<Priority, number> = { alta: 0, media: 1, baixa: 2 };
-/** No mesmo minuto: a reunião, que tem hora para começar; depois o lembrete; depois a tarefa. */
-const ORDEM_TIPO = { reserva: 0, lembrete: 1, tarefa: 2 } as const;
+/** No mesmo minuto: a reunião e a agenda travada, que têm hora para começar; depois o
+ *  lembrete; depois a tarefa. */
+const ORDEM_TIPO = { reserva: 0, compromisso: 1, lembrete: 2, tarefa: 3 } as const;
 
 const SEM_TAREFAS: Task[] = [];
 
@@ -475,6 +505,7 @@ function resumoDasSalas(
 
 type ItemDaAgenda =
   | { tipo: "reserva"; chave: string; inicio: number; fim: number; r: ReservaDeSala }
+  | { tipo: "compromisso"; chave: string; inicio: number; fim: number; c: Compromisso }
   | { tipo: "lembrete"; chave: string; inicio: number; l: Lembrete }
   | { tipo: "tarefa"; chave: string; inicio: number; t: Task };
 
@@ -515,6 +546,7 @@ function AgendaAberta({
   reservasConhecidas,
   aoFechar,
   aoVerNoCalendario,
+  aoAbrirCompromisso,
 }: AgendaDoDiaProps & { diaInicial: string }) {
   const { users, currentUser, openTask, openQuickCreate, quickCreate, taskDialog } = useFluxo();
   const reduzir = useReducedMotion();
@@ -636,6 +668,24 @@ function AgendaAberta({
   const lembretes = pessoal.doDia?.lembretes ?? SEM_PESSOAL.lembretes;
   const mudarPessoal = pessoal.mudarDia;
 
+  /* ---- Agenda travada (14/10/2026) ---- */
+
+  const [versaoCompromissos, setVersaoCompromissos] = useState(0);
+  useEffect(() => {
+    const aoMudar = () => setVersaoCompromissos((v) => v + 1);
+    window.addEventListener(COMPROMISSOS_MUDARAM, aoMudar);
+    return () => window.removeEventListener(COMPROMISSOS_MUDARAM, aoMudar);
+  }, []);
+  /* O escopo entra na versão: trocar "Só minhas"/"Todos" pede os blocos de novo. */
+  const travados = usePorBlocos(
+    dia,
+    versaoCompromissos * 2 + (escopo === "todos" ? 1 : 0),
+    escopo === "todos" ? buscarCompromissosDaEquipe : buscarCompromissosMeus,
+    SEM_COMPROMISSOS,
+    falhaDosCompromissos,
+  );
+  const compromissos = travados.doDia ?? SEM_COMPROMISSOS;
+
   const avisarMudanca = (d: string) =>
     window.dispatchEvent(new CustomEvent(AGENDA_PESSOAL_MUDOU, { detail: { dia: d } }));
 
@@ -715,6 +765,17 @@ function AgendaAberta({
         fim: emMinutos(r.fim),
         r,
       })),
+      ...compromissos.map((c) => {
+        /* O que começou ontem ou termina amanhã ocupa só a parte deste dia. */
+        const zero = (isoParaData(dia) ?? new Date()).getTime();
+        return {
+          tipo: "compromisso" as const,
+          chave: `c${c.id}`,
+          inicio: Math.max(0, Math.round((Date.parse(c.inicio) - zero) / 60_000)),
+          fim: Math.min(24 * 60, Math.round((Date.parse(c.fim) - zero) / 60_000)),
+          c,
+        };
+      }),
       ...lembretes.map((l) => ({
         tipo: "lembrete" as const,
         chave: `l${l.id}`,
@@ -729,7 +790,7 @@ function AgendaAberta({
       })),
     ];
     return lista.sort((a, b) => a.inicio - b.inicio || ORDEM_TIPO[a.tipo] - ORDEM_TIPO[b.tipo]);
-  }, [reservas, lembretes, comHora]);
+  }, [reservas, compromissos, dia, lembretes, comHora]);
 
   const posicaoDoAgora =
     minutoAgora === null
@@ -751,7 +812,11 @@ function AgendaAberta({
   const minhasReunioes = (reservas ?? []).filter(ehMinha).length;
   const progresso = doDia.length > 0 ? feitas / doDia.length : 0;
   const vazio =
-    doDia.length === 0 && lembretes.length === 0 && reservas !== null && reservas.length === 0;
+    doDia.length === 0 &&
+    lembretes.length === 0 &&
+    compromissos.length === 0 &&
+    reservas !== null &&
+    reservas.length === 0;
 
   /* A barra sai do zero ao abrir e desliza entre os dias — em `transform`, que
      o navegador anima sem refazer o layout da página. */
@@ -808,6 +873,8 @@ function AgendaAberta({
          vez da agenda chegasse, o React já teria tirado o menu da tela e esta
          pergunta responderia "não há menu", fechando a agenda junto. */
       if (document.querySelector("[data-menu-da-tarefa]")) return;
+      // O detalhe ou o "Travar agenda" por cima (14/10/2026): o teclado é deles.
+      if (document.querySelector("[data-sobre-a-agenda]")) return;
       if (e.key === "Escape") {
         e.preventDefault();
         aoFechar();
@@ -1108,6 +1175,19 @@ function AgendaAberta({
                                 item.inicio <= minutoAgora &&
                                 minutoAgora < item.fim
                               }
+                            />
+                          ) : item.tipo === "compromisso" ? (
+                            <CartaoDoCompromisso
+                              c={item.c}
+                              inicio={item.inicio}
+                              users={users}
+                              euId={currentUser.id}
+                              acontecendo={
+                                minutoAgora !== null &&
+                                item.inicio <= minutoAgora &&
+                                minutoAgora < item.fim
+                              }
+                              aoAbrir={aoAbrirCompromisso}
                             />
                           ) : item.tipo === "lembrete" ? (
                             <CartaoDoLembrete l={item.l} aoApagar={apagar} />
@@ -1607,6 +1687,77 @@ const CartaoDaReserva = memo(function CartaoDaReserva({
           {minha ? "Você reservou" : `Reservada por ${nomeCurto(r.responsavel || "—")}`}
         </div>
       </div>
+    </div>
+  );
+});
+
+/**
+ * Agenda travada na linha do tempo (14/10/2026): o cadeado, o horário, o
+ * assunto, quem travou e quem está nela. O clique abre o detalhe do
+ * calendário, onde quem criou edita ou cancela.
+ */
+const CartaoDoCompromisso = memo(function CartaoDoCompromisso({
+  c,
+  inicio,
+  users,
+  euId,
+  acontecendo,
+  aoAbrir,
+}: {
+  c: Compromisso;
+  /** Minuto do dia em que ele começa nesta data (0 se veio de ontem). */
+  inicio: number;
+  users: User[];
+  euId: string;
+  acontecendo: boolean;
+  aoAbrir?: (c: Compromisso) => void;
+}) {
+  const criador = users.find((u) => u.id === c.criadoPor);
+  const pessoas = c.participantes
+    .map((id) => users.find((u) => u.id === id))
+    .filter((u): u is User => !!u);
+  const nomes = pessoas.map((u) => (u.id === euId ? "você" : nomeCurto(u.name))).join(", ");
+  return (
+    <div className="flex gap-2">
+      <HoraNaRegua>{emHora(inicio)}</HoraNaRegua>
+      <button
+        type="button"
+        onClick={() => aoAbrir?.(c)}
+        disabled={!aoAbrir}
+        title={`Agenda travada · ${c.assunto} · ${faixaDeHorario(c)}`}
+        className="min-w-0 flex-1 rounded-lg border border-l-[3px] px-3 py-2 text-left transition enabled:hover:brightness-95"
+        style={{
+          borderColor: `color-mix(in oklab, ${COR_DA_AGENDA_TRAVADA} 30%, transparent)`,
+          borderLeftColor: COR_DA_AGENDA_TRAVADA,
+          background: `color-mix(in oklab, ${COR_DA_AGENDA_TRAVADA} 7%, transparent)`,
+        }}
+      >
+        <div className="flex items-center gap-2 text-[11px]">
+          <Lock className="h-3.5 w-3.5 shrink-0" style={{ color: COR_DA_AGENDA_TRAVADA }} />
+          <span className="font-semibold tabular-nums">{faixaDeHorario(c)}</span>
+          {acontecendo && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-px text-[10px] font-semibold text-destructive">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-destructive" />
+              Agora
+            </span>
+          )}
+          <span className="ml-auto flex shrink-0 -space-x-1.5">
+            {pessoas.slice(0, 5).map((u) => (
+              <UserAvatar
+                key={u.id}
+                nome={u.name}
+                iniciais={u.avatar}
+                className="h-5 w-5 text-[8px] ring-2 ring-card"
+              />
+            ))}
+          </span>
+        </div>
+        <div className="mt-1 truncate text-sm font-medium">{c.assunto}</div>
+        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {c.criadoPor === euId ? "Você travou" : `Travada por ${nomeCurto(criador?.name ?? "—")}`}
+          {nomes && ` · ${nomes}`}
+        </div>
+      </button>
     </div>
   );
 });

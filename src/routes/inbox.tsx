@@ -9,6 +9,9 @@ import {
   Clock,
   FolderKanban,
   Inbox as InboxIcon,
+  Lock,
+  Megaphone,
+  Newspaper,
   PhoneMissed,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
@@ -35,6 +38,7 @@ const filters = [
   { id: "concluida", label: "Concluídas" },
   { id: "chamada_perdida", label: "Chamadas" },
   { id: "lembrete", label: "Lembretes" },
+  { id: "compromisso", label: "Agenda" },
 ] as const;
 
 function InboxPage() {
@@ -56,6 +60,9 @@ function InboxPage() {
     if (type === "chamada_perdida") return PhoneMissed;
     if (type === "projeto") return FolderKanban;
     if (type === "lembrete") return AlarmClock;
+    if (type === "comunicado") return Megaphone;
+    if (type === "mural") return Newspaper;
+    if (type === "compromisso") return Lock;
     return Bell;
   };
 
@@ -106,6 +113,16 @@ function InboxPage() {
                 <button
                   onClick={() => {
                     markNotifRead(n.id);
+                    /* Agenda travada (14/10/2026): o calendário, no dia do
+                       compromisso. Antes da sala — o aviso pode trazer a sala,
+                       mas o clique é para ver a agenda. */
+                    if (n.type === "compromisso") {
+                      navigate({
+                        to: "/calendario",
+                        search: n.compromissoId ? { compromisso: n.compromissoId } : {},
+                      });
+                      return;
+                    }
                     if (n.type === "chamada_perdida" && n.fromUserId && n.roomName) {
                       callUserToRoom(n.fromUserId, n.roomName, n.roomLabel ?? n.roomName);
                       navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
@@ -119,6 +136,7 @@ function InboxPage() {
                         to: "/projetos",
                         search: n.projectId ? { projeto: n.projectId } : {},
                       });
+                    // Comunicado e marcação no Mural (14/10/2026).
                   }}
                   className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-secondary/50 ${
                     n.read ? "opacity-70" : ""

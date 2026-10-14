@@ -19,8 +19,31 @@ import type { Task, User } from "@/lib/fluxo-types";
  * não abrir a tarefa nem começar um arraste.
  */
 export function ReacoesDaTarefa({ task, compacto = false }: { task: Task; compacto?: boolean }) {
-  const { currentUser, users, reactToTask } = useFluxo();
-  const reacoes = task.reactions ?? [];
+  const { reactToTask } = useFluxo();
+  return (
+    <BarraDeReacoes
+      reacoes={task.reactions ?? []}
+      aoReagir={(emoji) => reactToTask(task.id, emoji)}
+      compacto={compacto}
+    />
+  );
+}
+
+/**
+ * A mesma barra de reações, para qualquer coisa que se reaja — a tarefa e,
+ * desde 14/10/2026, os posts do Mural. Quem chama guarda as reações e diz o
+ * que fazer com a escolha (`null` = tirar a minha).
+ */
+export function BarraDeReacoes({
+  reacoes,
+  aoReagir,
+  compacto = false,
+}: {
+  reacoes: { userId: string; emoji: string }[];
+  aoReagir: (emoji: string | null) => void;
+  compacto?: boolean;
+}) {
+  const { currentUser, users } = useFluxo();
   const minha = reacoes.find((r) => r.userId === currentUser.id)?.emoji ?? null;
   const pulo = useAnimationControls();
 
@@ -54,11 +77,11 @@ export function ReacoesDaTarefa({ task, compacto = false }: { task: Task; compac
 
   const reagir = (emoji: string) => {
     if (emoji === minha) {
-      reactToTask(task.id, null);
+      aoReagir(null);
       return;
     }
     lembrarEmoji(currentUser.id, emoji);
-    reactToTask(task.id, emoji);
+    aoReagir(emoji);
     void pulo.start({ scale: [1, 1.5, 0.9, 1.1, 1], rotate: [0, -12, 10, 0] , transition: { duration: 0.5 } });
   };
 
@@ -97,7 +120,7 @@ export function ReacoesDaTarefa({ task, compacto = false }: { task: Task; compac
               nome={nome}
               compacto={compacto}
               minha={minha}
-              aoTirarMinha={() => reactToTask(task.id, null)}
+              aoTirarMinha={() => aoReagir(null)}
             />
           </motion.div>
         )}

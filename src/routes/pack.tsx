@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEscFecha } from "@/hooks/use-esc-fecha";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Check,
+  Clock,
   Flame,
+  Search,
   Send,
   Sparkles,
   Trash2,
@@ -14,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { RECORRENCIA_DO_PACK } from "@/lib/recorrencia";
 import { confirmar } from "@/components/confirm-dialog";
 import { motion } from "framer-motion";
 
@@ -23,9 +24,18 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { ehChefeDe, podeEditarModeloDePack } from "@/lib/permissoes";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
-import type { PackTemplateScope } from "@/lib/fluxo-types";
+import type { PackTemplateScope, Task, User } from "@/lib/fluxo-types";
 import { TravaScroll } from "@/components/trava-scroll";
 import { UserAvatar } from "@/components/user-avatar";
+import { CriadorDePack, RascunhoDePack } from "@/components/criador-de-pack";
+import {
+  PRIORIDADES_DO_PACK,
+  chaveDoTitulo,
+  novoItemDePack,
+  tarefaDoItemDePack,
+  type ItemDePack,
+} from "@/lib/item-de-pack";
+import { semAcento } from "@/lib/texto-busca";
 
 export const Route = createFileRoute("/pack")({
   head: () => ({
@@ -41,26 +51,38 @@ export const Route = createFileRoute("/pack")({
   component: PackPage,
 });
 
-function todayEnd() {
-  const d = new Date();
-  d.setHours(23, 59, 0, 0);
-  return d.toISOString();
-}
-
-function parsePackLines(text: string) {
-  return text
-    .split("\n")
-    .map((l) => l.replace(/^[-*•\d.\s]+/, "").trim())
-    .filter((l) => l.length > 0);
-}
-
 type Tab = "meu" | "equipe" | "outro" | "modelos";
 type FiltroEquipe = "todos" | "pendentes" | "sem" | "feitos";
+
+const primeiroNome = (u: Pick<User, "name"> | undefined) => u?.name.split(" ")[0] ?? "a pessoa";
+
+/** Horário e prioridade do item, ao lado do título. Média sem horário não mostra nada. */
+function DetalhesDoItem({ t }: { t: Task }) {
+  const prio = PRIORIDADES_DO_PACK.find((p) => p.id === t.priority);
+  return (
+    <>
+      {t.dueTime && (
+        <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          {t.dueTime}
+        </span>
+      )}
+      {prio && t.priority !== "media" && (
+        <span
+          className={`shrink-0 rounded-full border px-1.5 py-0 text-[10px] font-semibold ${prio.cor}`}
+        >
+          {prio.label}
+        </span>
+      )}
+    </>
+  );
+}
 
 function PackPage() {
   const {
     createTask,
     updateTask,
+    deleteTask,
     tasks,
     users,
     currentUser,
@@ -71,9 +93,10 @@ function PackPage() {
     transferPack,
   } = useFluxo();
   const [tab, setTab] = useState<Tab>("meu");
-  const [meuText, setMeuText] = useState("");
-  const [outroText, setOutroText] = useState("");
-  const [targetId, setTargetId] = useState<string>("");
+  /* O que está sendo montado para os outros mora aqui, e não na aba: trocar
+     de aba para conferir o pack da equipe não pode jogar fora o rascunho. */
+  const [destinatarios, setDestinatarios] = useState<string[]>([]);
+  const [rascunho, setRascunho] = useState<ItemDePack[]>([]);
 
   // O pack de hoje e o que falta nele — ver `noPackDeHoje` e `concluidaHoje`.
   const myPack = useMemo(
@@ -108,52 +131,14 @@ function PackPage() {
     [users, currentUser, isGerente],
   );
 
-  const targetUser = users.find((u) => u.id === targetId);
-  const targetPack = useMemo(
-    () => (targetId ? tasks.filter((t) => noPackDeHoje(t, targetId)) : []),
-    [tasks, targetId],
-  );
-  const [lastSent, setLastSent] = useState<{ to: string; items: string[]; at: number } | null>(
-    null,
-  );
-
-  const submit = (assigneeId: string, text: string, clear: () => void) => {
-    const lines = parsePackLines(text);
-    if (lines.length === 0) {
-      toast.error("Escreva pelo menos um item (uma linha por tarefa)");
-      return;
-    }
-    const target = users.find((u) => u.id === assigneeId);
-    lines.forEach((title) => {
-      createTask({
-        title,
-        sector: target?.sector ?? currentUser.sector,
-        createdBy: currentUser.id,
-        assigneeId,
-        mentions: assigneeId !== currentUser.id ? [assigneeId] : [],
-        status: "pendente",
-        score: 10,
-        dueDate: todayEnd(),
-        /* O pack é de compromissos que voltam: nascia sem recorrência, e o
-           item concluído num dia sumia do pack no seguinte (o do João, em
-           25/09). Agora volta todo dia útil — ver RECORRENCIA_DO_PACK. */
-        ...RECORRENCIA_DO_PACK,
-        priority: "media",
-        tags: ["pack"],
-        inPack: true,
-      });
-    });
-    clear();
-    if (assigneeId === currentUser.id) {
-      toast.success(
-        `Adicionado ao seu pack (${lines.length} ${lines.length === 1 ? "item" : "itens"})`,
-      );
-    } else {
-      toast.success(
-        `Pack enviado para ${target?.name?.split(" ")[0] ?? "a pessoa"} (${lines.length})`,
-      );
-      setLastSent({ to: assigneeId, items: lines, at: Date.now() });
-    }
+  /** Itens da linha de criação entram direto no meu pack. */
+  const adicionarAoMeuPack = (itens: ItemDePack[]) => {
+    itens.forEach((i) => createTask(tarefaDoItemDePack(i, currentUser, currentUser)));
+    toast.success(
+      itens.length === 1
+        ? `"${itens[0].titulo}" no seu pack`
+        : `${itens.length} itens no seu pack de hoje`,
+    );
   };
 
   /* Concluir no pack é concluir a tarefa. Desfazer é pelo aviso que a
@@ -161,12 +146,9 @@ function PackPage() {
      clique aqui: o item concluído hoje fica travado, riscado, até amanhã. */
   const concluir = (id: string) => updateTask(id, { status: "concluida" });
 
-  const meuCount = parsePackLines(meuText).length;
-  const outroCount = parsePackLines(outroText).length;
-
   /** Abre "Montar para alguém" já com a pessoa escolhida. */
   const montarPara = (id: string) => {
-    setTargetId(id);
+    setDestinatarios([id]);
     setTab("outro");
   };
 
@@ -198,14 +180,14 @@ function PackPage() {
             </div>
           </div>
 
-          <nav className="mt-2 flex gap-1 rounded-lg bg-secondary p-1 text-xs font-semibold">
+          <nav className="mt-2 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1 text-xs font-semibold">
             {abas.map((t) => {
               const active = tab === t.id;
               return (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 transition ${
+                  className={`relative flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 py-2 transition ${
                     active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -227,8 +209,8 @@ function PackPage() {
 
         {tab === "meu" && (
           /* "Criar" e "Concluir" eram duas abas para a mesma lista: agora o dia
-             fica à esquerda e a caixa de acrescentar, ao lado. */
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+             fica à esquerda e a linha de criação, ao lado. */
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
             <section className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -243,7 +225,7 @@ function PackPage() {
               </div>
               {myPack.length === 0 ? (
                 <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-10 text-center text-xs text-muted-foreground">
-                  Nenhum item no seu pack de hoje. Escreva ao lado, uma linha por tarefa.
+                  Nenhum item no seu pack de hoje. Escreva ao lado e aperte Enter.
                 </div>
               ) : (
                 <>
@@ -276,10 +258,11 @@ function PackPage() {
                               type="button"
                               onClick={() => concluir(t.id)}
                               disabled={done}
-                              className={`flex-1 text-left disabled:cursor-default ${done ? "line-through" : ""}`}
+                              className={`min-w-0 flex-1 text-left disabled:cursor-default ${done ? "line-through" : ""}`}
                             >
                               {t.title}
                             </button>
+                            {!done && <DetalhesDoItem t={t} />}
                             {done ? (
                               <span className="shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                                 Concluída hoje
@@ -316,34 +299,14 @@ function PackPage() {
               <h2 className="flex items-center gap-1.5 text-sm font-semibold">
                 <Sparkles className="h-3.5 w-3.5" /> Acrescentar ao meu pack
               </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Uma linha por tarefa. Tudo entra como prioridade média e vence hoje.
+              <p className="mt-1 mb-3 text-xs text-muted-foreground">
+                Como criar uma tarefa: escreva e aperte Enter. Vence hoje; com horário, nele.
               </p>
-              <textarea
+              <CriadorDePack
                 autoFocus
-                value={meuText}
-                onChange={(e) => setMeuText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                    submit(currentUser.id, meuText, () => setMeuText(""));
-                }}
-                placeholder={
-                  "Ex:\nResponder e-mails prioritários\nRevisar proposta ACME\nLigar para fornecedor X"
-                }
-                rows={7}
-                className="mt-3 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                aoAdicionar={adicionarAoMeuPack}
+                existentes={myPack.map((t) => t.title)}
               />
-              <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-                <span>
-                  {meuCount} {meuCount === 1 ? "item" : "itens"} · Ctrl+Enter envia
-                </span>
-                <button
-                  onClick={() => submit(currentUser.id, meuText, () => setMeuText(""))}
-                  className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110"
-                >
-                  Adicionar
-                </button>
-              </div>
             </section>
           </div>
         )}
@@ -360,136 +323,18 @@ function PackPage() {
         )}
 
         {tab === "outro" && (
-          <section className="rounded-xl border border-border bg-card p-4">
-            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-              <Users className="h-3.5 w-3.5" /> Montar pack para alguém da equipe
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Escolha a pessoa e cole a rotina do dia. Ela recebe tudo já no pack, com menção.
-            </p>
-
-            {paraQuem.length === 0 ? (
-              <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
-                Ninguém responde a você no organograma — não há para quem montar pack.
-              </div>
-            ) : (
-              <div className="mt-3 grid gap-3 md:grid-cols-[240px_1fr]">
-                <div className="flex max-h-[420px] flex-col gap-1 overflow-y-auto rounded-lg border border-border bg-background p-2">
-                  {paraQuem.map((u) => {
-                    const active = targetId === u.id;
-                    const count = tasks.filter((t) => noPackDeHoje(t, u.id)).length;
-                    return (
-                      <button
-                        key={u.id}
-                        onClick={() => setTargetId(u.id)}
-                        className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition ${
-                          active ? "bg-primary/10 text-foreground" : "hover:bg-secondary"
-                        }`}
-                      >
-                        <UserAvatar
-                          nome={u.name}
-                          iniciais={u.avatar}
-                          className="h-7 w-7 shrink-0 text-[10px]"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-semibold">{u.name}</span>
-                          <span className="block truncate text-[10px] text-muted-foreground">
-                            {u.jobTitle}
-                          </span>
-                        </span>
-                        {count > 0 && (
-                          <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-500">
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  {targetUser && (
-                    <div className="rounded-lg border border-border bg-background p-3">
-                      <div className="flex items-center gap-2">
-                        <UserAvatar
-                          nome={targetUser.name}
-                          iniciais={targetUser.avatar}
-                          className="h-8 w-8 text-[11px]"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-semibold">
-                            Pack de {targetUser.name.split(" ")[0]} hoje
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            {targetPack.length === 0
-                              ? "Nenhum item ainda — você vai ser o primeiro"
-                              : `${targetPack.length} ${targetPack.length === 1 ? "item já enviado" : "itens já enviados"}`}
-                          </div>
-                        </div>
-                        {lastSent &&
-                          lastSent.to === targetId &&
-                          Date.now() - lastSent.at < 8000 && (
-                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
-                              ✓ enviado agora
-                            </span>
-                          )}
-                      </div>
-                      {targetPack.length > 0 && (
-                        <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto">
-                          {targetPack.map((t) => {
-                            const isNew =
-                              lastSent &&
-                              lastSent.to === targetId &&
-                              lastSent.items.includes(t.title);
-                            return (
-                              <li
-                                key={t.id}
-                                className={`truncate text-[11px] ${
-                                  isNew ? "font-semibold text-emerald-500" : "text-muted-foreground"
-                                }`}
-                              >
-                                {isNew ? "✓" : "•"} {t.title}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                  <textarea
-                    value={outroText}
-                    onChange={(e) => setOutroText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && targetId)
-                        submit(targetId, outroText, () => setOutroText(""));
-                    }}
-                    placeholder={
-                      targetId
-                        ? "Ex:\nFechar caixa do dia\nEnviar relatório semanal\nConfirmar reuniões de amanhã"
-                        : "Escolha uma pessoa ao lado para começar…"
-                    }
-                    disabled={!targetId}
-                    rows={9}
-                    className="w-full flex-1 resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-60"
-                  />
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>
-                      {outroCount} {outroCount === 1 ? "item" : "itens"} · Ctrl+Enter envia
-                    </span>
-                    <button
-                      onClick={() =>
-                        targetId && submit(targetId, outroText, () => setOutroText(""))
-                      }
-                      disabled={!targetId}
-                      className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
-                    >
-                      {targetUser ? `Enviar para ${targetUser.name.split(" ")[0]}` : "Enviar pack"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
+          <MontarParaAlguem
+            paraQuem={paraQuem}
+            tasks={tasks}
+            currentUser={currentUser}
+            packTemplates={packTemplates}
+            createTask={createTask}
+            deleteTask={deleteTask}
+            destinatarios={destinatarios}
+            setDestinatarios={setDestinatarios}
+            rascunho={rascunho}
+            setRascunho={setRascunho}
+          />
         )}
 
         {tab === "modelos" && (
@@ -506,6 +351,506 @@ function PackPage() {
         )}
       </div>
     </FluxoLayout>
+  );
+}
+
+type Fluxo = ReturnType<typeof useFluxo>;
+
+/**
+ * Montar o pack de outra pessoa — ou de várias de uma vez (pedido do usuário,
+ * 13/10/2026: "o montar pack para alguém também tem que ser mais fácil").
+ *
+ * Três passos na mesma tela: quem recebe (busca com foto, mais de um), os
+ * itens (a mesma linha de criação do meu pack, ou um modelo para começar) e
+ * o envio. Ao lado, o que cada pessoa já tem hoje — o item repetido é
+ * apontado no rascunho e não é enviado de novo.
+ *
+ * Cada item vira uma tarefa por pessoa, pelo `createTask` de sempre: nenhuma
+ * consulta nova, tudo sai do que a store já tem.
+ */
+function MontarParaAlguem({
+  paraQuem,
+  tasks,
+  currentUser,
+  packTemplates,
+  createTask,
+  deleteTask,
+  destinatarios,
+  setDestinatarios,
+  rascunho,
+  setRascunho,
+}: {
+  paraQuem: User[];
+  tasks: Task[];
+  currentUser: User;
+  packTemplates: Fluxo["packTemplates"];
+  createTask: Fluxo["createTask"];
+  deleteTask: Fluxo["deleteTask"];
+  destinatarios: string[];
+  setDestinatarios: (ids: string[]) => void;
+  rascunho: ItemDePack[];
+  setRascunho: (itens: ItemDePack[]) => void;
+}) {
+  const [busca, setBusca] = useState("");
+  const [ultimoEnvio, setUltimoEnvio] = useState<{ para: string[]; titulos: Set<string> } | null>(
+    null,
+  );
+
+  /* O desfazer roda segundos depois do envio: precisa da lista e do
+     `deleteTask` de AGORA, não dos da renderização em que o envio saiu — as
+     tarefas criadas ainda não estavam nela. */
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+  const deleteTaskRef = useRef(deleteTask);
+  deleteTaskRef.current = deleteTask;
+
+  /** O pack de hoje de cada pessoa, numa passada só pela lista. */
+  const packPorPessoa = useMemo(() => {
+    const m = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (!t.inPack || !noPackDeHoje(t, t.assigneeId)) continue;
+      const l = m.get(t.assigneeId);
+      if (l) l.push(t);
+      else m.set(t.assigneeId, [t]);
+    }
+    return m;
+  }, [tasks]);
+
+  const porId = useMemo(() => new Map(paraQuem.map((u) => [u.id, u])), [paraQuem]);
+  // Só quem ainda está na lista de quem eu posso montar — a regra de sempre.
+  const selecionados = destinatarios.map((id) => porId.get(id)).filter((u): u is User => !!u);
+  const selecionado = new Set(selecionados.map((u) => u.id));
+
+  const termo = semAcento(busca);
+  const visiveis = termo
+    ? paraQuem.filter(
+        (u) => semAcento(u.name).includes(termo) || semAcento(u.jobTitle ?? "").includes(termo),
+      )
+    : paraQuem;
+
+  const alternar = (id: string) =>
+    setDestinatarios(
+      selecionado.has(id)
+        ? selecionados.filter((u) => u.id !== id).map((u) => u.id)
+        : [...selecionados.map((u) => u.id), id],
+    );
+
+  /** Quem já tem este título no pack de hoje. */
+  const jaTem = (titulo: string) => {
+    const chave = chaveDoTitulo(titulo);
+    return selecionados.filter((u) =>
+      (packPorPessoa.get(u.id) ?? []).some((t) => chaveDoTitulo(t.title) === chave),
+    );
+  };
+
+  const titulosExistentes = selecionados.flatMap((u) =>
+    (packPorPessoa.get(u.id) ?? []).map((t) => t.title),
+  );
+
+  const usarModelo = (templateId: string) => {
+    const tpl = packTemplates.find((p) => p.id === templateId);
+    if (!tpl) return;
+    const noRascunho = new Set(rascunho.map((i) => chaveDoTitulo(i.titulo)));
+    const novos = tpl.items
+      .filter((it) => !noRascunho.has(chaveDoTitulo(it.title)))
+      .map((it) =>
+        novoItemDePack(it.title, {
+          minutos: it.estimatedMinutes,
+          etiquetasExtras: [`modelo:${tpl.name}`],
+        }),
+      );
+    setRascunho([...rascunho, ...novos]);
+    toast.success(
+      novos.length
+        ? `${novos.length} ${novos.length === 1 ? "item" : "itens"} do modelo "${tpl.name}"`
+        : `Os itens de "${tpl.name}" já estão na lista`,
+    );
+  };
+
+  // Quantas tarefas o envio cria: por pessoa, só o que ela ainda não tem.
+  const envios = selecionados.map((u) => {
+    const tem = new Set((packPorPessoa.get(u.id) ?? []).map((t) => chaveDoTitulo(t.title)));
+    return {
+      u,
+      itens: rascunho.filter((i) => i.titulo.trim() && !tem.has(chaveDoTitulo(i.titulo))),
+    };
+  });
+  const totalTarefas = envios.reduce((n, e) => n + e.itens.length, 0);
+  const vazios = rascunho.some((i) => !i.titulo.trim());
+
+  const rotuloEnviar =
+    selecionados.length === 0
+      ? "Escolha quem recebe"
+      : selecionados.length === 1
+        ? `Enviar pack para ${primeiroNome(selecionados[0])}`
+        : `Enviar pack para ${selecionados.length} pessoas`;
+
+  const enviar = async () => {
+    if (selecionados.length === 0) {
+      toast.error("Escolha pelo menos uma pessoa");
+      return;
+    }
+    if (rascunho.length === 0) {
+      toast.error("Acrescente pelo menos um item");
+      return;
+    }
+    if (vazios) {
+      toast.error("Há item sem título — escreva ou tire da lista");
+      return;
+    }
+    if (totalTarefas === 0) {
+      toast.error("Todos esses itens já estão no pack de hoje de quem vai receber");
+      return;
+    }
+    // Para várias pessoas o envio se multiplica: vale uma confirmação.
+    if (selecionados.length > 1) {
+      const ok = await confirmar({
+        titulo: `Enviar ${rascunho.length} ${rascunho.length === 1 ? "item" : "itens"} para ${selecionados.length} pessoas?`,
+        descricao: `${selecionados.map((u) => u.name).join(", ")}. São ${totalTarefas} tarefas no total; o que alguém já tem hoje não é repetido.`,
+        confirmar: "Enviar",
+      });
+      if (!ok) return;
+    }
+
+    const inicio = Date.now();
+    const enviados = rascunho;
+    const para = envios.filter((e) => e.itens.length > 0).map((e) => e.u.id);
+    envios.forEach(({ u, itens }) =>
+      itens.forEach((i) => createTask(tarefaDoItemDePack(i, u, currentUser))),
+    );
+    const titulos = new Set(enviados.map((i) => chaveDoTitulo(i.titulo)));
+    setUltimoEnvio({ para, titulos });
+    setRascunho([]);
+
+    /* Desfazer: arquiva o que acabou de sair e devolve a lista ao rascunho.
+       As tarefas são achadas pelo que as identifica — quem criou, para quem,
+       o título e o instante —, porque o `createTask` não devolve o id. */
+    const desfazer = () => {
+      const alvos = tasksRef.current.filter(
+        (t) =>
+          t.inPack &&
+          t.createdBy === currentUser.id &&
+          para.includes(t.assigneeId) &&
+          titulos.has(chaveDoTitulo(t.title)) &&
+          t.status !== "concluida" &&
+          Date.parse(t.createdAt) >= inicio - 2000,
+      );
+      alvos.forEach((t) => deleteTaskRef.current(t.id));
+      // Um aviso de "excluída" por tarefa seria uma pilha: fica só o resumo.
+      toast.dismiss();
+      setRascunho(enviados);
+      setUltimoEnvio(null);
+      toast.success(
+        `Envio desfeito — ${alvos.length} ${alvos.length === 1 ? "tarefa retirada" : "tarefas retiradas"}`,
+      );
+    };
+
+    const quem = para.length === 1 ? primeiroNome(porId.get(para[0])) : `${para.length} pessoas`;
+    const pulados = rascunho.length * selecionados.length - totalTarefas;
+    toast.success(`Pack enviado para ${quem}`, {
+      description: `${totalTarefas} ${totalTarefas === 1 ? "tarefa criada" : "tarefas criadas"}${
+        pulados > 0 ? ` · ${pulados} já ${pulados === 1 ? "estava" : "estavam"} no pack` : ""
+      }`,
+      duration: 10000,
+      action: { label: "Desfazer", onClick: desfazer },
+    });
+  };
+
+  if (paraQuem.length === 0) {
+    return (
+      <section className="rounded-xl border border-dashed border-border bg-card px-4 py-10 text-center text-xs text-muted-foreground">
+        Ninguém responde a você no organograma — não há para quem montar pack.
+      </section>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)_340px]">
+      {/* 1. Quem recebe */}
+      <section className="flex flex-col rounded-xl border border-border bg-card p-3 lg:max-h-[640px]">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">
+            <Passo n={1} /> Quem recebe
+          </h2>
+          {selecionados.length > 0 && (
+            <button
+              onClick={() => setDestinatarios([])}
+              className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              Limpar ({selecionados.length})
+            </button>
+          )}
+        </div>
+        <div className="mt-2 flex items-center gap-1.5 rounded-md border border-border bg-background px-2 focus-within:border-primary">
+          <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar pessoa ou cargo…"
+            className="h-8 min-w-0 flex-1 bg-transparent text-xs outline-none"
+          />
+          {busca && (
+            <button
+              onClick={() => setBusca("")}
+              className="rounded p-0.5 text-muted-foreground hover:bg-secondary"
+              title="Limpar busca"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        {termo && visiveis.length > 1 && (
+          <button
+            onClick={() =>
+              setDestinatarios(
+                Array.from(
+                  new Set([...selecionados.map((u) => u.id), ...visiveis.map((u) => u.id)]),
+                ),
+              )
+            }
+            className="mt-1.5 self-start text-[11px] font-semibold text-primary hover:underline"
+          >
+            Marcar os {visiveis.length} encontrados
+          </button>
+        )}
+        <ul className="mt-2 flex max-h-[360px] flex-col gap-0.5 overflow-y-auto lg:max-h-none lg:flex-1">
+          {visiveis.length === 0 && (
+            <li className="px-2 py-6 text-center text-[11px] text-muted-foreground">
+              Ninguém com esse nome.
+            </li>
+          )}
+          {visiveis.map((u) => {
+            const ativo = selecionado.has(u.id);
+            const pack = packPorPessoa.get(u.id) ?? [];
+            return (
+              <li key={u.id}>
+                <button
+                  onClick={() => alternar(u.id)}
+                  aria-pressed={ativo}
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition ${
+                    ativo ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-secondary"
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      ativo
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background"
+                    }`}
+                  >
+                    {ativo && <Check className="h-3 w-3" />}
+                  </span>
+                  <UserAvatar
+                    nome={u.name}
+                    iniciais={u.avatar}
+                    className="h-7 w-7 shrink-0 text-[10px]"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{u.name}</span>
+                    <span className="block truncate text-[10px] text-muted-foreground">
+                      {u.jobTitle}
+                    </span>
+                  </span>
+                  {pack.length > 0 && (
+                    <span
+                      className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                      title={`${pack.length} no pack de hoje`}
+                    >
+                      {pack.length}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      {/* 2. Os itens e 3. o envio */}
+      <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+        <div>
+          <h2 className="text-sm font-semibold">
+            <Passo n={2} /> O que vai no pack
+          </h2>
+          {selecionados.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {selecionados.map((u) => (
+                <span
+                  key={u.id}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-background py-0.5 pr-1 pl-0.5 text-[11px]"
+                >
+                  <UserAvatar nome={u.name} iniciais={u.avatar} className="h-5 w-5 text-[8px]" />
+                  {primeiroNome(u)}
+                  <button
+                    onClick={() => alternar(u.id)}
+                    className="rounded-full p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    title={`Tirar ${u.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Escolha ao lado uma ou mais pessoas. Dá para ir montando a lista antes.
+            </p>
+          )}
+        </div>
+
+        <CriadorDePack
+          autoFocus
+          aoAdicionar={(itens) => setRascunho([...rascunho, ...itens])}
+          existentes={titulosExistentes}
+          placeholder="Item do pack — Enter adiciona à lista"
+        />
+
+        {packTemplates.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <Layers className="h-3.5 w-3.5" />
+            <select
+              value=""
+              onChange={(e) => e.target.value && usarModelo(e.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-primary"
+              aria-label="Usar um modelo de pack"
+            >
+              <option value="">Usar modelo…</option>
+              {packTemplates.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name} ({tpl.items.length})
+                </option>
+              ))}
+            </select>
+            <span>acrescenta os itens do modelo à lista, para editar antes de enviar.</span>
+          </div>
+        )}
+
+        {rascunho.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-xs text-muted-foreground">
+            A lista está vazia. Escreva um item acima e aperte Enter, cole uma lista ou use um
+            modelo.
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>
+                {rascunho.length} {rascunho.length === 1 ? "item" : "itens"} na lista — clique para
+                editar
+              </span>
+              <button
+                onClick={async () => {
+                  const ok = await confirmar({
+                    titulo: "Esvaziar a lista?",
+                    descricao: "Os itens ainda não enviados saem da lista.",
+                    confirmar: "Esvaziar",
+                    perigo: true,
+                  });
+                  if (ok) setRascunho([]);
+                }}
+                className="font-medium hover:text-destructive"
+              >
+                Esvaziar
+              </button>
+            </div>
+            <RascunhoDePack
+              itens={rascunho}
+              aoMudar={setRascunho}
+              duplicados={(i) => jaTem(i.titulo).map(primeiroNome)}
+            />
+          </>
+        )}
+
+        <div className="sticky bottom-0 -mx-4 -mb-4 mt-auto flex flex-wrap items-center justify-between gap-2 rounded-b-xl border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
+          <span className="text-[11px] text-muted-foreground">
+            <Passo n={3} />{" "}
+            {selecionados.length && rascunho.length
+              ? `${totalTarefas} ${totalTarefas === 1 ? "tarefa" : "tarefas"} no pack de hoje, com aviso`
+              : "Envie quando estiver pronto"}
+          </span>
+          <button
+            onClick={() => void enviar()}
+            disabled={selecionados.length === 0 || rascunho.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+          >
+            <Send className="h-3.5 w-3.5" />
+            {rotuloEnviar}
+          </button>
+        </div>
+      </section>
+
+      {/* O que cada um já tem hoje, para não mandar repetido. */}
+      <section className="h-fit rounded-xl border border-border bg-card p-3 lg:col-span-2 2xl:col-span-1">
+        <h2 className="text-sm font-semibold">Já no pack de hoje</h2>
+        {selecionados.length === 0 ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Escolha alguém para ver o que essa pessoa já tem hoje.
+          </p>
+        ) : (
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2 2xl:grid-cols-1">
+            {selecionados.map((u) => {
+              const pack = packPorPessoa.get(u.id) ?? [];
+              const feitos = pack.filter((t) => concluidaHoje(t)).length;
+              return (
+                <li key={u.id} className="rounded-lg border border-border bg-background p-2.5">
+                  <div className="flex items-center gap-2">
+                    <UserAvatar
+                      nome={u.name}
+                      iniciais={u.avatar}
+                      className="h-7 w-7 shrink-0 text-[10px]"
+                    />
+                    <div className="min-w-0 flex-1 truncate text-xs font-semibold">{u.name}</div>
+                    {pack.length > 0 ? (
+                      <Progresso feitos={feitos} total={pack.length} />
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">Sem pack</span>
+                    )}
+                  </div>
+                  {pack.length > 0 && (
+                    <ul className="mt-1.5 max-h-40 space-y-0.5 overflow-y-auto">
+                      {pack.map((t) => {
+                        const done = concluidaHoje(t);
+                        const novo =
+                          !done &&
+                          ultimoEnvio?.para.includes(u.id) &&
+                          ultimoEnvio.titulos.has(chaveDoTitulo(t.title)) &&
+                          t.createdBy === currentUser.id;
+                        return (
+                          <li
+                            key={t.id}
+                            className={`flex items-center gap-1.5 text-[11px] ${
+                              novo
+                                ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            <span className="shrink-0">{done || novo ? "✓" : "•"}</span>
+                            <span
+                              className={`min-w-0 flex-1 truncate ${done ? "line-through" : ""}`}
+                            >
+                              {t.title}
+                            </span>
+                            {t.dueTime && <span className="shrink-0 text-[10px]">{t.dueTime}</span>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/** O número do passo, num círculo. */
+function Passo({ n }: { n: number }) {
+  return (
+    <span className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold text-primary">
+      {n}
+    </span>
   );
 }
 

@@ -155,7 +155,9 @@ export async function buscarColaborador(
     const r = await pool
       .request()
       .input("cpf", sql.VarChar, cpfLimpo)
-      .query(`${COL_INTERNO} WHERE REPLACE(REPLACE(col.CPF,'.',''),'-','') = @cpf AND col.SITUACAO = '1'`);
+      .query(
+        `${COL_INTERNO} WHERE REPLACE(REPLACE(col.CPF,'.',''),'-','') = @cpf AND col.SITUACAO = '1'`,
+      );
     const row = r.recordset[0];
     if (row) return { ...row, origem: "interno" as const };
   }
@@ -185,7 +187,9 @@ export async function buscarColaborador(
  * IAM: trocar lá tiraria funções dele no apontamento.
  */
 export function cargoDeChefia(funcao: string | null | undefined): boolean {
-  return /^(SUPERVISOR|SUPERVISORA|COORDENADOR|COORDENADORA|GERENTE)/.test(normalizar(funcao ?? ""));
+  return /^(SUPERVISOR|SUPERVISORA|COORDENADOR|COORDENADORA|GERENTE)\b/.test(
+    normalizar(funcao ?? ""),
+  );
 }
 
 export async function chefiaAlguem(nome: string): Promise<boolean> {
@@ -209,4 +213,64 @@ export async function chefiaAlguem(nome: string): Promise<boolean> {
           AND LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI <> @nome COLLATE Latin1_General_CI_AI`,
     );
   return r.recordset.length > 0;
+}
+
+/*
+ * Reconferência do papel com a sessão já aberta.
+ *
+ * O papel só era calculado no LOGIN. Quem continuava logado depois de uma
+ * mudança de regra ou de cargo ficava com o papel velho até sair e entrar: o
+ * João Paulo (supervisor de controladoria, cadastrado como externo) seguiu
+ * "ADM (Colaborador)" dias depois da correção de 09/10/2026 (relato de
+ * 13/10/2026). Agora, ao abrir o app, o papel é reconferido — no máximo a
+ * cada 6 h por pessoa — com a mesma regra do login.
+ */
+const PAPEL_CONFERIDO = new Map<number, number>();
+const SEIS_HORAS = 6 * 3600_000;
+
+export async function reconferirPapel(pessoaId: number): Promise<void> {
+  const antes = PAPEL_CONFERIDO.get(pessoaId);
+  if (antes && Date.now() - antes < SEIS_HORAS) return;
+  PAPEL_CONFERIDO.set(pessoaId, Date.now());
+  if (PAPEL_CONFERIDO.size > 2000) PAPEL_CONFERIDO.clear();
+
+  const { getPool, sql } = await import("@/integrations/db.server");
+  const pool = await getPool();
+  const perfil = (
+    await pool
+      .request()
+      .input("p", sql.Int, pessoaId)
+      .query(`SELECT nome, papel FROM gestor.perfis WHERE pessoa_id=@p`)
+  ).recordset[0] as { nome: string | null; papel: string | null } | undefined;
+  const nome = perfil?.nome?.trim();
+  if (!nome) return;
+
+  // A função pelo nome, efetivo primeiro e depois externo (sem CPF aqui — a
+  // sessão não o traz); nome igual é o mesmo critério do organograma.
+  const f = await pool
+    .request()
+    .input("nome", sql.NVarChar, nome)
+    .query(
+      `SELECT TOP 1 funcao FROM (
+         SELECT 0 AS ordem, LTRIM(RTRIM(FUNCAO)) AS funcao FROM dbo.COLABORADORES
+          WHERE SITUACAO = '1' AND LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI
+         UNION ALL
+         SELECT 1, LTRIM(RTRIM(FUNCAO)) FROM dbo.COLABORADORES_EXTERNOS
+          WHERE ATIVO = 1 AND LTRIM(RTRIM(NOME)) COLLATE Latin1_General_CI_AI = @nome COLLATE Latin1_General_CI_AI
+       ) x ORDER BY ordem`,
+    );
+  const funcao = (f.recordset[0] as { funcao: string | null } | undefined)?.funcao ?? null;
+  // Fora do cadastro de colaboradores: não mexe (o login também não mexe).
+  if (funcao === null && f.recordset.length === 0) return;
+
+  const papel = papelPelaHierarquia(nome, cargoDeChefia(funcao) || (await chefiaAlguem(nome)));
+  if (papel === perfil?.papel) return;
+  await pool
+    .request()
+    .input("p", sql.Int, pessoaId)
+    .input("papel", sql.NVarChar, papel)
+    .query(
+      `UPDATE gestor.perfis SET papel = @papel, atualizado_em = SYSDATETIMEOFFSET() WHERE pessoa_id = @p`,
+    );
+  console.info(`[iam] papel de ${nome} reconferido: ${perfil?.papel ?? "—"} → ${papel}`);
 }

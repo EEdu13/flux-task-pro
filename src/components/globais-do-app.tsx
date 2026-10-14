@@ -4,6 +4,7 @@ import { TaskDialog } from "@/components/task-dialog";
 import { QuickTaskModal } from "@/components/quick-task-modal";
 import { IncomingCall } from "@/components/incoming-call";
 import { AttentionOverlay } from "@/components/attention-overlay";
+import { AlertaDeCompromisso } from "@/components/alerta-de-compromisso";
 import { EmojiGigante } from "@/components/emoji-gigante";
 import { OutgoingCallWatcher } from "@/components/outgoing-call-watcher";
 import { TractorBanner } from "@/components/tractor-banner";
@@ -40,6 +41,8 @@ export function GlobaisDoApp() {
       <QuickTaskModal />
       <IncomingCall />
       <AttentionOverlay />
+      {/* Agenda travada (14/10/2026): o cartão de 30 e 10 minutos antes. */}
+      <AlertaDeCompromisso />
       <EmojiGigante />
       <OutgoingCallWatcher />
       <TractorBanner />

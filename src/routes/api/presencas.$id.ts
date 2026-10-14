@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 /**
- * O relatório de presença de uma reunião como PLANILHA (CSV), para abrir no
- * Excel. Exige sessão, e só sai para quem abriu a reunião ou para a gerência
- * (a mesma regra de `montarRelatorio`).
+ * O relatório de presença de uma reunião como PLANILHA do Excel (.xlsx — era
+ * CSV até 13/10/2026; "CSV ninguém usa mais", pediu o usuário). Exige sessão,
+ * e só sai para quem abriu a reunião ou para a gerência (a mesma regra de
+ * `montarRelatorio`).
  *
- * Formato do Excel em português: separador ";", data dd/mm/aaaa e o BOM no
- * começo — sem ele o Excel lê os acentos errado.
+ * Duas abas: "Presença" (a tabela, com filtro no cabeçalho) e "Reunião" (os
+ * dados da reunião). As datas vão como texto já no horário de Brasília: o
+ * servidor roda em UTC, e uma data "de verdade" sairia 3 horas adiantada.
  */
 const fmt = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", {
@@ -22,7 +24,6 @@ const duracao = (s: number) => {
   const m = Math.round((s % 3600) / 60);
   return h ? `${h}h${String(m).padStart(2, "0")}` : `${m} min`;
 };
-const cel = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
 
 export const Route = createFileRoute("/api/presencas/$id")({
   server: {
@@ -42,33 +43,42 @@ export const Route = createFileRoute("/api/presencas/$id")({
         if (!rel) return new Response("não encontrado", { status: 404 });
 
         const r = rel.reuniao;
-        const linhas = [
-          [cel("Relatório de presença"), cel(r.titulo)].join(";"),
-          [cel("Sala"), cel(r.sala)].join(";"),
-          [cel("Aberta por"), cel(r.criador)].join(";"),
-          [cel("Início"), cel(fmt(r.inicio))].join(";"),
-          [cel(r.aberta ? "Em andamento até" : "Fim"), cel(fmt(r.fim))].join(";"),
-          [cel("Participantes"), cel(rel.linhas.length)].join(";"),
-          "",
-          ["Nome", "Tipo", "Entrou", "Saiu", "Tempo na reunião", "Entradas"].map(cel).join(";"),
-          ...rel.linhas.map((l) =>
-            [
-              cel(l.nome),
-              cel(l.convidado ? "Convidado" : "Colaborador"),
-              cel(fmt(l.primeiraEntrada)),
-              cel(l.presenteAgora ? "ainda na sala" : fmt(l.ultimaSaida)),
-              cel(duracao(l.segundos)),
-              cel(l.entradas),
-            ].join(";"),
-          ),
-        ];
+        const { gerarXlsx, TIPO_XLSX } = await import("@/lib/planilha-xlsx");
+        const arquivo = gerarXlsx([
+          {
+            nome: "Presença",
+            linhas: [
+              ["Nome", "Tipo", "Entrou", "Saiu", "Tempo na reunião", "Minutos", "Entradas"],
+              ...rel.linhas.map((l) => [
+                l.nome,
+                l.convidado ? "Convidado" : "Colaborador",
+                fmt(l.primeiraEntrada),
+                l.presenteAgora ? "ainda na sala" : fmt(l.ultimaSaida),
+                duracao(l.segundos),
+                Math.round(l.segundos / 60),
+                l.entradas,
+              ]),
+            ],
+          },
+          {
+            nome: "Reunião",
+            linhas: [
+              ["Relatório de presença", r.titulo],
+              ["Sala", r.sala],
+              ["Aberta por", r.criador],
+              ["Início", fmt(r.inicio)],
+              [r.aberta ? "Em andamento até" : "Fim", fmt(r.fim)],
+              ["Participantes", rel.linhas.length],
+            ],
+          },
+        ]);
         const dia = new Date(r.inicio)
           .toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
           .replace(/\//g, "-");
-        const nome = `presenca-${r.sala}-${dia}.csv`;
-        return new Response(String.fromCharCode(0xfeff) + linhas.join("\r\n"), {
+        const nome = `presenca-${r.sala}-${dia}.xlsx`;
+        return new Response(arquivo as BodyInit, {
           headers: {
-            "content-type": "text/csv; charset=utf-8",
+            "content-type": TIPO_XLSX,
             "content-disposition": `attachment; filename="${nome}"`,
             "cache-control": "private, no-store",
           },

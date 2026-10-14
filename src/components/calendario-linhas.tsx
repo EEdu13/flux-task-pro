@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { Repeat, Users } from "lucide-react";
+import { Lock, Repeat, Users } from "lucide-react";
 import type { User } from "@/lib/fluxo-types";
 import { statusColor, statusLabels } from "@/lib/fluxo-types";
 import { dataParaIso } from "@/lib/data-iso";
 import { nomeCurto } from "@/lib/nome-curto";
 import { idReal, type TarefaNoCalendario } from "@/lib/ocorrencias-previstas";
+import { COR_DA_AGENDA_TRAVADA, faixaDeHorario, type Compromisso } from "@/lib/compromisso";
 
 /**
  * A visão em linhas do calendário: uma linha por tarefa, os dias em colunas e
@@ -42,6 +43,8 @@ export function CalendarioLinhas({
   dias,
   onTaskClick,
   onDiaContexto,
+  compromissos = [],
+  onCompromissoClick,
 }: {
   tarefas: TarefaNoCalendario[];
   users: User[];
@@ -56,6 +59,9 @@ export function CalendarioLinhas({
   onTaskClick: (id: string) => void;
   /** Botão direito no dia do cabeçalho: o menu do dia, que pinta a coluna. */
   onDiaContexto?: (x: number, y: number, iso: string) => void;
+  /** Agenda travada (14/10/2026): uma linha por compromisso, no topo. */
+  compromissos?: Compromisso[];
+  onCompromissoClick?: (c: Compromisso) => void;
 }) {
   const [executante, setExecutante] = useState<string | null>(null);
 
@@ -237,7 +243,17 @@ export function CalendarioLinhas({
             ))}
           </div>
 
-          {grupos.length === 0 && (
+          <LinhasDaAgendaTravada
+            compromissos={compromissos}
+            isoDe={isoDe}
+            molde={molde}
+            dias={dias}
+            hojeIdx={hojeIdx}
+            pintado={pintado}
+            onClick={onCompromissoClick}
+          />
+
+          {grupos.length === 0 && compromissos.length === 0 && (
             <div className="p-8 text-center text-sm text-muted-foreground">
               Nenhuma tarefa com prazo neste período.
             </div>
@@ -348,6 +364,108 @@ export function CalendarioLinhas({
           tarefas
         </span>
       </p>
+    </div>
+  );
+}
+
+/**
+ * A agenda travada na visão em linhas (14/10/2026): um grupo no topo, uma
+ * linha por compromisso, com o bloco roxo nos dias que ele ocupa (quase sempre
+ * um). O clique abre o detalhe.
+ */
+function LinhasDaAgendaTravada({
+  compromissos,
+  isoDe,
+  molde,
+  dias,
+  hojeIdx,
+  pintado,
+  onClick,
+}: {
+  compromissos: Compromisso[];
+  isoDe: string[];
+  molde: string;
+  dias: number;
+  hojeIdx: number;
+  pintado: (i: number) => string | undefined;
+  onClick?: (c: Compromisso) => void;
+}) {
+  const linhas = useMemo(() => {
+    const primeiro = isoDe[0];
+    const ultimo = isoDe[isoDe.length - 1];
+    if (!primeiro || !ultimo) return [];
+    const idx = new Map(isoDe.map((iso, i) => [iso, i]));
+    return compromissos
+      .map((c) => {
+        const de = dataParaIso(new Date(c.inicio));
+        // O fim exato à meia-noite não ocupa o dia seguinte.
+        const ate = dataParaIso(new Date(Date.parse(c.fim) - 1));
+        if (ate < primeiro || de > ultimo) return null;
+        return {
+          c,
+          de: de < primeiro ? 0 : idx.get(de)!,
+          ate: ate > ultimo ? isoDe.length - 1 : idx.get(ate)!,
+        };
+      })
+      .filter((l): l is { c: Compromisso; de: number; ate: number } => !!l)
+      .sort((a, b) => a.c.inicio.localeCompare(b.c.inicio));
+  }, [compromissos, isoDe]);
+
+  if (linhas.length === 0) return null;
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 border-b border-border bg-secondary/30 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Lock className="h-3 w-3" style={{ color: COR_DA_AGENDA_TRAVADA }} />
+        Agenda travada
+        <span className="ml-1 font-normal normal-case tracking-normal">{linhas.length}</span>
+      </div>
+      {linhas.map(({ c, de, ate }) => (
+        <div
+          key={c.id}
+          className="grid border-b border-border"
+          style={{ gridTemplateColumns: molde }}
+        >
+          <button
+            type="button"
+            onClick={() => onClick?.(c)}
+            className="flex min-w-0 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-secondary/50"
+            title={`Agenda travada · ${c.assunto} · ${faixaDeHorario(c)}`}
+          >
+            <Lock className="h-3 w-3 shrink-0" style={{ color: COR_DA_AGENDA_TRAVADA }} />
+            <span className="truncate font-medium">{c.assunto}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+              {faixaDeHorario(c)}
+            </span>
+          </button>
+          <div
+            className="relative grid"
+            style={{
+              gridColumn: `2 / span ${dias}`,
+              gridTemplateColumns: `repeat(${dias}, minmax(2.25rem, 1fr))`,
+            }}
+          >
+            {isoDe.map((iso, i) => (
+              <div
+                key={iso}
+                className={`border-l border-border ${i === hojeIdx ? "bg-primary/5" : ""}`}
+                style={{ gridColumn: i + 1, gridRow: 1, background: pintado(i) }}
+                aria-hidden
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => onClick?.(c)}
+              title={`${c.assunto} · ${faixaDeHorario(c)}`}
+              className="relative z-[1] mx-0.5 my-1.5 rounded-md transition hover:brightness-110"
+              style={{
+                gridColumn: `${de + 1} / ${ate + 2}`,
+                gridRow: 1,
+                background: COR_DA_AGENDA_TRAVADA,
+              }}
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

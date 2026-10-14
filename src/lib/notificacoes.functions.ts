@@ -31,7 +31,17 @@ import {
 export type NotificacaoDoBanco = {
   id: string;
   userId: string;
-  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto" | "lembrete";
+  type:
+    | "mencao"
+    | "atribuida"
+    | "prazo"
+    | "concluida"
+    | "chamada_perdida"
+    | "projeto"
+    | "lembrete"
+    | "comunicado"
+    | "mural"
+    | "compromisso";
   title: string;
   desc: string;
   at: string;
@@ -42,6 +52,8 @@ export type NotificacaoDoBanco = {
   fromUserId?: string;
   /** Aviso de "te adicionou a um projeto": qual projeto abrir. */
   projectId?: string;
+  /** Aviso da agenda travada (14/10/2026): qual compromisso. Ver `paraApp`. */
+  compromissoId?: string;
 };
 
 const TIPOS = [
@@ -52,6 +64,11 @@ const TIPOS = [
   "chamada_perdida",
   "projeto",
   "lembrete",
+  // Do Mural (14/10/2026): escritos só pelo servidor, em `publicarNoMural`.
+  "comunicado",
+  "mural",
+  // Agenda travada (14/10/2026): escritos só pelo servidor — ver `compromissos.functions.ts`.
+  "compromisso",
 ] as const;
 
 /**
@@ -105,7 +122,10 @@ function paraApp(n: LinhaNotificacao): NotificacaoDoBanco {
     roomName: n.sala ?? undefined,
     roomLabel: n.titulo_da_sala ?? undefined,
     fromUserId: n.de_pessoa_id === null ? undefined : String(n.de_pessoa_id),
-    projectId: n.projeto_id ?? undefined,
+    /* No aviso de compromisso, `projeto_id` (sem chave estrangeira) leva o id
+       do compromisso — ver `entregarAlertasDeCompromisso`. */
+    projectId: n.tipo === "compromisso" ? undefined : (n.projeto_id ?? undefined),
+    compromissoId: n.tipo === "compromisso" ? (n.projeto_id ?? undefined) : undefined,
   };
 }
 
@@ -171,12 +191,18 @@ async function entregarLembretes(eu: number): Promise<void> {
  * Antes de listar, entrega os lembretes vencidos (`entregarLembretes`): é esta
  * leitura, que o app já repete ao voltar para a janela e a cada minuto, que
  * faz o lembrete tocar — sem relógio nem chamada a mais.
+ *
+ * Do mesmo jeito, os avisos de 30 e 10 minutos da agenda travada
+ * (14/10/2026, `entregarAlertasDeCompromisso`). Ela nunca lança e, sem a
+ * migração, só pula — a sineta segue igual.
  */
 export const listarNotificacoes = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (eu): Promise<{ notificacoes: NotificacaoDoBanco[] }> => {
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
-    await entregarLembretes(eu);
+    const { entregarAlertasDeCompromisso } = await import("@/lib/compromissos.server");
+    // As duas nunca lançam; em paralelo para a sineta não esperar uma pela outra.
+    await Promise.all([entregarLembretes(eu), entregarAlertasDeCompromisso(eu)]);
     const r = await pool
       .request()
       .input("eu", sql.Int, eu)

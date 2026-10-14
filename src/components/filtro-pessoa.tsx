@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Users2, X } from "lucide-react";
+import { Check, ChevronDown, Users2, X } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { UserAvatar } from "@/components/user-avatar";
 import { sectors, type User } from "@/lib/fluxo-types";
 import type { SelecaoDePessoas } from "@/lib/filtro-de-pessoas";
@@ -13,9 +14,12 @@ function listaDeNomes(nomes: string[]): string {
 }
 
 /**
- * Os setores de quem aparece no filtro, como chips. Fica na linha de cima,
- * junto das datas (pedido do usuário, 07/10/2026), e escolhe duas coisas: as
- * tarefas de quem é daquele setor e os rostos que o `FiltroPessoa` mostra.
+ * Os setores de quem aparece no filtro, numa lista suspensa. Fica na linha de
+ * cima, junto das datas, e escolhe duas coisas: as tarefas de quem é daquele
+ * setor e os rostos que o `FiltroPessoa` mostra.
+ *
+ * Era uma fileira de chips; virou lista suspensa (pedido do usuário,
+ * 13/10/2026) para abrir espaço ao filtro de tags na mesma linha.
  *
  * Só os setores que têm gente nesta lista — a lista fixa tem 17 e a maioria
  * não tem ninguém aqui. Com um setor só, não aparece: seria um botão dizendo
@@ -30,29 +34,84 @@ export function FiltroSetor({
   setor: string;
   aoMudar: (setor: string) => void;
 }) {
+  const [aberto, setAberto] = useState(false);
   const presentes = useMemo(() => {
     const ids = new Set(pessoas.map((p) => p.sector));
     return sectors.filter((s) => ids.has(s.id));
   }, [pessoas]);
   if (presentes.length <= 1) return null;
+  const atual = presentes.find((s) => s.id === setor);
+  const escolher = (id: string) => {
+    aoMudar(id);
+    setAberto(false);
+  };
   return (
-    <div
-      role="radiogroup"
-      aria-label="Setor"
-      className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5"
+    <Popover open={aberto} onOpenChange={setAberto}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={atual ? `Setor: ${atual.name}` : "Filtrar por setor"}
+          className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-secondary/40 px-2.5 text-xs font-medium transition hover:bg-secondary ${
+            atual ? "border-primary/60 text-foreground" : "border-border text-muted-foreground"
+          }`}
+        >
+          {atual ? (
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: atual.color }} />
+          ) : (
+            <Users2 className="h-3.5 w-3.5 shrink-0" />
+          )}
+          <span className="max-w-36 truncate">{atual ? atual.name : "Todos os setores"}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="z-140 w-56 p-1.5">
+        <div role="radiogroup" aria-label="Setor" className="max-h-72 overflow-y-auto">
+          <OpcaoSetor rotulo="Todos os setores" ativo={!atual} aoClicar={() => escolher("todos")} />
+          <div className="mx-1 my-1 h-px bg-border" />
+          {presentes.map((s) => (
+            <OpcaoSetor
+              key={s.id}
+              rotulo={s.name}
+              cor={s.color}
+              ativo={setor === s.id}
+              aoClicar={() => escolher(s.id)}
+            />
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function OpcaoSetor({
+  rotulo,
+  cor,
+  ativo,
+  aoClicar,
+}: {
+  rotulo: string;
+  cor?: string;
+  ativo: boolean;
+  aoClicar: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={ativo}
+      onClick={aoClicar}
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-secondary ${
+        ativo ? "bg-primary/10 font-semibold text-foreground" : "text-muted-foreground"
+      }`}
     >
-      <ChipSetor id="todos" rotulo="Todos" ativo={setor === "todos"} aoClicar={() => aoMudar("todos")} />
-      {presentes.map((s) => (
-        <ChipSetor
-          key={s.id}
-          id={s.id}
-          rotulo={s.name}
-          cor={s.color}
-          ativo={setor === s.id}
-          aoClicar={() => aoMudar(s.id)}
-        />
-      ))}
-    </div>
+      {cor ? (
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: cor }} />
+      ) : (
+        <Users2 className="h-3.5 w-3.5 shrink-0" />
+      )}
+      <span className="min-w-0 flex-1 truncate">{rotulo}</span>
+      {ativo && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+    </button>
   );
 }
 
@@ -161,52 +220,6 @@ export function FiltroPessoa({
         </button>
       )}
     </div>
-  );
-}
-
-function ChipSetor({
-  id,
-  rotulo,
-  cor,
-  ativo,
-  aoClicar,
-}: {
-  id: string;
-  rotulo: string;
-  cor?: string;
-  ativo: boolean;
-  aoClicar: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={ativo}
-      onClick={aoClicar}
-      className={`relative flex items-center gap-1.5 whitespace-nowrap rounded px-2 py-1 text-xs font-medium transition-colors ${
-        ativo ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {ativo && (
-        // Um único fundo deslizando entre os setores — mesmo recurso do item
-        // ativo da sidebar. Trocar de setor move a marca, não pisca duas.
-        <motion.span
-          layoutId="filtro-setor-ativo"
-          className="absolute inset-0 rounded bg-primary shadow-sm"
-          transition={{ type: "spring", stiffness: 400, damping: 33 }}
-        />
-      )}
-      {cor ? (
-        <span
-          className="relative h-2 w-2 shrink-0 rounded-full"
-          style={{ background: ativo ? "currentColor" : cor }}
-        />
-      ) : (
-        <Users2 className="relative h-3 w-3 shrink-0" />
-      )}
-      <span className="relative">{rotulo}</span>
-      <span className="sr-only">{id}</span>
-    </button>
   );
 }
 

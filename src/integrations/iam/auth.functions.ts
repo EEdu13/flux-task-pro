@@ -222,6 +222,11 @@ export const iamMe = createServerFn({ method: "GET" }).handler(async (): Promise
   try {
     const idade = iamCacheIdade(token);
     const dados = await iamResolve(token);
+    /* O papel do Fluxo (gerente/supervisor/adm) também se acerta sem novo
+       login — ver `reconferirPapel`. Dispara e esquece: não atrasa a abertura. */
+    void import("./colaborador.server")
+      .then((col) => col.reconferirPapel(dados.usuarioId))
+      .catch((e) => console.warn("[iam] papel não reconferido:", (e as Error)?.message));
     return {
       autenticado: true,
       usuarioId: dados.usuarioId,

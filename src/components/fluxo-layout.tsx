@@ -329,6 +329,15 @@ export function FluxoLayout({
      para o clique na notificação levar ao mesmo lugar que o clique na sineta. */
   const abrirAviso = (n: Aviso) => {
     markNotifRead(n.id);
+    /* Agenda travada (14/10/2026): abre o calendário no dia do compromisso,
+       com ele aberto. Antes da sala, que o aviso também pode trazer. */
+    if (n.type === "compromisso") {
+      navigate({
+        to: "/calendario",
+        search: n.compromissoId ? { compromisso: n.compromissoId } : {},
+      });
+      return;
+    }
     if (n.taskId) openTask(n.taskId);
     if (n.roomName) navigate({ to: "/salas/$roomName", params: { roomName: n.roomName } });
     if (n.type === "projeto") {

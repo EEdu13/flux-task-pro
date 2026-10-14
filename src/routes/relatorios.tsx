@@ -1,85 +1,96 @@
+import { baixarXlsx } from "@/lib/planilha-xlsx";
 import { createFileRoute } from "@tanstack/react-router";
-import { dataParaIso } from "@/lib/data-iso";
-import { useMemo } from "react";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  AlarmClock,
+  CheckCircle2,
+  Download,
+  FileSpreadsheet,
+  Hourglass,
+  Inbox,
+  Lightbulb,
+  Target,
+  Timer,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
-import { useFluxo } from "@/lib/fluxo-store";
-import { sectors, statusLabels, priorityLabels } from "@/lib/fluxo-types";
 import {
+  PERIODOS,
+  avaliarEntregas,
+  dentro,
+  duracao,
+  gerarAchados,
+  idadeEmDias,
+  janelaDoPeriodo,
+  mapaDeCalor,
+  resumirEntregas,
+  sessoesDoEscopo,
+  somaSegundos,
+  variacao,
+  baldesDaJanela,
+  type Achado,
+  type Periodo,
+  type Variacao,
+} from "@/components/relatorios/analise";
+import { Indicador, TituloDeBloco } from "@/components/relatorios/pecas";
+import { SecaoEntregas } from "@/components/relatorios/secao-entregas";
+import { SecaoTempo } from "@/components/relatorios/secao-tempo";
+import { TabelaDoTime } from "@/components/relatorios/tabela-do-time";
+import { useFluxo } from "@/lib/fluxo-store";
+import { priorityLabels, sectors, statusLabels, type Task, type User } from "@/lib/fluxo-types";
+import { nomeCurto } from "@/lib/nome-curto";
+import { tarefaVencida } from "@/lib/prazo";
+import {
+  linhasDeResumo,
+  linhasDeSessoes,
   carregarTempoDoServidor,
-  formatHM,
-  formatHMS,
-  buildSessionsCsv,
-  buildSummaryCsv,
-  downloadCsv,
-  type CsvSessionRow,
-  type CsvSummaryRow,
+  type SessionRow,
+  type SummaryRow,
   type Persisted,
 } from "@/lib/time-log";
-import { useEffect, useState } from "react";
-
-/**
- * Estilo único dos tooltips dos gráficos.
- *
- * Os três precisam ser passados, e é por isso que virou constante em vez de
- * ficar solto em cada `<Tooltip>`: o `contentStyle` NÃO desce para o rótulo nem
- * para os itens. O Recharts pinta cada item com a cor da série e, quando não
- * tem, com `#000` fixo; o rótulo fica sem cor nenhuma e herda. No tema escuro
- * isso dá letra preta sobre popover escuro — o texto some, que foi o que
- * apareceu em "Tarefas por setor".
- *
- * O `itemStyle` sobrepõe de propósito a cor da série. Aqui todo gráfico tem uma
- * série só, então a cor não distingue nada — e algumas cores de setor
- * (o amarelo, por exemplo) ficariam ilegíveis sobre o popover claro.
- */
-const TOOLTIP = {
-  contentStyle: {
-    background: "var(--color-popover)",
-    border: "1px solid var(--color-border)",
-    borderRadius: 8,
-    color: "var(--color-popover-foreground)",
-    fontSize: 12,
-  },
-  labelStyle: { color: "var(--color-popover-foreground)", fontWeight: 600 },
-  itemStyle: { color: "var(--color-popover-foreground)" },
-} as const;
 
 export const Route = createFileRoute("/relatorios")({
   head: () => ({
     meta: [
       { title: "Relatórios · SGL - CONECTA" },
-      { name: "description", content: "Desempenho por pessoa, setor e evolução ao longo do tempo." },
+      {
+        name: "description",
+        content: "Análise de entregas, prazos e tempo trabalhado por pessoa, equipe e setor.",
+      },
     ],
   }),
   component: Relatorios,
 });
 
-function Relatorios() {
-  const { tasks, users, completions, currentUser } = useFluxo();
-  const [timeTick, setTimeTick] = useState(0);
-  useEffect(() => {
-    const on = () => setTimeTick((v) => v + 1);
-    window.addEventListener("fluxo:timer-updated", on);
-    return () => window.removeEventListener("fluxo:timer-updated", on);
-  }, []);
+/**
+ * Relatórios — reconstruída em 13/10/2026 (pedido do usuário: "aba relatórios
+ * tá horrível … coloque coisas úteis ali de tempo, tarefas e tal, que
+ * realmente seja uma análise").
+ *
+ * Dois seletores mandam na tela inteira: o PERÍODO (7 dias, 30 dias, mês
+ * atual, 90 dias — com comparação contra o período anterior do mesmo tamanho)
+ * e o ESCOPO (eu, uma pessoa, minha equipe, um setor). O escopo respeita quem
+ * pode ver quem: gerente vê todos, supervisor vê a si e a quem responde a ele,
+ * ADM só a si.
+ *
+ * Custo no banco: nenhum além do que já existia. Tarefas e conclusões (90
+ * dias) já estão na memória do app; as sessões do cronômetro são buscadas UMA
+ * vez por visita (`listarSessoesDeTempo`) e tudo o mais é conta no cliente —
+ * o teto de DTU do Azure já foi atingido uma vez.
+ *
+ * O bug do "Tempo total registrado 0m" ao lado de "Tarefas com tempo 2": as
+ * sessões existiam, mas somavam menos de um minuto e `formatHM` corta os
+ * segundos. Agora toda duração passa por `duracao`, que mostra segundos
+ * quando é o caso.
+ */
 
-  // Manager scope: gestor sees all, supervisor sees self + subordinates,
-  // adm only sees self.
+const ESCOPO_TIME = "time";
+
+function Relatorios() {
+  const { tasks, users, completions, projects, currentUser } = useFluxo();
+
+  /* ------------------------------------------------------------ quem vejo */
   const visibleUsers = useMemo(() => {
     if (currentUser.role === "gerente") return users;
     if (currentUser.role === "supervisor")
@@ -87,26 +98,88 @@ function Relatorios() {
     return users.filter((u) => u.id === currentUser.id);
   }, [users, currentUser]);
 
-  // "all" aggregates every log stored locally; otherwise per-user log.
-  const [scope, setScope] = useState<string>(currentUser.id);
+  const escopoPadrao = visibleUsers.length > 1 ? ESCOPO_TIME : `p:${currentUser.id}`;
+  const [escopo, setEscopo] = useState<string>(escopoPadrao);
   useEffect(() => {
-    setScope(currentUser.id);
+    setEscopo(escopoPadrao);
+    // Só ao trocar de usuário: mudar a lista de pessoas não deve desfazer a escolha.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser.id]);
 
-  /* O tempo vem do banco, não do `localStorage` desta máquina.
-     `timeTick` dispara na primeira carga e a cada sessão encerrada — o
-     cronômetro emite o evento de novo depois que a gravação no servidor
-     responde, então a busca abaixo já encontra a sessão nova. */
-  const [allLogs, setAllLogs] = useState<Record<string, Persisted>>({});
+  const [periodo, setPeriodo] = useState<Periodo>("30d");
+
+  const setoresVisiveis = useMemo(() => {
+    const ids = new Set(visibleUsers.map((u) => u.sector));
+    return sectors.filter((s) => ids.has(s.id));
+  }, [visibleUsers]);
+
+  const pessoasEscopo = useMemo<User[]>(() => {
+    if (escopo === ESCOPO_TIME) return visibleUsers;
+    if (escopo.startsWith("s:")) return visibleUsers.filter((u) => u.sector === escopo.slice(2));
+    const id = escopo.slice(2);
+    const u = visibleUsers.find((x) => x.id === id);
+    return u ? [u] : visibleUsers.filter((x) => x.id === currentUser.id);
+  }, [escopo, visibleUsers, currentUser.id]);
+
+  const escopoIds = useMemo(() => new Set(pessoasEscopo.map((u) => u.id)), [pessoasEscopo]);
+  const multi = pessoasEscopo.length > 1;
+
+  const rotuloEscopo =
+    escopo === ESCOPO_TIME
+      ? currentUser.role === "gerente"
+        ? "todos os colaboradores"
+        : "sua equipe"
+      : escopo.startsWith("s:")
+        ? `o setor ${sectors.find((s) => s.id === escopo.slice(2))?.name ?? ""}`
+        : pessoasEscopo[0]?.id === currentUser.id
+          ? "você"
+          : nomeCurto(pessoasEscopo[0]?.name ?? "");
+
+  const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const nomeDe = useCallback(
+    (id: string) => {
+      const u = userById.get(id);
+      return u ? nomeCurto(u.name) : "—";
+    },
+    [userById],
+  );
+  const tarefaPorId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const projetoPorId = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+
+  /* ---------------------------------------------------- sessões do servidor
+     Uma busca ao abrir a tela. O cronômetro avisa ("fluxo:timer-updated")
+     quando uma sessão termina — duas vezes, uma ao gravar no navegador e outra
+     quando o servidor confirma —, então a nova busca espera o aviso assentar
+     em vez de consultar o banco duas vezes seguidas. */
+  const [recarga, setRecarga] = useState(0);
+  useEffect(() => {
+    let espera: ReturnType<typeof setTimeout> | undefined;
+    const aoAvisar = () => {
+      clearTimeout(espera);
+      espera = setTimeout(() => setRecarga((v) => v + 1), 3000);
+    };
+    window.addEventListener("fluxo:timer-updated", aoAvisar);
+    return () => {
+      clearTimeout(espera);
+      window.removeEventListener("fluxo:timer-updated", aoAvisar);
+    };
+  }, []);
+
+  const [logs, setLogs] = useState<Record<string, Persisted>>({});
   const [carregandoTempo, setCarregandoTempo] = useState(true);
+  const [erroTempo, setErroTempo] = useState<string | null>(null);
   useEffect(() => {
     let vivo = true;
     void (async () => {
       try {
         const dados = await carregarTempoDoServidor();
-        if (vivo) setAllLogs(dados);
+        if (vivo) {
+          setLogs(dados);
+          setErroTempo(null);
+        }
       } catch (e) {
         console.warn("[fluxo] tempo não carregou:", (e as Error)?.message);
+        if (vivo) setErroTempo((e as Error)?.message || "erro desconhecido");
       } finally {
         if (vivo) setCarregandoTempo(false);
       }
@@ -114,188 +187,169 @@ function Relatorios() {
     return () => {
       vivo = false;
     };
-  }, [timeTick]);
+  }, [recarga]);
 
-  // Merge sessions + totals across the chosen scope.
-  const timeLog = useMemo(() => {
-    if (scope === "all") {
-      const sessions = visibleUsers.flatMap((u) => allLogs[u.id]?.sessions ?? []);
-      const totals: Record<string, number> = {};
-      for (const u of visibleUsers) {
-        const t = allLogs[u.id]?.totals ?? {};
-        for (const [k, v] of Object.entries(t)) totals[k] = (totals[k] ?? 0) + v;
-      }
-      return { sessions, totals };
-    }
-    return allLogs[scope] ?? { sessions: [], totals: {} };
-  }, [scope, visibleUsers, allLogs]);
+  /* ------------------------------------------------------------- janelas */
+  const janela = useMemo(() => janelaDoPeriodo(periodo), [periodo]);
+  const { baldes, granularidade } = useMemo(() => baldesDaJanela(janela), [janela]);
 
-  const scopeLabel =
-    scope === "all"
-      ? "todos os colaboradores"
-      : (users.find((u) => u.id === scope)?.name ?? "colaborador");
-
-  /* O seletor do topo vale para a TELA INTEIRA, não só para o cronômetro.
-     Antes ele governava apenas as sessões: os cartões de conclusões, de tarefas
-     abertas e os gráficos de status/setor liam `tasks` e `completions` crus — e
-     esses dois chegam do servidor com o SETOR inteiro, não só com quem está
-     olhando (ver o `filtro` em `listarConclusoes` e em `listarTarefas`). A tela
-     dizia "exibindo Fulano" no subtítulo e mostrava os números do time embaixo,
-     que é pior que não filtrar nada: parece um fato sobre a pessoa. */
-  const escopoIds = useMemo(
-    () => new Set(scope === "all" ? visibleUsers.map((u) => u.id) : [scope]),
-    [scope, visibleUsers],
+  /* ------------------------------------------------------------- sessões */
+  const sessoesEscopo = useMemo(() => sessoesDoEscopo(logs, escopoIds), [logs, escopoIds]);
+  const sessoesJanela = useMemo(
+    () => sessoesEscopo.filter((s) => dentro(s.startedAt, janela)),
+    [sessoesEscopo, janela],
+  );
+  const sessoesAnt = useMemo(
+    () =>
+      janela.anterior ? sessoesEscopo.filter((s) => dentro(s.startedAt, janela.anterior!)) : null,
+    [sessoesEscopo, janela],
   );
 
-  const conclusoesEscopo = useMemo(
-    () => completions.filter((c) => escopoIds.has(c.userId)),
-    [completions, escopoIds],
+  /* ------------------------------------------------------------ entregas */
+  const entregasEscopo = useMemo(
+    () =>
+      avaliarEntregas(
+        completions.filter((c) => escopoIds.has(c.userId)),
+        tarefaPorId,
+      ),
+    [completions, escopoIds, tarefaPorId],
+  );
+  const entregasJanela = useMemo(
+    () => entregasEscopo.filter((e) => dentro(e.at, janela)),
+    [entregasEscopo, janela],
+  );
+  const entregasAnt = useMemo(
+    () => (janela.anterior ? entregasEscopo.filter((e) => dentro(e.at, janela.anterior!)) : null),
+    [entregasEscopo, janela],
+  );
+  const resumo = useMemo(() => resumirEntregas(entregasJanela), [entregasJanela]);
+  const resumoAnt = useMemo(
+    () => (entregasAnt ? resumirEntregas(entregasAnt) : null),
+    [entregasAnt],
   );
 
-  /* Os cartões dizem "(30d)" e a consulta devolve 90 dias — o rótulo mentia em
-     até dois meses de trabalho a mais. A janela é recortada aqui, e não na
-     consulta, porque `listarConclusoes` serve a tela inicial também. */
-  const conclusoes30 = useMemo(() => {
-    const corte = Date.now() - 30 * 24 * 3600e3;
-    return conclusoesEscopo.filter((c) => new Date(c.at).getTime() >= corte);
-  }, [conclusoesEscopo]);
-
-  const noPrazo30 = useMemo(() => conclusoes30.filter((c) => c.onTime).length, [conclusoes30]);
-
-  /* Tarefa pertence a quem vai fazer. Contar também as que a pessoa criou para
-     outro inflaria "tarefas abertas" com trabalho que não é dela. */
+  /* -------------------------------------------------------------- tarefas */
+  /* Tarefa pertence a quem vai fazer: contar também as que a pessoa criou
+     para outro inflaria a carga com trabalho que não é dela. */
   const tarefasEscopo = useMemo(
     () => tasks.filter((t) => escopoIds.has(t.assigneeId)),
     [tasks, escopoIds],
   );
-
-  const sessionToUserId = useMemo(() => {
-    // For "all" mode we need to know which user each session belongs to.
-    const map = new Map<string, string>();
-    if (scope !== "all") {
-      for (const s of allLogs[scope]?.sessions ?? []) map.set(s.id, scope);
-      return map;
-    }
-    for (const u of visibleUsers) {
-      for (const s of allLogs[u.id]?.sessions ?? []) map.set(s.id, u.id);
-    }
-    return map;
-  }, [scope, visibleUsers, allLogs]);
-
-  const userById = useMemo(() => {
-    const m = new Map<string, (typeof users)[number]>();
-    for (const u of users) m.set(u.id, u);
-    return m;
-  }, [users]);
-
-  // Aggregate seconds worked per day (last 30 days)
-  const timeByDay = useMemo(() => {
-    const buckets: { label: string; key: string; seconds: number }[] = [];
-    const map = new Map<string, number>();
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      // Dia local, não UTC: em Brasília, depois das 21h o UTC já é amanhã.
-      const key = dataParaIso(d);
-      map.set(key, 0);
-      buckets.push({
-        label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-        key,
-        seconds: 0,
-      });
-    }
-    for (const s of timeLog.sessions) {
-      const key = dataParaIso(new Date(s.endedAt));
-      if (map.has(key)) map.set(key, (map.get(key) ?? 0) + s.seconds);
-    }
-    return buckets.map((b) => ({ ...b, seconds: map.get(b.key) ?? 0, minutes: Math.round((map.get(b.key) ?? 0) / 60) }));
-  }, [timeLog]);
-
-  const totalSecondsAll = useMemo(
-    () => timeLog.sessions.reduce((s, x) => s + x.seconds, 0),
-    [timeLog],
+  const abertas = useMemo(
+    () => tarefasEscopo.filter((t) => t.status !== "concluida"),
+    [tarefasEscopo],
   );
-  const totalSecondsLast7 = useMemo(() => {
-    const cutoff = Date.now() - 7 * 24 * 3600e3;
-    return timeLog.sessions.filter((s) => s.endedAt >= cutoff).reduce((sum, x) => sum + x.seconds, 0);
-  }, [timeLog]);
+  const vencidas = useMemo(() => abertas.filter((t) => tarefaVencida(t)), [abertas]);
 
-  const topTasks = useMemo(() => {
-    const entries = Object.entries(timeLog.totals)
-      .map(([taskId, secs]) => {
-        const t = tasks.find((x) => x.id === taskId);
-        return { taskId, title: t?.title ?? "(tarefa removida)", seconds: secs, estimated: t?.estimatedMinutes };
-      })
-      .sort((a, b) => b.seconds - a.seconds)
-      .slice(0, 8);
-    return entries;
-  }, [timeLog, tasks]);
+  /* ---------------------------------------------------------------- tempo */
+  const segPorTarefa = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of sessoesEscopo) m.set(s.taskId, (m.get(s.taskId) ?? 0) + s.seconds);
+    return m;
+  }, [sessoesEscopo]);
 
-  const estimateAccuracy = useMemo(() => {
-    const rows = tasks
-      .filter((t) => t.estimatedMinutes && (timeLog.totals[t.id] ?? 0) > 60)
-      .map((t) => {
-        const actualMin = Math.round((timeLog.totals[t.id] ?? 0) / 60);
-        const est = t.estimatedMinutes!;
-        return {
-          taskId: t.id,
-          title: t.title,
-          est,
-          actual: actualMin,
-          diff: actualMin - est,
-          pct: Math.round((actualMin / est) * 100),
-        };
-      })
-      .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
-      .slice(0, 8);
-    return rows;
-  }, [tasks, timeLog]);
+  /** Tempo médio das tarefas concluídas no período que tiveram cronômetro (todo o tempo delas). */
+  const tempoPorConcluida = useCallback(
+    (es: { taskId: string }[]) => {
+      const ids = [...new Set(es.map((e) => e.taskId))];
+      const comTempo = ids.map((id) => segPorTarefa.get(id) ?? 0).filter((v) => v > 0);
+      return {
+        media: comTempo.length ? comTempo.reduce((a, b) => a + b, 0) / comTempo.length : null,
+        comTempo: comTempo.length,
+        total: ids.length,
+      };
+    },
+    [segPorTarefa],
+  );
+  const medioAtual = useMemo(
+    () => tempoPorConcluida(entregasJanela),
+    [tempoPorConcluida, entregasJanela],
+  );
+  const medioAnt = useMemo(
+    () => (entregasAnt ? tempoPorConcluida(entregasAnt) : null),
+    [tempoPorConcluida, entregasAnt],
+  );
 
-  // Recent sessions table
-  const recentSessions = useMemo(() => {
-    return [...timeLog.sessions]
-      .sort((a, b) => b.endedAt - a.endedAt)
-      .slice(0, 30)
-      .map((s) => {
-        const t = tasks.find((x) => x.id === s.taskId);
-        const uid = sessionToUserId.get(s.id);
-        const u = uid ? userById.get(uid) : undefined;
-        return {
-          ...s,
-          taskTitle: t?.title ?? "(tarefa removida)",
-          taskStatus: t ? statusLabels[t.status] : "",
-          userName: u?.name ?? (uid === currentUser.id ? currentUser.name : "—"),
-        };
-      });
-  }, [timeLog, tasks, sessionToUserId, userById, currentUser]);
+  const totalTempo = somaSegundos(sessoesJanela);
+  const totalTempoAnt = sessoesAnt ? somaSegundos(sessoesAnt) : null;
+  const tarefasComTempo = new Set(sessoesJanela.map((s) => s.taskId)).size;
 
-  // Time per user (only meaningful with data stored locally)
-  const timeByUser = useMemo(() => {
-    return visibleUsers
-      .map((u) => {
-        const secs = (allLogs[u.id]?.sessions ?? []).reduce((s, x) => s + x.seconds, 0);
-        return { id: u.id, name: u.name.split(" ")[0]!, seconds: secs, minutes: Math.round(secs / 60) };
-      })
-      .filter((r) => r.seconds > 0)
-      .sort((a, b) => b.seconds - a.seconds)
-      .slice(0, 10);
-  }, [visibleUsers, allLogs]);
+  /* -------------------------------------------------------------- achados */
+  const achados = useMemo<Achado[]>(() => {
+    const porTarefa = new Map<string, number>();
+    for (const s of sessoesJanela)
+      porTarefa.set(s.taskId, (porTarefa.get(s.taskId) ?? 0) + s.seconds);
+    const tempoPorTarefa = [...porTarefa.entries()]
+      .map(([id, seg]) => ({
+        titulo: tarefaPorId.get(id)?.title ?? "tarefa arquivada",
+        segundos: seg,
+      }))
+      .sort((a, b) => b.segundos - a.segundos);
 
-  // ---------------- Exports ----------------
+    const porPessoa = new Map<string, number>();
+    for (const t of vencidas) porPessoa.set(t.assigneeId, (porPessoa.get(t.assigneeId) ?? 0) + 1);
+    const atrasadasPorPessoa = multi
+      ? [...porPessoa.entries()]
+          .map(([id, n]) => ({ nome: nomeDe(id), n }))
+          .sort((a, b) => b.n - a.n)
+      : [];
 
-  const exportSessions = () => {
-    const rows: CsvSessionRow[] = [...timeLog.sessions]
+    let maisAntiga: { titulo: string; dias: number } | null = null;
+    for (const t of abertas) {
+      const dias = idadeEmDias(t);
+      if (!maisAntiga || dias > maisAntiga.dias) maisAntiga = { titulo: t.title, dias };
+    }
+
+    const backlogInicio = tarefasEscopo.filter((t: Task) => {
+      const criada = new Date(t.createdAt).getTime();
+      if (criada >= janela.inicio) return false;
+      const fim = t.completedAt ? new Date(t.completedAt).getTime() : null;
+      return t.status !== "concluida" || (fim != null && fim >= janela.inicio);
+    }).length;
+
+    return gerarAchados({
+      janela,
+      entregas: resumo,
+      entregasAnteriores: resumoAnt,
+      listaEntregas: entregasJanela,
+      criadasNoPeriodo: tarefasEscopo.filter((t) => dentro(new Date(t.createdAt).getTime(), janela))
+        .length,
+      backlogInicio,
+      backlogAgora: abertas.length,
+      tempoPorTarefa,
+      calor: mapaDeCalor(sessoesJanela),
+      atrasadasPorPessoa,
+      maisAntiga,
+    });
+  }, [
+    sessoesJanela,
+    tarefaPorId,
+    vencidas,
+    multi,
+    nomeDe,
+    abertas,
+    tarefasEscopo,
+    janela,
+    resumo,
+    resumoAnt,
+    entregasJanela,
+  ]);
+
+  /* -------------------------------------------------------------- exports
+     Seguem o escopo E o período escolhidos — o arquivo é o que a tela mostra. */
+  const sufixo = `${escopo.replace(":", "-")}-${periodo}-${new Date().toISOString().slice(0, 10)}`;
+
+  const exportarSessoes = () => {
+    const rows: SessionRow[] = [...sessoesJanela]
       .sort((a, b) => a.startedAt - b.startedAt)
       .map((s) => {
-        const t = tasks.find((x) => x.id === s.taskId);
-        const uid = sessionToUserId.get(s.id) ?? scope;
-        const u = userById.get(uid);
+        const t = tarefaPorId.get(s.taskId);
+        const u = userById.get(s.userId);
         return {
           userName: u?.name ?? "—",
           userSector: u?.sector,
           taskId: s.taskId,
-          taskTitle: t?.title ?? "(tarefa removida)",
+          taskTitle: t?.title ?? "(tarefa arquivada)",
           status: t ? statusLabels[t.status] : "",
           priority: t ? priorityLabels[t.priority] : "",
           estimatedMinutes: t?.estimatedMinutes,
@@ -304,22 +358,27 @@ function Relatorios() {
           seconds: s.seconds,
         };
       });
-    downloadCsv(`fluxo-sessoes-${scope}-${new Date().toISOString().slice(0, 10)}.csv`, buildSessionsCsv(rows));
+    baixarXlsx(`fluxo-sessoes-${sufixo}`, [{ nome: "Sessões", linhas: linhasDeSessoes(rows) }]);
   };
 
-  const exportSummary = () => {
-    // Aggregate per user + task
+  const exportarResumo = () => {
     const agg = new Map<
       string,
-      { userId: string; taskId: string; seconds: number; sessions: number; firstAt: number; lastAt: number }
+      {
+        userId: string;
+        taskId: string;
+        seconds: number;
+        sessions: number;
+        firstAt: number;
+        lastAt: number;
+      }
     >();
-    for (const s of timeLog.sessions) {
-      const uid = sessionToUserId.get(s.id) ?? scope;
-      const k = `${uid}|${s.taskId}`;
+    for (const s of sessoesJanela) {
+      const k = `${s.userId}|${s.taskId}`;
       const cur = agg.get(k);
       if (!cur) {
         agg.set(k, {
-          userId: uid,
+          userId: s.userId,
           taskId: s.taskId,
           seconds: s.seconds,
           sessions: 1,
@@ -333,15 +392,15 @@ function Relatorios() {
         cur.lastAt = Math.max(cur.lastAt, s.endedAt);
       }
     }
-    const rows: CsvSummaryRow[] = [...agg.values()]
+    const rows: SummaryRow[] = [...agg.values()]
       .sort((a, b) => b.seconds - a.seconds)
       .map((r) => {
-        const t = tasks.find((x) => x.id === r.taskId);
+        const t = tarefaPorId.get(r.taskId);
         const u = userById.get(r.userId);
         return {
           userName: u?.name ?? "—",
           userSector: u?.sector,
-          taskTitle: t?.title ?? "(tarefa removida)",
+          taskTitle: t?.title ?? "(tarefa arquivada)",
           status: t ? statusLabels[t.status] : "",
           priority: t ? priorityLabels[t.priority] : "",
           estimatedMinutes: t?.estimatedMinutes,
@@ -351,416 +410,277 @@ function Relatorios() {
           lastAt: r.lastAt,
         };
       });
-    downloadCsv(`fluxo-tempo-por-tarefa-${scope}-${new Date().toISOString().slice(0, 10)}.csv`, buildSummaryCsv(rows));
+    baixarXlsx(`fluxo-tempo-por-tarefa-${sufixo}`, [
+      { nome: "Tempo por tarefa", linhas: linhasDeResumo(rows) },
+    ]);
   };
 
-  const last30 = useMemo(() => {
-    const days: { label: string; concluidas: number }[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      const end = new Date(d);
-      end.setDate(d.getDate() + 1);
-      const items = conclusoesEscopo.filter((c) => {
-        const t = new Date(c.at).getTime();
-        return t >= d.getTime() && t < end.getTime();
-      });
-      days.push({
-        label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-        concluidas: items.length,
-      });
-    }
-    return days;
-  }, [conclusoesEscopo]);
+  /* ------------------------------------------------------------- rótulos */
+  const fmtDia = (ms: number) =>
+    new Date(ms).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  const comparacao = janela.anterior
+    ? `Variações contra ${fmtDia(janela.anterior.inicio)}–${fmtDia(janela.anterior.fim - 1)}.`
+    : "Sem comparação: o histórico guarda só 90 dias.";
 
-  /* Só as pessoas do escopo, e só quem tem conclusão — mesma regra do gráfico
-     de tempo por colaborador logo acima. Com uma pessoa só isso vira uma barra
-     repetindo o cartão de cima, então a seção some (ver o `length > 1`). */
-  const byUser = useMemo(() => {
-    return visibleUsers
-      .filter((u) => escopoIds.has(u.id))
-      .map((u) => ({
-        name: u.name.split(" ")[0]!,
-        concluidas: conclusoesEscopo.filter((c) => c.userId === u.id).length,
-      }))
-      .filter((r) => r.concluidas > 0)
-      .sort((a, b) => b.concluidas - a.concluidas)
-      .slice(0, 8);
-  }, [visibleUsers, escopoIds, conclusoesEscopo]);
-
-  /* Setor da TAREFA, não o da pessoa que concluiu.
-     Antes a fatia era o setor de quem fez, o que num escopo de uma pessoa só
-     dava uma fatia de 100% — um gráfico que não informava nada. E o título
-     sempre disse "tarefas por setor"; agora é isso mesmo que ele conta. */
-  const bySector = useMemo(() => {
-    return sectors
-      .map((s) => ({
-        name: s.name,
-        value: tarefasEscopo.filter((t) => t.sector === s.id).length,
-        color: s.color,
-      }))
-      .filter((s) => s.value > 0);
-  }, [tarefasEscopo]);
-
-  const statusDist = useMemo(() => {
-    return (Object.keys(statusLabels) as (keyof typeof statusLabels)[]).map((k) => ({
-      name: statusLabels[k],
-      value: tarefasEscopo.filter((t) => t.status === k).length,
-    }));
-  }, [tarefasEscopo]);
+  const tempoMedioVar: Variacao | null = (() => {
+    const v = variacao(medioAtual.media, medioAnt?.media ?? null, "pct");
+    // Mais tempo por tarefa não é bom nem ruim por si — só informa.
+    return v ? { ...v, tom: "neutro" } : null;
+  })();
 
   return (
     <FluxoLayout title="Relatórios">
-      <div className="mx-auto w-full max-w-[2200px] space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Relatórios</h1>
-            <p className="text-sm text-muted-foreground">
-              Desempenho, tempo trabalhado e evolução — atualmente exibindo <b>{scopeLabel}</b>.
+      <div className="mx-auto w-full max-w-[2200px] space-y-5">
+        {/* ------------------------------------------------ cabeçalho */}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl font-bold tracking-tight">Relatórios</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Entregas, prazos e tempo de <b className="text-foreground">{rotuloEscopo}</b>{" "}
+              {janela.frase}. <span className="hidden sm:inline">{comparacao}</span>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-[11px] font-medium text-muted-foreground">Visão de tempo:</label>
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            <div
+              role="radiogroup"
+              aria-label="Período"
+              className="flex rounded-lg border border-border bg-card p-0.5 shadow-sm"
             >
-              {visibleUsers.length > 1 && <option value="all">Todos ({visibleUsers.length})</option>}
-              {visibleUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                  {u.id === currentUser.id ? " (você)" : ""}
-                </option>
+              {PERIODOS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={periodo === p.id}
+                  onClick={() => setPeriodo(p.id)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                    periodo === p.id
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {p.rotulo}
+                </button>
               ))}
-            </select>
+            </div>
+            {visibleUsers.length > 1 && (
+              <select
+                value={escopo}
+                onChange={(e) => setEscopo(e.target.value)}
+                aria-label="De quem"
+                className="h-8 max-w-[240px] rounded-lg border border-border bg-card px-2 text-xs shadow-sm"
+              >
+                <option value={ESCOPO_TIME}>
+                  {currentUser.role === "gerente" ? "Todos" : "Minha equipe"} ({visibleUsers.length}
+                  )
+                </option>
+                {setoresVisiveis.length > 1 && (
+                  <optgroup label="Setor">
+                    {setoresVisiveis.map((s) => (
+                      <option key={s.id} value={`s:${s.id}`}>
+                        {s.name} ({visibleUsers.filter((u) => u.sector === s.id).length})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Pessoa">
+                  <option value={`p:${currentUser.id}`}>
+                    {nomeCurto(currentUser.name)} (você)
+                  </option>
+                  {visibleUsers
+                    .filter((u) => u.id !== currentUser.id)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => (
+                      <option key={u.id} value={`p:${u.id}`}>
+                        {nomeCurto(u.name)}
+                      </option>
+                    ))}
+                </optgroup>
+              </select>
+            )}
             <button
               type="button"
-              onClick={exportSummary}
-              disabled={timeLog.sessions.length === 0}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
-              title="CSV consolidado por tarefa"
+              onClick={exportarResumo}
+              disabled={sessoesJanela.length === 0}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-medium shadow-sm hover:bg-accent disabled:opacity-50"
+              title="Planilha (Excel) do tempo consolidado por pessoa e tarefa, no escopo e período escolhidos"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" /> Resumo
             </button>
             <button
               type="button"
-              onClick={exportSessions}
-              disabled={timeLog.sessions.length === 0}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              title="CSV detalhado com início, fim e duração"
+              onClick={exportarSessoes}
+              disabled={sessoesJanela.length === 0}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
+              title="Planilha (Excel) de cada sessão, com início, fim e duração, no escopo e período escolhidos"
             >
               <Download className="h-3.5 w-3.5" /> Sessões
             </button>
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <Kpi label="Tarefas concluídas (30d)" value={conclusoes30.length} />
-          <Kpi label="No prazo (30d)" value={noPrazo30} />
-          {/* Era "No prazo", logo ao lado de outro cartão "No prazo (30d)" —
-              dois rótulos iguais para um número e uma porcentagem. */}
-          <Kpi
-            label="% no prazo (30d)"
-            value={`${Math.round((noPrazo30 / Math.max(1, conclusoes30.length)) * 100)}%`}
-          />
-          <Kpi
-            label="Tarefas abertas"
-            value={tarefasEscopo.filter((t) => t.status !== "concluida").length}
-          />
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <Kpi label="Tempo total registrado" value={formatHM(totalSecondsAll)} />
-          <Kpi label="Tempo — últimos 7 dias" value={formatHM(totalSecondsLast7)} />
-          <Kpi label="Tarefas com tempo" value={Object.keys(timeLog.totals).length} />
-        </div>
-
-        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-          <h2 className="text-sm font-semibold">Tempo trabalhado — últimos 30 dias (minutos)</h2>
-          <p className="text-[11px] text-muted-foreground">
-            {carregandoTempo ? (
-              "Buscando as sessões no servidor…"
-            ) : (
-              <>
-                Baseado no play/pause/stop das tarefas de <b>{scopeLabel}</b>.
-              </>
-            )}
-          </p>
-          <div className="mt-3 h-64">
-            <ResponsiveContainer>
-              <BarChart data={timeByDay} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip {...TOOLTIP} formatter={(v: number) => [`${v} min`, "Trabalhado"]} />
-                <Bar dataKey="minutes" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        {/* ------------------------------------------------ achados */}
+        {achados.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {achados.map((a) => (
+              <CartaoAchado key={a.titulo} achado={a} />
+            ))}
           </div>
-        </section>
-
-        {timeByUser.length > 0 && (
-          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Tempo por colaborador</h2>
-            <p className="text-[11px] text-muted-foreground">
-              Soma das sessões cronometradas nos últimos 90 dias, de qualquer computador — útil
-              para o gestor comparar cargas.
-            </p>
-            <div className="mt-3 h-64">
-              <ResponsiveContainer>
-                <BarChart data={timeByUser} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip {...TOOLTIP} formatter={(v: number) => [`${v} min`, "Trabalhado"]} />
-                  <Bar dataKey="minutes" fill="var(--color-chart-4)" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Tarefas que mais consumiram tempo</h2>
-            {topTasks.length === 0 ? (
-              <div className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                Ainda nenhuma tarefa cronometrada. Use ▶ em qualquer tarefa para começar.
-              </div>
-            ) : (
-              <ul className="mt-3 space-y-1.5">
-                {topTasks.map((t) => {
-                  const est = t.estimated ? t.estimated * 60 : 0;
-                  const over = est > 0 && t.seconds > est;
-                  const pct = est > 0 ? Math.min(200, Math.round((t.seconds / est) * 100)) : null;
-                  return (
-                    <li key={t.taskId} className="rounded-md border border-border bg-background p-2">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
-                        <span className="font-mono tabular-nums text-muted-foreground">
-                          {formatHM(t.seconds)}
-                        </span>
-                      </div>
-                      {pct !== null && (
-                        <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                          <div className="h-1 flex-1 overflow-hidden rounded-full bg-secondary">
-                            <div
-                              className={`h-full ${over ? "bg-destructive" : "bg-primary"}`}
-                              style={{ width: `${Math.min(100, pct)}%` }}
-                            />
-                          </div>
-                          <span className={over ? "text-destructive" : ""}>
-                            {pct}% de {formatHM(est)}
-                          </span>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-
-          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Estimado × real</h2>
-            <p className="text-[11px] text-muted-foreground">
-              Onde a estimativa está longe da realidade (bom para calibrar próximos prazos).
-            </p>
-            {estimateAccuracy.length === 0 ? (
-              <div className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                Nenhuma tarefa com estimativa + tempo cronometrado ainda.
-              </div>
-            ) : (
-              <ul className="mt-3 space-y-1.5">
-                {estimateAccuracy.map((r) => (
-                  <li key={r.taskId} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background p-2 text-xs">
-                    <span className="min-w-0 flex-1 truncate">{r.title}</span>
-                    <span className="font-mono tabular-nums text-muted-foreground">
-                      {formatHM(r.actual * 60)} / {formatHM(r.est * 60)}
-                    </span>
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                        r.diff > 0
-                          ? "bg-destructive/15 text-destructive"
-                          : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                      }`}
-                    >
-                      {r.diff > 0 ? "+" : ""}
-                      {r.diff}min
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+        {/* ------------------------------------------------ indicadores */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+          <Indicador
+            icone={CheckCircle2}
+            rotulo="Concluídas"
+            valor={String(resumo.total)}
+            variacao={variacao(resumo.total, resumoAnt?.total ?? null, "pct")}
+            detalhe={resumoAnt ? `${resumoAnt.total} no período anterior` : undefined}
+          />
+          <Indicador
+            icone={Target}
+            rotulo="No prazo"
+            valor={resumo.pctNoPrazo == null ? "—" : `${Math.round(resumo.pctNoPrazo)}%`}
+            variacao={variacao(resumo.pctNoPrazo, resumoAnt?.pctNoPrazo ?? null, "pp")}
+            detalhe={
+              resumo.total
+                ? `${resumo.noPrazo} de ${resumo.total} no dia útil do prazo`
+                : "Sem entregas"
+            }
+          />
+          <Indicador
+            icone={AlarmClock}
+            rotulo="Atraso médio"
+            valor={
+              resumo.atrasoMedio == null
+                ? "—"
+                : `${resumo.atrasoMedio.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} d.u.`
+            }
+            variacao={variacao(resumo.atrasoMedio, resumoAnt?.atrasoMedio ?? null, "abs", false)}
+            detalhe={
+              resumo.atrasadas
+                ? `Dias úteis, nas ${resumo.atrasadas} entregas atrasadas`
+                : "Nenhuma entrega atrasada"
+            }
+          />
+          <Indicador
+            icone={Timer}
+            rotulo="Tempo registrado"
+            valor={carregandoTempo ? "…" : duracao(totalTempo)}
+            variacao={carregandoTempo ? null : variacao(totalTempo, totalTempoAnt, "pct")}
+            detalhe={
+              carregandoTempo
+                ? "Buscando sessões…"
+                : `${sessoesJanela.length} ${sessoesJanela.length === 1 ? "sessão" : "sessões"} em ${tarefasComTempo} ${tarefasComTempo === 1 ? "tarefa" : "tarefas"}`
+            }
+          />
+          <Indicador
+            icone={Hourglass}
+            rotulo="Tempo por concluída"
+            valor={medioAtual.media == null ? "—" : duracao(medioAtual.media)}
+            variacao={tempoMedioVar}
+            detalhe={
+              medioAtual.total
+                ? `${medioAtual.comTempo} de ${medioAtual.total} concluídas tinham cronômetro`
+                : "Sem entregas no período"
+            }
+          />
+          <Indicador
+            icone={Inbox}
+            rotulo="Abertas agora"
+            valor={String(abertas.length)}
+            detalhe={
+              vencidas.length ? (
+                <span className="font-medium text-destructive">
+                  {vencidas.length} {vencidas.length === 1 ? "vencida" : "vencidas"}
+                </span>
+              ) : (
+                "Nenhuma vencida"
+              )
+            }
+          />
         </div>
 
-        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-          <h2 className="text-sm font-semibold">Evolução — últimos 30 dias</h2>
-          <p className="text-[11px] text-muted-foreground">
-            Tarefas concluídas por dia por <b>{scopeLabel}</b>.
-          </p>
-          <div className="mt-3 h-72">
-            <ResponsiveContainer>
-              <LineChart data={last30} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={3} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip {...TOOLTIP} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="concluidas" stroke="var(--color-chart-1)" strokeWidth={2} dot={false} name="Concluídas" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+        {/* ------------------------------------------------ entregas */}
+        <TituloDeBloco
+          titulo="Entregas"
+          descricao="Ritmo de conclusão, prazo e o que está acumulando."
+        />
+        <SecaoEntregas
+          entregas={entregasJanela}
+          baldes={baldes}
+          granularidade={granularidade}
+          tarefasEscopo={tarefasEscopo}
+          multi={multi}
+          nomeDe={nomeDe}
+        />
 
-        <div className={`grid gap-4 ${byUser.length > 1 ? "md:grid-cols-2" : ""}`}>
-          {byUser.length > 1 && (
-            <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-              <h2 className="text-sm font-semibold">Top pessoas (tarefas concluídas)</h2>
-              <div className="mt-3 h-72">
-                <ResponsiveContainer>
-                  <BarChart data={byUser} margin={{ left: -10, right: 8, top: 8, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip {...TOOLTIP} />
-                    {/* `name` para o tooltip não mostrar "concluidas", que é o
-                      nome do campo — sem acento e em minúscula. */}
-                  <Bar
-                    dataKey="concluidas"
-                    name="Concluídas"
-                    fill="var(--color-chart-1)"
-                    radius={[6, 6, 0, 0]}
-                  />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </section>
-          )}
+        {/* ------------------------------------------------ tempo */}
+        <TituloDeBloco
+          titulo="Tempo"
+          descricao="Do cronômetro (▶) das tarefas, de qualquer computador."
+        />
+        <SecaoTempo
+          sessoes={sessoesJanela}
+          baldes={baldes}
+          granularidade={granularidade}
+          multi={multi}
+          nomeDe={nomeDe}
+          tarefaPorId={tarefaPorId}
+          projetoPorId={projetoPorId}
+          carregando={carregandoTempo}
+          erro={erroTempo}
+        />
 
-          <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">Tarefas por setor</h2>
-            <p className="text-[11px] text-muted-foreground">
-              Tarefas em aberto e concluídas de <b>{scopeLabel}</b>, pelo setor da tarefa.
-            </p>
-            {bySector.length === 0 ? (
-              <div className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                Nenhuma tarefa no período.
-              </div>
-            ) : (
-              <div className="mt-3 h-72">
-                <ResponsiveContainer>
-                  <PieChart>
-                    {/* O rótulo precisa de `fill` explícito: sem ele o Recharts
-                        usa o cinza escuro padrão dele, que no tema noturno fica
-                        preto sobre fundo preto. */}
-                    <Pie
-                      data={bySector}
-                      dataKey="value"
-                      nameKey="name"
-                      outerRadius={90}
-                      label={{ fontSize: 11, fill: "var(--color-foreground)" }}
-                    >
-                      {bySector.map((s, i) => (
-                        <Cell key={i} fill={s.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      {...TOOLTIP}
-                      formatter={(v: number, nome: string) => [
-                        v === 1 ? "1 tarefa" : `${v} tarefas`,
-                        nome,
-                      ]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </section>
-        </div>
-
-        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold">Sessões recentes</h2>
-              <p className="text-[11px] text-muted-foreground">
-                Últimas 30 sessões cronometradas — use "Exportar sessões" para baixar tudo em CSV.
-              </p>
-            </div>
-          </div>
-          {recentSessions.length === 0 ? (
-            <div className="mt-4 rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-              Nenhuma sessão registrada. Use ▶ em qualquer tarefa para começar.
-            </div>
-          ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <th className="pb-2 pr-3 font-medium">Tarefa</th>
-                    {scope === "all" && <th className="pb-2 pr-3 font-medium">Colaborador</th>}
-                    <th className="pb-2 pr-3 font-medium">Status</th>
-                    <th className="pb-2 pr-3 font-medium">Início</th>
-                    <th className="pb-2 pr-3 font-medium">Fim</th>
-                    <th className="pb-2 pr-3 text-right font-medium">Duração</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentSessions.map((s) => (
-                    <tr key={s.id} className="border-t border-border/60">
-                      <td className="max-w-[240px] truncate py-2 pr-3">{s.taskTitle}</td>
-                      {scope === "all" && <td className="py-2 pr-3 text-muted-foreground">{s.userName}</td>}
-                      <td className="py-2 pr-3 text-muted-foreground">{s.taskStatus}</td>
-                      <td className="py-2 pr-3 tabular-nums text-muted-foreground">
-                        {new Date(s.startedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                      <td className="py-2 pr-3 tabular-nums text-muted-foreground">
-                        {new Date(s.endedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono tabular-nums">{formatHMS(s.seconds)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
-          <h2 className="text-sm font-semibold">Distribuição por status</h2>
-          <p className="text-[11px] text-muted-foreground">
-            Situação atual das tarefas de <b>{scopeLabel}</b> (as arquivadas ficam de fora).
-          </p>
-          <div className="mt-3 h-56">
-            <ResponsiveContainer>
-              <BarChart data={statusDist} layout="vertical" margin={{ left: 40, right: 20, top: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} />
-                {/* Sem `formatter`, o Recharts cai no `dataKey` e escreve
-                    "value : 3" — nome de campo do código vazando para a tela. */}
-                <Tooltip
-                  {...TOOLTIP}
-                  formatter={(v: number) => [v === 1 ? "1 tarefa" : `${v} tarefas`, "Total"]}
-                />
-                <Bar dataKey="value" fill="var(--color-chart-3)" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+        {/* ------------------------------------------------ time */}
+        {multi && (
+          <>
+            <TituloDeBloco
+              titulo="Equipe"
+              descricao={`${pessoasEscopo.length} pessoas no escopo.`}
+            />
+            <TabelaDoTime
+              pessoas={pessoasEscopo}
+              entregas={entregasJanela}
+              tarefasEscopo={tarefasEscopo}
+              sessoes={sessoesJanela}
+              baldes={baldes}
+              tasks={tasks}
+              completions={completions}
+              aoEscolher={(id) => {
+                setEscopo(`p:${id}`);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          </>
+        )}
       </div>
     </FluxoLayout>
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string | number }) {
+const estiloDoAchado = {
+  bom: { icone: TrendingUp, cor: "var(--color-success)" },
+  ruim: { icone: TrendingDown, cor: "var(--color-destructive)" },
+  neutro: { icone: Lightbulb, cor: "var(--color-primary)" },
+} as const;
+
+function CartaoAchado({ achado }: { achado: Achado }) {
+  const { icone: Icone, cor } = estiloDoAchado[achado.tom];
   return (
-    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tracking-tight">{value}</div>
+    <div className="flex min-w-0 gap-3 rounded-xl border border-border bg-card p-3.5 shadow-sm">
+      <span
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+        style={{ background: `color-mix(in oklab, ${cor} 15%, transparent)`, color: cor }}
+      >
+        <Icone className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold leading-snug">{achado.titulo}</div>
+        <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
+          {achado.detalhe}
+        </div>
+      </div>
     </div>
   );
 }

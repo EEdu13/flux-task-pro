@@ -1,17 +1,8 @@
+import { baixarXlsx, type Celula } from "@/lib/planilha-xlsx";
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Download,
-  FileText,
-  Maximize2,
-  Minimize2,
-  Presentation,
-  Target,
-  TrendingDown,
-  TrendingUp,
-  Users,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Download, FileText, Maximize2, Minimize2, Presentation } from "lucide-react";
 import { toast } from "sonner";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -20,7 +11,38 @@ import { rotuloDaFrequencia, sectors, type Task, type User } from "@/lib/fluxo-t
 import { carregarTempoDoServidor, formatHM } from "@/lib/time-log";
 import { desktopSetFullscreen, isTauri } from "@/lib/desktop";
 import { TravaScroll } from "@/components/trava-scroll";
-import { SEM_PRAZO, rotuloDoPrazo, venceEm } from "@/lib/prazo";
+import { rotuloDoPrazo } from "@/lib/prazo";
+import {
+  PERIODOS,
+  contar,
+  fatiasDoPeriodo,
+  janelaAnterior,
+  mapaDeConclusoes,
+  montarAlertas,
+  periodRange,
+  periodoLabel,
+  placarPorFatia,
+  placarPorSetor,
+  pontuarPessoa,
+  prazoNoPeriodo,
+  progressoDasMetas,
+  scoreTask,
+  somar,
+  tarefasPorPessoa,
+  type Contagem,
+  type Periodo,
+  type TaskScore,
+} from "@/components/metas/calculo";
+import { Cartao, Distribuicao, GraficoEvolucao, MapaDeCalor } from "@/components/metas/graficos";
+import { nomeDoSetor, porScore } from "@/components/metas/formato";
+import {
+  CartaoDoScore,
+  FiltroDeColaboradores,
+  ListaDeAlertas,
+  ProgressoDeMetas,
+  ScorePorSetor,
+} from "@/components/metas/paineis";
+import { Podio, Ranking } from "@/components/metas/ranking";
 
 export const Route = createFileRoute("/metas")({
   head: () => ({
@@ -32,118 +54,20 @@ export const Route = createFileRoute("/metas")({
   component: MetasPage,
 });
 
-/* Isto é um PERÍODO, não uma frequência de tarefa.
-   Parece a mesma coisa e não é — e a confusão entre as duas deixava a aba
-   Mensal permanentemente vazia. O filtro exigia `t.frequency === period`, ou
-   seja, "tarefas cuja recorrência é mensal", e não "tarefas que vencem neste
-   mês". Como as 23 tarefas do banco são diárias, o Mensal mostrava zero para
-   todo mundo — e tarefa semanal não aparecia em aba nenhuma, porque não havia
-   aba com esse nome. Agora a aba escolhe só a janela de datas; a recorrência da
-   tarefa não entra na conta. */
-type Period = "diaria" | "mensal" | "personalizado";
-
-interface TaskScore {
-  task: Task;
-  state: "on-time" | "late" | "pending" | "missed";
-  points: number;
-}
-
-interface UserScore {
-  user: User;
-  assigned: number;
-  points: number;
-  onTime: number;
-  late: number;
-  pending: number;
-  missed: number;
-  pct: number;
-  breakdown: TaskScore[];
-}
-
-/**
- * Converte "2026-09-01" do <input type="date"> em meia-noite LOCAL.
- *
- * `new Date("2026-09-01")` seria meia-noite em UTC, que no Brasil é 21h do dia
- * anterior — e o período inteiro escorregaria um dia. Montando com os números
- * separados, a data é local desde o começo.
- */
-function dataLocal(iso: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  d.setHours(0, 0, 0, 0);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function periodRange(
-  period: Period,
-  ref = new Date(),
-  personalizado?: { de: string; ate: string },
-): { start: Date; end: Date; label: string } {
-  const start = new Date(ref);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-
-  if (period === "personalizado") {
-    const de = dataLocal(personalizado?.de ?? "");
-    const ate = dataLocal(personalizado?.ate ?? "");
-    /* Datas incompletas ou invertidas caem no mês corrente em vez de mostrar
-       uma tela vazia — quem está preenchendo o segundo campo não deveria ver o
-       painel piscar em branco no meio da digitação. */
-    if (de && ate && ate.getTime() >= de.getTime()) {
-      // O fim é EXCLUSIVO na comparação, então soma um dia para o último dia
-      // escolhido entrar inteiro no período.
-      const fim = new Date(ate);
-      fim.setDate(fim.getDate() + 1);
-      const fmt = (d: Date) => d.toLocaleDateString("pt-BR");
-      return { start: de, end: fim, label: `${fmt(de)} a ${fmt(ate)}` };
-    }
-    return periodRange("mensal", ref);
-  }
-
-  if (period === "diaria") {
-    end.setDate(start.getDate() + 1);
-    return { start, end, label: start.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" }) };
-  }
-  start.setDate(1);
-  end.setTime(start.getTime());
-  end.setMonth(start.getMonth() + 1);
-  return { start, end, label: start.toLocaleDateString("pt-BR", { month: "long", year: "numeric" }) };
-}
-
-/** O prazo cai no período? Sem prazo não cai em período nenhum. */
-function prazoNoPeriodo(t: Task, range: { start: Date; end: Date }): boolean {
-  if (!t.dueDate) return false;
-  const due = new Date(t.dueDate).getTime();
-  return due >= range.start.getTime() && due < range.end.getTime();
-}
-
-function scoreTask(task: Task, completionAt: string | null): TaskScore {
-  // Sem prazo: não há atraso possível. Concluída vale inteira; aberta, pendente.
-  // O pack vence no fim do dia, não no horário — ver `venceEm`.
-  const due = venceEm(task);
-  const now = Date.now();
-  if (task.status === "concluida") {
-    const done = completionAt ? new Date(completionAt).getTime() : now;
-    if (done <= due) return { task, state: "on-time", points: 1 };
-    return { task, state: "late", points: 0.5 };
-  }
-  if (due < now) return { task, state: "missed", points: 0 };
-  return { task, state: "pending", points: 0 };
-}
-
-/** Nome do período para os rótulos. Era `frequencyLabel`, e o nome já entregava
- *  a confusão que existia: aqui nunca se falou de frequência de tarefa. */
-function periodoLabel(p: Period) {
-  return p === "diaria" ? "diário" : p === "mensal" ? "mensal" : "personalizado";
-}
+/* Reforma de 13/10/2026: a aba virou um painel de score e metas de verdade —
+   anel do score com a tendência, evolução dia a dia contra a linha da meta,
+   pódio, ranking com minilinha, distribuição completa (com as pendentes),
+   alertas acionáveis, score por setor, mapa de calor pessoa × dia e o
+   progresso das metas cadastradas. As contas e os gráficos moram em
+   `src/components/metas/`; tudo é calculado aqui no navegador, em cima do que o
+   `useFluxo` já carregou — nenhuma consulta nova ao banco (teto de DTU). A
+   regra do score não mudou: ver `calculo.ts`. */
 
 function MetasPage() {
-  const { tasks, users, completions, currentUser } = useFluxo();
-  const [period, setPeriod] = useState<Period>("diaria");
+  const { tasks, users, completions, currentUser, metas } = useFluxo();
+  const [period, setPeriod] = useState<Periodo>("diaria");
   /* O personalizado nasce no mês corrente: do dia 1 até hoje. Nascer vazio
-     obrigaria a preencher dois campos antes de ver qualquer coisa, e a primeira
-     impressão da aba seria uma tela em branco. */
+     obrigaria a preencher dois campos antes de ver qualquer coisa. */
   const [customDe, setCustomDe] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -153,6 +77,7 @@ function MetasPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [openUserId, setOpenUserId] = useState<string | null>(null);
+  const [porPessoaNoGrafico, setPorPessoaNoGrafico] = useState(false);
   const isManager = currentUser.role === "gerente" || currentUser.role === "supervisor";
   const containerRef = useRef<HTMLDivElement>(null);
   const [presenting, setPresenting] = useState(false);
@@ -164,28 +89,18 @@ function MetasPage() {
     return users.filter((u) => u.id === currentUser.id);
   }, [users, currentUser]);
 
-  // Team filter — starts with everyone visible; the panel + PDF respect it.
+  // Filtro do time — começa com todo mundo visível; painel e PDF respeitam.
   const [selectedTeam, setSelectedTeam] = useState<Set<string>>(
     () => new Set(visibleUsers.map((u) => u.id)),
   );
   useEffect(() => {
-    // If the visible team changes (e.g. role switch), reset selection.
+    // Se o time visível muda (ex.: troca de papel), a seleção recomeça.
     setSelectedTeam(new Set(visibleUsers.map((u) => u.id)));
   }, [visibleUsers]);
   const filteredUsers = useMemo(
     () => visibleUsers.filter((u) => selectedTeam.has(u.id)),
     [visibleUsers, selectedTeam],
   );
-  const toggleTeamMember = (id: string) =>
-    setSelectedTeam((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const allSelected = selectedTeam.size === visibleUsers.length;
-  const toggleAllTeam = () =>
-    setSelectedTeam(allSelected ? new Set() : new Set(visibleUsers.map((u) => u.id)));
 
   /* ————— Modo apresentação —————
      No app nativo NÃO usamos requestFullscreen(): quem manda no tamanho é a
@@ -214,8 +129,7 @@ function MetasPage() {
    * O modo apresentação é CSS e vale por si só; a tela cheia do sistema é um
    * bônus. Por isso o estado é trocado ANTES e independe dela: se a tela cheia
    * falhar (permissão do Tauri, navegador que nega o gesto), a pessoa ainda
-   * apresenta — só com a barra de tarefas à mostra. Amarrar um no outro foi o
-   * que fez o botão simplesmente não responder.
+   * apresenta — só com a barra de tarefas à mostra.
    */
   const togglePresent = async () => {
     const alvo = !presenting;
@@ -232,9 +146,7 @@ function MetasPage() {
     }
   };
 
-  // Esc sai da apresentação. No navegador em tela cheia real o próprio
-  // navegador já trata, mas se a tela cheia não pegou ninguém trata — e sem
-  // isto a única saída seria achar o botão.
+  // Esc sai da apresentação mesmo quando a tela cheia não pegou.
   useEffect(() => {
     if (!presenting) return;
     const onKey = (e: KeyboardEvent) => {
@@ -254,49 +166,101 @@ function MetasPage() {
     };
   }, []);
 
+  /* ————— Contas (todas no navegador) ————— */
+
   const range = useMemo(
     () => periodRange(period, new Date(), { de: customDe, ate: customAte }),
     [period, customDe, customAte],
   );
+  const rangeAnterior = useMemo(() => janelaAnterior(period, range), [period, range]);
+  const { fatias, descricao: descricaoDasFatias } = useMemo(
+    () => fatiasDoPeriodo(period, range),
+    [period, range],
+  );
 
-  const scores: UserScore[] = useMemo(() => {
-    return filteredUsers.map((u) => {
-      // Sem `t.frequency === period`: a aba escolhe a janela de datas, não a
-      // recorrência da tarefa. Ver a nota no tipo `Period`.
-      const assigned = tasks.filter(
-        (t) =>
-          t.assigneeId === u.id && prazoNoPeriodo(t, range),
-      );
-      const breakdown = assigned.map((t) => {
-        const c = completions.find((x) => x.taskId === t.id);
-        return scoreTask(t, c?.at ?? null);
-      });
-      const points = breakdown.reduce((s, b) => s + b.points, 0);
-      return {
-        user: u,
-        assigned: assigned.length,
-        points,
-        onTime: breakdown.filter((b) => b.state === "on-time").length,
-        late: breakdown.filter((b) => b.state === "late").length,
-        pending: breakdown.filter((b) => b.state === "pending").length,
-        missed: breakdown.filter((b) => b.state === "missed").length,
-        pct: assigned.length ? (points / assigned.length) * 100 : 0,
-        breakdown,
-      };
-    });
-  }, [filteredUsers, tasks, completions, period, range]);
+  const conclusoes = useMemo(() => mapaDeConclusoes(completions), [completions]);
+  const tarefasDe = useMemo(
+    () => tarefasPorPessoa(tasks, new Set(filteredUsers.map((u) => u.id))),
+    [tasks, filteredUsers],
+  );
 
-  const ranked = [...scores].sort((a, b) => b.pct - a.pct);
-  const teamAssigned = scores.reduce((s, r) => s + r.assigned, 0);
-  const teamPoints = scores.reduce((s, r) => s + r.points, 0);
-  const teamPct = teamAssigned ? (teamPoints / teamAssigned) * 100 : 0;
-  const teamOnTime = scores.reduce((s, r) => s + r.onTime, 0);
-  const teamLate = scores.reduce((s, r) => s + r.late, 0);
-  const teamMissed = scores.reduce((s, r) => s + r.missed, 0);
-  const topPerformer = ranked.find((r) => r.assigned > 0) ?? null;
-  const needsAttention = [...ranked]
-    .filter((r) => r.assigned > 0)
-    .sort((a, b) => a.pct - b.pct)[0] ?? null;
+  const scores = useMemo(
+    () => filteredUsers.map((u) => pontuarPessoa(u, tarefasDe.get(u.id) ?? [], range, conclusoes)),
+    [filteredUsers, tarefasDe, range, conclusoes],
+  );
+  const ranked = useMemo(() => [...scores].sort(porScore), [scores]);
+  const time = useMemo(() => somar(scores.map((s) => contar(s.breakdown))), [scores]);
+  const timeAnterior = useMemo(
+    () =>
+      somar(
+        filteredUsers.map((u) =>
+          contar(pontuarPessoa(u, tarefasDe.get(u.id) ?? [], rangeAnterior, conclusoes).breakdown),
+        ),
+      ),
+    [filteredUsers, tarefasDe, rangeAnterior, conclusoes],
+  );
+
+  const series = useMemo(() => {
+    const m = new Map<string, Contagem[]>();
+    for (const u of filteredUsers)
+      m.set(u.id, placarPorFatia(tarefasDe.get(u.id) ?? [], fatias, conclusoes));
+    return m;
+  }, [filteredUsers, tarefasDe, fatias, conclusoes]);
+  const serieDoTime = useMemo(
+    () => fatias.map((_, i) => somar([...series.values()].map((s) => s[i]))),
+    [fatias, series],
+  );
+
+  const alertas = useMemo(() => montarAlertas(ranked, range), [ranked, range]);
+  const setores = useMemo(() => placarPorSetor(scores), [scores]);
+  const mostrarSetores = currentUser.role === "gerente" && setores.length > 1;
+  const progressoMetas = useMemo(
+    () => progressoDasMetas(metas, filteredUsers, users, completions, nomeDoSetor),
+    [metas, filteredUsers, users, completions],
+  );
+
+  // Linha por pessoa só cabe com poucas pessoas: são 5 cores de gráfico no tema.
+  const podeSepararPessoas = filteredUsers.length >= 2 && filteredUsers.length <= 5;
+  const linhasPorPessoa = useMemo(
+    () =>
+      podeSepararPessoas && porPessoaNoGrafico
+        ? ranked.map((s) => ({ user: s.user, serie: series.get(s.user.id) ?? [] }))
+        : undefined,
+    [podeSepararPessoas, porPessoaNoGrafico, ranked, series],
+  );
+  const linhasDoMapa = useMemo(
+    () => ranked.map((s) => ({ user: s.user, serie: series.get(s.user.id) ?? [] })),
+    [ranked, series],
+  );
+
+  /** Abre o detalhamento da pessoa no ranking e rola até ela. */
+  const abrirPessoa = useCallback((id: string) => {
+    setOpenUserId(id);
+    requestAnimationFrame(() =>
+      document
+        .getElementById(`metas-pessoa-${id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  }, []);
+
+  const tituloDoScore =
+    filteredUsers.length === 1
+      ? filteredUsers[0].id === currentUser.id
+        ? "Seu score"
+        : `Score de ${filteredUsers[0].name.split(" ")[0]}`
+      : "Score do time";
+  const rotuloAnterior =
+    period === "diaria"
+      ? rangeAnterior.start.toLocaleDateString("pt-BR", {
+          weekday: "long",
+          day: "2-digit",
+          month: "2-digit",
+        })
+      : period === "semanal"
+        ? "a semana anterior"
+        : period === "mensal"
+          ? rangeAnterior.label
+          : `${rangeAnterior.label}`;
 
   return (
     <FluxoLayout title="Metas & Score">
@@ -310,63 +274,66 @@ function MetasPage() {
       <div
         ref={containerRef}
         style={presenting ? { inset: 0 } : undefined}
-        className={`space-y-5 ${
+        className={`space-y-4 ${
           presenting
-            ? "fixed z-410 max-w-none overflow-auto bg-background p-8 text-[1.05rem]"
+            ? "fixed z-410 max-w-none overflow-auto bg-background p-6 text-[1.05rem] lg:p-10"
             : "mx-auto w-full max-w-[2200px]"
         }`}
       >
         {presenting && <TravaScroll />}
         <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
-                <Presentation className="h-3 w-3" /> Painel do gestor
-              </span>
-            </div>
-            <h1 className={`mt-1 font-semibold tracking-tight ${presenting ? "text-4xl" : "text-2xl"}`}>
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+              <Presentation className="h-3 w-3" /> Painel do gestor
+            </span>
+            <h1
+              className={`mt-1 font-display font-bold tracking-tight ${presenting ? "text-4xl lg:text-5xl" : "text-2xl"}`}
+            >
               Metas & Score
             </h1>
             <p className="text-sm text-muted-foreground">
-              {isManager
-                ? "Filtre seus colaboradores, apresente ao vivo e exporte um PDF do período. O score vem direto das tarefas concluídas no prazo."
-                : "Score automático baseado nas suas tarefas concluídas no prazo. Peça acesso de gestor para acompanhar o time."}
+              {presenting
+                ? `${range.label} · ${
+                    filteredUsers.length === visibleUsers.length
+                      ? "time todo"
+                      : `${filteredUsers.length} ${filteredUsers.length === 1 ? "pessoa" : "pessoas"}`
+                  }`
+                : isManager
+                  ? "Score do time contra a meta de 100%: 1 ponto por tarefa no prazo, ½ com atraso, 0 em aberto."
+                  : "Seu score contra a meta de 100%: 1 ponto por tarefa no prazo, ½ com atraso, 0 em aberto."}
             </p>
           </div>
-          {/* Abas e "Apresentar" ficam presos numa linha só.
-              Os campos de data moravam DENTRO deste flex-wrap, entre as abas e o
-              botão — então, ao escolher Personalizado, a linha não cabia mais e o
-              grupo inteiro caía para baixo do subtítulo. Trocar de aba fazia o
-              canto superior direito pular de lugar. Agora as datas descem por
-              fora, numa segunda linha própria, e o que está em cima não se mexe. */}
+          {/* Abas e "Apresentar" ficam presos numa linha só; as datas do
+              personalizado descem numa segunda linha própria, para o canto
+              superior direito não pular de lugar ao trocar de aba. */}
           <div className="flex flex-col items-start gap-2 sm:items-end">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex overflow-hidden rounded-md border border-border bg-card text-sm">
-                {(["diaria", "mensal", "personalizado"] as Period[]).map((p) => (
+              <div className="inline-flex overflow-hidden rounded-lg border border-border bg-card text-sm shadow-sm">
+                {PERIODOS.map((p) => (
                   <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className={`px-3 py-1.5 font-medium ${period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPeriod(p.id)}
+                    aria-pressed={period === p.id}
+                    className={`px-3 py-1.5 font-medium transition ${period === p.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
                   >
-                    {p === "diaria" ? "Diário" : p === "mensal" ? "Mensal" : "Personalizado"}
+                    {p.rotulo}
                   </button>
                 ))}
               </div>
               <button
+                type="button"
                 onClick={togglePresent}
-                className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20"
-                title={presenting ? "Sair da apresentação" : "Modo apresentação"}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20"
+                title={presenting ? "Sair da apresentação (Esc)" : "Modo apresentação"}
               >
                 {presenting ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 {presenting ? "Sair" : "Apresentar"}
               </button>
             </div>
 
-            {/* Dois movimentos com papéis diferentes: a altura abre o espaço sem
-                solavanco no que vem abaixo, e o deslocamento faz os campos
-                entrarem pela direita, de onde a aba foi clicada. O
-                `MotionConfig reducedMotion="user"` da raiz já desliga isso para
-                quem pediu menos animação no sistema. */}
+            {/* A altura abre o espaço sem solavanco; o deslocamento traz os
+                campos pela direita, de onde a aba foi clicada. */}
             <AnimatePresence initial={false}>
               {period === "personalizado" && (
                 <motion.div
@@ -408,179 +375,138 @@ function MetasPage() {
           </div>
         </header>
 
-        {isManager && visibleUsers.length > 1 && (
-          <section className="rounded-lg border border-border bg-card p-3 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                <Users className="h-3.5 w-3.5" /> Filtrar meus colaboradores
-              </div>
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span>
-                  {selectedTeam.size} de {visibleUsers.length}
-                </span>
-                <button
-                  onClick={toggleAllTeam}
-                  className="rounded px-2 py-0.5 font-medium text-primary hover:bg-primary/10"
-                >
-                  {allSelected ? "Limpar" : "Selecionar todos"}
-                </button>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {visibleUsers.map((u) => {
-                const on = selectedTeam.has(u.id);
-                const sector = sectors.find((s) => s.id === u.sector);
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => toggleTeamMember(u.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs transition ${
-                      on
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <UserAvatar
-                      nome={u.name}
-                      iniciais={u.avatar}
-                      className="h-5 w-5 text-[9px] text-white"
-                      style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-                    />
-                    {u.name}
-                    {u.id === currentUser.id && (
-                      <span className="rounded-full bg-primary/15 px-1 text-[9px] font-semibold uppercase text-primary">
-                        você
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        <div className="grid gap-3 md:grid-cols-4">
-          <KpiCard label={`Período (${periodoLabel(period)})`} value={range.label} mono />
-          <KpiCard label="Tarefas do período" value={teamAssigned} />
-          <KpiCard
-            label="Concluídas"
-            value={`${teamOnTime + teamLate} / ${teamAssigned}`}
-          />
-          <KpiCard label={filteredUsers.length === 1 ? "Score individual" : "Score do time"} value={`${teamPct.toFixed(0)}%`} highlight={teamPct >= 100} />
-        </div>
-
-        {isManager && filteredUsers.length > 0 && (
-          <div className="grid gap-3 md:grid-cols-3">
-            <HighlightCard
-              tone="success"
-              label="Destaque"
-              user={topPerformer?.user}
-              value={topPerformer && topPerformer.assigned > 0 ? `${topPerformer.pct.toFixed(0)}%` : "—"}
-              sub={topPerformer ? `${topPerformer.onTime} no prazo · ${topPerformer.assigned} tarefas` : "Sem dados no período"}
+        {/* Filtro compacto. Some na apresentação: a lista suspensa abre fora do
+            elemento em tela cheia e ficaria invisível — e na TV ninguém filtra. */}
+        {isManager && visibleUsers.length > 1 && !presenting && (
+          <div className="flex flex-wrap items-center gap-2">
+            <FiltroDeColaboradores
+              pessoas={visibleUsers}
+              selecionados={selectedTeam}
+              aoMudar={setSelectedTeam}
+              euId={currentUser.id}
             />
-            <HighlightCard
-              tone="warning"
-              label="Precisa de atenção"
-              user={needsAttention?.user}
-              value={needsAttention && needsAttention.assigned > 0 ? `${needsAttention.pct.toFixed(0)}%` : "—"}
-              sub={needsAttention ? `${needsAttention.missed} perdidas · ${needsAttention.late} em atraso` : "Sem dados no período"}
-            />
-            <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Distribuição</div>
-              <div className="mt-2 space-y-1.5 text-xs">
-                <DistRow label="No prazo" value={teamOnTime} total={teamAssigned} className="bg-success" />
-                <DistRow label="Em atraso" value={teamLate} total={teamAssigned} className="bg-warning" />
-                <DistRow label="Perdidas" value={teamMissed} total={teamAssigned} className="bg-destructive" />
-              </div>
-            </div>
+            <span className="text-xs capitalize text-muted-foreground">
+              {periodoLabel(period)} · {range.label}
+            </span>
           </div>
         )}
 
-        <section className="rounded-lg border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between border-b border-border px-5 py-3">
-            <div>
-              <h2 className="text-sm font-semibold">Ranking do período</h2>
-              <p className="text-xs text-muted-foreground">Clique em um colaborador para ver o detalhamento.</p>
-            </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <CartaoDoScore
+              titulo={tituloDoScore}
+              contagem={time}
+              anterior={timeAnterior}
+              rotuloAnterior={rotuloAnterior}
+              rotuloDoPeriodo={range.label}
+              grande={presenting}
+            />
+          </div>
+          <Cartao
+            titulo="Distribuição das tarefas"
+            subtitulo="Os quatro estados somam o total do período"
+          >
+            <Distribuicao contagem={time} grande={presenting} />
+          </Cartao>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Cartao
+            className="lg:col-span-2"
+            titulo="Evolução do score"
+            subtitulo={`${descricaoDasFatias} · a linha tracejada é a meta (100%)`}
+            acoes={
+              podeSepararPessoas ? (
+                <div className="inline-flex overflow-hidden rounded-md border border-border text-[11px]">
+                  {[
+                    { v: false, r: "Time" },
+                    { v: true, r: "Por pessoa" },
+                  ].map((o) => (
+                    <button
+                      key={o.r}
+                      type="button"
+                      onClick={() => setPorPessoaNoGrafico(o.v)}
+                      aria-pressed={porPessoaNoGrafico === o.v}
+                      className={`px-2 py-1 font-medium ${porPessoaNoGrafico === o.v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}
+                    >
+                      {o.r}
+                    </button>
+                  ))}
+                </div>
+              ) : undefined
+            }
+          >
+            <GraficoEvolucao
+              fatias={fatias}
+              serieDoTime={serieDoTime}
+              porPessoa={linhasPorPessoa}
+              altura={presenting ? 340 : 250}
+            />
+          </Cartao>
+          <Cartao
+            titulo="Precisa de atenção"
+            subtitulo="O que pede ação neste período, do mais urgente ao informativo"
+          >
+            <ListaDeAlertas alertas={alertas} aoAbrir={abrirPessoa} />
+          </Cartao>
+        </div>
+
+        <Cartao
+          titulo="Ranking do período"
+          subtitulo="Clique em alguém para ver as tarefas. Com atraso vale ½ ponto; pendente e perdida, 0."
+          acoes={
             <span className="text-xs text-muted-foreground">
               {scores.length} {scores.length === 1 ? "colaborador" : "colaboradores"}
             </span>
-          </div>
-          <ul className="divide-y divide-border">
-            {ranked.length === 0 && (
-              <li className="px-5 py-10 text-center text-sm text-muted-foreground">
-                <Target className="mx-auto mb-2 h-6 w-6" />
-                {filteredUsers.length === 0
-                  ? "Selecione ao menos um colaborador para ver o ranking."
-                  : "Nenhuma tarefa com prazo neste período."}
-              </li>
-            )}
-            {ranked.map((row) => {
-              const sector = sectors.find((s) => s.id === row.user.sector);
-              const good = row.pct >= 100;
-              const bad = row.assigned > 0 && row.pct < 100;
-              const isOpen = openUserId === row.user.id;
-              return (
-                <li key={row.user.id}>
-                  <button
-                    onClick={() => setOpenUserId(isOpen ? null : row.user.id)}
-                    className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-secondary/40"
-                  >
-                    <UserAvatar
-                      nome={row.user.name}
-                      iniciais={row.user.avatar}
-                      className="h-9 w-9 text-xs text-white"
-                      style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        {row.user.name}
-                        <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                          {sector?.name ?? row.user.sector}
-                        </span>
-                      </div>
-                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                         <span>
-                           {row.onTime + row.late} de {row.assigned} {row.assigned === 1 ? "tarefa" : "tarefas"}
-                         </span>
-                         <span className="text-success">✓ {row.onTime} no prazo</span>
-                        <span className="text-warning">◐ {row.late} em atraso</span>
-                        <span>◌ {row.pending} pendente</span>
-                        <span className="text-destructive">✗ {row.missed} perdida</span>
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${Math.min(100, row.pct)}%`,
-                            background: good
-                              ? "var(--color-success)"
-                              : bad
-                                ? "var(--color-destructive)"
-                                : "var(--color-primary)",
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="ml-3 flex w-20 flex-col items-end">
-                      <div className={`text-lg font-semibold tabular-nums ${good ? "text-success" : bad ? "text-destructive" : ""}`}>
-                        {row.pct.toFixed(0)}%
-                      </div>
-                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        {good ? <TrendingUp className="h-3 w-3 text-success" /> : bad ? <TrendingDown className="h-3 w-3 text-destructive" /> : null}
-                        {row.assigned === 0 ? "sem tarefas" : good ? "excelente" : bad ? "abaixo" : "regular"}
-                      </div>
-                    </div>
-                  </button>
-                  {isOpen && <UserBreakdown row={row} period={period} range={range} />}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+          }
+        >
+          {ranked.filter((r) => r.assigned > 0).length >= 2 && (
+            <div className="mb-5 pt-4">
+              <Podio ranking={ranked} aoAbrir={abrirPessoa} />
+            </div>
+          )}
+          <Ranking
+            scores={scores}
+            series={series}
+            fatias={fatias}
+            aberto={openUserId}
+            aoAlternar={(id) => setOpenUserId((atual) => (atual === id ? null : id))}
+            rotuloDoPeriodo={range.label}
+            grande={presenting}
+          />
+        </Cartao>
 
-        {isManager && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Cartao
+            className="lg:col-span-2"
+            titulo="Mapa de calor"
+            subtitulo={`Score de cada pessoa em cada ${descricaoDasFatias === "por semana" ? "semana" : "dia"} (${descricaoDasFatias}). Passe o mouse para ver o detalhe.`}
+          >
+            <MapaDeCalor
+              linhas={linhasDoMapa}
+              fatias={fatias}
+              aoAbrir={abrirPessoa}
+              grande={presenting}
+            />
+          </Cartao>
+          <div className="flex min-w-0 flex-col gap-4">
+            {mostrarSetores && (
+              <Cartao titulo="Score por setor" subtitulo={range.label}>
+                <ScorePorSetor setores={setores} />
+              </Cartao>
+            )}
+            <Cartao
+              titulo="Metas cadastradas"
+              subtitulo="Cada meta se mede na própria janela (dia, semana ou mês corrente)"
+            >
+              <ProgressoDeMetas itens={progressoMetas} />
+            </Cartao>
+          </div>
+        </div>
+
+        {isManager && !presenting && (
           <ExportarPeriodo
+            key={filteredUsers.map((u) => u.id).join(",")}
             users={filteredUsers}
             tasks={tasks}
             completions={completions}
@@ -589,139 +515,6 @@ function MetasPage() {
         )}
       </div>
     </FluxoLayout>
-  );
-}
-
-function HighlightCard({
-  tone,
-  label,
-  user,
-  value,
-  sub,
-}: {
-  tone: "success" | "warning";
-  label: string;
-  user?: User;
-  value: string;
-  sub: string;
-}) {
-  const sector = user ? sectors.find((s) => s.id === user.sector) : undefined;
-  const border = tone === "success" ? "border-success/40 bg-success/5" : "border-warning/40 bg-warning/5";
-  const valueClass = tone === "success" ? "text-success" : "text-warning";
-  return (
-    <div className={`rounded-lg border p-4 shadow-sm ${border}`}>
-      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
-      {user ? (
-        <div className="mt-2 flex items-center gap-3">
-          <UserAvatar
-            nome={user.name}
-            iniciais={user.avatar}
-            className="h-10 w-10 text-xs text-white"
-            style={{ background: sector?.color ?? "oklch(0.52 0.22 275)" }}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">{user.name}</div>
-            <div className="truncate text-[11px] text-muted-foreground">{sub}</div>
-          </div>
-          <div className={`text-2xl font-semibold tabular-nums ${valueClass}`}>{value}</div>
-        </div>
-      ) : (
-        <div className="mt-2 text-sm text-muted-foreground">Sem dados no período.</div>
-      )}
-    </div>
-  );
-}
-
-function DistRow({
-  label,
-  value,
-  total,
-  className,
-}: {
-  label: string;
-  value: number;
-  total: number;
-  className: string;
-}) {
-  const pct = total === 0 ? 0 : Math.round((value / total) * 100);
-  return (
-    <div>
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{label}</span>
-        <span className="tabular-nums font-medium text-foreground">
-          {value} · {pct}%
-        </span>
-      </div>
-      <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-secondary">
-        <div className={`h-full rounded-full ${className}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function UserBreakdown({
-  row,
-  period,
-  range,
-}: {
-  row: UserScore;
-  period: Period;
-  range: { label: string };
-}) {
-  return (
-    <div className="border-t border-border bg-secondary/30 px-5 py-4">
-      <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          Tarefas de <strong>{range.label}</strong>
-        </span>
-        <span>
-          {row.onTime + row.late} de {row.assigned} concluídas
-        </span>
-      </div>
-      {row.breakdown.length === 0 ? (
-        <p className="py-4 text-center text-xs text-muted-foreground">Nenhuma tarefa nesse período.</p>
-      ) : (
-        <ul className="space-y-1">
-          {row.breakdown.map((b) => (
-            <li key={b.task.id} className="flex items-center justify-between rounded-md bg-card px-3 py-2 text-xs">
-              <div className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{b.task.title}</span>
-                <span className="ml-2 text-muted-foreground">
-                  {b.task.dueDate
-                    ? `prazo ${rotuloDoPrazo(b.task, { day: "2-digit", month: "2-digit" })}`
-                    : SEM_PRAZO.toLowerCase()}
-                </span>
-              </div>
-              <StateBadge state={b.state} points={b.points} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function StateBadge({ state }: { state: TaskScore["state"]; points?: number }) {
-  const map: Record<TaskScore["state"], { label: string; className: string }> = {
-    "on-time": { label: "No prazo", className: "bg-success/15 text-success" },
-    late: { label: "Em atraso", className: "bg-warning/15 text-warning" },
-    pending: { label: "Pendente", className: "bg-secondary text-muted-foreground" },
-    missed: { label: "Perdida", className: "bg-destructive/15 text-destructive" },
-  };
-  const m = map[state];
-  return (
-    <span className={`ml-3 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${m.className}`}>
-      {m.label}
-    </span>
-  );
-}
-
-function KpiCard({ label, value, mono, highlight }: { label: string; value: string | number; mono?: boolean; highlight?: boolean }) {
-  return (
-    <div className={`rounded-lg border p-4 shadow-sm ${highlight ? "border-success/40 bg-success/5" : "border-border bg-card"}`}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className={`mt-1 truncate text-lg font-semibold tracking-tight ${mono ? "capitalize" : ""}`}>{value}</div>
-    </div>
   );
 }
 
@@ -815,20 +608,20 @@ function ExportarPeriodo({
     return "Crítico";
   };
 
-  const exportCsv = async () => {
+  const exportXlsx = async () => {
     const list = selectedUsers();
     if (list.length === 0) return;
     setBusy(true);
     /* O tempo trabalhado vem do banco. Antes saía do `localStorage` desta
-       máquina, então a coluna "Trabalhado" do CSV vinha zerada para todo mundo
+       máquina, então a coluna "Trabalhado" da planilha vinha zerada para todo mundo
        menos quem exportou — e zerada é indistinguível de "não cronometrou". */
     let logs: Record<string, { totals: Record<string, number> }> = {};
     try {
       logs = await carregarTempoDoServidor();
     } catch (e) {
-      console.warn("[fluxo] tempo não carregou para o CSV:", (e as Error)?.message);
+      console.warn("[fluxo] tempo não carregou para a planilha:", (e as Error)?.message);
     }
-    const rows: string[] = [];
+    const rows: Celula[][] = [];
     rows.push(
       [
         "Colaborador",
@@ -841,10 +634,10 @@ function ExportarPeriodo({
         "Trabalhado (min)",
         "Trabalhado (hh:mm)",
         "Desvio (min)",
-      ].join(";"),
+      ],
     );
     for (const u of list) {
-      // Mesma correção do PDF: semanal não pode sumir do CSV em silêncio.
+      // Mesma correção do PDF: semanal não pode sumir da planilha em silêncio.
       const uTasks = tasks.filter(
         (t) =>
           t.assigneeId === u.id && prazoNoPeriodo(t, range),
@@ -864,45 +657,40 @@ function ExportarPeriodo({
         sumEstMin += est;
         rows.push(
           [
-            escapeCsv(u.name),
-            escapeCsv(u.sector),
+            u.name,
+            u.sector,
             // Chave, como as outras colunas; a pontual não é "diaria".
             t.recurring ? t.frequency : "sem_recorrencia",
-            escapeCsv(t.title),
+            t.title,
             rotuloDoPrazo(t),
             b.state,
-            est || "",
-            workedMin || "",
-            workedSec ? escapeCsv(formatHM(workedSec)) : "",
-            est ? (workedMin - est).toString() : "",
-          ].join(";"),
+            est || null,
+            workedMin || null,
+            workedSec ? formatHM(workedSec) : null,
+            est ? workedMin - est : null,
+          ],
         );
       }
       const pts = breakdown.reduce((s, b) => s + b.points, 0);
       const pct = uTasks.length ? (pts / uTasks.length) * 100 : 0;
       rows.push(
         [
-          escapeCsv(`>> TOTAL ${u.name}`),
-          "",
-          "",
-          "",
-          "",
+          `>> TOTAL ${u.name}`,
+          null,
+          null,
+          null,
+          null,
           `${pct.toFixed(0)}%`,
-          sumEstMin || "",
-          Math.round(sumWorkedSec / 60) || "",
-          sumWorkedSec ? escapeCsv(formatHM(sumWorkedSec)) : "",
-          sumEstMin ? (Math.round(sumWorkedSec / 60) - sumEstMin).toString() : "",
-        ].join(";"),
+          sumEstMin || null,
+          Math.round(sumWorkedSec / 60) || null,
+          sumWorkedSec ? formatHM(sumWorkedSec) : null,
+          sumEstMin ? Math.round(sumWorkedSec / 60) - sumEstMin : null,
+        ],
       );
     }
-    const csv = "\uFEFF" + rows.join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `fluxo-score-${range.label.replace(/\s+/g, "-").toLowerCase()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    baixarXlsx(`fluxo-score-${range.label.replace(/\s+/g, "-").toLowerCase()}`, [
+      { nome: "Score", linhas: rows },
+    ]);
     setBusy(false);
   };
 
@@ -1205,10 +993,11 @@ function ExportarPeriodo({
     <section className="rounded-lg border border-dashed border-border bg-card px-5 py-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-xl">
-          <h2 className="text-sm font-semibold">Relatório mensal exportável</h2>
+          {/* "mensal" saiu do título (13/10/2026): exporta o período da tela. */}
+          <h2 className="text-sm font-semibold">Relatório do período · {range.label}</h2>
           <p className="text-xs text-muted-foreground">
             Selecione um ou mais colaboradores e gere um <strong>PDF profissional</strong> com capa, ranking e uma
-            página de detalhamento por pessoa. Também disponível como planilha CSV.
+            página de detalhamento por pessoa. Também disponível como planilha do Excel.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1221,12 +1010,12 @@ function ExportarPeriodo({
             {busyPdf ? "Gerando..." : `Exportar PDF (${selected.size})`}
           </button>
           <button
-            onClick={exportCsv}
+            onClick={exportXlsx}
             disabled={busy || selected.size === 0}
             className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
           >
             <Download className="h-4 w-4" />
-            CSV
+            Excel
           </button>
         </div>
       </div>
@@ -1281,7 +1070,3 @@ function ExportarPeriodo({
   );
 }
 
-function escapeCsv(s: string): string {
-  if (/[";\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}

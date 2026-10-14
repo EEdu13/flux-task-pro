@@ -1,3 +1,4 @@
+import type { Celula } from "@/lib/planilha-xlsx";
 // Per-user persistent time log for the task timer / pomodoro.
 // Sessions are stored across days so relatorios can aggregate them.
 
@@ -124,29 +125,12 @@ export function sessionsInRange(
   return sessions.filter((s) => s.endedAt >= fromMs && s.endedAt < toMs);
 }
 
-function csvEscape(v: string | number): string {
-  const s = String(v ?? "");
-  if (/[";\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
+/* As planilhas do tempo (Relatórios → Resumo e Sessões). Saem em .xlsx
+   (pedido do usuário, 13/10/2026: "CSV ninguém usa mais") — ver
+   `planilha-xlsx.ts`. Minutos vão como número, para somar no Excel; início e
+   fim como data e hora de verdade. */
 
-function fmtDateTime(ms: number): string {
-  const d = new Date(ms);
-  return d.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function fmtIso(ms: number): string {
-  return new Date(ms).toISOString();
-}
-
-export interface CsvSessionRow {
+export interface SessionRow {
   userName: string;
   userSector?: string;
   taskId: string;
@@ -159,41 +143,38 @@ export interface CsvSessionRow {
   seconds: number;
 }
 
-export function buildSessionsCsv(rows: CsvSessionRow[]): string {
-  const header = [
-    "Colaborador",
-    "Setor",
-    "Tarefa",
-    "Status",
-    "Prioridade",
-    "Início",
-    "Fim",
-    "Início (ISO)",
-    "Fim (ISO)",
-    "Duração (min)",
-    "Duração (hh:mm:ss)",
-    "Estimado (min)",
-  ].join(";");
-  const body = rows.map((r) =>
+const minutos = (seg: number) => Math.round((seg / 60) * 100) / 100;
+
+export function linhasDeSessoes(rows: SessionRow[]): Celula[][] {
+  return [
     [
-      csvEscape(r.userName),
-      csvEscape(r.userSector ?? ""),
-      csvEscape(r.taskTitle),
-      csvEscape(r.status ?? ""),
-      csvEscape(r.priority ?? ""),
-      csvEscape(fmtDateTime(r.startedAt)),
-      csvEscape(fmtDateTime(r.endedAt)),
-      csvEscape(fmtIso(r.startedAt)),
-      csvEscape(fmtIso(r.endedAt)),
-      csvEscape((r.seconds / 60).toFixed(2).replace(".", ",")),
-      csvEscape(formatHMS(r.seconds)),
-      csvEscape(r.estimatedMinutes ?? ""),
-    ].join(";"),
-  );
-  return "\uFEFF" + [header, ...body].join("\n");
+      "Colaborador",
+      "Setor",
+      "Tarefa",
+      "Status",
+      "Prioridade",
+      "Início",
+      "Fim",
+      "Duração (min)",
+      "Duração (hh:mm:ss)",
+      "Estimado (min)",
+    ],
+    ...rows.map((r) => [
+      r.userName,
+      r.userSector ?? "",
+      r.taskTitle,
+      r.status ?? "",
+      r.priority ?? "",
+      new Date(r.startedAt),
+      new Date(r.endedAt),
+      minutos(r.seconds),
+      formatHMS(r.seconds),
+      r.estimatedMinutes ?? null,
+    ]),
+  ];
 }
 
-export interface CsvSummaryRow {
+export interface SummaryRow {
   userName: string;
   userSector?: string;
   taskTitle: string;
@@ -206,48 +187,37 @@ export interface CsvSummaryRow {
   lastAt?: number;
 }
 
-export function buildSummaryCsv(rows: CsvSummaryRow[]): string {
-  const header = [
-    "Colaborador",
-    "Setor",
-    "Tarefa",
-    "Status",
-    "Prioridade",
-    "Estimado (min)",
-    "Trabalhado (min)",
-    "Trabalhado (hh:mm)",
-    "Sessões",
-    "Primeiro início",
-    "Último término",
-    "Desvio (min)",
-  ].join(";");
-  const body = rows.map((r) => {
-    const mins = r.totalSeconds / 60;
-    const desvio = r.estimatedMinutes != null ? mins - r.estimatedMinutes : "";
-    return [
-      csvEscape(r.userName),
-      csvEscape(r.userSector ?? ""),
-      csvEscape(r.taskTitle),
-      csvEscape(r.status ?? ""),
-      csvEscape(r.priority ?? ""),
-      csvEscape(r.estimatedMinutes ?? ""),
-      csvEscape(mins.toFixed(2).replace(".", ",")),
-      csvEscape(formatHM(r.totalSeconds)),
-      csvEscape(r.sessions),
-      csvEscape(r.firstAt ? fmtDateTime(r.firstAt) : ""),
-      csvEscape(r.lastAt ? fmtDateTime(r.lastAt) : ""),
-      csvEscape(typeof desvio === "number" ? desvio.toFixed(1).replace(".", ",") : ""),
-    ].join(";");
-  });
-  return "\uFEFF" + [header, ...body].join("\n");
-}
-
-export function downloadCsv(filename: string, csv: string) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+export function linhasDeResumo(rows: SummaryRow[]): Celula[][] {
+  return [
+    [
+      "Colaborador",
+      "Setor",
+      "Tarefa",
+      "Status",
+      "Prioridade",
+      "Estimado (min)",
+      "Trabalhado (min)",
+      "Trabalhado (hh:mm)",
+      "Sessões",
+      "Primeiro início",
+      "Último término",
+      "Desvio (min)",
+    ],
+    ...rows.map((r) => [
+      r.userName,
+      r.userSector ?? "",
+      r.taskTitle,
+      r.status ?? "",
+      r.priority ?? "",
+      r.estimatedMinutes ?? null,
+      minutos(r.totalSeconds),
+      formatHM(r.totalSeconds),
+      r.sessions,
+      r.firstAt ? new Date(r.firstAt) : null,
+      r.lastAt ? new Date(r.lastAt) : null,
+      r.estimatedMinutes != null
+        ? Math.round((r.totalSeconds / 60 - r.estimatedMinutes) * 10) / 10
+        : null,
+    ]),
+  ];
 }

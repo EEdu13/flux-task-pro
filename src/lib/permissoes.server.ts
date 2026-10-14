@@ -194,12 +194,17 @@ export async function permissaoNoAnexo(
               SELECT ${bit("m.de_pessoa_id = @eu OR m.para_pessoa_id = @eu")}
                 FROM gestor.mensagens m WHERE m.id = a.dono_id), 0)
             WHEN a.dono_tipo = 'projeto' THEN 1
+            -- Foto do mural (14/10/2026): o mural é da empresa toda. Sem
+            -- consultar gestor.mural_posts aqui de propósito, para esta
+            -- fechadura (de todos os anexos) não depender da migração do mural.
+            WHEN a.dono_tipo = 'mural' THEN 1
             ELSE 0 END AS ver,
        CASE WHEN a.enviado_por = @eu THEN 1
             WHEN a.dono_tipo IN ('tarefa', 'comentario') THEN ${tarefaDoAnexo(SQL_CONTEUDO_DA_TAREFA)}
             WHEN a.dono_tipo = 'projeto' THEN ISNULL((
               SELECT ${bit(SQL_CONTEUDO_DO_PROJETO)}
                 FROM gestor.projetos p WHERE p.id = a.dono_id), 0)
+            WHEN a.dono_tipo = 'mural' THEN @gerente
             ELSE 0 END AS remover
        FROM gestor.anexos a WHERE a.id = @a;`,
   );
@@ -211,6 +216,13 @@ export async function permissaoNoAnexo(
  * Vale para listar os anexos de alguma coisa e para anexar nela.
  */
 export async function podeVerDonoDeAnexo(eu: number, tipo: string, id: string): Promise<boolean> {
+  /* O post do mural (14/10/2026) é visto por todos; basta existir. Consulta à
+     parte, para o SQL abaixo não citar uma tabela que só existe depois da
+     migração do mural. */
+  if (tipo === "mural") {
+    const { postVisivel } = await import("@/lib/mural.server");
+    return postVisivel(id);
+  }
   const l = await consultar<{ pode: number }>(
     eu,
     { tipo: { tipo: "texto", valor: tipo }, dono: { tipo: "guid", valor: id } },

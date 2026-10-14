@@ -9,7 +9,7 @@ import type { Task } from "@/lib/fluxo-types";
 /**
  * "Atribuir ao projeto" direto da tarefa (pedido do usuário, 13/10/2026): criar
  * a tarefa em Minhas tarefas e ligá-la a um projeto ativo sem precisar ir até a
- * tela do projeto. Lista os ATIVOS, os seus primeiro (dono ou membro).
+ * tela do projeto. Lista só os ATIVOS de que a pessoa é dona.
  */
 export function ListaDeProjetos({ task, aoEscolher }: { task: Task; aoEscolher?: () => void }) {
   const { projects, currentUser, updateTask } = useFluxo();
@@ -17,12 +17,15 @@ export function ListaDeProjetos({ task, aoEscolher }: { task: Task; aoEscolher?:
 
   const lista = useMemo(() => {
     const termo = busca.trim().toLowerCase();
-    const meu = (p: (typeof projects)[number]) =>
-      p.ownerId === currentUser.id || p.memberIds.includes(currentUser.id) ? 0 : 1;
+    /* Só os projetos de que a pessoa é DONA (pedido do usuário, 13/10/2026):
+       pôr tarefa no projeto dos outros bagunçava o projeto alheio. O projeto
+       atual da tarefa continua na lista, para mostrar o visto. */
     return projects
-      .filter((p) => p.status === "ativo" || p.id === task.projectId)
+      .filter(
+        (p) => (p.status === "ativo" && p.ownerId === currentUser.id) || p.id === task.projectId,
+      )
       .filter((p) => !termo || p.name.toLowerCase().includes(termo))
-      .sort((a, b) => meu(a) - meu(b) || a.name.localeCompare(b.name, "pt-BR"));
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [projects, busca, currentUser.id, task.projectId]);
 
   const escolher = (projectId: string | undefined, nome?: string) => {
@@ -55,7 +58,9 @@ export function ListaDeProjetos({ task, aoEscolher }: { task: Task; aoEscolher?:
       <div className="max-h-64 overflow-y-auto">
         {lista.length === 0 ? (
           <div className="px-2 py-3 text-center text-[11px] text-muted-foreground">
-            {busca ? "Nenhum projeto ativo com esse nome." : "Nenhum projeto ativo."}
+            {busca
+              ? "Nenhum projeto seu com esse nome."
+              : "Você não é dono de nenhum projeto ativo."}
           </div>
         ) : (
           lista.map((p) => {

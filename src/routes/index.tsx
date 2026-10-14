@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AtSign,
   Bell,
@@ -7,7 +7,7 @@ import {
   ChevronRight,
   Clock,
   Flame,
-  Target,
+  TrendingUp,
   Trophy,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
@@ -15,8 +15,16 @@ import { useFluxo } from "@/lib/fluxo-store";
 import { tituloDoAviso } from "@/lib/aviso";
 import { formatDueBucket, formatRelative } from "@/lib/use-theme";
 import { sectors, statusColor, statusLabels } from "@/lib/fluxo-types";
-import { userScorePct, scoreTextClass } from "@/lib/score";
+import { userScorePct, scoreTextClass, type PeriodoDoPlacar } from "@/lib/score";
 import { ScoreBar } from "@/components/score-bar";
+import {
+  AneisDoPlacar,
+  DiasDaSemana,
+  MinhaCarga,
+  Podio,
+  SeuRitmo,
+} from "@/components/painel-inicio";
+import { RankingDeTempo, TempoTrabalhado } from "@/components/tempo-trabalhado";
 import { SemanaDoTime } from "@/components/semana-do-time";
 import { UserAvatar } from "@/components/user-avatar";
 import { BlocoEntrada } from "@/components/stagger";
@@ -101,18 +109,74 @@ function Home() {
   }, [completions, currentUser.id]);
 
 
-  const myScore = useMemo(
-    () => userScorePct(currentUser.id, tasks, completions),
+  // Os três placares do topo: hoje, a semana e o mês.
+  const meusPlacares = useMemo(
+    () => ({
+      dia: userScorePct(currentUser.id, tasks, completions, new Date(), "dia"),
+      semana: userScorePct(currentUser.id, tasks, completions, new Date(), "semana"),
+      mes: userScorePct(currentUser.id, tasks, completions, new Date(), "mes"),
+    }),
     [currentUser.id, tasks, completions],
+  );
+  const atrasadas = openTasks.filter((t) => formatDueBucket(t.dueDate) === "atrasada").length;
+  const vencemHoje = openTasks.filter((t) => formatDueBucket(t.dueDate) === "hoje").length;
+  /* Uma frase que diz por onde começar — o que mais pesa primeiro. */
+  const resumoDoDia =
+    atrasadas > 0
+      ? `${atrasadas} ${atrasadas === 1 ? "tarefa atrasada pede" : "tarefas atrasadas pedem"} atenção${vencemHoje > 0 ? ` e ${vencemHoje} ${vencemHoje === 1 ? "vence" : "vencem"} hoje` : ""}.`
+      : vencemHoje > 0
+        ? `Nada atrasado. ${vencemHoje} ${vencemHoje === 1 ? "tarefa vence" : "tarefas vencem"} hoje.`
+        : openTasks.length > 0
+          ? "Nada atrasado e nada vencendo hoje. Bom momento para adiantar a semana."
+          : "Nenhuma tarefa aberta com você.";
+  const hojeExtenso = new Date().toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  /* O período do ranking (pedido do usuário, 13/10/2026: "só o mês fica ruim
+     de ver"). Conta as tarefas com prazo no período — a mesma conta do placar.
+     Lembrado neste computador. */
+  const [periodoRanking, setPeriodoRanking] = useState<PeriodoDoPlacar>("mes");
+  // Lido depois de montar: no servidor não há localStorage, e ler já no
+  // estado inicial daria uma tela diferente da que o servidor mandou.
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem("fluxo:ranking-periodo");
+      if (v === "dia" || v === "semana") setPeriodoRanking(v);
+    } catch {
+      /* sem armazenamento: fica o mês */
+    }
+  }, []);
+  const escolherPeriodo = (p: PeriodoDoPlacar) => {
+    setPeriodoRanking(p);
+    try {
+      window.localStorage.setItem("fluxo:ranking-periodo", p);
+    } catch {
+      /* sem armazenamento, vale só nesta tela */
+    }
+  };
+  /* Chefia fora do ranking (pedido do usuário, 13/10/2026): o ranking é do
+     time, e supervisor/gerente no meio dele expunha a nota do chefe para a
+     equipe. Quem é chefia ganha o botão "Todos" para se ver na lista — o
+     colaborador nunca vê o botão nem a chefia. */
+  const ehChefia = currentUser.role !== "adm";
+  const [rankingComChefia, setRankingComChefia] = useState(false);
+  const pessoasDoRanking = useMemo(
+    () =>
+      ehChefia && rankingComChefia
+        ? pessoasDoTime
+        : pessoasDoTime.filter((u) => u.role === "adm"),
+    [pessoasDoTime, ehChefia, rankingComChefia],
   );
   const userPct = useMemo(() => {
     const m = new Map<string, { pct: number; assigned: number }>();
-    for (const u of pessoasDoTime) {
-      const s = userScorePct(u.id, tasks, completions);
+    for (const u of pessoasDoRanking) {
+      const s = userScorePct(u.id, tasks, completions, new Date(), periodoRanking);
       m.set(u.id, { pct: s.pct, assigned: s.assigned });
     }
     return m;
-  }, [pessoasDoTime, tasks, completions]);
+  }, [pessoasDoRanking, tasks, completions, periodoRanking]);
   /* O time INTEIRO, sem corte.
    *
    * Havia um `.slice(0, 5)` aqui, e ele produzia um efeito que não parecia um
@@ -131,7 +195,7 @@ function Home() {
    */
   const ranking = useMemo(
     () =>
-      [...pessoasDoTime].sort((a, b) => {
+      [...pessoasDoRanking].sort((a, b) => {
         const sa = userPct.get(a.id) ?? { pct: 0, assigned: 0 };
         const sb = userPct.get(b.id) ?? { pct: 0, assigned: 0 };
         if (sa.assigned === 0 && sb.assigned === 0) return 0;
@@ -139,7 +203,7 @@ function Home() {
         if (sb.assigned === 0) return -1;
         return sb.pct - sa.pct;
       }),
-    [pessoasDoTime, userPct],
+    [pessoasDoRanking, userPct],
   );
 
   const recentNotifs = notifications
@@ -149,53 +213,109 @@ function Home() {
   return (
     <FluxoLayout title="Início">
       <div className="mx-auto w-full max-w-[2200px] space-y-6">
-        <BlocoEntrada indice={0} className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Olá, {currentUser.name.split(" ")[0]}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Você tem <span className="font-medium text-foreground">{openTasks.length}</span> tarefas em aberto e concluiu{" "}
-              <span className="font-medium text-foreground">{doneToday.length}</span> hoje.
-            </p>
-          </div>
-          <Link
-            to="/minhas-tarefas"
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-          >
-            Ir para minhas tarefas <ChevronRight className="h-4 w-4" />
-          </Link>
+        {/* O topo: quem sou, o que pede atenção agora e os três placares
+            (hoje, semana, mês) em anéis — repaginado em 13/10/2026. */}
+        <BlocoEntrada indice={0}>
+          <section className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-sm">
+            <div className="pointer-events-none absolute -left-24 -top-32 h-80 w-80 rounded-full bg-primary/10 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-40 right-10 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl" />
+            <div className="relative grid items-center gap-6 lg:grid-cols-[minmax(0,1.15fr)_auto_minmax(0,1fr)] xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_auto_minmax(0,1fr)]">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+                  {hojeExtenso}
+                </div>
+                <h1 className="mt-1 font-display text-3xl font-bold tracking-tight">
+                  Olá, {currentUser.name.split(" ")[0]}
+                </h1>
+                <p
+                  className={`mt-2 max-w-md text-sm ${atrasadas > 0 ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {resumoDoDia}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    to="/minhas-tarefas"
+                    className="inline-flex items-center gap-1 rounded-md bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+                  >
+                    Ir para minhas tarefas <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </div>
+
+              {/* Solto no meio do topo, sem cartão (pedido do usuário, 13/10/2026).
+                  Em tela menor desce para baixo de tudo, na largura inteira. */}
+              <div className="order-last lg:col-span-3 xl:order-none xl:col-span-1">
+                <SeuRitmo completions={completions} userId={currentUser.id} />
+              </div>
+
+              <div className="justify-self-center">
+                <div className="mb-2 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Meu placar
+                </div>
+                <AneisDoPlacar
+                  dia={meusPlacares.dia}
+                  semana={meusPlacares.semana}
+                  mes={meusPlacares.mes}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Numero
+                  icon={CheckCircle2}
+                  rotulo="Concluídas hoje"
+                  valor={doneToday.length}
+                  cor="var(--color-success)"
+                />
+                <Numero
+                  icon={Clock}
+                  rotulo="Em aberto"
+                  valor={openTasks.length}
+                  sub={`${todayFocus.length} em foco`}
+                  cor="var(--color-primary)"
+                />
+                <Numero
+                  icon={TrendingUp}
+                  rotulo="Atrasadas"
+                  valor={atrasadas}
+                  cor={atrasadas > 0 ? "var(--color-destructive)" : "var(--color-muted-foreground)"}
+                />
+                <Numero
+                  icon={Flame}
+                  rotulo="Sequência"
+                  valor={`${currentUser.streak} d`}
+                  sub="dias em ritmo"
+                  cor="oklch(0.6 0.2 330)"
+                />
+              </div>
+            </div>
+          </section>
         </BlocoEntrada>
 
-        <BlocoEntrada indice={1} className="grid gap-4 md:grid-cols-4">
-          <Kpi icon={CheckCircle2} label="Concluídas hoje" value={doneToday.length} sub={`${doneToday.length === 1 ? "tarefa concluída" : "tarefas concluídas"}`} color="oklch(0.62 0.16 155)" />
-          <Kpi icon={Target} label="Em aberto" value={openTasks.length} sub={`${todayFocus.length} em foco agora`} color="oklch(0.52 0.22 275)" />
-          <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground">Meu score do mês</span>
-              <Trophy
-                className="h-4 w-4"
-                style={{
-                  color:
-                    myScore.assigned === 0
-                      ? "oklch(0.55 0.02 260)"
-                      : myScore.pct >= 100
-                        ? "oklch(0.62 0.16 155)"
-                        : "oklch(0.58 0.22 25)",
-                }}
-              />
+
+        <BlocoEntrada indice={1} className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+          <TempoTrabalhado
+            eu={currentUser}
+            tasks={tasks}
+            time={pessoasDoTime.filter((u) => u.id !== currentUser.id)}
+            ehChefia={ehChefia}
+          />
+          <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-sm font-semibold">Minha carga</h2>
+            <p className="mb-4 text-xs text-muted-foreground">
+              O que está aberto com você e quando vence, nos próximos 10 dias.
+            </p>
+            <MinhaCarga abertas={openTasks} />
+          </section>
+          <section className="flex flex-col gap-5 rounded-xl border border-border bg-card p-5 shadow-sm">
+            <RankingDeTempo eu={currentUser} tasks={tasks} aoAbrir={openTask} />
+            <div className="border-t border-border pt-4">
+              <h2 className="text-sm font-semibold">Dias mais cheios</h2>
+              <p className="mb-3 text-xs text-muted-foreground">
+                De segunda a domingo: quando as suas tarefas vencem e quando você conclui.
+              </p>
+              <DiasDaSemana tasks={tasks} completions={completions} userId={currentUser.id} />
             </div>
-            <div className={`mt-2 text-2xl font-semibold tabular-nums tracking-tight ${scoreTextClass(myScore.pct, myScore.assigned)}`}>
-              {myScore.assigned === 0 ? "—" : `${Math.round(myScore.pct)}%`}
-            </div>
-            <div className="mt-2">
-              <ScoreBar pct={myScore.pct} assigned={myScore.assigned} showLabel={false} size="md" />
-            </div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
-              {myScore.done} de {myScore.assigned} {myScore.assigned === 1 ? "tarefa" : "tarefas"} do mês
-            </div>
-          </div>
-          <Kpi icon={Flame} label="Sequência" value={`${currentUser.streak} d`} sub="dias em ritmo" color="oklch(0.6 0.2 330)" />
+          </section>
         </BlocoEntrada>
 
         {/* Meu pack — foco especial */}
@@ -423,8 +543,50 @@ function Home() {
             <div className="flex items-center gap-2">
               <Trophy className="h-4 w-4 text-primary" />
               <h2 className="text-sm font-semibold">Ranking do time</h2>
+              {ehChefia && (
+                <button
+                  type="button"
+                  onClick={() => setRankingComChefia((v) => !v)}
+                  aria-pressed={rankingComChefia}
+                  title={
+                    rankingComChefia
+                      ? "Mostrando também supervisores e gerentes (só você vê)"
+                      : "Incluir supervisores e gerentes — só você vê"
+                  }
+                  className={`ml-auto rounded-md border px-2 py-0.5 text-[11px] font-medium transition ${
+                    rankingComChefia
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Todos
+                </button>
+              )}
+              <div className={`${ehChefia ? "" : "ml-auto "}inline-flex rounded-md border border-border p-0.5 text-[11px] font-medium`}>
+                {(
+                  [
+                    ["dia", "Hoje"],
+                    ["semana", "Semana"],
+                    ["mes", "Mês"],
+                  ] as const
+                ).map(([v, rotulo]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => escolherPeriodo(v)}
+                    className={`rounded px-2 py-0.5 transition ${
+                      periodoRanking === v
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
             </div>
-            <ul className="mt-3 max-h-96 divide-y divide-border overflow-y-auto">
+            <Podio pessoas={ranking} placar={userPct} />
+            <ul className="mt-1 max-h-96 divide-y divide-border overflow-y-auto">
               {ranking.map((u, i) => {
                 const s = userPct.get(u.id) ?? { pct: 0, assigned: 0 };
                 return (
@@ -505,27 +667,29 @@ function Home() {
   );
 }
 
-function Kpi({
+function Numero({
   icon: Icon,
-  label,
-  value,
+  rotulo,
+  valor,
   sub,
-  color,
+  cor,
 }: {
   icon: typeof Trophy;
-  label: string;
-  value: string | number;
-  sub: string;
-  color: string;
+  rotulo: string;
+  valor: string | number;
+  sub?: string;
+  cor: string;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        <Icon className="h-4 w-4" style={{ color }} />
+    <div className="rounded-xl border border-border bg-background/60 p-3 backdrop-blur">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" style={{ color: cor }} />
+        {rotulo}
       </div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+      <div className="mt-1 font-display text-2xl font-bold tabular-nums tracking-tight" style={{ color: cor }}>
+        {valor}
+      </div>
+      {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
     </div>
   );
 }

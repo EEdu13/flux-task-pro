@@ -252,7 +252,21 @@ export interface MeetingMinute {
 export interface Notification {
   id: string;
   userId: string; // recipient
-  type: "mencao" | "atribuida" | "prazo" | "concluida" | "chamada_perdida" | "projeto" | "lembrete";
+  /* "comunicado" e "mural" (14/10/2026): comunicado oficial do Mural e
+     marcação com @ num post. Os dois levam ao /mural. */
+  type:
+    | "mencao"
+    | "atribuida"
+    | "prazo"
+    | "concluida"
+    | "chamada_perdida"
+    | "projeto"
+    | "lembrete"
+    | "comunicado"
+    | "mural"
+    /* Agenda travada (14/10/2026): travou, mudou, cancelou e o "começa em
+       X min" (ver `ehAlertaDeCompromisso`). Leva ao /calendario. */
+    | "compromisso";
   title: string;
   desc: string;
   at: string; // ISO
@@ -263,6 +277,8 @@ export interface Notification {
   fromUserId?: string;
   /** "te adicionou a um projeto": o projeto que o clique abre. */
   projectId?: string;
+  /** Aviso da agenda travada: o compromisso que o clique abre no calendário. */
+  compromissoId?: string;
 }
 
 export interface Meta {

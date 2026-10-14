@@ -26,7 +26,8 @@ export type AnexoGravado = {
   url: string;
 };
 
-const DONOS = ["tarefa", "comentario", "projeto", "mensagem"] as const;
+/* "mural" (14/10/2026): as fotos de um post do Mural. */
+const DONOS = ["tarefa", "comentario", "projeto", "mensagem", "mural"] as const;
 type Dono = (typeof DONOS)[number];
 
 /**
@@ -93,6 +94,13 @@ export const enviarAnexo = createServerFn({ method: "POST" })
         const { podeVerDonoDeAnexo } = await import("@/lib/permissoes.server");
         if (!(await podeVerDonoDeAnexo(eu, dados.donoTipo, dados.donoId))) {
           throw new Error("Você não tem acesso a onde este arquivo seria anexado.");
+        }
+        /* No mural, só o autor põe foto no próprio post, e no máximo quatro. */
+        if (dados.donoTipo === "mural") {
+          const { podeAnexarNoPost } = await import("@/lib/mural.server");
+          if (!(await podeAnexarNoPost(eu, dados.donoId))) {
+            throw new Error("Este post já tem fotos demais (ou não é seu).");
+          }
         }
 
         // A vírgula separa o cabeçalho do data URL do conteúdo. Sem data URL,
@@ -167,6 +175,12 @@ export const enviarAnexo = createServerFn({ method: "POST" })
           await registrarNoHistorico(dados.donoId, eu, [
             { tipo: "editada", texto: `anexou "${dados.nome}"` },
           ]);
+        }
+
+        // A foto nova aparece no feed guardado do mural na hora.
+        if (dados.donoTipo === "mural") {
+          const { esquecerFeed } = await import("@/lib/mural.server");
+          await esquecerFeed();
         }
 
         return {

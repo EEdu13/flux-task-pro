@@ -8,7 +8,6 @@ import {
   Flame,
   Clock,
   Filter,
-  Inbox,
   LayoutGrid,
   List,
   Pencil,
@@ -71,7 +70,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import { FiltroPessoa, FiltroSetor } from "@/components/filtro-pessoa";
 import { BuscaComTags } from "@/components/busca-com-tags";
+import { FiltroDeTags, SEM_SELECAO_DE_TAGS, type SelecaoDeTags } from "@/components/filtro-de-tags";
 import { ReacoesDaTarefa } from "@/components/reacoes-da-tarefa";
+import { SeloNova } from "@/components/selo-nova";
 import {
   SEM_SELECAO_DE_PESSOAS,
   passaNoFiltroDePessoas,
@@ -91,7 +92,7 @@ import {
   type User,
 } from "@/lib/fluxo-types";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
-import { comCerquilha } from "@/lib/etiquetas-do-projeto";
+import { chaveDaEtiqueta, comCerquilha } from "@/lib/etiquetas-do-projeto";
 import {
   estiloDoCartaoDoProjeto,
   useEtiquetasDoCartao,
@@ -233,6 +234,7 @@ function MinhasTarefas() {
   const [filtroPessoas, setFiltroPessoas] = useState<SelecaoDePessoas>(SEM_SELECAO_DE_PESSOAS);
   /** O setor dos chips de cima: o do RESPONSÁVEL, não o gravado na tarefa. */
   const [setorPessoas, setSetorPessoas] = useState<string>("todos");
+  const [filtroTags, setFiltroTags] = useState<SelecaoDeTags>(SEM_SELECAO_DE_TAGS);
   const [datePreset, setDatePreset] = useState<DatePreset>("todas");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -341,7 +343,18 @@ function MinhasTarefas() {
       }
       return true;
     });
-    const visible = base;
+    /* Etiquetas: qualquer uma das marcadas basta — marcar mais amplia o
+       recorte, como num filtro de loja. "Sem tags" é mais uma opção do mesmo
+       grupo. Como a busca, só vale onde a barra aparece. */
+    const marcadas = new Set(filtroTags.tags);
+    const filtrando = comBarra && (filtroTags.semTags || marcadas.size > 0);
+    const visible = filtrando
+      ? base.filter((t) =>
+          t.tags.length === 0
+            ? filtroTags.semTags
+            : t.tags.some((g) => marcadas.has(chaveDaEtiqueta(g))),
+        )
+      : base;
     return { visible, base };
   }, [
     tasks,
@@ -354,11 +367,42 @@ function MinhasTarefas() {
     priority,
     filtroPessoas,
     setorPessoas,
+    filtroTags,
     search,
     datePreset,
     dateFrom,
     dateTo,
   ]);
+
+  /* O que o filtro de etiquetas oferece: só as etiquetas das tarefas que a
+     tela mostra agora (`base`, sem o filtro de etiquetas), com quantas são.
+     As marcadas ficam mesmo sem tarefa, para poder desmarcar. */
+  const opcoesDeTag = useMemo(() => {
+    const porChave = new Map<string, { nome: string; n: number }>();
+    let semTags = 0;
+    for (const t of base) {
+      if (t.tags.length === 0) semTags++;
+      const vistas = new Set<string>();
+      for (const g of t.tags) {
+        const chave = chaveDaEtiqueta(g);
+        if (!chave || vistas.has(chave)) continue;
+        vistas.add(chave);
+        const atual = porChave.get(chave);
+        if (atual) atual.n++;
+        else porChave.set(chave, { nome: g.replace(/^#+/, "").trim(), n: 1 });
+      }
+    }
+    for (const chave of filtroTags.tags) {
+      if (porChave.has(chave)) continue;
+      // O nome como está gravado, se alguma tarefa ainda tiver a etiqueta.
+      const grafia = tasks.flatMap((t) => t.tags).find((g) => chaveDaEtiqueta(g) === chave);
+      porChave.set(chave, { nome: grafia?.replace(/^#+/, "").trim() ?? chave, n: 0 });
+    }
+    const tags = [...porChave]
+      .map(([chave, { nome, n }]) => ({ chave, nome, n }))
+      .sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+    return { tags, semTags };
+  }, [tasks, base, filtroTags.tags]);
 
   const scopeCounts = useMemo(() => {
     const active = tasks.filter(
@@ -506,7 +550,9 @@ function MinhasTarefas() {
             baixo, os rostos — ver `FiltroPessoa`. Escondidos no Meu pack, que
             é sempre hoje.
 
-            O filtro de etiquetas saiu: a busca já acha "#tag". */}
+            Setor e tags em listas suspensas, lado a lado (pedido do usuário,
+            13/10/2026): o setor era uma fileira de chips e as tags tinham
+            saído; a busca também acha "#tag". */}
         {scope !== "pack" && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5">
@@ -551,6 +597,13 @@ function MinhasTarefas() {
                 aoMudar={setSetorPessoas}
               />
             )}
+            <FiltroDeTags
+              opcoes={opcoesDeTag.tags}
+              semTagsN={opcoesDeTag.semTags}
+              valor={filtroTags}
+              aoMudar={setFiltroTags}
+              className="h-8 w-48 shrink-0 text-xs"
+            />
             <BuscaComTags
               valor={search}
               aoMudar={setSearch}
@@ -579,24 +632,8 @@ function MinhasTarefas() {
           {scope === "pack" ? (
             <PackView
               tasks={visible}
-              externalTasks={tasks.filter((t) => {
-                if (t.assigneeId !== currentUser.id && !t.mentions.includes(currentUser.id))
-                  return false;
-                if (t.inPack && t.assigneeId === currentUser.id) return false; // já está no pack
-                if (t.status === "concluida") return false;
-                if (!t.dueDate) return false; // sem prazo não é "de hoje" nem atrasada
-                const due = new Date(t.dueDate);
-                const now = new Date();
-                return (
-                  (due.getFullYear() === now.getFullYear() &&
-                    due.getMonth() === now.getMonth() &&
-                    due.getDate() === now.getDate()) ||
-                  due.getTime() < now.setHours(0, 0, 0, 0)
-                ); // hoje ou atrasadas
-              })}
               onEdit={openTask}
               onTogglePack={(id, v) => updateTask(id, { inPack: v })}
-              onCompleteExternal={(id) => updateTask(id, { status: "concluida" })}
               currentUserId={currentUser.id}
               onMove={(id, status) => moveTask(id, status)}
             />
@@ -819,6 +856,7 @@ function TaskList({
                                   <div className="text-sm font-medium">
                                     <SeloDoProjeto projectId={t.projectId} />
                                     {t.title}
+                                    <SeloNova task={t} className="ml-1.5 align-middle" />
                                   </div>
                                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                                     <EtiquetasDaTarefa task={t} />
@@ -1761,7 +1799,10 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
             else onQuickComplete(t.id);
           }}
         />
-        <div className="min-w-0 flex-1 text-sm font-medium leading-snug">{t.title}</div>
+        <div className="min-w-0 flex-1 text-sm font-medium leading-snug">
+          {t.title}
+          <SeloNova task={t} className="ml-1.5 align-middle" />
+        </div>
         <SetaDeColuna
           destino={PROXIMA_COLUNA[coluna]}
           voltando={coluna === "concluida"}
@@ -2012,18 +2053,14 @@ function Badge({ label, color, dot }: { label: string; color: string; dot?: bool
 
 function PackView({
   tasks,
-  externalTasks,
   onEdit,
   onTogglePack,
-  onCompleteExternal,
   currentUserId,
   onMove,
 }: {
   tasks: Task[];
-  externalTasks: Task[];
   onEdit: (id: string) => void;
   onTogglePack: (id: string, v: boolean) => void;
-  onCompleteExternal: (id: string) => void;
   currentUserId: string;
   onMove: (id: string, status: Status) => void;
 }) {
@@ -2101,123 +2138,6 @@ function PackView({
         </div>
       ) : (
         <PackEmColunas tasks={tasks} onEdit={onEdit} onMove={onMove} onTogglePack={onTogglePack} />
-      )}
-
-      {/* --- Tarefas externas do dia ------------------------------------ */}
-      <div className="pt-6">
-        <div className="mb-2 flex items-center gap-2">
-          <Inbox className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Chegaram pra hoje</h3>
-          <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {externalTasks.length}
-          </span>
-          <span className="text-[11px] text-muted-foreground">
-            · fora do pack — atribuídas, menções ou criadas com prazo até hoje
-          </span>
-        </div>
-        {externalTasks.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-xs text-muted-foreground">
-            Nada de fora do pack pra hoje. Foque no essencial.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {externalTasks.map((t) => (
-              <ExternalRow
-                key={t.id}
-                task={t}
-                currentUserId={currentUserId}
-                onEdit={onEdit}
-                onComplete={onCompleteExternal}
-                onTogglePack={onTogglePack}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ExternalRow({
-  task,
-  currentUserId,
-  onEdit,
-  onComplete,
-  onTogglePack,
-}: {
-  task: Task;
-  currentUserId: string;
-  onEdit: (id: string) => void;
-  onComplete: (id: string) => void;
-  onTogglePack: (id: string, v: boolean) => void;
-}) {
-  const sec = sectors.find((s) => s.id === task.sector);
-  const isMention = task.mentions.includes(currentUserId) && task.assigneeId !== currentUserId;
-  const isMine = task.assigneeId === currentUserId;
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const isLate = prazoVencido(task.dueDate, startOfToday.getTime());
-  const origin = isMention ? "Mencionaram você" : isMine ? "Atribuída a você" : "Criada por você";
-  const projeto = useProjetoDaTarefa(task.projectId);
-  return (
-    <div
-      style={estiloDoCartaoDoProjeto(projeto)}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        window.dispatchEvent(
-          new CustomEvent("fluxo:task-context", {
-            detail: { id: task.id, x: e.clientX, y: e.clientY },
-          }),
-        );
-      }}
-      className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm transition hover:shadow-md"
-    >
-      <button
-        onClick={() => onComplete(task.id)}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-border transition hover:border-emerald-500 hover:bg-emerald-500/10"
-        title="Marcar concluída"
-      />
-      <button onClick={() => onEdit(task.id)} className="flex-1 text-left">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">
-            <SeloDoProjeto projectId={task.projectId} />
-            {task.title}
-          </span>
-          <span
-            className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
-              isMention
-                ? "bg-primary/15 text-primary"
-                : isLate
-                  ? "bg-destructive/15 text-destructive"
-                  : "bg-secondary text-muted-foreground"
-            }`}
-          >
-            {isLate ? "Atrasada" : origin}
-          </span>
-        </div>
-        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span>
-            {task.dueDate
-              ? `Prazo ${rotuloDoPrazo(task, { day: "2-digit", month: "short" })}`
-              : SEM_PRAZO}
-          </span>
-          {task.recurring && (
-            <span className="inline-flex items-center gap-0.5">
-              <Repeat className="h-2.5 w-2.5" /> Recorrente
-            </span>
-          )}
-          <EtiquetasDaTarefa task={task} />
-        </div>
-      </button>
-      <Badge label={sec?.name ?? "—"} color={sec?.color ?? "oklch(0.55 0.02 260)"} dot />
-      {isMine && (
-        <button
-          onClick={() => onTogglePack(task.id, true)}
-          title="Adicionar ao Meu pack"
-          className="rounded p-1.5 text-muted-foreground opacity-70 transition hover:bg-amber-500/10 hover:text-amber-500 hover:opacity-100"
-        >
-          <Star className="h-4 w-4" />
-        </button>
       )}
     </div>
   );
@@ -2403,6 +2323,7 @@ const MioloDoCartaoDoPack = memo(function MioloDoCartaoDoPack({
         <div className={`flex-1 text-sm font-medium leading-snug ${done ? "line-through" : ""}`}>
           <SeloDoProjeto projectId={task.projectId} />
           {task.title}
+          <SeloNova task={task} className="ml-1.5 align-middle" />
         </div>
         <button
           onClick={(e) => {

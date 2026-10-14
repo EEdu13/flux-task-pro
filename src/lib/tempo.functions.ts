@@ -1,5 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import {
+  comSessao,
+  comSessaoSemEntrada,
+  semIdentidade,
+} from "@/integrations/iam/funcao-com-sessao";
 
 /* O cronômetro de tarefa.
  *
@@ -101,11 +105,10 @@ export const listarSessoesDeTempo = createServerFn({ method: "POST" }).handler(
     const pool = await getPool();
 
     // O tempo de cada um e o de quem responde a ele no organograma.
-    const { SQL_MEUS_SUBORDINADOS, SQL_PREPARA_SUBORDINADOS } = await import("@/lib/permissoes.server");
+    const { SQL_MEUS_SUBORDINADOS, SQL_PREPARA_SUBORDINADOS } =
+      await import("@/lib/permissoes.server");
     const filtro =
-      papel === "gerente"
-        ? "1=1"
-        : `(s.pessoa_id=@eu OR s.pessoa_id IN ${SQL_MEUS_SUBORDINADOS})`;
+      papel === "gerente" ? "1=1" : `(s.pessoa_id=@eu OR s.pessoa_id IN ${SQL_MEUS_SUBORDINADOS})`;
 
     const req = pool.request().input("eu", sql.Int, eu);
 
@@ -130,3 +133,80 @@ export const listarSessoesDeTempo = createServerFn({ method: "POST" }).handler(
     };
   }),
 );
+
+/**
+ * Só o MEU tempo dos últimos 90 dias, para a tela inicial.
+ *
+ * A Início é a tela mais aberta do sistema; `listarSessoesDeTempo` monta a
+ * equipe varrendo o cadastro de colaboradores e, para a gerência, traz 2000
+ * linhas — caro demais para cada abertura (o teto de DTU do Azure já foi
+ * atingido uma vez). Aqui é uma busca direta no índice
+ * `IX_sessoes_pessoa_periodo` (pessoa, início), sem montar equipe.
+ */
+export const meuTempoRecente = createServerFn({ method: "POST" }).handler(
+  comSessaoSemEntrada(async (eu): Promise<{ sessoes: SessaoDeTempo[] }> => {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("eu", sql.Int, eu)
+      .query(
+        `SELECT TOP (1500) s.id, s.tarefa_id, s.pessoa_id, s.iniciou_em, s.encerrou_em, s.segundos
+           FROM gestor.sessoes_de_tempo s
+          WHERE s.pessoa_id = @eu AND s.iniciou_em >= DATEADD(DAY, -90, SYSDATETIMEOFFSET())
+          ORDER BY s.iniciou_em DESC`,
+      );
+    return {
+      sessoes: (r.recordset as LinhaSessao[]).map((s) => ({
+        id: s.id,
+        taskId: s.tarefa_id,
+        pessoaId: String(s.pessoa_id),
+        startedAt: s.iniciou_em.getTime(),
+        endedAt: s.encerrou_em.getTime(),
+        seconds: s.segundos,
+      })),
+    };
+  }),
+);
+
+/**
+ * As horas de cada pessoa da equipe num dia ("AAAA-MM-DD", dia de Brasília),
+ * já somadas no banco — para a aba "Time" do card de tempo da Início. Só roda
+ * quando a chefia abre a aba, nunca ao carregar a tela.
+ */
+export const tempoDoTimeNoDia = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((entrada: { dia: string }) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(entrada?.dia ?? "")) throw new Error("Dia inválido.");
+      return { dia: entrada.dia };
+    }),
+  )
+  .handler(
+    comSessao(
+      async (eu, { dia }: { dia: string }): Promise<{ porPessoa: Record<string, number> }> => {
+        const { papelEsetor } = await import("@/lib/perfil.functions");
+        const { papel } = await papelEsetor(eu);
+        const { getPool, sql } = await import("@/integrations/db.server");
+        const pool = await getPool();
+        const { SQL_MEUS_SUBORDINADOS, SQL_PREPARA_SUBORDINADOS } =
+          await import("@/lib/permissoes.server");
+        const filtro = papel === "gerente" ? "1=1" : `s.pessoa_id IN ${SQL_MEUS_SUBORDINADOS}`;
+        const r = await pool
+          .request()
+          .input("eu", sql.Int, eu)
+          .input("inicio", sql.NVarChar, `${dia}T00:00:00-03:00`)
+          .query(
+            `${SQL_PREPARA_SUBORDINADOS}
+           DECLARE @de DATETIMEOFFSET(3) = CAST(@inicio AS DATETIMEOFFSET(3));
+           SELECT s.pessoa_id, SUM(s.segundos) AS segundos
+             FROM gestor.sessoes_de_tempo s
+            WHERE ${filtro} AND s.iniciou_em >= @de AND s.iniciou_em < DATEADD(DAY, 1, @de)
+            GROUP BY s.pessoa_id`,
+          );
+        const porPessoa: Record<string, number> = {};
+        for (const l of r.recordset as { pessoa_id: number; segundos: number }[])
+          porPessoa[String(l.pessoa_id)] = l.segundos;
+        return { porPessoa };
+      },
+    ),
+  );

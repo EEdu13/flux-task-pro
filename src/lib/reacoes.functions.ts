@@ -15,8 +15,8 @@ import { comSessao, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
 const guid = (v: unknown): string | null =>
   typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
 
-/** Um emoji, e só: até 16 caracteres, sem letra nem número soltos. */
-function emojiValido(v: unknown): string | null {
+/** Um emoji, e só: até 16 caracteres, sem letra nem número soltos. Também usado pelo mural. */
+export function emojiValido(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const e = v.trim();
   if (!e || e.length > 16) return null;

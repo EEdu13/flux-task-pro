@@ -19,7 +19,8 @@ import { avisarHistoricoMudou } from "./historico-eventos";
  * `downloadAttachment` — e lá está tratado.
  */
 
-export type DonoDeAnexo = "tarefa" | "comentario" | "projeto";
+/* "mural" (14/10/2026): as fotos de um post do Mural. */
+export type DonoDeAnexo = "tarefa" | "comentario" | "projeto" | "mural";
 
 /**
  * @param donoId  id de BANCO do dono (uniqueidentifier). Comentário usa o id
