@@ -3,6 +3,7 @@ import { ArrowDownRight, ArrowUpRight, CheckCircle2, Minus, TrendingUp } from "l
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
 import { useFluxo } from "@/lib/fluxo-store";
+import { entregueNoPrazo } from "@/lib/dias-uteis";
 import { nomeCurto } from "@/lib/nome-curto";
 
 /* "Últimos 7 dias · time" na tela inicial.
@@ -29,7 +30,7 @@ type Dia = {
 const DIA_MS = 24 * 60 * 60 * 1000;
 
 export function SemanaDoTime() {
-  const { completions, users } = useFluxo();
+  const { completions, users, tasks } = useFluxo();
   const [foco, setFoco] = useState<number | null>(null);
   /* Onde está o mouse dentro da área das colunas (e a largura dela), para a
      caixa acompanhar. `null` quando o foco veio do teclado. */
@@ -72,6 +73,8 @@ export function SemanaDoTime() {
     const fim = hoje.getTime() + DIA_MS;
     let anteriores = 0;
     const porPessoa = new Map<string, number>();
+    // O prazo de cada tarefa carregada (null = sem prazo, sempre no prazo).
+    const prazoPorTarefa = new Map(tasks.map((t) => [t.id.toLowerCase(), t.dueDate] as const));
     for (const c of completions) {
       const t = new Date(c.at).getTime();
       if (t >= inicio - 7 * DIA_MS && t < inicio) anteriores++;
@@ -80,7 +83,19 @@ export function SemanaDoTime() {
       const dia = [...dias].reverse().find((d) => t >= d.inicio);
       if (!dia) continue;
       dia.feitas++;
-      if (c.onTime) dia.noPrazo++;
+      /* "No prazo" pela regra do DIA útil (15/10/2026), como em Relatórios.
+         O `onTime` gravado vinha da regra antiga (hora exata) nas conclusões
+         de antes de 13/10 e marcava como atrasado o que foi feito no dia. Ele
+         só vale quando a tarefa já não está carregada. */
+      const tarefa = prazoPorTarefa.get(c.taskId.toLowerCase());
+      const noPrazo =
+        tarefa === undefined
+          ? c.onTime
+          : entregueNoPrazo(
+              tarefa,
+              new Date(c.at).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" }),
+            );
+      if (noPrazo) dia.noPrazo++;
       porPessoa.set(c.userId, (porPessoa.get(c.userId) ?? 0) + 1);
     }
     const total = dias.reduce((s, d) => s + d.feitas, 0);
@@ -91,7 +106,7 @@ export function SemanaDoTime() {
       .sort((a, b) => b.n - a.n || a.pessoa!.name.localeCompare(b.pessoa!.name))
       .slice(0, 3);
     return { dias, total, anteriores, noPrazo, destaques };
-  }, [completions, users]);
+  }, [completions, users, tasks]);
 
   const { dias, total, anteriores, noPrazo, destaques } = semana;
   const maior = Math.max(1, ...dias.map((d) => d.feitas));

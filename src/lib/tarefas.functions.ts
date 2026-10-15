@@ -525,6 +525,7 @@ async function criarProximaOcorrencia(eu: number, id: string): Promise<void> {
 
     const { meiaNoiteDeAmanhaEmBrasilia, proximaOcorrenciaEmBrasilia } =
       await import("@/lib/recorrencia");
+    const { fimDoPrazoEfetivo } = await import("@/lib/dias-uteis");
     const proxima = proximaOcorrenciaEmBrasilia(paraApp(linha));
     if (!proxima) return;
 
@@ -552,7 +553,17 @@ async function criarProximaOcorrencia(eu: number, id: string): Promise<void> {
         ordem: linha.ordem,
         origem: "criou pela recorrência, ao concluir a anterior",
         dataReal: null,
-        nasceEm: meiaNoiteDeAmanhaEmBrasilia(),
+        /* Nasce amanhã — ou, se a atual foi concluída ANTES do prazo, só
+           depois do dia do prazo dela (15/10/2026). A mensal de 01/11
+           concluída em 13/10 fazia a de 01/12 aparecer já no dia 14; a pessoa
+           via uma pendente nova, concluía de novo, e o prazo saltava um mês
+           por dia (01/12, 01/01…). Na diária nada muda: o prazo é hoje. */
+        nasceEm: new Date(
+          Math.max(
+            meiaNoiteDeAmanhaEmBrasilia().getTime(),
+            fimDoPrazoEfetivo(linha.prazo) + 1,
+          ),
+        ),
         anteriorId: id,
       },
       true,

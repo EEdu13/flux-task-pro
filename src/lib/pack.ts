@@ -41,5 +41,16 @@ export function concluidaHoje(
  */
 export function noPackDeHoje(t: Task, pessoaId: string, agora: Date = new Date()): boolean {
   if (!t.inPack || t.assigneeId !== pessoaId) return false;
+  /* Recorrente que NÃO é diária (semanal, mensal…) só entra no pack no dia em
+     que vence — ou atrasada. Entrava todo dia (15/10/2026): a pessoa concluía
+     a mensal hoje, a próxima ocorrência (um mês à frente) voltava ao pack
+     amanhã, era concluída de novo, e o prazo saltava um mês por dia — 10/11,
+     10/12, 10/01… */
+  if (t.recurring && t.frequency !== "diaria" && t.dueDate && t.status !== "concluida") {
+    const vence = new Date(t.dueDate);
+    const fimDeHoje = new Date(agora);
+    fimDeHoje.setHours(23, 59, 59, 999);
+    if (vence.getTime() > fimDeHoje.getTime()) return false;
+  }
   return t.status !== "concluida" || concluidaHoje(t, agora);
 }
