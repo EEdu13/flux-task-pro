@@ -35,6 +35,13 @@ import {
 } from "@/integrations/iam/nome-cache";
 import { FirstAccessModal } from "@/components/first-access-modal";
 import { transicionar } from "@/components/transition-veil";
+import {
+  AberturaOutubroRosa,
+  LetrasQueChegam,
+  ORosa,
+  SeloOutubroRosa,
+  ehOutubro,
+} from "@/components/abertura-outubro-rosa";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -75,7 +82,8 @@ function LoginPage() {
     <div className="relative min-h-screen w-full overflow-hidden bg-[var(--auth-base)] text-white">
       <Aurora />
       <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-10 px-6 py-12 lg:grid-cols-2 lg:gap-16 lg:py-0">
-        <Marca />
+        {/* Em outubro, a abertura do Outubro Rosa termina na marca (16/10/2026). */}
+        {ehOutubro() ? <AberturaOutubroRosa marca={<Marca rosa />} /> : <Marca />}
         <div className="relative">
           <div
             className="absolute -inset-[1px] rounded-2xl opacity-70 blur-md"
@@ -744,7 +752,7 @@ function Aurora() {
   );
 }
 
-function Marca() {
+function Marca({ rosa = false }: { rosa?: boolean }) {
   return (
     <div className="space-y-8">
       <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs backdrop-blur">
@@ -812,27 +820,49 @@ function Marca() {
             backgroundImage: "linear-gradient(90deg, var(--auth-deep), var(--auth-glow))",
           }}
         >
-          C
-          <img
-            src={larsilSimbolo}
-            alt="O"
-            className="inline-block"
-            style={{
-              height: "0.76em",
-              width: "0.76em",
-              verticalAlign: "-0.015em",
-              margin: "0 0.056em",
-              filter:
-                "drop-shadow(0 0 10px color-mix(in oklab, var(--auth-glow) 55%, transparent)) drop-shadow(0 0 26px color-mix(in oklab, var(--auth-glow) 28%, transparent))",
-            }}
-          />
-          NECTA
+          {rosa ? (
+            /* Outubro Rosa: o círculo da abertura pousa aqui (layoutId) e as
+               letras chegam dos lados depois dele. */
+            <>
+              <LetrasQueChegam de="esq">C</LetrasQueChegam>
+              <span style={{ margin: "0 0.056em" }}>
+                <ORosa>
+                  <img
+                    src={larsilSimbolo}
+                    alt="O"
+                    className="block"
+                    style={{ height: "0.76em", width: "0.76em" }}
+                  />
+                </ORosa>
+              </span>
+              <LetrasQueChegam de="dir">NECTA</LetrasQueChegam>
+            </>
+          ) : (
+            <>
+              C
+              <img
+                src={larsilSimbolo}
+                alt="O"
+                className="inline-block"
+                style={{
+                  height: "0.76em",
+                  width: "0.76em",
+                  verticalAlign: "-0.015em",
+                  margin: "0 0.056em",
+                  filter:
+                    "drop-shadow(0 0 10px color-mix(in oklab, var(--auth-glow) 55%, transparent)) drop-shadow(0 0 26px color-mix(in oklab, var(--auth-glow) 28%, transparent))",
+                }}
+              />
+              NECTA
+            </>
+          )}
         </span>
       </h1>
       <p className="max-w-lg text-sm leading-relaxed text-white/70">
         O ambiente completo da Larsil para organizar tarefas, conectar equipes e transformar
         trabalho em resultado.
       </p>
+      {rosa && <SeloOutubroRosa />}
       <ul className="grid max-w-md grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { icon: Zap, label: "Rápido" },

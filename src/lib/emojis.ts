@@ -85,4 +85,4 @@ export function emojisRapidos(pessoaId: string, quantos = 8): string[] {
 }
 
 /** Os emojis grandes que dá para mandar pelo chat, na tela inteira. */
-export const EMOJIS_GIGANTES = ["❤️", "😂", "😍", "👏", "🎉", "🔥", "😮", "😢", "😡", "👍", "🙏", "🚀", "☕", "🌲", "💪", "🤝"];
+export const EMOJIS_GIGANTES = ["❤️", "😂", "😍", "👏", "🎉", "🔥", "😮", "😢", "😡", "👍", "🙏", "🚀", "☕", "🌲", "💪", "🤝", "💣"];

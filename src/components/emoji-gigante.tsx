@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { primeiroNome } from "@/integrations/iam/types";
+import { BombaNaTela, DURACAO_DA_BOMBA_MS } from "@/components/bomba-na-tela";
 
 type Evento = { emoji: string; deNome: string; meu: boolean; chave: number };
 
@@ -22,7 +23,11 @@ export function EmojiGigante() {
       if (!d?.emoji) return;
       setAtual({ emoji: d.emoji, deNome: d.deNome, meu: !!d.meu, chave: Date.now() });
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => setAtual(null), 3200);
+      // A bomba (16/10/2026) tem cena própria, um pouco mais longa.
+      timer = window.setTimeout(
+        () => setAtual(null),
+        d.emoji === "💣" ? DURACAO_DA_BOMBA_MS : 3200,
+      );
     };
     window.addEventListener("fluxo:emoji-gigante", aoReceber);
     return () => {
@@ -47,6 +52,9 @@ export function EmojiGigante() {
         : [],
     [atual],
   );
+
+  if (atual?.emoji === "💣")
+    return <BombaNaTela key={atual.chave} deNome={atual.deNome} meu={atual.meu} />;
 
   return (
     <AnimatePresence>
