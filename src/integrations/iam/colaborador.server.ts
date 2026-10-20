@@ -66,6 +66,10 @@ export function setorParaId(bruto: string | null | undefined): string {
     CONTROLADORIA: "controladoria",
     DHO: "dho",
     FACILITIES: "facilities",
+    CONTABIL: "contabil",
+    CONTABILFISCAL: "contabil",
+    "CONTABIL FISCAL": "contabil",
+    "QUALIDADE FLORESTAL": "qualidade-florestal",
     OPERACIONAL: "campo",
   };
   return mapa[n] ?? n.toLowerCase().replace(/\s+/g, "-");

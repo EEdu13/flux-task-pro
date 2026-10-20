@@ -409,7 +409,25 @@ function ContatosPage() {
   const setoresComGente = useMemo(() => {
     const contagem = new Map<string, number>();
     for (const u of users) contagem.set(u.sector, (contagem.get(u.sector) ?? 0) + 1);
-    return sectors
+    /* Setor que surgiu no organograma e ainda não está na lista do app: aparece
+       mesmo assim, com o nome do próprio organograma e uma cor própria — senão
+       quem está nele sumia de Contatos e do escritório 3D (20/10/2026). */
+    const conhecidos = new Set(sectors.map((s) => s.id));
+    const novos = [...contagem.keys()]
+      .filter((id) => id && !conhecidos.has(id))
+      .map((id) => {
+        let h = 0;
+        for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 360;
+        return {
+          id,
+          name: id
+            .split("-")
+            .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+            .join(" "),
+          color: `oklch(0.72 0.14 ${h})`,
+        };
+      });
+    return [...sectors, ...novos]
       .filter((s) => contagem.has(s.id))
       .map((s) => ({ ...s, total: contagem.get(s.id)! }));
   }, [users]);

@@ -323,6 +323,9 @@ export const sectors = [
   { id: "controladoria", name: "Controladoria", color: "oklch(0.73 0.15 310)" },
   { id: "dho", name: "DHO", color: "oklch(0.76 0.14 350)" },
   { id: "facilities", name: "Facilities", color: "oklch(0.71 0.11 130)" },
+  // 20/10/2026: setores novos no organograma.
+  { id: "contabil", name: "Contábil", color: "oklch(0.74 0.13 75)" },
+  { id: "qualidade-florestal", name: "Qualidade Florestal", color: "oklch(0.70 0.16 150)" },
   { id: "sem-setor", name: "Sem setor", color: "oklch(0.60 0.02 260)" },
 ];
 
