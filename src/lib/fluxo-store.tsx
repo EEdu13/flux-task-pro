@@ -192,7 +192,10 @@ interface Store {
   addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
   // meeting minutes
   minutes: MeetingMinute[];
-  saveMinute: (m: Omit<MeetingMinute, "id" | "createdAt" | "createdBy">) => MeetingMinute;
+  /** Com `id` de uma ata que já existe (o rascunho da reunião), atualiza a mesma. */
+  saveMinute: (
+    m: Omit<MeetingMinute, "id" | "createdAt" | "createdBy"> & { id?: string },
+  ) => MeetingMinute;
   deleteMinute: (id: string) => void;
   /** Reage à tarefa com um emoji; `null` tira a reação. */
   reactToTask: (taskId: string, emoji: string | null) => void;
@@ -212,7 +215,10 @@ interface Store {
    * Troca a foto do projeto (ou tira, com `null`). A imagem aparece na hora e
    * sobe em seguida; a antiga sai do Blob depois que a nova estiver gravada.
    */
-  setProjectPhoto: (id: string, foto: { name: string; type: string; dataUrl: string } | null) => void;
+  setProjectPhoto: (
+    id: string,
+    foto: { name: string; type: string; dataUrl: string } | null,
+  ) => void;
   deleteProject: (id: string) => void;
   addProjectAttachments: (projectId: string, atts: Attachment[]) => void;
   removeProjectAttachment: (projectId: string, attId: string) => void;
@@ -516,10 +522,9 @@ async function tentarNovamente(): Promise<void> {
   toast.loading("Salvando de novo…", { id: "gravacao-tarefa" });
   for (const t of pendentes) await gravarTarefa(t);
   if (gravacoesFalhadas.size === 0) {
-    toast.success(
-      pendentes.length === 1 ? "Salvo." : `Salvo — ${pendentes.length} alterações.`,
-      { id: "gravacao-tarefa" },
-    );
+    toast.success(pendentes.length === 1 ? "Salvo." : `Salvo — ${pendentes.length} alterações.`, {
+      id: "gravacao-tarefa",
+    });
   }
   // Se ainda houver falha, `avisarFalha` já reabriu o aviso de erro.
 }
@@ -1043,7 +1048,12 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
   const tarefasAgoraRef = useRef(state.tasks);
   tarefasAgoraRef.current = state.tasks;
   const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ open: false });
-  const [quickCreate, setQuickCreate] = useState<{ open: boolean; status?: Status; dueDate?: string; assigneeId?: string }>({ open: false });
+  const [quickCreate, setQuickCreate] = useState<{
+    open: boolean;
+    status?: Status;
+    dueDate?: string;
+    assigneeId?: string;
+  }>({ open: false });
 
   /* A janela recarregou com alguém dentro: confere o cookie e volta.
 
@@ -1225,7 +1235,6 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     };
   }, [state.currentUserId, state.isAuthenticated]);
 
-
   /* Os avisos de prazo saíram daqui.
      Eram gerados na montagem, varrendo as tarefas VISÍVEIS e endereçando cada
      aviso ao responsável — então um supervisor produzia avisos para a equipe
@@ -1249,9 +1258,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
    */
   const currentUser = useMemo(
     () =>
-      state.users.find((u) => u.id === state.currentUserId) ??
-      state.users[0] ??
-      USUARIO_AUSENTE,
+      state.users.find((u) => u.id === state.currentUserId) ?? state.users[0] ?? USUARIO_AUSENTE,
     [state.users, state.currentUserId],
   );
 
@@ -1586,6 +1593,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           const { subirAnexos } = await import("@/lib/anexo-upload");
           const enviados = await subirAnexos("tarefa", id, pendentes);
           if (!enviados.length) return;
+          if (enviados.some((x) => /^(audio|video)\//.test(x.type))) {
+            void import("@/components/midia-no-cartao").then((m) => m.renovarMidiaDaTarefa(id));
+          }
           setState((s2) => ({
             ...s2,
             tasks: s2.tasks.map((t2) => (t2.id === id ? { ...t2, attachments: enviados } : t2)),
@@ -1798,7 +1808,11 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           try {
             const api = await import("@/lib/tarefa-satelites.functions");
             const gravado = await api.comentarNaTarefa({
-              data: { tarefaId: taskId, texto: c.text },
+              data: {
+                tarefaId: taskId,
+                texto: c.text,
+                comAnexo: (c.attachments?.length ?? 0) > 0,
+              },
             });
 
             /* O anexo do comentário sobe AQUI, e só aqui é possível.
@@ -1813,12 +1827,13 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                fantasma local. */
             const arquivos = c.attachments ?? [];
             const enviados = arquivos.length
-              ? await (await import("@/lib/anexo-upload")).subirAnexos(
-                  "comentario",
-                  gravado.id,
-                  arquivos,
-                )
+              ? await (
+                  await import("@/lib/anexo-upload")
+                ).subirAnexos("comentario", gravado.id, arquivos)
               : [];
+            if (enviados.some((x) => /^(audio|video)\//.test(x.type))) {
+              void import("@/components/midia-no-cartao").then((m) => m.renovarMidiaDaTarefa(taskId));
+            }
 
             setState((s2) => ({
               ...s2,
@@ -1842,6 +1857,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
             }));
           } catch (e) {
             console.warn("[fluxo] comentário não gravou:", (e as Error)?.message);
+            // Avisa: o comentário (e o recado de voz junto) não chegou ao servidor.
+            toast.error("O comentário não foi salvo", {
+              description: "Confira a conexão e tente comentar de novo.",
+            });
           }
         })();
       }
@@ -2386,12 +2405,15 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          gravação evita depender de quem chama lembrar do formato. */
       const minute: MeetingMinute = {
         ...m,
-        id: novoId(),
+        id: m.id && ehGuid(m.id) ? m.id.toUpperCase() : novoId(),
         createdAt: nowIso(),
         createdBy: currentUser.id,
         topics: m.topics.map((t) => ({ ...t, id: ehGuid(t.id) ? t.id.toUpperCase() : novoId() })),
       };
-      setState((s) => ({ ...s, minutes: [minute, ...(s.minutes ?? [])] }));
+      setState((s) => ({
+        ...s,
+        minutes: [minute, ...(s.minutes ?? []).filter((x) => x.id.toUpperCase() !== minute.id)],
+      }));
 
       /* O par nome↔pessoa é remontado aqui.
          A tela produz dois arrays soltos: os nomes vêm do LiveKit, os ids vêm
@@ -2448,7 +2470,10 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
           api.adicionarTopicoNaAta({ data: { ataId: minuteId, id: topico.id, text: texto, kind } }),
         )
         .then((r) => {
-          if (!r.ok) toast.error("O tópico não foi gravado na ata", { description: "Só quem está na ata pode escrever nela." });
+          if (!r.ok)
+            toast.error("O tópico não foi gravado na ata", {
+              description: "Só quem está na ata pode escrever nela.",
+            });
         })
         .catch((e) => {
           console.warn("[fluxo] tópico não gravou:", (e as Error)?.message);
@@ -2577,8 +2602,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     },
     visibleMinutes: () =>
       (state.minutes ?? []).filter(
-        (m) =>
-          m.createdBy === currentUser.id || m.participantIds.includes(currentUser.id),
+        (m) => m.createdBy === currentUser.id || m.participantIds.includes(currentUser.id),
       ),
 
     // === Projetos ===
@@ -2591,10 +2615,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       const id = novoId();
       setState((s) => ({
         ...s,
-        projects: [
-          { ...p, id, createdAt: nowIso(), createdBy: currentUser.id },
-          ...s.projects,
-        ],
+        projects: [{ ...p, id, createdAt: nowIso(), createdBy: currentUser.id }, ...s.projects],
       }));
 
       naFilaDoProjeto(id, () =>
@@ -2705,9 +2726,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
       setState((s) => ({
         ...s,
         projects: s.projects.map((p) =>
-          p.id === projectId
-            ? { ...p, attachments: [...(p.attachments ?? []), ...atts] }
-            : p,
+          p.id === projectId ? { ...p, attachments: [...(p.attachments ?? []), ...atts] } : p,
         ),
       }));
     },

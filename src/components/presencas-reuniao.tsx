@@ -151,6 +151,14 @@ export function RelatorioDePresencaView({ id, aoVivo = false }: { id: string; ao
     );
   const r = rel.reuniao;
   const total = rel.linhas.reduce((n, l) => n + l.segundos, 0);
+  /* A duração é do início ao fim da reunião (19/10/2026: "o tempo somado não
+     é 7h, cálculo tá errado"). O antigo "tempo somado" juntava o tempo de
+     cada participante — 15 pessoas × ~30 min dava 7h — e ficou só como
+     detalhe, com o nome certo: horas-pessoa. */
+  const duracaoDaReuniao = Math.max(
+    0,
+    Math.round((new Date(r.fim).getTime() - new Date(r.inicio).getTime()) / 1000),
+  );
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start gap-3">
@@ -197,13 +205,20 @@ export function RelatorioDePresencaView({ id, aoVivo = false }: { id: string; ao
             rotulo: "Na sala agora",
             valor: String(rel.linhas.filter((l) => l.presenteAgora).length),
           },
-          { rotulo: "Tempo somado", valor: total ? duracao(total) : "—" },
+          {
+            rotulo: r.aberta ? "Duração até agora" : "Duração da reunião",
+            valor: duracaoDaReuniao ? duracao(duracaoDaReuniao) : "—",
+            detalhe: total ? `${duracao(total)} somando o tempo de todos` : undefined,
+          },
         ].map((c) => (
           <div key={c.rotulo} className="rounded-lg border border-border bg-background p-2.5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               {c.rotulo}
             </div>
             <div className="text-lg font-bold">{c.valor}</div>
+            {"detalhe" in c && c.detalhe && (
+              <div className="text-[10px] text-muted-foreground">{c.detalhe}</div>
+            )}
           </div>
         ))}
       </div>

@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { ataTemConteudo, type AtaAoVivo } from "@/lib/ata-ao-vivo";
 import type { AtaDaReuniao } from "@/lib/use-ata-da-reuniao";
+import { ReprodutorDeAudio } from "@/components/reprodutor-de-midia";
 
 /**
  * A ata na tela da reunião: o botão, o painel aberto e a versão minimizada.
@@ -108,7 +109,15 @@ export function BotaoDaAta({
 /* O conteúdo da ata                                                    */
 /* ------------------------------------------------------------------ */
 
-function Secao({ icone, titulo, children }: { icone: ReactNode; titulo: string; children: ReactNode }) {
+function Secao({
+  icone,
+  titulo,
+  children,
+}: {
+  icone: ReactNode;
+  titulo: string;
+  children: ReactNode;
+}) {
   return (
     <section className="space-y-2">
       <h4 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
@@ -217,7 +226,10 @@ export function ConteudoDaAta({ ata, compacto = false }: { ata: AtaAoVivo; compa
       )}
 
       {ata.pontosDeAtencao.length > 0 && (
-        <Secao icone={<AlertTriangle className="h-3 w-3 text-amber-400" />} titulo="Pontos de atenção">
+        <Secao
+          icone={<AlertTriangle className="h-3 w-3 text-amber-400" />}
+          titulo="Pontos de atenção"
+        >
           <ul className="space-y-1.5">
             <AnimatePresence initial={false}>
               {ata.pontosDeAtencao.map((p) => (
@@ -265,12 +277,17 @@ export function PainelDaAta({
   aoFechar: () => void;
   nomeDoArquivo: string;
 }) {
-  const [aba, setAba] = useState<"ata" | "falas">("ata");
+  const temAta = ataTemConteudo(ata.ata);
+  /* Durante a reunião o que existe é a transcrição; a ata só sai no fim.
+     Quando ela chega, a aba troca sozinha. */
+  const [aba, setAba] = useState<"ata" | "falas">(temAta ? "ata" : "falas");
+  useEffect(() => {
+    if (temAta) setAba("ata");
+  }, [temAta]);
   const [salvando, setSalvando] = useState(false);
   const e = ata.estado;
   const s = situacao(ata);
   const ouvindoComigo = ata.souDono && e?.fase === "ouvindo";
-  const temAta = ataTemConteudo(ata.ata);
 
   const falasRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -370,7 +387,7 @@ export function PainelDaAta({
         {(
           [
             ["ata", "Ata"],
-            ["falas", `Falas${ata.falas.length ? ` (${ata.falas.length})` : ""}`],
+            ["falas", `Transcrição${ata.falas.length ? ` (${ata.falas.length})` : ""}`],
           ] as const
         ).map(([id, rotulo]) => (
           <button
@@ -396,11 +413,12 @@ export function PainelDaAta({
             <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
               {e && e.fase === "ouvindo" && !ata.donoSaiu ? (
                 <>
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <p className="text-[13px] text-white/75">Ouvindo a reunião…</p>
+                  <FileText className="h-5 w-5 text-primary" />
+                  <p className="text-[13px] text-white/75">A ata sai quando a reunião terminar</p>
                   <p className="text-[11.5px] leading-relaxed text-white/45">
-                    A ata começa a aparecer aqui depois das primeiras falas, e vai sendo reescrita
-                    conforme a conversa avança.
+                    Por enquanto tudo o que é dito vai para a Transcrição, com o nome de quem falou.
+                    No fim, a IA lê a reunião inteira de uma vez e escreve a ata — resumo, decisões
+                    e próximos passos.
                   </p>
                 </>
               ) : (
@@ -414,7 +432,9 @@ export function PainelDaAta({
       ) : (
         <div ref={falasRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {ata.falas.length === 0 ? (
-            <p className="mt-8 text-center text-[12px] text-white/45">Nenhuma fala transcrita ainda.</p>
+            <p className="mt-8 text-center text-[12px] text-white/45">
+              Nenhuma fala transcrita ainda.
+            </p>
           ) : (
             <ul className="space-y-2">
               {ata.falas.map((f) => (
@@ -422,6 +442,16 @@ export function PainelDaAta({
                   <span className="tabular-nums text-white/35">{f.hora}</span>{" "}
                   <span className="font-semibold text-white/85">{f.quem}:</span>{" "}
                   <span className="text-white/75">{f.texto}</span>
+                  {/* O áudio do trecho fica guardado: dá para conferir o que foi dito. */}
+                  {f.audio && e?.ataId && (
+                    <div className="mt-1">
+                      <ReprodutorDeAudio
+                        mini
+                        src={`/api/ata-audio/${e.ataId}/${f.audio}`}
+                        semente={f.audio}
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
               {ata.transcrevendo > 0 && (
@@ -598,7 +628,13 @@ export function AtaMinimizada({
       initial={{ opacity: 0, x: 16, filter: "blur(6px)" }}
       animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
       transition={{ type: "spring", stiffness: 260, damping: 30 }}
-      style={{ position: "fixed", left: pos.left, top: pos.top, width: pos.width, height: pos.height }}
+      style={{
+        position: "fixed",
+        left: pos.left,
+        top: pos.top,
+        width: pos.width,
+        height: pos.height,
+      }}
       className="group z-45 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-neutral-950/85 text-left text-white shadow-2xl backdrop-blur-md focus-visible:outline-2 focus-visible:outline-primary"
       title="Abrir a ata"
       aria-label={`${rotulo}. Abrir a ata.`}
@@ -615,7 +651,11 @@ export function AtaMinimizada({
           className="pointer-events-none block select-none opacity-60 blur-[3px] transition-[filter,opacity] duration-300 group-hover:opacity-90 group-hover:blur-[1px] motion-reduce:transition-none"
           aria-hidden="true"
         >
-          {ataTemConteudo(ata.ata) ? <ConteudoDaAta ata={ata.ata} compacto /> : <Rascunho linhas={24} />}
+          {ataTemConteudo(ata.ata) ? (
+            <ConteudoDaAta ata={ata.ata} compacto />
+          ) : (
+            <Rascunho linhas={24} />
+          )}
         </span>
 
         {/* A caneta passando: uma faixa de luz descendo enquanto o Claude escreve. */}

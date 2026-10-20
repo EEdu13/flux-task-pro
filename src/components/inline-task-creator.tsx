@@ -13,6 +13,12 @@ import {
   primeiraDataDaRegra,
 } from "@/lib/recorrencia";
 import { filesToAttachments, formatBytes, isImage, openAttachment } from "@/lib/attachments";
+import { BotaoRecadoDeVoz } from "@/components/recado-de-voz";
+import { BotaoGravarTela } from "@/components/gravar-tela";
+
+/** Mesmo quadradinho do clipe, para a coluna de opções não desalinhar. */
+const BOTAO_GRAVAR =
+  "h-6 w-6 shrink-0 justify-center rounded-md border border-foreground/30 text-foreground/70 hover:border-primary/50 hover:bg-primary/10 hover:text-primary";
 import { CampoData } from "@/components/campo-data";
 import { CampoDeTags } from "@/components/campo-de-tags";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
@@ -674,9 +680,10 @@ export function InlineTaskCreator({
   const update = (id: string, patch: Partial<DraftRow>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
-  const adicionarPasso = (rowId: string) => {
-    const texto = (novoPasso[rowId] ?? "").trim();
-    if (!texto) return;
+  /** Acrescenta passos ao checklist da linha (um ou vários de uma vez). */
+  const acrescentarPassos = (rowId: string, textos: string[]) => {
+    if (!textos.length) return;
+    const base = Date.now().toString(36);
     setRows((rs) =>
       rs.map((r) =>
         r.id === rowId
@@ -684,13 +691,45 @@ export function InlineTaskCreator({
               ...r,
               checklist: [
                 ...r.checklist,
-                { id: `${rowId}-c${r.checklist.length}-${Date.now().toString(36)}`, text: texto, done: false },
+                ...textos.map((text, i) => ({
+                  id: `${rowId}-c${r.checklist.length + i}-${base}`,
+                  text,
+                  done: false,
+                })),
               ],
             }
           : r,
       ),
     );
+  };
+
+  const adicionarPasso = (rowId: string) => {
+    const texto = (novoPasso[rowId] ?? "").trim();
+    if (!texto) return;
+    acrescentarPassos(rowId, [texto]);
     setNovoPasso((n) => ({ ...n, [rowId]: "" }));
+  };
+
+  /* Colar uma lista (20/10/2026): uma coluna do Excel, linhas de um texto ou
+     várias células — cada linha (ou célula) vira um passo. Marcadores de lista
+     ("1.", "-", "•", "[ ]") saem do começo. Texto de uma linha só cola normal. */
+  const colarPassos = (rowId: string, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const texto = e.clipboardData.getData("text/plain");
+    if (!/[\r\n\t]/.test(texto.trim())) return;
+    e.preventDefault();
+    const passos = texto
+      .split(/\r?\n|\t/)
+      .map((l) =>
+        l
+          .replace(/^\s*(?:[-*•–]|\d+[.)]|\[[ xX]?\])\s+/, "")
+          .trim(),
+      )
+      .filter(Boolean)
+      .slice(0, 100);
+    acrescentarPassos(rowId, passos);
+    if (passos.length) {
+      toast.success(`${passos.length} ${passos.length === 1 ? "passo adicionado" : "passos adicionados"} ao checklist`);
+    }
   };
 
   /**
@@ -790,6 +829,15 @@ export function InlineTaskCreator({
       target = draft;
     }
     await addFilesToRow(target.id, files);
+  };
+
+  /* Recado de voz e gravação de tela (19/10/2026): entram como anexo da linha e
+     sobem em pedaços quando a tarefa for criada. */
+  const anexarGravacao = (rowId: string, anexo: Attachment) => {
+    setRows((rs) =>
+      rs.map((r) => (r.id === rowId ? { ...r, attachments: [...r.attachments, anexo] } : r)),
+    );
+    toast.success(anexo.type.startsWith("video/") ? "Gravação de tela anexada" : "Recado de voz anexado");
   };
 
   const removeAttachment = (rowId: string, attId: string) =>
@@ -1125,7 +1173,8 @@ export function InlineTaskCreator({
                 adicionarPasso(row.id);
               }
             }}
-            placeholder="Um passo e Enter…"
+            onPaste={(e) => colarPassos(row.id, e)}
+            placeholder="Um passo e Enter… (ou cole uma lista)"
             className="h-6 min-w-0 flex-1 rounded-md border border-foreground/30 bg-background px-1.5 text-[11px] outline-none placeholder:text-foreground/50 focus:border-primary"
           />
           <button
@@ -1137,6 +1186,15 @@ export function InlineTaskCreator({
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
+        {row.checklist.length > 1 && (
+          <button
+            type="button"
+            onClick={() => update(row.id, { checklist: [] })}
+            className="mt-1 text-[10px] font-medium text-foreground/50 transition hover:text-destructive"
+          >
+            Limpar checklist ({row.checklist.length})
+          </button>
+        )}
         {row.checklist.length > 0 && (
           <ul className="mt-1.5 space-y-1">
             {row.checklist.map((c, i) => (
@@ -1153,10 +1211,11 @@ export function InlineTaskCreator({
                       checklist: row.checklist.filter((x) => x.id !== c.id),
                     })
                   }
-                  className="shrink-0 text-foreground/40 opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-foreground/45 transition hover:bg-destructive/10 hover:text-destructive"
+                  title="Remover este passo"
                   aria-label={`Remover ${c.text}`}
                 >
-                  <X className="h-3 w-3" />
+                  <Trash2 className="h-3 w-3" />
                 </button>
               </li>
             ))}
@@ -1803,6 +1862,17 @@ export function InlineTaskCreator({
                             <div className="flex items-center justify-center gap-1">
                               {botaoComprovante(row, true)}
                               {botaoAnexar(row)}
+                              <BotaoRecadoDeVoz
+                                aoGravar={(a) => anexarGravacao(row.id, a)}
+                                tamanhoIcone="h-3.5 w-3.5"
+                                className={BOTAO_GRAVAR}
+                              />
+                              <BotaoGravarTela
+                                aoConcluir={(a) => anexarGravacao(row.id, a)}
+                                rotulo={null}
+                                tamanhoIcone="h-3.5 w-3.5"
+                                className={BOTAO_GRAVAR}
+                              />
                               {botaoRemover(row)}
                             </div>
                           </td>

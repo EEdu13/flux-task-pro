@@ -6,6 +6,7 @@ import { IncomingCall } from "@/components/incoming-call";
 import { AttentionOverlay } from "@/components/attention-overlay";
 import { AlertaDeCompromisso } from "@/components/alerta-de-compromisso";
 import { EmojiGigante } from "@/components/emoji-gigante";
+import { ReacaoDeAvatar } from "@/components/reacao-de-avatar";
 import { OutgoingCallWatcher } from "@/components/outgoing-call-watcher";
 import { TractorBanner } from "@/components/tractor-banner";
 import { ChatDock } from "@/components/chat-dock";
@@ -16,6 +17,10 @@ import { ReservaDeSalaModal } from "@/components/reserva-de-sala-modal";
 import { TeamDelegatePanel } from "@/components/team-delegate-panel";
 import { FocusOverlay } from "@/components/focus-overlay";
 import { Novidades } from "@/components/novidades";
+import { PortaDoAgradecer } from "@/components/mural/agradecer";
+import { PortaDoEventoDaTarefa } from "@/components/mural/tarefa-em-evento";
+import { PortaDoWrapped } from "@/components/wrapped/porta-do-wrapped";
+import { ConfeteDeAniversario } from "@/components/confete-de-aniversario";
 
 /** Páginas que não usam o `FluxoLayout` — e não querem as janelas globais. */
 const SEM_GLOBAIS = ["/login", "/convidado", "/chamada", "/conferir-dados-antigos"];
@@ -44,6 +49,8 @@ export function GlobaisDoApp() {
       {/* Agenda travada (14/10/2026): o cartão de 30 e 10 minutos antes. */}
       <AlertaDeCompromisso />
       <EmojiGigante />
+      {/* Reações do avatar (17/10/2026): o boneco de quem mandou, no meio da tela. */}
+      <ReacaoDeAvatar />
       <OutgoingCallWatcher />
       <TractorBanner />
       <ChatDock />
@@ -57,6 +64,12 @@ export function GlobaisDoApp() {
       <FocusOverlay />
       {/* "O que mudou": uma vez por pessoa, por versão — ver `novidades.tsx`. */}
       <Novidades />
+      {/* "Agradecer" do Mural, aberto também pela tarefa (14/10/2026). */}
+      <PortaDoAgradecer />
+      <PortaDoEventoDaTarefa />
+      {/* Wrapped do mês (19/10/2026): abre sozinho no dia 1º (06:30) — ver `porta-do-wrapped.tsx`. */}
+      <PortaDoWrapped />
+      <ConfeteDeAniversario />
     </>
   );
 }

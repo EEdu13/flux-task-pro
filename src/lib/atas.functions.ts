@@ -1,5 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { comSessao, comSessaoSemEntrada, semIdentidade } from "@/integrations/iam/funcao-com-sessao";
+import {
+  comSessao,
+  comSessaoSemEntrada,
+  semIdentidade,
+} from "@/integrations/iam/funcao-com-sessao";
 
 /* As atas — bloco F, o último campo que ainda vivia só no navegador.
  *
@@ -158,9 +162,7 @@ export const listarAtas = createServerFn({ method: "POST" }).handler(
              Guardar assim é o que preserva o par — dois arrays soltos perderiam
              qual id pertence a qual nome. */
           participantNames: meus.map((p) => p.nome),
-          participantIds: meus
-            .filter((p) => p.pessoa_id !== null)
-            .map((p) => String(p.pessoa_id)),
+          participantIds: meus.filter((p) => p.pessoa_id !== null).map((p) => String(p.pessoa_id)),
           markdown: l.markdown,
           topics: topicos.get(l.id.toLowerCase()) ?? [],
         };
@@ -181,9 +183,10 @@ type EntradaAta = {
 /**
  * Grava a ata inteira — cabeçalho, participantes e tópicos — de uma vez.
  *
- * A ata é escrita uma única vez, no fim da reunião, e depois só é lida. Não há
- * caminho de edição, então não há o problema de regravar por cima do que outra
- * pessoa escreveu. Isso permite a gravação em bloco, que aqui é a mais simples.
+ * A ata da reunião ao vivo é gravada várias vezes com o MESMO id: primeiro como
+ * rascunho, durante a reunião, e no fim com a versão final. Chamar de novo com
+ * um id que já existe atualiza (ver abaixo), desde que quem chama possa
+ * escrever na ata.
  *
  * O id vem do cliente porque a tela precisa dele imediatamente, para mostrar a
  * ata recém-gerada sem esperar a resposta. É um UUID, e o `WHERE NOT EXISTS`
@@ -254,8 +257,62 @@ export const salvarAta = createServerFn({ method: "POST" })
            SELECT @@ROWCOUNT AS gravou;`,
         );
 
-      // Já existia: a tela chamou duas vezes. Não regrava nem duplica os filhos.
-      if ((r.recordset[0] as { gravou: number }).gravou === 0) return { id: d.id };
+      /* Já existia: é o rascunho que a reunião vai salvando enquanto acontece
+         (19/10/2026 — a ata deixou de nascer só no fim, e reunião perdida por
+         quem escrevia ter saído não acontece mais). Quem esteve nela atualiza o
+         texto; participante que faltava entra; os tópicos que ainda não viraram
+         tarefa são trocados pelos novos. Os que já viraram tarefa ficam. */
+      if ((r.recordset[0] as { gravou: number }).gravou === 0) {
+        /* Uma ida ao banco só, e não uma por participante e por tópico: o
+           rascunho é salvo a cada minuto durante a reunião. Os tópicos têm id
+           estável (sai do texto), então só entra o que é novo e só sai o que
+           sumiu — os que já viraram tarefa nunca saem. */
+        const t = await pool
+          .request()
+          .input("ata", sql.UniqueIdentifier, d.id)
+          .input("titulo", sql.NVarChar, d.tituloDaSala)
+          .input("markdown", sql.NVarChar(sql.MAX), d.markdown)
+          .input("eu", sql.Int, eu)
+          .input("pessoas", sql.NVarChar(sql.MAX), JSON.stringify(d.participantes))
+          .input(
+            "topicos",
+            sql.NVarChar(sql.MAX),
+            JSON.stringify(d.topicos.map((tp, ordem) => ({ ...tp, ordem }))),
+          )
+          .query(
+            `UPDATE gestor.atas SET markdown = @markdown, titulo_da_sala = COALESCE(@titulo, titulo_da_sala)
+              WHERE id = @ata AND ${PODE_ESCREVER_NA_ATA};
+             IF @@ROWCOUNT = 0 BEGIN SELECT 0 AS ok; RETURN; END;
+
+             INSERT INTO gestor.ata_participantes (ata_id, nome, pessoa_id)
+             SELECT @ata, j.nome, j.pessoaId
+               FROM OPENJSON(@pessoas) WITH (nome NVARCHAR(160), pessoaId INT) j
+              WHERE NOT EXISTS (SELECT 1 FROM gestor.ata_participantes p
+                                 WHERE p.ata_id = @ata AND p.nome = j.nome);
+
+             DECLARE @novos TABLE (id UNIQUEIDENTIFIER PRIMARY KEY, texto NVARCHAR(600),
+                                   tipo NVARCHAR(20), ordem INT);
+             INSERT INTO @novos (id, texto, tipo, ordem)
+             SELECT DISTINCT TRY_CAST(j.id AS UNIQUEIDENTIFIER), j.texto, j.tipo, j.ordem
+               FROM OPENJSON(@topicos) WITH (id NVARCHAR(36), texto NVARCHAR(600),
+                                             tipo NVARCHAR(20), ordem INT) j
+              WHERE TRY_CAST(j.id AS UNIQUEIDENTIFIER) IS NOT NULL;
+
+             DELETE t FROM gestor.topicos_da_ata t
+              WHERE t.ata_id = @ata AND t.tarefa_id IS NULL
+                AND NOT EXISTS (SELECT 1 FROM @novos n WHERE n.id = t.id);
+             INSERT INTO gestor.topicos_da_ata (id, ata_id, texto, tipo, ordem)
+             SELECT n.id, @ata, n.texto, n.tipo, n.ordem FROM @novos n
+              WHERE NOT EXISTS (SELECT 1 FROM gestor.topicos_da_ata t WHERE t.id = n.id);
+             SELECT 1 AS ok;`,
+          );
+        /* Sem permissão: avisa em vez de fingir que salvou — quem chamou
+           precisa saber que a ata não foi gravada. */
+        if (!(t.recordset[0] as { ok: number } | undefined)?.ok) {
+          throw new Error("Sem permissão para atualizar esta ata.");
+        }
+        return { id: d.id };
+      }
 
       for (const p of d.participantes) {
         await pool
@@ -389,28 +446,26 @@ export const adicionarTopicoNaAta = createServerFn({ method: "POST" })
     }),
   )
   .handler(
-    comSessao(
-      async (eu, d: { ataId: string; id: string; texto: string; tipo: string }) => {
-        const { getPool, sql } = await import("@/integrations/db.server");
-        const pool = await getPool();
-        const r = await pool
-          .request()
-          .input("ata", sql.UniqueIdentifier, d.ataId)
-          .input("id", sql.UniqueIdentifier, d.id)
-          .input("texto", sql.NVarChar, d.texto)
-          .input("tipo", sql.NVarChar, d.tipo)
-          .input("eu", sql.Int, eu)
-          .query(
-            // Idempotente pelo id: dois cliques não viram dois tópicos.
-            `INSERT INTO gestor.topicos_da_ata (id, ata_id, texto, tipo, ordem)
+    comSessao(async (eu, d: { ataId: string; id: string; texto: string; tipo: string }) => {
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const r = await pool
+        .request()
+        .input("ata", sql.UniqueIdentifier, d.ataId)
+        .input("id", sql.UniqueIdentifier, d.id)
+        .input("texto", sql.NVarChar, d.texto)
+        .input("tipo", sql.NVarChar, d.tipo)
+        .input("eu", sql.Int, eu)
+        .query(
+          // Idempotente pelo id: dois cliques não viram dois tópicos.
+          `INSERT INTO gestor.topicos_da_ata (id, ata_id, texto, tipo, ordem)
              SELECT @id, @ata, @texto, @tipo,
                     (SELECT ISNULL(MAX(ordem), -1) + 1 FROM gestor.topicos_da_ata WHERE ata_id = @ata)
               WHERE ${PODE_ESCREVER_NA_ATA}
                 AND NOT EXISTS (SELECT 1 FROM gestor.topicos_da_ata WHERE id = @id)`,
-          );
-        return { ok: (r.rowsAffected[0] ?? 0) > 0 };
-      },
-    ),
+        );
+      return { ok: (r.rowsAffected[0] ?? 0) > 0 };
+    }),
   );
 
 export const apagarTopicoDaAta = createServerFn({ method: "POST" })
@@ -455,7 +510,9 @@ export const atualizarTextoDaAta = createServerFn({ method: "POST" })
         .input("ata", sql.UniqueIdentifier, d.ataId)
         .input("markdown", sql.NVarChar(sql.MAX), d.markdown)
         .input("eu", sql.Int, eu)
-        .query(`UPDATE gestor.atas SET markdown = @markdown WHERE id = @ata AND ${PODE_ESCREVER_NA_ATA}`);
+        .query(
+          `UPDATE gestor.atas SET markdown = @markdown WHERE id = @ata AND ${PODE_ESCREVER_NA_ATA}`,
+        );
       return { ok: (r.rowsAffected[0] ?? 0) > 0 };
     }),
   );

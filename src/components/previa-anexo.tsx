@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
 import { useEscFecha } from "@/hooks/use-esc-fecha";
 import { TravaScroll } from "@/components/trava-scroll";
+import { ReprodutorDeAudio, ReprodutorDeVideo } from "@/components/reprodutor-de-midia";
 import {
   EVENTO_PREVIA,
   abrirNoPrograma,
@@ -24,13 +25,16 @@ import {
  * Montada uma vez na raiz; qualquer tela chama `openAttachment(a)`.
  */
 
-type Tipo = "imagem" | "pdf" | "texto" | "outro";
+type Tipo = "imagem" | "pdf" | "texto" | "audio" | "video" | "outro";
 
 const EXT_TEXTO = /\.(txt|csv|md|json|log|xml)$/i;
 
 function tipoDe(nome: string, mime: string): Tipo {
   if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(nome)) return "imagem";
   if (mime === "application/pdf" || /\.pdf$/i.test(nome)) return "pdf";
+  // Recado de voz e gravação de tela (19/10/2026).
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("text/") || EXT_TEXTO.test(nome)) return "texto";
   return "outro";
 }
@@ -61,6 +65,17 @@ export function PreviaDoAnexoHost() {
     setUrl(null);
     setTexto(null);
     setErro(null);
+    /* Áudio e vídeo tocam direto do endereço (o proxy responde em pedaços,
+       com `Range`): baixar o vídeo inteiro antes de mostrar seria esperar à
+       toa. */
+    const direto = tipoDe(anexo.name, anexo.type || "");
+    if (direto === "audio" || direto === "video") {
+      setTipo(direto);
+      setTamanho(anexo.size ?? null);
+      setUrl(anexo.dataUrl);
+      setCarregando(false);
+      return;
+    }
     setCarregando(true);
     void (async () => {
       try {
@@ -152,6 +167,12 @@ export function PreviaDoAnexoHost() {
             <div className="max-w-sm p-6 text-center text-sm text-muted-foreground">{erro}</div>
           ) : tipo === "imagem" && url ? (
             <img src={url} alt={anexo.name} className="max-h-[80vh] max-w-full object-contain" />
+          ) : tipo === "audio" && url ? (
+            <div className="w-full max-w-md p-6">
+              <ReprodutorDeAudio src={url} semente={anexo.name} />
+            </div>
+          ) : tipo === "video" && url ? (
+            <ReprodutorDeVideo src={url} className="max-h-[80vh] rounded-none" />
           ) : tipo === "pdf" && url ? (
             <iframe src={url} title={anexo.name} className="h-[80vh] w-full border-0 bg-white" />
           ) : tipo === "texto" && texto != null ? (

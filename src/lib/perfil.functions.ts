@@ -210,9 +210,8 @@ export type PessoaDoQuadro = {
 export const listarPessoas = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (): Promise<{ pessoas: PessoaDoQuadro[] }> => {
     const { getPool } = await import("@/integrations/db.server");
-    const { SQL_SETOR_DO_EXTERNO, SQL_SETOR_DO_INTERNO, chefeDireto, setorParaId } = await import(
-      "@/integrations/iam/colaborador.server"
-    );
+    const { SQL_SETOR_DO_EXTERNO, SQL_SETOR_DO_INTERNO, chefeDireto, setorParaId } =
+      await import("@/integrations/iam/colaborador.server");
     const pool = await getPool();
     /* Setor e chefe também vêm daqui, ao vivo, e não só da cópia que o login
        grava em `perfis`. A cópia envelhecia: quem era posto na equipe de
@@ -279,9 +278,19 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
     /** O cadastro ativo da pessoa no organograma: efetivo manda, como no login. */
     const noOrganograma = (p: Linha) =>
       p.c_ativo === 1
-        ? { nome: p.c_nome ?? p.nome, setor: p.c_setor, supervisor: p.c_sup, coordenador: p.c_coord }
+        ? {
+            nome: p.c_nome ?? p.nome,
+            setor: p.c_setor,
+            supervisor: p.c_sup,
+            coordenador: p.c_coord,
+          }
         : p.x_ativo === 1
-          ? { nome: p.x_nome ?? p.nome, setor: p.x_setor, supervisor: p.x_sup, coordenador: p.x_coord }
+          ? {
+              nome: p.x_nome ?? p.nome,
+              setor: p.x_setor,
+              supervisor: p.x_sup,
+              coordenador: p.x_coord,
+            }
           : null;
     return {
       pessoas: (r.recordset as Linha[]).map((p) => {
@@ -385,7 +394,18 @@ export const salvarMeuPerfil = createServerFn({ method: "POST" })
  */
 /* "calendario" guarda as cores e as salas ocultas do calendário, num JSON
    curto — ver `use-prefs-do-calendario.ts`. */
-const CHAVES = ["tema", "paleta", "calendario", "calendario_dias", "notificacoes", "novidades"] as const;
+const CHAVES = [
+  "tema",
+  "paleta",
+  "calendario",
+  "calendario_dias",
+  "notificacoes",
+  "novidades",
+  "avatar3d",
+  /* O último "Wrapped do mês" que a pessoa já viu, "AAAA-MM" (19/10/2026):
+     abre sozinho uma vez por mês, e nunca de novo depois de visto. */
+  "wrapped_visto",
+] as const;
 type Chave = (typeof CHAVES)[number];
 const chaveValida = (v: unknown): v is Chave =>
   typeof v === "string" && (CHAVES as readonly string[]).includes(v);
@@ -434,4 +454,83 @@ export const salvarPreferencia = createServerFn({ method: "POST" })
         );
       return { ok: true };
     }),
+  );
+
+/**
+ * O avatar 3D de OUTRA pessoa (reações do avatar, 17/10/2026): quem recebe um
+ * beijo ou um "bravo" precisa do boneco de quem mandou.
+ *
+ * Por que uma consulta, e não o avatar dentro do aviso: a mensagem do aviso
+ * cabe 200 caracteres (`gestor.avisos_de_tela`) e o formato compacto passa
+ * disso com folga. Só a chave "avatar3d" sai daqui — o resto das preferências
+ * da pessoa (tema, calendário…) continua só dela. O avatar não é segredo: a
+ * sala ao vivo já o mostra a todo mundo que entra.
+ *
+ * `de` (e não `pessoaId`): é QUEM se quer ver, não quem pede — quem pede vem
+ * da sessão, como em toda função daqui.
+ */
+export const avatarDaPessoa = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((entrada: { de: string | number }) => {
+      const de = Number(entrada?.de);
+      if (!Number.isInteger(de) || de <= 0) throw new Error("Pessoa inválida");
+      return { de };
+    }),
+  )
+  .handler(
+    comSessao(async (_eu, dados: { de: number }): Promise<{ avatar: string | null }> => {
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const r = await pool
+        .request()
+        .input("pessoa", sql.Int, dados.de)
+        .query(
+          `SELECT valor FROM gestor.preferencias WHERE pessoa_id=@pessoa AND chave='avatar3d'`,
+        );
+      const valor = (r.recordset as { valor: string }[])[0]?.valor;
+      return { avatar: typeof valor === "string" && valor ? valor : null };
+    }),
+  );
+
+/**
+ * Os avatares 3D de VÁRIAS pessoas de uma vez (Mural, 17/10/2026): cada
+ * cartão de conquista mostra o boneco de quem conquistou comemorando, e uma
+ * página do Mural tem vários — uma consulta só, em vez de uma por cartão.
+ * Mesma regra de `avatarDaPessoa`: só a chave "avatar3d" sai daqui.
+ */
+export const avataresDasPessoas = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((entrada: { ids: (string | number)[] }) => {
+      const ids = [...new Set((Array.isArray(entrada?.ids) ? entrada.ids : []).map(Number))]
+        .filter((n) => Number.isInteger(n) && n > 0)
+        .slice(0, 100);
+      return { ids };
+    }),
+  )
+  .handler(
+    comSessao(
+      async (
+        _eu,
+        dados: { ids: number[] },
+      ): Promise<{ avatares: Record<string, string | null> }> => {
+        const avatares: Record<string, string | null> = {};
+        if (!dados.ids.length) return { avatares };
+        const { getPool, sql } = await import("@/integrations/db.server");
+        const pool = await getPool();
+        const req = pool.request();
+        const nomes = dados.ids.map((id, i) => {
+          req.input(`p${i}`, sql.Int, id);
+          return `@p${i}`;
+        });
+        const r = await req.query(
+          `SELECT pessoa_id, valor FROM gestor.preferencias
+            WHERE chave='avatar3d' AND pessoa_id IN (${nomes.join(",")})`,
+        );
+        for (const id of dados.ids) avatares[String(id)] = null;
+        for (const l of r.recordset as { pessoa_id: number; valor: string }[]) {
+          if (typeof l.valor === "string" && l.valor) avatares[String(l.pessoa_id)] = l.valor;
+        }
+        return { avatares };
+      },
+    ),
   );

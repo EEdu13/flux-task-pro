@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { PREFIXO_REACAO, ehReacaoDoAvatar } from "@/lib/reacoes-do-avatar";
 
 const sanitizeUserId = (value: unknown) => {
   if (typeof value !== "string") throw new Error("Usuário inválido");
@@ -15,7 +16,7 @@ const pessoaAlvo = (v: unknown): number => {
 };
 
 /** Tipos de aviso que trafegam pela mesma tabela. */
-export type TipoAviso = "cutucada" | "trator" | "emoji";
+export type TipoAviso = "cutucada" | "trator" | "emoji" | "avatar";
 
 /* O emoji gigante (estilo MSN, 08/10/2026) viaja como cutucada com a
    mensagem "emoji:❤️". A tabela só aceita os tipos `cutucada` e `trator`
@@ -53,13 +54,31 @@ export const sendNudgeFn = createServerFn({ method: "POST" })
           : "";
       const fromAvatar =
         typeof input?.fromAvatar === "string" ? input.fromAvatar.trim().slice(0, 20) : "";
-      const pedido = input?.kind === "trator" ? "trator" : input?.kind === "emoji" ? "emoji" : "cutucada";
+      const pedido =
+        input?.kind === "trator"
+          ? "trator"
+          : input?.kind === "emoji"
+            ? "emoji"
+            : input?.kind === "avatar"
+              ? "avatar"
+              : "cutucada";
       const texto = typeof input?.message === "string" ? input.message.trim() : "";
       if (pedido === "emoji") {
         // Um emoji só, curto e pictográfico — não vira canal de texto livre.
         if (!texto || texto.length > 16 || !/\p{Extended_Pictographic}/u.test(texto))
           throw new Error("Emoji inválido");
         return { fromName, fromAvatar, targetUserId, kind: "cutucada" as const, message: `${PREFIXO_EMOJI}${texto}` };
+      }
+      if (pedido === "avatar") {
+        // Reação do avatar (17/10/2026): só um id do catálogo, nunca texto livre.
+        if (!ehReacaoDoAvatar(texto)) throw new Error("Reação inválida");
+        return {
+          fromName,
+          fromAvatar,
+          targetUserId,
+          kind: "cutucada" as const,
+          message: `${PREFIXO_REACAO}${texto}`,
+        };
       }
       const kind: "trator" | "cutucada" = pedido;
       // 200 é o limite da coluna; faixa maior que isso não caberia na tela também.

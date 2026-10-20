@@ -8,10 +8,12 @@ import { useChat } from "@/lib/chat-store";
 import {
   ChatAvatar,
   Composer,
+  EmojiDoStatus,
   MessageList,
   OnlineDot,
   RotuloDeSituacao,
   SeletorDeStatus,
+  TextoDoStatus,
 } from "@/components/chat-ui";
 
 export const Route = createFileRoute("/chat")({
@@ -127,9 +129,14 @@ function ChatPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-semibold">{r.user.name}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold">{r.user.name}</span>
+                        <EmojiDoStatus userId={r.user.id} className="text-sm" />
+                      </span>
                       {r.when && (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{fmtWhen(r.when)}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {fmtWhen(r.when)}
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center justify-between gap-2">
@@ -164,7 +171,8 @@ function ChatPage() {
                 </span>
                 <h3 className="text-sm font-semibold">Suas conversas</h3>
                 <p className="text-xs text-muted-foreground">
-                  Escolha alguém à esquerda para conversar. A bolinha mostra o status de cada pessoa: verde disponível, vermelho ocupado, amarelo ausente e cinza offline.
+                  Escolha alguém à esquerda para conversar. A bolinha mostra o status de cada
+                  pessoa: verde disponível, vermelho ocupado, amarelo ausente e cinza offline.
                 </p>
               </div>
             </div>
@@ -174,8 +182,9 @@ function ChatPage() {
                 <ChatAvatar user={peer} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{peer.name}</div>
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
                     <RotuloDeSituacao situacao={situacaoDe(peer.id)} />
+                    <TextoDoStatus userId={peer.id} comAte comSeparador />
                   </div>
                 </div>
                 {/* As mesmas três do cabeçalho do dock, no topo da conversa. */}

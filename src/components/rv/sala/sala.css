@@ -1,0 +1,398 @@
+/*
+ * Camada 2D sobre as cabeças (crachá, selos, balões).
+ *
+ * Classes com prefixo rv- e CSS puro (não Tailwind) porque o Projetor mexe no
+ * DOM direto a cada quadro (transform, data-modo, --rv-dx): seletores por
+ * atributo e variáveis CSS fazem o trabalho sem render do React.
+ */
+
+.rv-camada {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  contain: strict;
+}
+
+/* Cada grupo é um ponto (a âncora): os filhos se penduram nele. */
+.rv-grupo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.rv-linha-cabeca {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* ───────── Crachá ───────── */
+
+.rv-cracha {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  /* Quase opaco: o crachá cai em cima do quadro/telão em alguns lugares e o texto
+     deles por baixo atrapalhava a leitura do nome. */
+  background: rgba(20, 14, 10, 0.92);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+}
+/* Fora do quadro pelos lados: seta para onde a pessoa está e "💬" se ela tem card. */
+.rv-seta-fora,
+.rv-tem-balao {
+  display: none;
+}
+.rv-grupo[data-fora="esq"] .rv-seta-esq,
+.rv-grupo[data-fora="dir"] .rv-seta-dir {
+  display: inline;
+  font-size: 10px;
+  color: #fbbf24;
+}
+.rv-grupo[data-fora] .rv-tem-balao {
+  display: inline;
+  font-size: 12px;
+}
+.rv-grupo[data-fora] .rv-cracha {
+  box-shadow: 0 0 0 1.5px rgba(251, 191, 36, 0.7);
+}
+
+.rv-cracha.rv-falando {
+  box-shadow: 0 0 0 2px #22c55e;
+  animation: rv-falando 1.1s ease-in-out infinite;
+}
+@keyframes rv-falando {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px #22c55e, 0 0 0 0 rgba(34, 197, 94, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 2px #22c55e, 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+}
+
+.rv-chip-ia {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 4px;
+  margin-right: -4px;
+  border-radius: 4px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.rv-chip-ia.rv-solto {
+  height: 18px;
+  margin: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1.5px solid #fff;
+}
+
+/* ───────── Selos ───────── */
+
+.rv-mudo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #1f2937;
+  border: 1.5px solid #fff;
+  color: #f87171;
+}
+.rv-mudo.rv-meu {
+  width: 30px;
+  height: 30px;
+  background: #dc2626;
+  border: 2px solid #fff;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+.rv-mudo.rv-sem-microfone {
+  background: #6b7280;
+  color: #fff;
+}
+
+.rv-gesto {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 2px solid #f59e0b;
+  font-size: 30px;
+  line-height: 1;
+  animation:
+    rv-pulo 600ms cubic-bezier(0.2, 0.9, 0.3, 1.4) both,
+    rv-pulso 650ms ease-in-out 600ms 3;
+}
+.rv-gesto.rv-primeiro {
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3), 0 0 16px 4px rgba(245, 158, 11, 0.55);
+}
+.rv-gesto-fila {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #111827;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  border: 1.5px solid #fff;
+}
+@keyframes rv-pulo {
+  0% {
+    transform: translateY(14px) scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-8px) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes rv-pulso {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+/* ───────── Balão ───────── */
+
+/* Ponto de ancoragem do balão: o Projetor põe transform e data-modo. */
+.rv-balao {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+.rv-balao-anim {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform-origin: 50% 100%;
+  animation:
+    rv-balao-entra 240ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both,
+    rv-balao-sai 400ms ease-in var(--rv-saida, 9600ms) forwards;
+}
+@keyframes rv-balao-entra {
+  from {
+    transform: scale(0.6) translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes rv-balao-sai {
+  from {
+    transform: none;
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.85) translateY(-6px);
+    opacity: 0;
+  }
+}
+
+.rv-var {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  visibility: hidden;
+  pointer-events: none;
+  text-align: left;
+  font: inherit;
+  color: #111827;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.96);
+  border: 0;
+  border-left: 4px solid #f59e0b;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.rv-balao[data-modo="completo"] .rv-var-completo,
+.rv-balao[data-modo="compacto"] .rv-var-compacto,
+.rv-balao[data-modo="chip"] .rv-var-chip {
+  visibility: visible;
+  pointer-events: auto;
+}
+/* Hover em qualquer modo: só o expandido aparece. */
+.rv-balao:hover .rv-var {
+  visibility: hidden;
+}
+.rv-balao:hover .rv-var.rv-var-expandido {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.rv-var-completo,
+.rv-var-expandido {
+  width: max-content;
+  max-width: 220px;
+  min-width: 120px;
+  padding: 7px 10px 7px 9px;
+  border-radius: 12px;
+}
+.rv-var-expandido {
+  width: 220px;
+  z-index: 2;
+}
+.rv-var-compacto {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  max-width: 160px;
+  padding: 0 8px 0 6px;
+  border-radius: 999px;
+  width: max-content;
+}
+.rv-var-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+  border-radius: 999px;
+  border-left: 0;
+  font-size: 14px;
+  width: max-content;
+}
+
+.rv-balao-linha {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.rv-balao-emoji {
+  flex: none;
+  font-size: 18px;
+  line-height: 20px;
+}
+.rv-balao-emoji.rv-pequeno {
+  font-size: 14px;
+  line-height: 1;
+}
+.rv-balao-titulo {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 19px;
+  min-width: 0;
+}
+.rv-var-compacto .rv-balao-titulo {
+  font-size: 12.5px;
+  line-height: 1;
+}
+.rv-duas-linhas {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rv-uma-linha {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rv-balao-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: 24px;
+}
+.rv-balao-chip {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  white-space: nowrap;
+}
+.rv-balao-mais {
+  flex: none;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 15px;
+}
+.rv-balao-resumo {
+  margin: 4px 0 0 24px;
+  font-size: 12px;
+  line-height: 16px;
+  color: #334155;
+}
+.rv-balao-rodape {
+  margin: 4px 0 0 24px;
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+/* Rabicho: triângulo de 8 px apontando a cabeça; o Projetor inclina via --rv-dx. */
+.rv-rabicho {
+  position: absolute;
+  top: 100%;
+  left: clamp(14px, calc(50% - var(--rv-dx, 0px)), calc(100% - 14px));
+  width: 16px;
+  height: 8px;
+  transform: translateX(-50%) skewX(var(--rv-incl, 0deg));
+  transform-origin: 50% 0;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-cracha.rv-falando,
+  .rv-gesto {
+    animation: none;
+  }
+  .rv-balao-anim {
+    animation: rv-balao-sai 1ms linear var(--rv-saida, 9600ms) forwards;
+  }
+}

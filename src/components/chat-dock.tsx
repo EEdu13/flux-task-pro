@@ -5,10 +5,12 @@ import { useChat } from "@/lib/chat-store";
 import {
   ChatAvatar,
   Composer,
+  EmojiDoStatus,
   MessageList,
   OnlineDot,
   RotuloDeSituacao,
   SeletorDeStatus,
+  TextoDoStatus,
 } from "@/components/chat-ui";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLancadoresRecolhidos } from "@/lib/lancadores";
@@ -123,58 +125,59 @@ export function ChatDock() {
           rótulo junto, que passou a alcançar ~193px e encostaria nas janelas. */}
       <div className="pointer-events-none absolute bottom-0 right-52 flex flex-row-reverse items-end gap-3">
         <AnimatePresence initial={false}>
-        {expanded.map((id) => {
-          const u = userById.get(id);
-          if (!u) return null;
-          return (
-            <motion.div
-              key={id}
-              layout
-              // Sobe do rodapé e desce ao sair — a janela vem de onde a barra
-              // minimizada fica, então minimizar e reabrir formam um movimento
-              // de ida e volta em vez de dois eventos sem relação.
-              initial={{ opacity: 0, y: 60, scaleY: 0.85 }}
-              animate={{ opacity: 1, y: 0, scaleY: 1 }}
-              exit={{ opacity: 0, y: 60, scaleY: 0.85 }}
-              transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
-              className="pointer-events-auto flex h-[460px] flex-col overflow-hidden rounded-t-xl border border-border bg-card shadow-2xl"
-              style={{ transformOrigin: "bottom center", width: LARGURA }}
-            >
-              <header className="flex items-center gap-2 border-b border-border bg-sidebar px-3 py-2 text-sidebar-foreground">
-                <div className="relative">
-                  <ChatAvatar user={u} size={30} />
-                  <span className="absolute -bottom-0.5 -right-0.5">
-                    <OnlineDot situacao={situacaoDe(u.id)} />
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-semibold">{u.name}</div>
-                  <div className="text-[10px] opacity-90">
-                    <RotuloDeSituacao situacao={situacaoDe(u.id)} />
+          {expanded.map((id) => {
+            const u = userById.get(id);
+            if (!u) return null;
+            return (
+              <motion.div
+                key={id}
+                layout
+                // Sobe do rodapé e desce ao sair — a janela vem de onde a barra
+                // minimizada fica, então minimizar e reabrir formam um movimento
+                // de ida e volta em vez de dois eventos sem relação.
+                initial={{ opacity: 0, y: 60, scaleY: 0.85 }}
+                animate={{ opacity: 1, y: 0, scaleY: 1 }}
+                exit={{ opacity: 0, y: 60, scaleY: 0.85 }}
+                transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
+                className="pointer-events-auto flex h-[460px] flex-col overflow-hidden rounded-t-xl border border-border bg-card shadow-2xl"
+                style={{ transformOrigin: "bottom center", width: LARGURA }}
+              >
+                <header className="flex items-center gap-2 border-b border-border bg-sidebar px-3 py-2 text-sidebar-foreground">
+                  <div className="relative">
+                    <ChatAvatar user={u} size={30} />
+                    <span className="absolute -bottom-0.5 -right-0.5">
+                      <OnlineDot situacao={situacaoDe(u.id)} />
+                    </span>
                   </div>
-                </div>
-                <AcoesDoChat peerId={id} />
-                <span className="mx-0.5 h-4 w-px bg-white/20" aria-hidden />
-                <button
-                  onClick={() => minimizeChat(id)}
-                  className="rounded p-1 opacity-70 hover:bg-white/10 hover:opacity-100"
-                  title="Minimizar"
-                >
-                  <Minus className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => closeChat(id)}
-                  className="rounded p-1 opacity-70 hover:bg-destructive hover:opacity-100"
-                  title="Fechar"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </header>
-              <MessageList peerId={id} compact />
-              <Composer peerId={id} />
-            </motion.div>
-          );
-        })}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold">{u.name}</div>
+                    <div className="flex min-w-0 items-center gap-1 text-[10px] opacity-90">
+                      <RotuloDeSituacao situacao={situacaoDe(u.id)} />
+                      <TextoDoStatus userId={u.id} comSeparador />
+                    </div>
+                  </div>
+                  <AcoesDoChat peerId={id} />
+                  <span className="mx-0.5 h-4 w-px bg-white/20" aria-hidden />
+                  <button
+                    onClick={() => minimizeChat(id)}
+                    className="rounded p-1 opacity-70 hover:bg-white/10 hover:opacity-100"
+                    title="Minimizar"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => closeChat(id)}
+                    className="rounded p-1 opacity-70 hover:bg-destructive hover:opacity-100"
+                    title="Fechar"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </header>
+                <MessageList peerId={id} compact />
+                <Composer peerId={id} />
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
 
@@ -191,50 +194,51 @@ export function ChatDock() {
             transition={{ type: "spring", stiffness: 380, damping: 34 }}
           />
           <AnimatePresence initial={false}>
-          {collapsed.map((id) => {
-            const u = userById.get(id);
-            if (!u) return null;
-            const unread = unreadByPeer.get(u.id) ?? 0;
-            return (
-              <motion.div
-                key={id}
-                layout
-                // A barra sobe assim que a janela desce: as duas animações se
-                // encadeiam e a conversa parece encolher para o rodapé.
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 30 }}
-                transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                className="pointer-events-auto flex w-[220px] items-center gap-2 rounded-t-xl border border-border bg-sidebar px-3 py-2 text-sidebar-foreground shadow-2xl"
-              >
-                <button
-                  onClick={() => open(id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  title="Abrir conversa"
+            {collapsed.map((id) => {
+              const u = userById.get(id);
+              if (!u) return null;
+              const unread = unreadByPeer.get(u.id) ?? 0;
+              return (
+                <motion.div
+                  key={id}
+                  layout
+                  // A barra sobe assim que a janela desce: as duas animações se
+                  // encadeiam e a conversa parece encolher para o rodapé.
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 30 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                  className="pointer-events-auto flex w-[220px] items-center gap-2 rounded-t-xl border border-border bg-sidebar px-3 py-2 text-sidebar-foreground shadow-2xl"
                 >
-                  <div className="relative shrink-0">
-                    <ChatAvatar user={u} size={28} />
-                    <span className="absolute -bottom-0.5 -right-0.5">
-                      <OnlineDot situacao={situacaoDe(u.id)} />
-                    </span>
-                  </div>
-                  <span className="truncate text-xs font-semibold">{u.name}</span>
-                  {unread > 0 && (
-                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
-                      {unread}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => closeChat(id)}
-                  className="shrink-0 rounded p-0.5 opacity-70 hover:bg-destructive hover:opacity-100"
-                  title="Fechar"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </motion.div>
-            );
-          })}
+                  <button
+                    onClick={() => open(id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    title="Abrir conversa"
+                  >
+                    <div className="relative shrink-0">
+                      <ChatAvatar user={u} size={28} />
+                      <span className="absolute -bottom-0.5 -right-0.5">
+                        <OnlineDot situacao={situacaoDe(u.id)} />
+                      </span>
+                    </div>
+                    <span className="truncate text-xs font-semibold">{u.name}</span>
+                    <EmojiDoStatus userId={u.id} className="text-xs" />
+                    {unread > 0 && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                        {unread}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => closeChat(id)}
+                    className="shrink-0 rounded p-0.5 opacity-70 hover:bg-destructive hover:opacity-100"
+                    title="Fechar"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
       )}
@@ -242,82 +246,89 @@ export function ChatDock() {
       {/* Launcher (acima do FAB) + painel de contatos */}
       <div ref={lancadorRef} className="pointer-events-auto absolute bottom-24 right-5">
         <AnimatePresence>
-        {panelOpen && (
-          <motion.div
-            // Nasce no canto de baixo à direita — de onde o botão está — em vez
-            // de surgir do centro. A origem faz o painel parecer sair do botão.
-            initial={{ opacity: 0, y: 12, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.7 }}
-            style={{ transformOrigin: "bottom right" }}
-            className="absolute bottom-full right-0 mb-3 flex max-h-[65vh] w-80 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
-          >
-            <div className="flex items-center justify-between border-b border-border bg-sidebar px-4 py-3 text-sidebar-foreground">
-              <div>
-                <div className="text-sm font-semibold">Conversas</div>
-                <div className="text-[11px] opacity-70">{onlineCount} online agora</div>
-              </div>
-              {/* O meu status mora no topo da lista de quem eu vejo: é onde a
-                  pessoa está pensando em conversa, e onde repara na própria bolinha. */}
-              <SeletorDeStatus className="ml-auto mr-2" />
-              <button
-                onClick={() => setPanelOpen(false)}
-                className="rounded-md p-1 opacity-80 hover:bg-white/10"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="border-b border-border p-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar pessoa…"
-                  className="w-full rounded-full border border-border bg-background py-1.5 pl-8 pr-3 text-xs outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {contacts.map((u) => {
-                const unread = unreadByPeer.get(u.id) ?? 0;
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => open(u.id)}
-                    className="flex w-full items-center gap-2.5 border-b border-border/50 px-3 py-2 text-left transition hover:bg-secondary/60"
-                  >
-                    <div className="relative">
-                      <span className={isOnline(u.id) ? "" : "opacity-60 grayscale"}>
-                        <ChatAvatar user={u} size={38} />
-                      </span>
-                      <span className="absolute -bottom-0.5 -right-0.5">
-                        <OnlineDot situacao={situacaoDe(u.id)} />
-                      </span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{u.name}</div>
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        {isOnline(u.id) ? <RotuloDeSituacao situacao={situacaoDe(u.id)} /> : u.jobTitle}
-                      </div>
-                    </div>
-                    {unread > 0 && (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                        {unread}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-              {contacts.length === 0 && (
-                <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  Ninguém encontrado.
+          {panelOpen && (
+            <motion.div
+              // Nasce no canto de baixo à direita — de onde o botão está — em vez
+              // de surgir do centro. A origem faz o painel parecer sair do botão.
+              initial={{ opacity: 0, y: 12, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+              transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.7 }}
+              style={{ transformOrigin: "bottom right" }}
+              className="absolute bottom-full right-0 mb-3 flex max-h-[65vh] w-80 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-border bg-sidebar px-4 py-3 text-sidebar-foreground">
+                <div>
+                  <div className="text-sm font-semibold">Conversas</div>
+                  <div className="text-[11px] opacity-70">{onlineCount} online agora</div>
                 </div>
-              )}
-            </div>
-          </motion.div>
-        )}
+                {/* O meu status mora no topo da lista de quem eu vejo: é onde a
+                  pessoa está pensando em conversa, e onde repara na própria bolinha. */}
+                <SeletorDeStatus className="ml-auto mr-2" />
+                <button
+                  onClick={() => setPanelOpen(false)}
+                  className="rounded-md p-1 opacity-80 hover:bg-white/10"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="border-b border-border p-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Buscar pessoa…"
+                    className="w-full rounded-full border border-border bg-background py-1.5 pl-8 pr-3 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {contacts.map((u) => {
+                  const unread = unreadByPeer.get(u.id) ?? 0;
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => open(u.id)}
+                      className="flex w-full items-center gap-2.5 border-b border-border/50 px-3 py-2 text-left transition hover:bg-secondary/60"
+                    >
+                      <div className="relative">
+                        <span className={isOnline(u.id) ? "" : "opacity-60 grayscale"}>
+                          <ChatAvatar user={u} size={38} />
+                        </span>
+                        <span className="absolute -bottom-0.5 -right-0.5">
+                          <OnlineDot situacao={situacaoDe(u.id)} />
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-sm font-medium">{u.name}</span>
+                          <EmojiDoStatus userId={u.id} className="text-sm" />
+                        </div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {isOnline(u.id) ? (
+                            <RotuloDeSituacao situacao={situacaoDe(u.id)} />
+                          ) : (
+                            u.jobTitle
+                          )}
+                        </div>
+                      </div>
+                      {unread > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {unread}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {contacts.length === 0 && (
+                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    Ninguém encontrado.
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* Recolhe junto com o raio, pelo botão que mora no `QuickFab`.

@@ -1,6 +1,12 @@
 import { FileText, Image as ImageIcon, X, Download } from "lucide-react";
 import type { Attachment } from "@/lib/fluxo-types";
 import { formatBytes, isImage, openAttachment, downloadAttachment } from "@/lib/attachments";
+import {
+  ReprodutorDeAudio,
+  ReprodutorDeVideo,
+  ehAudio,
+  ehVideo,
+} from "@/components/reprodutor-de-midia";
 
 export function AttachmentList({
   items,
@@ -14,59 +20,98 @@ export function AttachmentList({
   if (!items.length) return null;
   return (
     <ul className={`grid gap-2 ${compact ? "grid-cols-1" : "grid-cols-2"}`}>
-      {items.map((a) => (
-        <li
-          key={a.id}
-          className="group flex items-center gap-2 rounded-md border border-border bg-background/60 p-2 text-xs"
-        >
-          {isImage(a.type) ? (
+      {items.map((a) =>
+        /* Recado de voz e gravação de tela (19/10/2026) tocam ali mesmo, sem
+           abrir prévia: é o jeito WhatsApp/Loom que foi pedido. Ocupam a
+           linha inteira da grade — o player espremido em meia coluna não dá
+           para usar. */
+        ehAudio(a.type) || ehVideo(a.type) ? (
+          <li
+            key={a.id}
+            className={`group rounded-md border border-border bg-background/60 p-2 text-xs ${compact ? "" : "col-span-2"}`}
+          >
+            {ehAudio(a.type) ? (
+              <ReprodutorDeAudio src={a.dataUrl} semente={a.name} />
+            ) : (
+              <ReprodutorDeVideo src={a.dataUrl} className="max-h-80" />
+            )}
+            <div className="mt-1 flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+                {a.name} · {formatBytes(a.size)}
+              </span>
+              <button
+                type="button"
+                onClick={() => downloadAttachment(a)}
+                className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                title="Baixar"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
+              {onRemove && (
+                <button
+                  onClick={() => onRemove(a.id)}
+                  className="rounded p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                  title="Remover"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </li>
+        ) : (
+          <li
+            key={a.id}
+            className="group flex items-center gap-2 rounded-md border border-border bg-background/60 p-2 text-xs"
+          >
+            {isImage(a.type) ? (
+              <button
+                type="button"
+                onClick={() => openAttachment(a)}
+                className="shrink-0"
+                title="Abrir imagem"
+              >
+                <img src={a.dataUrl} alt={a.name} className="h-10 w-10 rounded object-cover" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openAttachment(a)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-secondary hover:bg-secondary/70"
+                title="Abrir arquivo"
+              >
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+            {/* O nome também abre: antes, PDF e planilha só tinham o "baixar". */}
             <button
               type="button"
               onClick={() => openAttachment(a)}
-              className="shrink-0"
-              title="Abrir imagem"
+              className="min-w-0 flex-1 text-left"
+              title="Abrir"
             >
-              <img src={a.dataUrl} alt={a.name} className="h-10 w-10 rounded object-cover" />
+              <div className="truncate font-medium hover:underline">{a.name}</div>
+              <div className="text-[10px] text-muted-foreground">{formatBytes(a.size)}</div>
             </button>
-          ) : (
             <button
               type="button"
-              onClick={() => openAttachment(a)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-secondary hover:bg-secondary/70"
-              title="Abrir arquivo"
+              onClick={() => downloadAttachment(a)}
+              className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+              title="Baixar"
             >
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <Download className="h-3.5 w-3.5" />
             </button>
-          )}
-          {/* O nome também abre: antes, PDF e planilha só tinham o "baixar". */}
-          <button
-            type="button"
-            onClick={() => openAttachment(a)}
-            className="min-w-0 flex-1 text-left"
-            title="Abrir"
-          >
-            <div className="truncate font-medium hover:underline">{a.name}</div>
-            <div className="text-[10px] text-muted-foreground">{formatBytes(a.size)}</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => downloadAttachment(a)}
-            className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
-            title="Baixar"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </button>
-          {onRemove && (
-            <button
-              onClick={() => onRemove(a.id)}
-              className="rounded p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-              title="Remover"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </li>
-      ))}
+            {onRemove && (
+              <button
+                onClick={() => onRemove(a.id)}
+                className="rounded p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                title="Remover"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </li>
+        ),
+      )}
     </ul>
   );
 }

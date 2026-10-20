@@ -63,7 +63,7 @@ export type FiltroDoMural =
 
 /** O selo de uma conquista automática (o desenho do cartão muda por ele). */
 export type SeloDaConquista =
-  "pack" | "setor" | "recorde" | "primeira" | "tempo_casa" | "boas_vindas";
+  "pack" | "setor" | "recorde" | "primeira" | "tempo_casa" | "boas_vindas" | "aniversario";
 
 export type OpcaoDaEnquete = { ordem: number; texto: string; votos: number };
 export type EnqueteDoPost = {
@@ -226,6 +226,7 @@ const SELOS: readonly SeloDaConquista[] = [
   "primeira",
   "tempo_casa",
   "boas_vindas",
+  "aniversario",
 ];
 
 /** Lista de ids de pessoa vinda da tela: inteiros positivos, sem repetir. */

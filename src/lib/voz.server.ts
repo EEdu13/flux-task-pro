@@ -2,11 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
 
-import {
-  ataDaEntrada,
-  type AtaAoVivo,
-  type FalaDaReuniao,
-} from "./ata-ao-vivo";
+import { ataDaEntrada, type AtaAoVivo, type FalaDaReuniao } from "./ata-ao-vivo";
 import { sectors } from "./fluxo-types";
 import { DEPARTMENT_ROOMS } from "./rooms";
 import {
@@ -27,8 +23,8 @@ export type { PessoaDoTime };
  * Duas IAs, uma para cada coisa:
  *   - OpenAI `gpt-4o-transcribe` transforma o áudio de UMA frase em texto. O
  *     Claude não recebe áudio.
- *   - Claude Sonnet 5 transforma o texto em tarefas, ou na ata, validadas contra
- *     um esquema.
+ *   - Claude transforma o texto em tarefas (Sonnet 5) ou na ata (Opus 5.5),
+ *     validadas contra um esquema.
  *
  * Os dois eram os modelos menores (mini-transcribe e Haiku). Subiram depois de
  * um teste com microfone de notebook em que a transcrição inventou trechos e a
@@ -44,6 +40,18 @@ export type { PessoaDoTime };
 
 export const MODELO_TRANSCRICAO = "gpt-4o-transcribe";
 export const MODELO_INTERPRETACAO = MODELO_DE_TEXTO;
+/**
+ * A ata usa o modelo mais forte (19/10/2026: "está lendo tudo errado,
+ * interpretando tudo errado… deixa ela a melhor possível"). Durante a reunião
+ * ele roda com esforço baixo, porque é chamado a cada meio minuto; a versão
+ * final, que é a que fica guardada, sai com esforço alto e a transcrição inteira.
+ */
+/** A leitura final, que lê a transcrição inteira e escreve a ata guardada. */
+export const MODELO_DA_ATA_FINAL = "claude-haiku-5-5";
+
+/** De onde a reunião é: sem isso a IA chuta o ramo (já saiu "indústria de bebidas"). */
+const sobreAEmpresa = () =>
+  `A empresa é a Plantsil (antes chamada Larsil), prestadora de serviços florestais no Brasil — silvicultura, plantio, subsolagem, colheita, viveiro, máquinas e frota —, com equipes de campo organizadas por projeto e fazenda. PCP é o planejamento e controle da produção; DHO é o RH. Setores e salas do sistema: ${GLOSSARIO.filter((t) => !["Larsil", "SGL", "Conecta"].includes(t)).join(", ")}. Sistemas internos: Conecta (este app), SGL, Painel PCP.`;
 
 export type Prioridade = "alta" | "media" | "baixa";
 
@@ -102,11 +110,19 @@ export type ContextoDeFala = "ditado" | "reuniao";
  */
 const GLOSSARIO = [
   ...new Set(
-    ["Larsil", "SGL", "Conecta", ...sectors.map((s) => s.name), ...DEPARTMENT_ROOMS.map((r) => r.label)]
+    [
+      "Larsil",
+      "SGL",
+      "Conecta",
+      ...sectors.map((s) => s.name),
+      ...DEPARTMENT_ROOMS.map((r) => r.label),
+    ]
       .map((t) => t.trim())
       // "CONTÁBIL/FISCAL" é maiúscula só na tela; como vocabulário ela atrapalha.
       // Sigla curta (TI, PCP, DHO) continua como é.
-      .map((t) => (t.length > 4 && t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t))
+      .map((t) =>
+        t.length > 4 && t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t,
+      )
       // "Sem setor" é rótulo de tela, não palavra que alguém fala.
       .filter((t) => t.length > 2 && !/^sem /i.test(t)),
   ),
@@ -126,11 +142,7 @@ const GLOSSARIO = [
  */
 const OUTRO_ALFABETO = /[^\P{L}\p{Script=Latin}]/u;
 
-const semAcento = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase();
+const semAcento = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 /**
  * Tira do texto o eco da dica de vocabulário.
@@ -167,6 +179,48 @@ function semEcoDaDica(texto: string, termos: string[]): string {
   return ficam.join(" ").trim();
 }
 
+/** Abaixo disto, a frase é palpite do modelo e não fala ouvida. Fala clara fica acima de 0,8. */
+const CONFIANCA_MINIMA_DA_FRASE = 0.55;
+
+/**
+ * Remonta o texto a partir dos pedaços (tokens) com a confiança de cada um,
+ * cortando em frases, e tira as frases de confiança baixa. Devolve null quando
+ * a resposta não trouxe os pedaços com texto (aí fica o texto como veio).
+ */
+function semFrasesIncertas(pedacos: { token?: string; logprob?: number }[]): string | null {
+  if (!pedacos.length || pedacos.some((p) => typeof p.token !== "string")) return null;
+  const frases: { texto: string; probs: number[] }[] = [];
+  let atual = { texto: "", probs: [] as number[] };
+  for (const p of pedacos) {
+    atual.texto += p.token;
+    if (typeof p.logprob === "number") atual.probs.push(p.logprob);
+    if (/[.!?…]\s*$/.test(p.token ?? "")) {
+      frases.push(atual);
+      atual = { texto: "", probs: [] };
+    }
+  }
+  if (atual.texto.trim()) frases.push(atual);
+
+  const ficam = frases.filter((f) => {
+    if (OUTRO_ALFABETO.test(f.texto)) {
+      console.info("[voz] frase descartada: outro alfabeto");
+      return false;
+    }
+    // Frase de duas ou três palavras tem pouca amostra: a média não diz nada.
+    if (f.probs.length < 4) return true;
+    const confianca = Math.exp(f.probs.reduce((s, l) => s + l, 0) / f.probs.length);
+    if (confianca >= CONFIANCA_MINIMA_DA_FRASE) return true;
+    // Só o número vai para o log, nunca o que foi dito.
+    console.info(`[voz] frase descartada: confiança ${confianca.toFixed(2)}`);
+    return false;
+  });
+  return ficam
+    .map((f) => f.texto)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function transcreverTrecho(opcoes: {
   apiKey: string | undefined;
   audio: Uint8Array<ArrayBuffer>;
@@ -176,6 +230,8 @@ export async function transcreverTrecho(opcoes: {
   contexto?: ContextoDeFala;
   /** Quanto do trecho foi voz, medido na tela. */
   falaMs?: number;
+  /** Reunião: o fim do que a MESMA pessoa disse antes. Dá contexto à frase que continua. */
+  anterior?: string;
 }): Promise<string> {
   if (!opcoes.apiKey) throw new ErroDaIa("A transcrição não está configurada no servidor.");
 
@@ -196,13 +252,17 @@ export async function transcreverTrecho(opcoes: {
      em outro idioma. O que ele ecoar da dica em trecho quase mudo é removido
      mais abaixo. */
   const termos = [...opcoes.nomes, ...GLOSSARIO];
-  form.append(
-    "prompt",
-    `Transcrição em português do Brasil. Nomes: ${opcoes.nomes.join(", ")}. Termos: ${GLOSSARIO.join(", ")}.`.slice(
-      0,
-      1400,
-    ),
-  );
+  const reuniao = opcoes.contexto === "reuniao";
+  const anterior = reuniao ? (opcoes.anterior ?? "").trim().slice(-400) : "";
+  /* Na reunião, a dica termina com o que a pessoa acabou de dizer: o modelo lê
+     a dica como o texto que veio antes, e a frase que continua o raciocínio sai
+     com as palavras certas. O eco disso é tirado mais abaixo. */
+  const base = (
+    reuniao
+      ? `Reunião de trabalho em português do Brasil, empresa de serviços florestais. Nomes: ${opcoes.nomes.join(", ")}. Termos: ${GLOSSARIO.join(", ")}.`
+      : `Transcrição em português do Brasil. Nomes: ${opcoes.nomes.join(", ")}. Termos: ${GLOSSARIO.join(", ")}.`
+  ).slice(0, anterior ? 1000 : 1400);
+  form.append("prompt", anterior ? `${base}\n${anterior}` : base);
 
   const r = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -230,7 +290,7 @@ export async function transcreverTrecho(opcoes: {
 
   const resposta = (await r.json()) as {
     text?: string;
-    logprobs?: { logprob?: number }[];
+    logprobs?: { token?: string; logprob?: number }[];
   };
   let texto = (resposta.text ?? "").trim();
   if (texto.length < 2) return "";
@@ -238,7 +298,9 @@ export async function transcreverTrecho(opcoes: {
     console.info("[voz] trecho descartado: frase de legenda");
     return "";
   }
-  if (OUTRO_ALFABETO.test(texto)) {
+  // Na reunião o trecho é um bloco de ~40 s: a letra de outro alfabeto tira só
+  // a frase dela (lá em `semFrasesIncertas`), não o bloco inteiro.
+  if (!reuniao && OUTRO_ALFABETO.test(texto)) {
     console.info("[voz] trecho descartado: veio em outro alfabeto");
     return "";
   }
@@ -251,15 +313,37 @@ export async function transcreverTrecho(opcoes: {
     .filter((l): l is number => typeof l === "number");
   if (probs.length >= 3) {
     const confianca = Math.exp(probs.reduce((s, l) => s + l, 0) / probs.length);
-    if (confianca < 0.4) {
+    // Na reunião quem decide é a confiança de cada frase, logo abaixo.
+    if (!reuniao && confianca < 0.4) {
       console.info(`[voz] trecho descartado: confiança ${confianca.toFixed(2)}`);
       return "";
+    }
+  }
+
+  /* Frase por frase (19/10/2026). O trecho inteiro pode ter confiança boa e
+     ainda assim carregar UMA frase inventada: no teste da ata, "semana passada
+     eu levei uma queda de moto" apareceu no meio de uma fala real, e a ata
+     registrou um acidente que ninguém contou. A frase que o modelo "chutou"
+     tem confiança bem mais baixa que as vizinhas — essa sai, o resto fica. */
+  if (reuniao) {
+    const filtrado = semFrasesIncertas(resposta.logprobs ?? []);
+    if (filtrado !== null) {
+      if (filtrado.length < 2) {
+        console.info("[voz] trecho descartado: todas as frases incertas");
+        return "";
+      }
+      texto = filtrado;
     }
   }
 
   texto = semEcoDaDica(texto, termos);
   if (texto.length < 2) {
     console.info("[voz] trecho descartado: eco da dica");
+    return "";
+  }
+  // O modelo devolveu a fala anterior (que foi na dica) como se fosse nova.
+  if (anterior && texto.length >= 8 && semAcento(anterior).includes(semAcento(texto))) {
+    console.info("[voz] trecho descartado: eco da fala anterior");
     return "";
   }
 
@@ -424,34 +508,56 @@ ${opcoes.trechoNovo}
 /* Ata da reunião                                                       */
 /* ------------------------------------------------------------------ */
 
-const INSTRUCOES_DA_ATA = `Você é o redator da ata de uma reunião de trabalho de uma empresa brasileira, em português do Brasil. A reunião está acontecendo agora: as falas chegam transcritas aos poucos, com a hora e o nome de quem falou, e você mantém a ata atualizada enquanto as pessoas conversam.
+/** O que vale para as duas redações: a ao vivo e a final. */
+const SOBRE_AS_FALAS = `Sobre as falas:
+- A reunião é em português do Brasil e a ata é escrita só em português do Brasil. Fala que aparecer em outro idioma é erro da transcrição: ignore, nunca traduza nem repita.
+- Vêm de transcrição automática, cada pessoa pelo seu microfone, cortadas nas pausas — uma ideia pode estar dividida em várias falas seguidas da mesma pessoa. Podem ter palavras trocadas por outras de som parecido, nomes escritos errado, sigla mal ouvida e palavra cortada no começo ou no fim. Entenda pelo sentido, pelo assunto da reunião, pelo ramo da empresa e pelos nomes dos participantes, e escreva certo e por extenso na ata.
+- Quando uma palavra não fizer sentido no contexto, procure a de som parecido que faz ("talão" num assunto de fazenda pode ser "talhão"). Se mesmo assim o trecho não fizer sentido, deixe-o fora — não monte uma interpretação a partir dele.
+- O nome antes dos dois-pontos é de quem falou. Uma pessoa citada dentro da fala ("o Lucas vai ver isso") não é quem falou.
+- Trechos sem sentido, soltos ou fora do assunto (ruído, eco, conversa paralela) devem ser ignorados.
+- Nunca registre o que não foi dito com clareza. Não invente responsável, prazo, número nem decisão.
+- Conversa social e de conexão ("bom dia", "tá me ouvindo?", "deixa eu compartilhar a tela", "caiu a internet") não entra.
+- O chat da reunião, quando houver, também é fala: links, números e combinados escritos ali entram na ata.
 
-Você recebe a ata como está e as falas novas. Devolva a ata completa, atualizada:
-- Incorpore o que as falas novas trazem e mantenha o que já estava. Reescreva um item só quando uma fala nova corrigir, completar ou mudar o que foi dito ("na verdade o prazo é dia 20").
-- As falas anteriores servem só de contexto para entender as novas; elas já estão na ata.
+Escrevendo:
+- Escreva em terceira pessoa, citando as pessoas pelo nome ("Lucas explicou que…"), com o nome escrito como na lista de participantes.
+- Seja concreto: número, valor, data, nome de fazenda, projeto, equipe, máquina, sistema e documento vão como foram ditos. Um ponto que diz "foram discutidos os números" sem dizer quais não serve.
+- Registre o porquê quando ele foi dito: o motivo de uma decisão importa tanto quanto a decisão.`;
 
-Campos:
-- resumo: de 2 a 4 frases sobre o que a reunião tratou até agora. Objetivo, sem floreio.
-- assuntos: os temas discutidos, na ordem em que surgiram. Cada um com título curto e pontos curtos com o que importa: fatos, números, argumentos, quem trouxe o quê. Junte no mesmo assunto o que for do mesmo tema.
+const CAMPOS_DA_ATA = `Campos:
+- resumo: de 2 a 5 frases sobre o que a reunião tratou e o que saiu dela. Objetivo, sem floreio.
+- assuntos: os temas discutidos, na ordem em que surgiram. Cada um com título curto e pontos com o que importa: fatos, números, argumentos, problemas, quem trouxe o quê. Junte no mesmo assunto o que for do mesmo tema, mesmo que volte mais tarde na reunião.
 - decisoes: só o que foi decidido de fato ("vamos fazer assim", "ficou definido", concordância clara). Proposta ou ideia sem acordo não é decisão.
 - proximos_passos: ações combinadas, começando por verbo no infinitivo. responsavel é o nome de quem ficou com a ação, escrito como na lista de participantes; null se ninguém foi citado. prazo como foi dito ("sexta-feira", "até dia 20"); null se não foi dito.
 - pontos_de_atencao: riscos, bloqueios, dependências e preocupações levantadas.
-Lista vazia quando não houver nada para o campo.
+Lista vazia quando não houver nada para o campo.`;
 
-Sobre as falas:
-- A reunião é em português do Brasil e a ata é escrita só em português do Brasil. Fala que aparecer em outro idioma é erro da transcrição: ignore, nunca traduza nem repita.
-- Vêm de transcrição automática, cada pessoa pelo seu microfone. Podem ter palavras trocadas por outras de som parecido, nomes escritos errado e palavra cortada no começo ou no fim da frase: entenda pelo sentido, pelo assunto da reunião e pelos nomes dos participantes, e escreva certo e por extenso na ata.
-- Trechos sem sentido, soltos ou fora do assunto (ruído, eco, conversa paralela) devem ser ignorados.
-- Nunca registre o que não foi dito com clareza. Não invente responsável, prazo, número nem decisão.
-- Conversa social e de conexão ("bom dia", "tá me ouvindo?", "deixa eu compartilhar a tela") não entra.
-- Escreva em terceira pessoa, citando as pessoas pelo nome ("Lucas explicou que…").`;
+export const instrucoesDaAtaFinal =
+  () => `Você é o redator da ata de uma reunião de trabalho, em português do Brasil. A reunião terminou. Você recebe a transcrição INTEIRA, fala por fala, com a hora e o nome de quem falou, e escreve a ata definitiva — é ela que fica guardada e que as pessoas vão consultar depois.
+
+${sobreAEmpresa()}
+
+Como trabalhar:
+- Leia a transcrição toda antes de escrever. Ela é a fonte da verdade.
+- Você também recebe o rascunho escrito durante a reunião, que viu a conversa em pedaços. Use-o só como ponto de partida: corrija o que estiver errado, complete o que faltou e tire o que a transcrição não sustenta.
+- Cubra a reunião do começo ao fim. Reunião longa tem muitos assuntos: nenhum assunto real pode ficar de fora, nem os do final.
+- Se a mesma coisa foi dita de jeitos diferentes ao longo da reunião, vale a última versão combinada.
+- Se a transcrição for curta ou quase só ruído, escreva uma ata curta e honesta — nunca encha com o que não foi dito.
+
+${CAMPOS_DA_ATA}
+
+${SOBRE_AS_FALAS}`;
 
 const AtaSchema = z.object({
   resumo: z.string(),
   assuntos: z.array(z.object({ titulo: z.string(), pontos: z.array(z.string()) })),
   decisoes: z.array(z.string()),
   proximos_passos: z.array(
-    z.object({ acao: z.string(), responsavel: z.string().nullable(), prazo: z.string().nullable() }),
+    z.object({
+      acao: z.string(),
+      responsavel: z.string().nullable(),
+      prazo: z.string().nullable(),
+    }),
   ),
   pontos_de_atencao: z.array(z.string()),
 });
@@ -459,77 +565,210 @@ const AtaSchema = z.object({
 const linhasDeFala = (falas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[]) =>
   falas.map((f) => `[${f.hora}] ${f.quem}: ${f.texto}`).join("\n");
 
-export async function atualizarAta(opcoes: {
+const ataParaOModelo = (a: AtaAoVivo) => ({
+  resumo: a.resumo,
+  assuntos: a.assuntos,
+  decisoes: a.decisoes,
+  proximos_passos: a.proximosPassos,
+  pontos_de_atencao: a.pontosDeAtencao,
+});
+
+const ataDoModelo = (bruto: z.infer<typeof AtaSchema>): AtaAoVivo =>
+  // Passa pelo mesmo conferidor de quem recebe a ata pela sala: tetos e itens vazios.
+  ataDaEntrada({
+    resumo: bruto.resumo,
+    assuntos: bruto.assuntos,
+    decisoes: bruto.decisoes,
+    proximosPassos: bruto.proximos_passos,
+    pontosDeAtencao: bruto.pontos_de_atencao,
+  });
+
+/**
+ * A redação final: a transcrição inteira, do primeiro ao último minuto, numa
+ * leitura só. A ata ao vivo vê a conversa em pedaços (as falas novas e um
+ * pouco de contexto) e erra o que só se entende olhando o todo — assunto que
+ * volta, correção dita meia hora depois, termo que só faz sentido com o resto.
+ *
+ * Vai por streaming: reunião longa é muito texto para ler e para escrever, e
+ * uma chamada comum estouraria o tempo.
+ */
+export async function redigirAtaFinal(opcoes: {
   apiKey: string | undefined;
   titulo: string;
   data: string;
   participantes: string[];
-  ata: AtaAoVivo;
-  anteriores: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
-  novas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+  rascunho: AtaAoVivo;
+  falas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
   chat: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+  /** Para comparar modelos num teste; na tela vale `MODELO_DA_ATA_FINAL`. */
+  modelo?: string;
 }): Promise<{ ata: AtaAoVivo; tokens: { entrada: number; saida: number } }> {
   if (!opcoes.apiKey) throw new ErroDaIa("A redação da ata não está configurada no servidor.");
 
-  const client = new Anthropic({ apiKey: opcoes.apiKey, timeout: 90_000, maxRetries: 1 });
-
-  const atual = {
-    resumo: opcoes.ata.resumo,
-    assuntos: opcoes.ata.assuntos,
-    decisoes: opcoes.ata.decisoes,
-    proximos_passos: opcoes.ata.proximosPassos,
-    pontos_de_atencao: opcoes.ata.pontosDeAtencao,
-  };
+  const client = new Anthropic({ apiKey: opcoes.apiKey, timeout: 600_000, maxRetries: 1 });
 
   const pedido = `<reuniao titulo=${JSON.stringify(opcoes.titulo)} data="${opcoes.data}">
 <participantes>
 ${opcoes.participantes.join(", ") || "(não identificados)"}
 </participantes>
 
-<ata_atual>
-${JSON.stringify(atual)}
-</ata_atual>
+<transcricao>
+${linhasDeFala(opcoes.falas) || "(nenhuma fala)"}
+</transcricao>
 
-<falas_anteriores>
-${linhasDeFala(opcoes.anteriores) || "(nenhuma)"}
-</falas_anteriores>
-
-<falas_novas>
-${linhasDeFala(opcoes.novas) || "(nenhuma)"}
-</falas_novas>
-
-<chat_novo>
+<chat>
 ${linhasDeFala(opcoes.chat) || "(nenhuma mensagem)"}
-</chat_novo>
-</reuniao>`;
+</chat>
+
+<rascunho_ao_vivo>
+${JSON.stringify(ataParaOModelo(opcoes.rascunho))}
+</rascunho_ao_vivo>
+</reuniao>
+
+Escreva a ata definitiva desta reunião.`;
 
   let resposta;
   try {
-    resposta = await client.messages.parse({
-      model: MODELO_INTERPRETACAO,
-      max_tokens: 8000,
-      system: INSTRUCOES_DA_ATA,
+    const fluxo = client.messages.stream({
+      model: opcoes.modelo ?? MODELO_DA_ATA_FINAL,
+      max_tokens: 64000,
+      system: instrucoesDaAtaFinal(),
       messages: [{ role: "user", content: pedido }],
-      output_config: { format: zodOutputFormat(AtaSchema) },
+      output_config: { format: zodOutputFormat(AtaSchema), effort: "high" },
     });
+    resposta = await fluxo.finalMessage();
   } catch (e) {
-    throw erroDoClaude(e, "escrever a ata");
+    throw erroDoClaude(e, "escrever a ata final");
   }
 
-  const bruto = resposta.parsed_output;
+  const texto = resposta.content
+    .map((b) => (b.type === "text" ? b.text : ""))
+    .join("")
+    .trim();
+  let bruto: z.infer<typeof AtaSchema> | null = null;
+  try {
+    const r = AtaSchema.safeParse(JSON.parse(texto));
+    if (r.success) bruto = r.data;
+  } catch {
+    /* JSON cortado ou recusa: cai no erro abaixo */
+  }
   if (!bruto) {
-    throw new ErroDaIa("Não consegui escrever a ata.", `anthropic stop=${resposta.stop_reason}`);
+    throw new ErroDaIa(
+      "Não consegui escrever a ata final.",
+      `anthropic stop=${resposta.stop_reason}`,
+    );
   }
 
   return {
-    // Passa pelo mesmo conferidor de quem recebe a ata pela sala: tetos e itens vazios.
-    ata: ataDaEntrada({
-      resumo: bruto.resumo,
-      assuntos: bruto.assuntos,
-      decisoes: bruto.decisoes,
-      proximosPassos: bruto.proximos_passos,
-      pontosDeAtencao: bruto.pontos_de_atencao,
-    }),
+    ata: ataDoModelo(bruto),
     tokens: { entrada: resposta.usage.input_tokens, saida: resposta.usage.output_tokens },
+  };
+}
+
+/** Reserva da leitura final: se o Claude falhar (fora do ar, sem crédito), a ata sai pelo GPT. */
+export const MODELO_DA_ATA_RESERVA = "gpt-5.4-mini";
+
+const ATA_EM_JSON_SCHEMA = (() => {
+  const str = { type: "string" };
+  const lista = { type: "array", items: str };
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["resumo", "assuntos", "decisoes", "proximos_passos", "pontos_de_atencao"],
+    properties: {
+      resumo: str,
+      assuntos: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["titulo", "pontos"],
+          properties: { titulo: str, pontos: lista },
+        },
+      },
+      decisoes: lista,
+      proximos_passos: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["acao", "responsavel", "prazo"],
+          properties: {
+            acao: str,
+            responsavel: { type: ["string", "null"] },
+            prazo: { type: ["string", "null"] },
+          },
+        },
+      },
+      pontos_de_atencao: lista,
+    },
+  };
+})();
+
+/** A mesma leitura final de `redigirAtaFinal`, pela OpenAI (Responses API, saída em JSON Schema). */
+export async function redigirAtaFinalComGpt(opcoes: {
+  apiKey: string | undefined;
+  titulo: string;
+  data: string;
+  participantes: string[];
+  falas: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+  chat: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+}): Promise<{ ata: AtaAoVivo; tokens: { entrada: number; saida: number } }> {
+  if (!opcoes.apiKey) throw new ErroDaIa("A redação da ata não está configurada no servidor.");
+  const pedido = `<reuniao titulo=${JSON.stringify(opcoes.titulo)} data="${opcoes.data}">
+<participantes>
+${opcoes.participantes.join(", ") || "(não identificados)"}
+</participantes>
+
+<transcricao>
+${linhasDeFala(opcoes.falas) || "(nenhuma fala)"}
+</transcricao>
+
+<chat>
+${linhasDeFala(opcoes.chat) || "(nenhuma mensagem)"}
+</chat>
+</reuniao>
+
+Escreva a ata definitiva desta reunião.`;
+
+  const r = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${opcoes.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: MODELO_DA_ATA_RESERVA,
+      instructions: instrucoesDaAtaFinal(),
+      input: pedido,
+      reasoning: { effort: "medium" },
+      text: {
+        format: { type: "json_schema", name: "ata", strict: true, schema: ATA_EM_JSON_SCHEMA },
+      },
+    }),
+    signal: AbortSignal.timeout(300_000),
+  });
+  const corpo = (await r.json().catch(() => null)) as {
+    output?: { content?: { type?: string; text?: string }[] }[];
+    usage?: { input_tokens?: number; output_tokens?: number };
+    error?: { code?: string };
+  } | null;
+  if (!r.ok || !corpo) {
+    throw new ErroDaIa(
+      "Não consegui escrever a ata.",
+      `openai ${r.status} ${corpo?.error?.code ?? ""}`,
+    );
+  }
+  const texto = (corpo.output ?? [])
+    .flatMap((o) => o.content ?? [])
+    .find((c) => c.type === "output_text")?.text;
+  let bruto: z.infer<typeof AtaSchema> | null = null;
+  try {
+    const p = AtaSchema.safeParse(JSON.parse(texto ?? ""));
+    if (p.success) bruto = p.data;
+  } catch {
+    /* resposta cortada: cai no erro abaixo */
+  }
+  if (!bruto) throw new ErroDaIa("Não consegui escrever a ata.", "openai ata sem JSON válido");
+  return {
+    ata: ataDoModelo(bruto),
+    tokens: { entrada: corpo.usage?.input_tokens ?? 0, saida: corpo.usage?.output_tokens ?? 0 },
   };
 }

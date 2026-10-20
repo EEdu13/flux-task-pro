@@ -372,15 +372,23 @@ export const salvarCompromisso = createServerFn({ method: "POST" })
            no organograma (efetivo ou externo), ao menos uma linha ativa — a
            mesma leitura de `listarPessoas`. Quem não está no organograma conta
            como ativo. Só roda ao gravar, para no máximo 60 pessoas. Volta
-           quem NÃO passa. */
+           quem NÃO passa.
+
+           (19/10/2026) A Mayara Talita não conseguia travar a PRÓPRIA agenda:
+           no RH ela está com SITUACAO '9' (não '1'), mas trabalha e usa o
+           CONECTA todo dia. Agora quem trava nunca é barrado, e quem entrou no
+           CONECTA nos últimos 30 dias conta como ativo, seja qual for a
+           situação no RH. A barreira continua para quem saiu e não usa mais. */
         const conferencia = await pool
           .request()
           .input("pessoas", sql.NVarChar(sql.MAX), JSON.stringify(d.participantes))
+          .input("autor", sql.Int, eu)
           .query(
             `SELECT CAST(j.value AS INT) AS pessoa_id, pf.nome
                FROM OPENJSON(@pessoas) j
                LEFT JOIN gestor.perfis pf ON pf.pessoa_id = CAST(j.value AS INT)
-              WHERE pf.pessoa_id IS NULL OR pf.nome IS NULL
+              WHERE CAST(j.value AS INT) <> @autor
+                AND (pf.pessoa_id IS NULL OR pf.nome IS NULL
                  OR ((EXISTS (SELECT 1 FROM dbo.COLABORADORES col
                                WHERE LTRIM(RTRIM(col.NOME)) COLLATE Latin1_General_CI_AI
                                      = LTRIM(RTRIM(pf.nome)) COLLATE Latin1_General_CI_AI)
@@ -394,7 +402,11 @@ export const salvarCompromisso = createServerFn({ method: "POST" })
                      AND NOT EXISTS (SELECT 1 FROM dbo.COLABORADORES_EXTERNOS ext
                                       WHERE ext.ATIVO = 1
                                         AND LTRIM(RTRIM(ext.NOME)) COLLATE Latin1_General_CI_AI
-                                            = LTRIM(RTRIM(pf.nome)) COLLATE Latin1_General_CI_AI));`,
+                                            = LTRIM(RTRIM(pf.nome)) COLLATE Latin1_General_CI_AI)
+                     -- usa o CONECTA: entrou nos últimos 30 dias
+                     AND NOT EXISTS (SELECT 1 FROM gestor.presenca pr
+                                      WHERE pr.pessoa_id = pf.pessoa_id
+                                        AND pr.visto_em >= DATEADD(DAY, -30, SYSDATETIMEOFFSET()))));`,
           );
         const barrados = conferencia.recordset as { pessoa_id: number; nome: string | null }[];
         if (barrados.length > 0) {

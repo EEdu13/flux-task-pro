@@ -13,6 +13,8 @@ import {
   Play,
   FolderKanban,
   ChevronLeft,
+  HeartHandshake,
+  CalendarPlus,
 } from "lucide-react";
 import { ListaDeProjetos } from "@/components/escolher-projeto";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -21,6 +23,8 @@ import { toast } from "sonner";
 import { useUndo } from "@/lib/undo-stack";
 import { startFocus } from "@/components/focus-overlay";
 import { emojisRapidos, lembrarEmoji } from "@/lib/emojis";
+import { abrirAgradecer } from "@/components/mural/agradecer";
+import { abrirTarefaEmEvento } from "@/components/mural/tarefa-em-evento";
 
 interface Detail {
   id: string;
@@ -98,7 +102,7 @@ export function TaskContextMenu() {
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const width = 220;
   // A altura real do menu, com a fileira de reações — passa disso e ele cortaria embaixo.
-  const height = 440;
+  const height = 500; // +1 linha: "Agradecer no mural" (14/10) e "Divulgar como evento" (17/10)
   const left = Math.min(ctx.x, vw - width - 8);
   const top = Math.min(ctx.y, vh - height - 8);
 
@@ -213,6 +217,13 @@ export function TaskContextMenu() {
             </span>
             <span className="text-muted-foreground">›</span>
           </button>
+          {/* Mural (14/10/2026): elogio público a quem fez a tarefa. */}
+          {task.assigneeId !== currentUser.id &&
+            item(HeartHandshake, "Agradecer no mural", () =>
+              abrirAgradecer({ pessoas: [task.assigneeId], tarefaId: task.id }),
+            )}
+          {/* Tarefa que é um encontro (o "Cultivar" de toda segunda) vira evento (17/10/2026). */}
+          {item(CalendarPlus, "Divulgar como evento no mural", () => abrirTarefaEmEvento(task))}
           {item(Copy, "Duplicar", () => {
             createTask({
               title: `${task.title} (cópia)`,

@@ -1,13 +1,15 @@
-import { useState } from "react";
-import { BellRing, Eraser, Send, Smile, Tractor } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BellRing, Eraser, PersonStanding, Send, Smile, Tractor } from "lucide-react";
 import { confirmar } from "@/components/confirm-dialog";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
 import { sendNudge } from "@/components/attention-overlay";
-import { corpoDoAviso, dispararEmojiGigante, type AvisoNoChat } from "@/lib/avisos-no-chat";
+import { corpoDoAviso, dispararReacaoDoAvatar, type AvisoNoChat } from "@/lib/avisos-no-chat";
 import { EMOJIS_GIGANTES } from "@/lib/emojis";
+import { LISTA_DE_REACOES, REACOES_DO_AVATAR } from "@/lib/reacoes-do-avatar";
+import type { AvatarConfig } from "@/lib/avatar-3d";
 import { primeiroNome } from "@/integrations/iam/types";
 
 /**
@@ -26,8 +28,30 @@ export function AcoesDoChat({ peerId, claro = false }: { peerId: string; claro?:
   const [ocupado, setOcupado] = useState(false);
   const [faixa, setFaixa] = useState("");
   const [tratorAberto, setTratorAberto] = useState(false);
+  const campoDaFaixa = useRef<HTMLInputElement>(null);
   const [emojiAberto, setEmojiAberto] = useState(false);
+  const [avatarAberto, setAvatarAberto] = useState(false);
+  /** O meu avatar, para as reações: `undefined` carregando, `null` ainda não montei. */
+  const [meuAvatar, setMeuAvatar] = useState<AvatarConfig | null | undefined>(undefined);
   const nome = primeiroNome(users.find((u) => u.id === peerId)?.name ?? "a pessoa");
+
+  /* Reações do avatar (17/10/2026): o boneco é lido ao abrir o popover — só
+     então importa saber se ele existe —, e de novo a cada abertura, para
+     pegar um avatar montado agora há pouco nas Configurações. */
+  useEffect(() => {
+    if (!avatarAberto) return;
+    let vivo = true;
+    import("@/lib/avatar-3d")
+      .then((lib) => lib.carregarMeuAvatar())
+      .then((a) => vivo && setMeuAvatar(a))
+      .catch((erro: unknown) => {
+        console.warn("reações do avatar: não deu para ler o meu avatar", erro);
+        if (vivo) setMeuAvatar(null);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [avatarAberto]);
 
   const avisar = async (aviso: AvisoNoChat) => {
     if (ocupado) return;
@@ -40,13 +64,32 @@ export function AcoesDoChat({ peerId, claro = false }: { peerId: string; claro?:
         currentUser.avatar,
         currentUser.id,
         aviso.tipo,
-        aviso.tipo === "trator" ? aviso.texto : aviso.tipo === "emoji" ? aviso.emoji : undefined,
+        aviso.tipo === "trator"
+          ? aviso.texto
+          : aviso.tipo === "emoji"
+            ? aviso.emoji
+            : aviso.tipo === "avatar"
+              ? aviso.reacao
+              : undefined,
       );
       await sendMessage(peerId, corpoDoAviso(aviso));
-      if (aviso.tipo === "emoji") dispararEmojiGigante(aviso.emoji, currentUser.name, true);
+      // O emoji gigante vai SÓ para a pessoa (17/10/2026: "quem mandou não
+      // precisa receber"); aqui, só a confirmação.
+      if (aviso.tipo === "emoji") toast.success(`${aviso.emoji} Emoji enviado para ${nome}`);
+      // A reação do avatar, quem manda vê junto — com o boneco que já está à mão.
+      else if (aviso.tipo === "avatar")
+        dispararReacaoDoAvatar(
+          aviso.reacao,
+          currentUser.name,
+          currentUser.id,
+          true,
+          meuAvatar ?? undefined,
+        );
       else
         toast.success(
-          aviso.tipo === "trator" ? `🚜 O trator saiu para ${nome}` : `Você chamou a atenção de ${nome}`,
+          aviso.tipo === "trator"
+            ? `🚜 O trator saiu para ${nome}`
+            : `Você chamou a atenção de ${nome}`,
         );
     } catch {
       toast.error("Não foi possível enviar agora");
@@ -71,6 +114,20 @@ export function AcoesDoChat({ peerId, claro = false }: { peerId: string; claro?:
     } catch {
       toast.error("Não foi possível limpar agora");
     }
+  };
+
+  /** Emoji na faixa do trator (17/10/2026): entra onde está o cursor. */
+  const porEmojiNaFaixa = (emoji: string) => {
+    const campo = campoDaFaixa.current;
+    const ini = campo?.selectionStart ?? faixa.length;
+    const fim = campo?.selectionEnd ?? faixa.length;
+    const nova = (faixa.slice(0, ini) + emoji + faixa.slice(fim)).slice(0, 200);
+    setFaixa(nova);
+    requestAnimationFrame(() => {
+      campo?.focus();
+      const pos = Math.min(ini + emoji.length, nova.length);
+      campo?.setSelectionRange(pos, pos);
+    });
   };
 
   const mandarTrator = () => {
@@ -118,6 +175,7 @@ export function AcoesDoChat({ peerId, claro = false }: { peerId: string; claro?:
           <div className="mb-1.5 text-xs font-semibold">🚜 O trator atravessa a tela de {nome}</div>
           <div className="flex items-center gap-1.5">
             <input
+              ref={campoDaFaixa}
               autoFocus
               value={faixa}
               maxLength={200}
@@ -140,6 +198,19 @@ export function AcoesDoChat({ peerId, claro = false }: { peerId: string; claro?:
             >
               <Send className="h-3.5 w-3.5" />
             </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-0.5">
+            {EMOJIS_GIGANTES.map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => porEmojiNaFaixa(e)}
+                className="grid h-7 w-7 place-items-center rounded-md text-base transition hover:scale-110 hover:bg-secondary"
+                aria-label={`Pôr ${e} na faixa`}
+              >
+                {e}
+              </button>
+            ))}
           </div>
         </PopoverContent>
       </Popover>
@@ -174,6 +245,47 @@ export function AcoesDoChat({ peerId, claro = false }: { peerId: string; claro?:
               </button>
             ))}
           </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* Reações do avatar numa caixa própria (17/10/2026: "uma caixinha nova
+          chamada avatar, fica bem separado"): o MEU boneco na tela da pessoa. */}
+      <Popover open={avatarAberto} onOpenChange={setAvatarAberto}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={ocupado}
+            className={botao}
+            title={`Mandar o seu avatar para a tela de ${nome}`}
+            aria-label="Enviar reação do avatar"
+          >
+            <PersonStanding className="h-4 w-4" />
+            {claro && "Avatar"}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="z-[460] w-[22rem] p-2">
+          <div className="mb-1.5 px-1 text-xs font-semibold">Seu avatar na tela de {nome}</div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {LISTA_DE_REACOES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => {
+                  setAvatarAberto(false);
+                  void avisar({ tipo: "avatar", reacao: r });
+                }}
+                className="flex flex-col items-center gap-1 rounded-lg border border-border px-1.5 py-2 text-[11px] font-medium transition hover:-translate-y-0.5 hover:border-primary/50 hover:bg-secondary"
+              >
+                <span className="text-2xl leading-none">{REACOES_DO_AVATAR[r].emoji}</span>
+                <span className="truncate">{REACOES_DO_AVATAR[r].rotulo}</span>
+              </button>
+            ))}
+          </div>
+          {meuAvatar === null && (
+            <p className="mt-2 px-1 text-[11px] text-muted-foreground">
+              Você ainda está com o avatar em branco — monte o seu em Configurações → Meu avatar.
+            </p>
+          )}
         </PopoverContent>
       </Popover>
 

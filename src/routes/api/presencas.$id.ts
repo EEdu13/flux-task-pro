@@ -68,6 +68,12 @@ export const Route = createFileRoute("/api/presencas/$id")({
               ["Aberta por", r.criador],
               ["Início", fmt(r.inicio)],
               [r.aberta ? "Em andamento até" : "Fim", fmt(r.fim)],
+              [
+                "Duração",
+                duracao(
+                  Math.max(0, (new Date(r.fim).getTime() - new Date(r.inicio).getTime()) / 1000),
+                ),
+              ],
               ["Participantes", rel.linhas.length],
             ],
           },

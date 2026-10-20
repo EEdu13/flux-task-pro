@@ -1,5 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { ESTADOS, paraEstado, type EstadoDoChat } from "@/lib/estado-do-chat";
+import {
+  CHAVE_STATUS_PERSONALIZADO,
+  paraStatus,
+  statusVigente,
+  type StatusPersonalizado,
+} from "@/lib/status-personalizado";
 
 /* Conversa privada, agora em `gestor.mensagens`.
 
@@ -43,14 +49,13 @@ const CHAVE_PRESENCA = "presenca:lista";
 /* -------------------- Mensagens -------------------- */
 
 export const chatSend = createServerFn({ method: "POST" })
-  .validator(
-    (input: { toUserId: string; body?: string; comAnexo?: boolean }) => {
-      // `fromUserId` saiu da entrada. Ele era o remetente escolhido pelo
-      // cliente — ou seja, dava para mandar mensagem no nome de outra pessoa.
-      const toUserId = pessoaAlvo(input?.toUserId);
-      const body = typeof input?.body === "string" ? input.body.slice(0, 4000) : "";
+  .validator((input: { toUserId: string; body?: string; comAnexo?: boolean }) => {
+    // `fromUserId` saiu da entrada. Ele era o remetente escolhido pelo
+    // cliente — ou seja, dava para mandar mensagem no nome de outra pessoa.
+    const toUserId = pessoaAlvo(input?.toUserId);
+    const body = typeof input?.body === "string" ? input.body.slice(0, 4000) : "";
 
-      /* O arquivo não vem por aqui.
+    /* O arquivo não vem por aqui.
 
          A mensagem é gravada primeiro e devolve o id; só então o cliente sobe o
          anexo, apontando para esse id. A ordem é obrigatória e não é escolha de
@@ -59,12 +64,11 @@ export const chatSend = createServerFn({ method: "POST" })
 
          `comAnexo` só serve para permitir corpo vazio — mandar uma foto sem
          legenda é normal, mandar mensagem vazia sem nada não é. */
-      const comAnexo = input?.comAnexo === true;
-      if (!body.trim() && !comAnexo) throw new Error("Mensagem vazia");
+    const comAnexo = input?.comAnexo === true;
+    if (!body.trim() && !comAnexo) throw new Error("Mensagem vazia");
 
-      return { toUserId, body: body.trim(), comAnexo };
-    },
-  )
+    return { toUserId, body: body.trim(), comAnexo };
+  })
   .handler(async ({ data }) => {
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
@@ -386,24 +390,43 @@ export const chatDigitando = createServerFn({ method: "POST" })
    `cache-compartilhado.server`). Cada aba pede a cada 10 s, e a batida de quem
    está online é de 20 s em 20 s: 2 s a mais de atraso não mudam quem aparece. */
 export const presenceList = createServerFn({ method: "POST" }).handler(async () => {
+  // Só quem está logado: a lista traz quem está online e o status de cada um
+  // ("🤒 Atestado", "🏖️ De férias") — não é coisa para fora da empresa.
+  const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+  await pessoaDaSessao();
   const { compartilhado } = await import("@/lib/cache-compartilhado.server");
   return compartilhado(CHAVE_PRESENCA, 2_000, listaDePresenca);
 });
 
+/* O status personalizado (19/10/2026) vem na MESMA consulta: um LEFT JOIN em
+   `gestor.preferencias` pela chave primária (pessoa_id, chave) — barato, e
+   sem sondagem nova para o banco compartilhado. O vencido sai aqui mesmo
+   (com a lista guardada por 2 s, o atraso não se nota); o cliente confere de
+   novo na hora de desenhar, porque a resposta fica 10 s na tela. */
 async function listaDePresenca() {
   const { getPool } = await import("@/integrations/db.server");
   const pool = await getPool();
-  const res = await pool
-    .request()
-    .query(`SELECT pessoa_id AS user_id, visto_em AS last_seen, estado FROM gestor.presenca`);
+  const res = await pool.request().query(
+    `SELECT p.pessoa_id AS user_id, p.visto_em AS last_seen, p.estado, pr.valor AS status
+       FROM gestor.presenca p
+       LEFT JOIN gestor.preferencias pr
+         ON pr.pessoa_id = p.pessoa_id AND pr.chave = N'${CHAVE_STATUS_PERSONALIZADO}'`,
+  );
+  const agora = Date.now();
   return {
-    presence: (res.recordset as { user_id: number; last_seen: Date; estado: string | null }[]).map(
-      (p) => ({
-        user_id: String(p.user_id),
-        last_seen: iso(p.last_seen) as string,
-        estado: paraEstado(p.estado),
-      }),
-    ),
+    presence: (
+      res.recordset as {
+        user_id: number;
+        last_seen: Date;
+        estado: string | null;
+        status: string | null;
+      }[]
+    ).map((p) => ({
+      user_id: String(p.user_id),
+      last_seen: iso(p.last_seen) as string,
+      estado: paraEstado(p.estado),
+      status: statusVigente(paraStatus(p.status), agora),
+    })),
   };
 }
 
@@ -442,4 +465,56 @@ export const definirEstado = createServerFn({ method: "POST" })
     const { esquecer } = await import("@/lib/cache-compartilhado.server");
     esquecer(CHAVE_PRESENCA);
     return { estado: data.estado };
+  });
+
+/* -------------------- Status personalizado (emoji + texto + até quando) -------------------- */
+
+/**
+ * Define ou limpa o status personalizado de quem está logado (19/10/2026).
+ *
+ * Grava em `gestor.preferencias`, chave `status_personalizado` — sem coluna
+ * nova na presença, porque o schema do banco compartilhado não muda por isto.
+ * `status: null` limpa (apaga a linha). Função própria, e não
+ * `salvarPreferencia`, por dois motivos: aquela não sabe apagar, e esta
+ * precisa descartar a lista de presença guardada para o status aparecer aos
+ * outros na próxima sondagem.
+ *
+ * Garante a linha da presença, como `definirEstado`: o status chega aos outros
+ * pelo JOIN a partir dela.
+ */
+export const definirStatusPersonalizado = createServerFn({ method: "POST" })
+  .validator((input: { status: StatusPersonalizado | null }) => {
+    if (input?.status === null) return { status: null };
+    const status = paraStatus(input?.status);
+    if (!status) throw new Error("Status inválido");
+    if (status.ate && Date.parse(status.ate) <= Date.now())
+      throw new Error("Esse horário já passou");
+    return { status };
+  })
+  .handler(async ({ data }) => {
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    const eu = await pessoaDaSessao();
+
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const req = pool
+      .request()
+      .input("pessoa", sql.Int, eu)
+      .input("chave", sql.NVarChar(60), CHAVE_STATUS_PERSONALIZADO);
+    if (data.status === null) {
+      await req.query(`DELETE FROM gestor.preferencias WHERE pessoa_id=@pessoa AND chave=@chave`);
+    } else {
+      await req.input("valor", sql.NVarChar(400), JSON.stringify(data.status)).query(
+        `IF EXISTS (SELECT 1 FROM gestor.preferencias WHERE pessoa_id=@pessoa AND chave=@chave)
+           UPDATE gestor.preferencias SET valor=@valor, atualizada_em=SYSDATETIMEOFFSET()
+            WHERE pessoa_id=@pessoa AND chave=@chave;
+         ELSE
+           INSERT INTO gestor.preferencias (pessoa_id, chave, valor) VALUES (@pessoa, @chave, @valor);
+         IF NOT EXISTS (SELECT 1 FROM gestor.presenca WHERE pessoa_id=@pessoa)
+           INSERT INTO gestor.presenca (pessoa_id) VALUES (@pessoa);`,
+      );
+    }
+    const { esquecer } = await import("@/lib/cache-compartilhado.server");
+    esquecer(CHAVE_PRESENCA);
+    return { status: data.status };
   });

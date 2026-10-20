@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { RefObject } from "react";
 import { useRoomContext, useLocalParticipant } from "@livekit/components-react";
 import { RoomEvent, Track } from "livekit-client";
@@ -8,7 +16,8 @@ import type {
   RemoteTrack,
   LocalTrackPublication,
 } from "livekit-client";
-import { Circle, Square } from "lucide-react";
+import { Captions, Circle, Square } from "lucide-react";
+import { LegendaDaReuniao } from "@/components/legenda-da-reuniao";
 import { toast } from "sonner";
 import { updateActiveSpeakers } from "@/lib/livekit-token.functions";
 import { criarCompositor, type Compositor, type FonteDeVideo } from "@/lib/composicao-gravacao";
@@ -368,6 +377,8 @@ export interface MeetingExtrasHandle {
   hasContent: () => boolean;
   hasSavedMinute: () => boolean;
   generateAndSave: () => Promise<boolean>;
+  /** Quem escreve a ata vai sair e ainda há gente na sala: passa a ata adiante. */
+  passarAAta: () => Promise<boolean>;
   openPanel: () => void;
   /** Quem escreve a ata ainda não salva (identidade no LiveKit), ou null. O
       "Encerrar" espera por essa pessoa: a ata está no computador dela. */
@@ -414,7 +425,8 @@ export const MeetingExtras = forwardRef<
       } else {
         toast.info(`${quem} começou a ata da reunião`, {
           id: "ata-por-outro",
-          description: "As falas desta reunião estão sendo transcritas. Clique em Ata para acompanhar.",
+          description:
+            "As falas desta reunião estão sendo transcritas. Clique em Ata para acompanhar.",
         });
       }
     },
@@ -426,6 +438,7 @@ export const MeetingExtras = forwardRef<
       hasContent: () => ata.temConteudoNaoSalvo(),
       hasSavedMinute: () => !!ata.estado?.salva,
       generateAndSave: () => ata.finalizarESalvar(),
+      passarAAta: () => ata.passarAAta(),
       openPanel: () => setVista("aberta"),
       escritorDaAta: () => (ata.estado && !ata.estado.salva ? ata.estado.dono : null),
     }),
@@ -444,6 +457,26 @@ export const MeetingExtras = forwardRef<
   };
 
   const rec = useMeetingRecorder(roomName);
+
+  /* Legenda ligada por padrão; quem não quiser desliga e a escolha fica
+     lembrada neste navegador. */
+  const [legendaLigada, setLegendaLigada] = useState(() => {
+    try {
+      return window.localStorage.getItem("fluxo:legenda") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const alternarLegenda = () =>
+    setLegendaLigada((v) => {
+      try {
+        window.localStorage.setItem("fluxo:legenda", v ? "0" : "1");
+      } catch {
+        /* sem armazenamento: vale só nesta tela */
+      }
+      return !v;
+    });
+  const legendaNoAr = ata.estado?.fase === "ouvindo" && !ata.donoSaiu;
 
   /* O relógio precisa de uma batida por segundo para andar.
      Antes isto era um `useMemo` com deps `[recording, startedAt]` — e nenhuma
@@ -476,13 +509,41 @@ export const MeetingExtras = forwardRef<
             ? "border-red-500/60 bg-red-500/20 text-red-200 animate-pulse"
             : "border-white/15 bg-white/5 text-white hover:bg-white/10"
         }`}
-        title={rec.recording ? "Parar gravação e baixar .webm" : "Gravar reunião (baixa .webm no seu computador)"}
+        title={
+          rec.recording
+            ? "Parar gravação e baixar .webm"
+            : "Gravar reunião (baixa .webm no seu computador)"
+        }
       >
-        {rec.recording ? <Square className="h-3.5 w-3.5 fill-current" /> : <Circle className="h-3.5 w-3.5 fill-current" />}
+        {rec.recording ? (
+          <Square className="h-3.5 w-3.5 fill-current" />
+        ) : (
+          <Circle className="h-3.5 w-3.5 fill-current" />
+        )}
         {rec.recording ? `Gravando ${recDuration}` : "Gravar"}
       </button>
 
       {ata.suportado && <BotaoDaAta ata={ata} vista={vista} onClick={aoClicarNaAta} />}
+
+      {legendaNoAr && (
+        <button
+          type="button"
+          onClick={alternarLegenda}
+          aria-pressed={legendaLigada}
+          title={legendaLigada ? "Esconder a legenda" : "Mostrar a legenda do que é dito"}
+          className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+            legendaLigada
+              ? "border-amber-300/50 bg-amber-300/15 text-amber-100"
+              : "border-white/15 bg-white/5 text-white hover:bg-white/10"
+          }`}
+        >
+          <Captions className="h-3.5 w-3.5" />
+          Legenda
+        </button>
+      )}
+      {legendaNoAr && legendaLigada && (
+        <LegendaDaReuniao legendas={ata.legendas} alvo={containerRef} />
+      )}
 
       {vista === "aberta" && (
         <PainelDaAta

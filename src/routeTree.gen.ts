@@ -22,9 +22,12 @@ import { Route as EquipeRouteImport } from './routes/equipe'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MetasRouteImport } from './routes/metas'
+import { Route as MeuMesRouteImport } from './routes/meu-mes'
 import { Route as MinhasTarefasRouteImport } from './routes/minhas-tarefas'
+import { Route as MuralRouteImport } from './routes/mural'
 import { Route as PackRouteImport } from './routes/pack'
 import { Route as ProjetosRouteImport } from './routes/projetos'
+import { Route as RealidadeVirtualRouteImport } from './routes/realidade-virtual'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
 import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
@@ -36,6 +39,7 @@ import { Route as ApiPublicPurgeRoomsRouteImport } from './routes/api/public/pur
 import { Route as ApiPublicTelegramDiarioRouteImport } from './routes/api/public/telegram-diario'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram-webhook'
 import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp-webhook'
+import { Route as ApiAtaAudioAtaBlocoRouteImport } from './routes/api/ata-audio.$ata.$bloco'
 import { Route as ApiPublicAppLatestRouteImport } from './routes/api/public/app/latest'
 import { Route as ApiPublicFotoNomeRouteImport } from './routes/api/public/foto/$nome'
 import { Route as ApiPublicAppBaixarArquivoRouteImport } from './routes/api/public/app/baixar.$arquivo'
@@ -105,9 +109,19 @@ const MetasRoute = MetasRouteImport.update({
   path: '/metas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MeuMesRoute = MeuMesRouteImport.update({
+  id: '/meu-mes',
+  path: '/meu-mes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MinhasTarefasRoute = MinhasTarefasRouteImport.update({
   id: '/minhas-tarefas',
   path: '/minhas-tarefas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MuralRoute = MuralRouteImport.update({
+  id: '/mural',
+  path: '/mural',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PackRoute = PackRouteImport.update({
@@ -118,6 +132,11 @@ const PackRoute = PackRouteImport.update({
 const ProjetosRoute = ProjetosRouteImport.update({
   id: '/projetos',
   path: '/projetos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RealidadeVirtualRoute = RealidadeVirtualRouteImport.update({
+  id: '/realidade-virtual',
+  path: '/realidade-virtual',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
@@ -177,6 +196,11 @@ const ApiPublicWhatsappWebhookRoute =
     path: '/api/public/whatsapp-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAtaAudioAtaBlocoRoute = ApiAtaAudioAtaBlocoRouteImport.update({
+  id: '/api/ata-audio/$ata/$bloco',
+  path: '/api/ata-audio/$ata/$bloco',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicAppLatestRoute = ApiPublicAppLatestRouteImport.update({
   id: '/api/public/app/latest',
   path: '/api/public/app/latest',
@@ -208,9 +232,12 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
+  '/meu-mes': typeof MeuMesRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
+  '/mural': typeof MuralRoute
   '/pack': typeof PackRoute
   '/projetos': typeof ProjetosRoute
+  '/realidade-virtual': typeof RealidadeVirtualRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -222,6 +249,7 @@ export interface FileRoutesByFullPath {
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/ata-audio/$ata/$bloco': typeof ApiAtaAudioAtaBlocoRoute
   '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
   '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
@@ -240,9 +268,12 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
+  '/meu-mes': typeof MeuMesRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
+  '/mural': typeof MuralRoute
   '/pack': typeof PackRoute
   '/projetos': typeof ProjetosRoute
+  '/realidade-virtual': typeof RealidadeVirtualRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -254,6 +285,7 @@ export interface FileRoutesByTo {
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/ata-audio/$ata/$bloco': typeof ApiAtaAudioAtaBlocoRoute
   '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
   '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
@@ -273,9 +305,12 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
+  '/meu-mes': typeof MeuMesRoute
   '/minhas-tarefas': typeof MinhasTarefasRoute
+  '/mural': typeof MuralRoute
   '/pack': typeof PackRoute
   '/projetos': typeof ProjetosRoute
+  '/realidade-virtual': typeof RealidadeVirtualRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -287,6 +322,7 @@ export interface FileRoutesById {
   '/api/public/telegram-diario': typeof ApiPublicTelegramDiarioRoute
   '/api/public/telegram-webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/whatsapp-webhook': typeof ApiPublicWhatsappWebhookRoute
+  '/api/ata-audio/$ata/$bloco': typeof ApiAtaAudioAtaBlocoRoute
   '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
   '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
@@ -307,9 +343,12 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/metas'
+    | '/meu-mes'
     | '/minhas-tarefas'
+    | '/mural'
     | '/pack'
     | '/projetos'
+    | '/realidade-virtual'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -321,6 +360,7 @@ export interface FileRouteTypes {
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/ata-audio/$ata/$bloco'
     | '/api/public/app/latest'
     | '/api/public/foto/$nome'
     | '/api/public/app/baixar/$arquivo'
@@ -339,9 +379,12 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/metas'
+    | '/meu-mes'
     | '/minhas-tarefas'
+    | '/mural'
     | '/pack'
     | '/projetos'
+    | '/realidade-virtual'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -353,6 +396,7 @@ export interface FileRouteTypes {
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/ata-audio/$ata/$bloco'
     | '/api/public/app/latest'
     | '/api/public/foto/$nome'
     | '/api/public/app/baixar/$arquivo'
@@ -371,9 +415,12 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/login'
     | '/metas'
+    | '/meu-mes'
     | '/minhas-tarefas'
+    | '/mural'
     | '/pack'
     | '/projetos'
+    | '/realidade-virtual'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -385,6 +432,7 @@ export interface FileRouteTypes {
     | '/api/public/telegram-diario'
     | '/api/public/telegram-webhook'
     | '/api/public/whatsapp-webhook'
+    | '/api/ata-audio/$ata/$bloco'
     | '/api/public/app/latest'
     | '/api/public/foto/$nome'
     | '/api/public/app/baixar/$arquivo'
@@ -404,9 +452,12 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
   MetasRoute: typeof MetasRoute
+  MeuMesRoute: typeof MeuMesRoute
   MinhasTarefasRoute: typeof MinhasTarefasRoute
+  MuralRoute: typeof MuralRoute
   PackRoute: typeof PackRoute
   ProjetosRoute: typeof ProjetosRoute
+  RealidadeVirtualRoute: typeof RealidadeVirtualRoute
   RelatoriosRoute: typeof RelatoriosRoute
   TarefasWaRoute: typeof TarefasWaRoute
   ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
@@ -418,6 +469,7 @@ export interface RootRouteChildren {
   ApiPublicTelegramDiarioRoute: typeof ApiPublicTelegramDiarioRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
+  ApiAtaAudioAtaBlocoRoute: typeof ApiAtaAudioAtaBlocoRoute
   ApiPublicAppLatestRoute: typeof ApiPublicAppLatestRoute
   ApiPublicFotoNomeRoute: typeof ApiPublicFotoNomeRoute
   ApiPublicAppBaixarArquivoRoute: typeof ApiPublicAppBaixarArquivoRoute
@@ -516,11 +568,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MetasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/meu-mes': {
+      id: '/meu-mes'
+      path: '/meu-mes'
+      fullPath: '/meu-mes'
+      preLoaderRoute: typeof MeuMesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/minhas-tarefas': {
       id: '/minhas-tarefas'
       path: '/minhas-tarefas'
       fullPath: '/minhas-tarefas'
       preLoaderRoute: typeof MinhasTarefasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mural': {
+      id: '/mural'
+      path: '/mural'
+      fullPath: '/mural'
+      preLoaderRoute: typeof MuralRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pack': {
@@ -535,6 +601,13 @@ declare module '@tanstack/react-router' {
       path: '/projetos'
       fullPath: '/projetos'
       preLoaderRoute: typeof ProjetosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/realidade-virtual': {
+      id: '/realidade-virtual'
+      path: '/realidade-virtual'
+      fullPath: '/realidade-virtual'
+      preLoaderRoute: typeof RealidadeVirtualRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/relatorios': {
@@ -614,6 +687,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ata-audio/$ata/$bloco': {
+      id: '/api/ata-audio/$ata/$bloco'
+      path: '/api/ata-audio/$ata/$bloco'
+      fullPath: '/api/ata-audio/$ata/$bloco'
+      preLoaderRoute: typeof ApiAtaAudioAtaBlocoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/app/latest': {
       id: '/api/public/app/latest'
       path: '/api/public/app/latest'
@@ -652,9 +732,12 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,
+  MeuMesRoute: MeuMesRoute,
   MinhasTarefasRoute: MinhasTarefasRoute,
+  MuralRoute: MuralRoute,
   PackRoute: PackRoute,
   ProjetosRoute: ProjetosRoute,
+  RealidadeVirtualRoute: RealidadeVirtualRoute,
   RelatoriosRoute: RelatoriosRoute,
   TarefasWaRoute: TarefasWaRoute,
   ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,
@@ -666,6 +749,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicTelegramDiarioRoute: ApiPublicTelegramDiarioRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
+  ApiAtaAudioAtaBlocoRoute: ApiAtaAudioAtaBlocoRoute,
   ApiPublicAppLatestRoute: ApiPublicAppLatestRoute,
   ApiPublicFotoNomeRoute: ApiPublicFotoNomeRoute,
   ApiPublicAppBaixarArquivoRoute: ApiPublicAppBaixarArquivoRoute,

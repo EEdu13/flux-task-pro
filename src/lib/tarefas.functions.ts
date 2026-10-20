@@ -475,15 +475,24 @@ export const salvarTarefa = createServerFn({ method: "POST" })
             .request()
             .input("id", sql.UniqueIdentifier, d.id)
             .query(`SELECT responsavel_id, situacao, prazo FROM gestor.tarefas WHERE id=@id`)
-        ).recordset[0] as { responsavel_id: number; situacao: string; prazo: Date | null } | undefined;
+        ).recordset[0] as
+          { responsavel_id: number; situacao: string; prazo: Date | null } | undefined;
         if (atual && atual.responsavel_id !== eu) {
           const mesmoPrazo =
             (atual.prazo?.getTime() ?? null) === (d.prazo?.getTime() ?? null) ||
             // O prazo vai e volta pela tela com o horário acertado no SQL; só
             // conta como mudança o que muda o dia.
-            (!!atual.prazo && !!d.prazo && atual.prazo.toISOString().slice(0, 10) === d.prazo.toISOString().slice(0, 10));
-          if (d.responsavelId !== atual.responsavel_id || d.situacao !== atual.situacao || !mesmoPrazo) {
-            throw new Error("Só o responsável ou quem criou a tarefa pode mudar responsável, situação ou prazo.");
+            (!!atual.prazo &&
+              !!d.prazo &&
+              atual.prazo.toISOString().slice(0, 10) === d.prazo.toISOString().slice(0, 10));
+          if (
+            d.responsavelId !== atual.responsavel_id ||
+            d.situacao !== atual.situacao ||
+            !mesmoPrazo
+          ) {
+            throw new Error(
+              "Só o responsável ou quem criou a tarefa pode mudar responsável, situação ou prazo.",
+            );
           }
         }
       }
@@ -559,10 +568,7 @@ async function criarProximaOcorrencia(eu: number, id: string): Promise<void> {
            via uma pendente nova, concluía de novo, e o prazo saltava um mês
            por dia (01/12, 01/01…). Na diária nada muda: o prazo é hoje. */
         nasceEm: new Date(
-          Math.max(
-            meiaNoiteDeAmanhaEmBrasilia().getTime(),
-            fimDoPrazoEfetivo(linha.prazo) + 1,
-          ),
+          Math.max(meiaNoiteDeAmanhaEmBrasilia().getTime(), fimDoPrazoEfetivo(linha.prazo) + 1),
         ),
         anteriorId: id,
       },
@@ -1182,3 +1188,120 @@ export const arquivarTarefa = createServerFn({ method: "POST" })
       return { ok: r.rowsAffected[0] > 0 };
     }),
   );
+
+/** Uma linha da planilha "Minhas tarefas" (todas, até as concluídas e arquivadas). */
+export type TarefaParaPlanilha = {
+  titulo: string;
+  descricao: string | null;
+  situacao: string;
+  prioridade: string;
+  frequencia: string;
+  recorrente: boolean;
+  setor: string | null;
+  projeto: string | null;
+  criador: string | null;
+  pontos: number;
+  prazo: string | null;
+  horario: string | null;
+  criadaEm: string;
+  concluidaEm: string | null;
+  /** "yyyy-MM-dd" quando a pessoa disse que concluiu em outro dia. */
+  dataReal: string | null;
+  arquivadaEm: string | null;
+  noPack: boolean;
+  minutosEstimados: number | null;
+  segundosTrabalhados: number;
+  etiquetas: string | null;
+  passos: number;
+  passosFeitos: number;
+};
+
+/**
+ * Todas as tarefas de que eu sou o responsável, para a planilha (19/10/2026:
+ * "exportar minhas tarefas completo, até as concluídas"). Diferente do quadro,
+ * entram as ARQUIVADAS também — é o histórico inteiro de quem quer ver tudo o
+ * que fez. Só as minhas (`responsavel_id = eu`), e só quando a pessoa clica:
+ * uma consulta por clique, com teto de 20 mil linhas.
+ */
+export const exportarMinhasTarefas = createServerFn({ method: "POST" }).handler(
+  comSessaoSemEntrada(async (eu): Promise<{ tarefas: TarefaParaPlanilha[] }> => {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    const r = await pool
+      .request()
+      .input("eu", sql.Int, eu)
+      .query(
+        `SELECT TOP (20000) t.titulo, t.descricao, t.situacao, t.prioridade, t.frequencia,
+                t.recorrente, t.setor, pr.nome AS projeto, cr.nome AS criador, t.pontos,
+                t.prazo, CONVERT(CHAR(5), t.horario, 108) AS horario, t.criada_em,
+                t.concluida_em, CONVERT(CHAR(10), t.data_real_de_conclusao, 23) AS data_real,
+                t.arquivada_em, t.no_pack, t.minutos_estimados,
+                (SELECT SUM(s.segundos) FROM gestor.sessoes_de_tempo s
+                  WHERE s.tarefa_id = t.id AND s.pessoa_id = @eu) AS segundos,
+                (SELECT STRING_AGG(CAST(e.nome AS NVARCHAR(MAX)), N', ')
+                        WITHIN GROUP (ORDER BY e.nome)
+                   FROM gestor.tarefa_etiquetas te
+                   JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
+                  WHERE te.tarefa_id = t.id) AS etiquetas,
+                (SELECT COUNT(*) FROM gestor.itens_de_checklist i WHERE i.tarefa_id = t.id) AS passos,
+                (SELECT COUNT(*) FROM gestor.itens_de_checklist i
+                  WHERE i.tarefa_id = t.id AND i.feito = 1) AS passos_feitos
+           FROM gestor.tarefas t
+           LEFT JOIN gestor.projetos pr ON pr.id = t.projeto_id
+           LEFT JOIN gestor.perfis cr ON cr.pessoa_id = t.criado_por
+          WHERE t.responsavel_id = @eu AND t.criada_em <= SYSDATETIMEOFFSET()
+          ORDER BY t.criada_em DESC`,
+      );
+    type Linha = {
+      titulo: string;
+      descricao: string | null;
+      situacao: string;
+      prioridade: string;
+      frequencia: string;
+      recorrente: boolean;
+      setor: string | null;
+      projeto: string | null;
+      criador: string | null;
+      pontos: number | null;
+      prazo: Date | null;
+      horario: string | null;
+      criada_em: Date;
+      concluida_em: Date | null;
+      data_real: string | null;
+      arquivada_em: Date | null;
+      no_pack: boolean;
+      minutos_estimados: number | null;
+      segundos: number | null;
+      etiquetas: string | null;
+      passos: number;
+      passos_feitos: number;
+    };
+    const iso = (d: Date | null) => (d ? d.toISOString() : null);
+    return {
+      tarefas: (r.recordset as Linha[]).map((l) => ({
+        titulo: l.titulo,
+        descricao: l.descricao,
+        situacao: l.situacao,
+        prioridade: l.prioridade,
+        frequencia: l.frequencia,
+        recorrente: !!l.recorrente,
+        setor: l.setor,
+        projeto: l.projeto,
+        criador: l.criador,
+        pontos: l.pontos ?? 0,
+        prazo: iso(l.prazo),
+        horario: l.horario,
+        criadaEm: l.criada_em.toISOString(),
+        concluidaEm: iso(l.concluida_em),
+        dataReal: l.data_real,
+        arquivadaEm: iso(l.arquivada_em),
+        noPack: !!l.no_pack,
+        minutosEstimados: l.minutos_estimados,
+        segundosTrabalhados: l.segundos ?? 0,
+        etiquetas: l.etiquetas,
+        passos: l.passos,
+        passosFeitos: l.passos_feitos,
+      })),
+    };
+  }),
+);

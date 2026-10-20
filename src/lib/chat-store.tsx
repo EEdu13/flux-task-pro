@@ -14,10 +14,12 @@ import {
   chatSend,
   chatThreads,
   definirEstado,
+  definirStatusPersonalizado,
   presenceHeartbeat,
   presenceList,
 } from "@/lib/chat.functions";
 import { paraEstado, type EstadoDoChat, type SituacaoNoChat } from "@/lib/estado-do-chat";
+import { statusVigente, type StatusPersonalizado } from "@/lib/status-personalizado";
 import { tocarMensagemNova } from "@/lib/sons";
 import { desktopFlashTaskbar, desktopTempoOcioso, isTauri } from "@/lib/desktop";
 import { avisarNoSistema } from "@/lib/aviso-do-sistema";
@@ -71,6 +73,15 @@ interface ChatCtx {
   /** O meu status escolhido. */
   meuEstado: EstadoDoChat;
   mudarMeuEstado: (estado: EstadoDoChat) => void;
+  /**
+   * O status personalizado (emoji + texto, 19/10/2026) de alguém, já sem o
+   * vencido. Vale também para quem está offline — "🚜 Em campo" é o recado de
+   * quem não está no computador.
+   */
+  statusDe: (userId: string) => StatusPersonalizado | null;
+  meuStatus: StatusPersonalizado | null;
+  /** `null` limpa. Devolve a promessa para a tela avisar se não gravou. */
+  mudarMeuStatus: (status: StatusPersonalizado | null) => Promise<void>;
   threads: ChatThread[];
   /**
    * Não lidas fora das conversas que estão desenhadas na tela agora — o
@@ -139,6 +150,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
      uma sondagem que saiu antes da troca voltaria com o status antigo e o
      seletor pularia de volta por um instante. */
   const trocaPendenteRef = useRef<{ estado: EstadoDoChat; ate: number } | null>(null);
+  /* O status personalizado de cada um, vindo da mesma sondagem da presença. O
+     meu tem a mesma proteção da troca de estado logo acima: uma sondagem que
+     saiu antes da troca não pode desfazê-la na tela. */
+  const [statusPorPessoa, setStatusPorPessoa] = useState<
+    Record<string, StatusPersonalizado | null>
+  >({});
+  const [meuStatus, setMeuStatus] = useState<StatusPersonalizado | null>(null);
+  const statusPendenteRef = useRef<{ status: StatusPersonalizado | null; ate: number } | null>(
+    null,
+  );
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [openWindows, setOpenWindows] = useState<string[]>([]);
   const [minimized, setMinimized] = useState<string[]>([]);
@@ -208,10 +229,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         const map: Record<string, number> = {};
         const est: Record<string, EstadoDoChat> = {};
+        const sts: Record<string, StatusPersonalizado | null> = {};
         for (const p of res.presence ?? []) {
           map[p.user_id] = new Date(p.last_seen).getTime();
           est[p.user_id] = paraEstado(p.estado);
+          if (p.status) sts[p.user_id] = p.status;
         }
+        const stPendente = statusPendenteRef.current;
+        if (stPendente && Date.now() < stPendente.ate) {
+          sts[meId] = stPendente.status;
+        } else {
+          statusPendenteRef.current = null;
+          setMeuStatus(sts[meId] ?? null);
+        }
+        setStatusPorPessoa(sts);
         setPresence(map);
         // O meu vem do banco também: quem deixou "ocupado" ontem continua
         // ocupado ao abrir o app hoje, em qualquer computador.
@@ -269,10 +300,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
            A leitura vem de um ref, e não das dependências deste efeito: ver a
            nota em `contagemNaTelaRef`. */
         const aVista = pessoaOlhando() ? contagemNaTelaRef.current : new Map<string, number>();
-        const total = lista.reduce(
-          (s, t) => s + (aVista.has(t.peer) ? 0 : t.unread || 0),
-          0,
-        );
+        const total = lista.reduce((s, t) => s + (aVista.has(t.peer) ? 0 : t.unread || 0), 0);
         const anterior = totalNaoLidasRef.current;
         totalNaoLidasRef.current = total;
         if (anterior !== null && total > anterior) {
@@ -326,6 +354,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     [isOnline, estados, meId, meuEstado],
   );
+
+  const statusDe = useCallback(
+    (userId: string): StatusPersonalizado | null =>
+      // Confere o vencimento na hora de desenhar: a resposta da sondagem fica
+      // 10 s na tela, e "volto às 14h" não pode sobrar às 14h05.
+      statusVigente(userId === meId ? meuStatus : statusPorPessoa[userId]),
+    [statusPorPessoa, meId, meuStatus],
+  );
+
+  const mudarMeuStatus = useCallback(async (status: StatusPersonalizado | null) => {
+    const anterior = statusPendenteRef.current;
+    setMeuStatus(status);
+    statusPendenteRef.current = { status, ate: Date.now() + 15_000 };
+    try {
+      await definirStatusPersonalizado({ data: { status } });
+    } catch (e) {
+      // Não gravou: a próxima sondagem traz de volta o que está no banco.
+      statusPendenteRef.current = anterior && Date.now() < anterior.ate ? anterior : null;
+      throw e;
+    }
+  }, []);
 
   /* Quem pôs o Ausente: a pessoa ou o relógio. Guardado no localStorage porque
      o app pode ser fechado e reaberto no meio — o status vem do banco como
@@ -458,7 +507,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const r = await chatSend({ data: { toUserId, body, comAnexo: !!att } });
         marcar({ idNoServidor: r.message.id });
 
-        if (att) {
+        if (att?.dataUrl.startsWith("blob:")) {
+          /* Recado de voz e gravação de tela (19/10/2026): o arquivo está na
+             memória do navegador e sobe em pedaços — o vídeo passa dos 5 MB
+             do envio de uma vez só. Ver `subirArquivoEmPedacos`. */
+          const { subirArquivoEmPedacos } = await import("@/lib/anexo-upload");
+          const arquivo = await (await fetch(att.dataUrl)).blob();
+          await subirArquivoEmPedacos("mensagem", r.message.id, arquivo, att.name, att.type);
+          // Já está no servidor: a cópia na memória (até 25 MB) pode sair.
+          const local = att.dataUrl;
+          window.setTimeout(() => URL.revokeObjectURL(local), 120_000);
+        } else if (att) {
           const { enviarAnexo } = await import("@/lib/anexo.functions");
           await enviarAnexo({
             data: {
@@ -518,6 +577,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     situacaoDe,
     meuEstado,
     mudarMeuEstado,
+    statusDe,
+    meuStatus,
+    mudarMeuStatus,
     threads,
     naoLidasFora,
     registrarNaTela,

@@ -58,6 +58,7 @@ export async function enviarParaOBlob(
   caminho: string,
   conteudo: ArrayBuffer,
   tipoMime: string,
+  opcoes: { naoSobrescrever?: boolean } = {},
 ): Promise<string> {
   const { base, sas } = contêiner();
   const alvo = `${base}/${caminho}`;
@@ -68,9 +69,15 @@ export async function enviarParaOBlob(
       "x-ms-blob-type": "BlockBlob",
       "content-type": tipoMime || "application/octet-stream",
       "content-length": String(conteudo.byteLength),
+      // Só cria: se já existe, o Azure responde 409 e o que está lá fica.
+      ...(opcoes.naoSobrescrever ? { "if-none-match": "*" } : {}),
     },
     body: conteudo,
   });
+
+  if (opcoes.naoSobrescrever && (r.status === 409 || r.status === 412)) {
+    throw new Error("Este arquivo já foi gravado.");
+  }
 
   if (!r.ok) {
     // O corpo do erro do Azure traz o motivo, mas pode ecoar a URL inteira —
@@ -123,4 +130,135 @@ export async function apagarDoBlob(url: string): Promise<void> {
   const r = await fetch(`${url}?${sas}`, { method: "DELETE" });
   // 404 significa que já não estava lá, o que para nós é sucesso.
   if (!r.ok && r.status !== 404) console.error(`[blob] DELETE falhou (${r.status})`);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Envio em pedaços (19/10/2026) — recado de voz e gravação de tela.
+ *
+ * O `enviarParaOBlob` acima manda o arquivo de uma vez, e o arquivo chega ao
+ * servidor inteiro em base64 numa única chamada. Para 5 MB isso passa; para um
+ * vídeo de tela de 25 MB seria uma requisição de 33 MB segurada na memória do
+ * servidor do começo ao fim.
+ *
+ * O Azure tem o caminho próprio para isso: cada pedaço sobe como um "bloco"
+ * (Put Block) e, no fim, uma lista diz quais blocos formam o arquivo, em que
+ * ordem (Put Block List). Só nesse momento o arquivo passa a existir. Os dois
+ * aceitam a mesma assinatura de contêiner que já está no `.env` — é escrita, e
+ * ela tem escrita — então a credencial continua só aqui no servidor: o
+ * navegador manda o pedaço para nós, nós mandamos para o Azure.
+ *
+ * Bônus de graça: bloco que nunca entra numa lista é descartado pelo próprio
+ * Azure depois de 7 dias. Gravação abandonada no meio não deixa arquivo órfão
+ * e não exige faxina nossa.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Id de bloco no formato que o Azure exige: base64, e TODOS do mesmo tamanho
+ * dentro de um arquivo. O zero à esquerda garante o tamanho igual.
+ */
+export function idDoBloco(indice: number): string {
+  return Buffer.from(`bloco-${String(indice).padStart(6, "0")}`).toString("base64");
+}
+
+/** Sobe um pedaço (Put Block). O arquivo ainda não existe depois disto. */
+export async function enviarBlocoParaOBlob(
+  caminho: string,
+  indice: number,
+  conteudo: ArrayBuffer,
+): Promise<void> {
+  const { base, sas } = contêiner();
+  const bloco = encodeURIComponent(idDoBloco(indice));
+  const r = await fetch(`${base}/${caminho}?comp=block&blockid=${bloco}&${sas}`, {
+    method: "PUT",
+    headers: { "content-length": String(conteudo.byteLength) },
+    body: conteudo,
+  });
+  if (!r.ok) {
+    // Mesmo cuidado do PUT inteiro: o corpo do erro pode ecoar a assinatura.
+    const detalhe = await r.text().catch(() => "");
+    console.error(
+      `[blob] Put Block ${caminho} #${indice} falhou (${r.status}):`,
+      detalhe.slice(0, 400),
+    );
+    throw new Error("Não foi possível guardar o arquivo agora.");
+  }
+}
+
+/**
+ * Fecha o arquivo com os blocos 0..total-1 (Put Block List) e devolve a URL
+ * SEM a assinatura, igual a `enviarParaOBlob`. O tipo do conteúdo vai aqui —
+ * é o que o Azure devolve depois no GET, e o player do navegador precisa dele.
+ */
+export async function confirmarBlocosNoBlob(
+  caminho: string,
+  total: number,
+  tipoMime: string,
+): Promise<string> {
+  const { base, sas } = contêiner();
+  const alvo = `${base}/${caminho}`;
+  const itens = Array.from({ length: total }, (_, i) => `<Latest>${idDoBloco(i)}</Latest>`);
+  const xml = `<?xml version="1.0" encoding="utf-8"?><BlockList>${itens.join("")}</BlockList>`;
+  const r = await fetch(`${alvo}?comp=blocklist&${sas}`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/xml",
+      "x-ms-blob-content-type": tipoMime || "application/octet-stream",
+    },
+    body: xml,
+  });
+  if (!r.ok) {
+    const detalhe = await r.text().catch(() => "");
+    console.error(`[blob] Put Block List ${caminho} falhou (${r.status}):`, detalhe.slice(0, 400));
+    throw new Error("Não foi possível guardar o arquivo agora.");
+  }
+  return alvo;
+}
+
+/**
+ * Lê o arquivo SEM segurá-lo inteiro na memória, repassando o pedido de faixa
+ * (`Range`) ao Azure — para áudio e vídeo.
+ *
+ * O `<video>` do navegador pede o arquivo aos pedaços (`Range: bytes=...`) para
+ * poder avançar e voltar sem baixar tudo, e espera a resposta 206 com o
+ * `Content-Range`. O Azure já fala isso; o proxy só precisa não atrapalhar.
+ * Com `lerDoBlob` (que devolve tudo de uma vez, sem faixa) o vídeo tocava, mas
+ * a barra de progresso não deixava pular para o meio.
+ */
+export async function lerDoBlobEmFluxo(
+  url: string,
+  faixa: string | null,
+): Promise<{
+  status: number;
+  corpo: ReadableStream<Uint8Array> | null;
+  cabecalhos: Record<string, string>;
+} | null> {
+  const { base, sas } = contêiner();
+  if (!url.startsWith(`${base}/`)) {
+    console.warn("[blob] recusado: URL fora do contêiner —", url.slice(0, 120));
+    return null;
+  }
+  // Só o formato simples "bytes=início-fim" passa adiante; qualquer outra
+  // coisa vira leitura inteira, que é sempre uma resposta válida.
+  const faixaValida = faixa && /^bytes=\d*-\d*$/.test(faixa.trim()) ? faixa.trim() : null;
+  const r = await fetch(`${url}?${sas}`, {
+    headers: faixaValida ? { range: faixaValida } : undefined,
+  });
+  if (!r.ok) {
+    if (r.status !== 404 && r.status !== 416)
+      console.error(`[blob] GET (fluxo) falhou (${r.status})`);
+    if (r.status === 416) {
+      return {
+        status: 416,
+        corpo: null,
+        cabecalhos: { "content-range": r.headers.get("content-range") ?? "" },
+      };
+    }
+    return null;
+  }
+  const cabecalhos: Record<string, string> = { "accept-ranges": "bytes" };
+  for (const nome of ["content-type", "content-length", "content-range"]) {
+    const v = r.headers.get(nome);
+    if (v) cabecalhos[nome] = v;
+  }
+  return { status: r.status, corpo: r.body, cabecalhos };
 }

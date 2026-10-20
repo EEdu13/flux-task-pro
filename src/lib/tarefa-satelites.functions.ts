@@ -80,7 +80,13 @@ export type SatelitesDaTarefa = {
   mentions: string[];
   tags: string[];
   recurringWeekdays: number[];
-  comments: { id: string; userId: string; text: string; at: string; attachments: AnexoDaTarefa[] }[];
+  comments: {
+    id: string;
+    userId: string;
+    text: string;
+    at: string;
+    attachments: AnexoDaTarefa[];
+  }[];
   activity: { id: string; userId: string; kind: string; text: string; at: string }[];
   /** Anexos da própria tarefa. Os de comentário vão dentro de cada comentário. */
   attachments: AnexoDaTarefa[];
@@ -222,7 +228,9 @@ export const carregarSatelites = createServerFn({ method: "POST" })
         // `User.id` é string na interface inteira.
         mentions: (mc.recordset as { pessoa_id: number }[]).map((m) => String(m.pessoa_id)),
         tags: (tg.recordset as { nome: string }[]).map((t) => t.nome),
-        recurringWeekdays: (dr.recordset as { dia_da_semana: number }[]).map((x) => x.dia_da_semana),
+        recurringWeekdays: (dr.recordset as { dia_da_semana: number }[]).map(
+          (x) => x.dia_da_semana,
+        ),
         comments: (
           cm.recordset as { id: string; autor_id: number; texto: string; criado_em: Date }[]
         ).map((c) => ({
@@ -643,11 +651,12 @@ export const salvarSatelites = createServerFn({ method: "POST" })
  */
 export const comentarNaTarefa = createServerFn({ method: "POST" })
   .validator(
-    semIdentidade((e: { tarefaId: string; texto: string }) => {
+    semIdentidade((e: { tarefaId: string; texto: string; comAnexo?: boolean }) => {
       const tarefaId = guid(e?.tarefaId);
       if (!tarefaId) throw new Error("Tarefa inválida");
       const t = texto(e?.texto, 100_000);
-      if (!t) throw new Error("Comentário vazio");
+      // Comentário só com anexo (o recado de voz, a gravação de tela) não tem texto.
+      if (!t && e?.comAnexo !== true) throw new Error("Comentário vazio");
       return { tarefaId, texto: t };
     }),
   )

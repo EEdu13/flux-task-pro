@@ -5,27 +5,93 @@ import { ESTADOS, INFO_DO_ESTADO, type SituacaoNoChat } from "@/lib/estado-do-ch
 import { toast } from "sonner";
 import type { User } from "@/lib/fluxo-types";
 import { filesToAttachments, isImage, openAttachment } from "@/lib/attachments";
-import {
-  pessoaOlhando,
-  useChat,
-  useConversation,
-  type MensagemDaConversa,
-} from "@/lib/chat-store";
+import { pessoaOlhando, useChat, useConversation, type MensagemDaConversa } from "@/lib/chat-store";
 import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
 import { lerAviso } from "@/lib/avisos-no-chat";
+import { REACOES_DO_AVATAR } from "@/lib/reacoes-do-avatar";
+import { BotaoRecadoDeVoz } from "@/components/recado-de-voz";
+import { BotaoGravarTela } from "@/components/gravar-tela";
+import {
+  ReprodutorDeAudio,
+  ReprodutorDeVideo,
+  ehAudio,
+  ehVideo,
+} from "@/components/reprodutor-de-midia";
+import type { Attachment } from "@/lib/fluxo-types";
 import { primeiroNome } from "@/integrations/iam/types";
+import {
+  DURACOES,
+  EMOJIS_DE_STATUS,
+  MAX_TEXTO_DO_STATUS,
+  PRESETS_DE_STATUS,
+  ateDaDuracao,
+  hojeNoCampoDeData,
+  rotuloDoAte,
+  statusEmTexto,
+  statusVigente,
+  type Duracao,
+  type StatusPersonalizado,
+} from "@/lib/status-personalizado";
 
 const EMOJIS = [
-  "😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😉", "😎", "🤩",
-  "🥳", "🤔", "😴", "😅", "😭", "😡", "👍", "👎", "👏", "🙌",
-  "🙏", "💪", "🔥", "✨", "🎉", "❤️", "💚", "💙", "💛", "⭐",
-  "✅", "❌", "⚡", "☕", "🍺", "🚀", "💧", "🌳", "🚜", "📌",
-  "👀", "🤝", "💯", "😬", "🥲", "😱", "🤷", "👋",
+  "😀",
+  "😁",
+  "😂",
+  "🤣",
+  "😊",
+  "😍",
+  "😘",
+  "😉",
+  "😎",
+  "🤩",
+  "🥳",
+  "🤔",
+  "😴",
+  "😅",
+  "😭",
+  "😡",
+  "👍",
+  "👎",
+  "👏",
+  "🙌",
+  "🙏",
+  "💪",
+  "🔥",
+  "✨",
+  "🎉",
+  "❤️",
+  "💚",
+  "💙",
+  "💛",
+  "⭐",
+  "✅",
+  "❌",
+  "⚡",
+  "☕",
+  "🍺",
+  "🚀",
+  "💧",
+  "🌳",
+  "🚜",
+  "📌",
+  "👀",
+  "🤝",
+  "💯",
+  "😬",
+  "🥲",
+  "😱",
+  "🤷",
+  "👋",
 ];
 
 function initials(name: string) {
-  return name.split(" ").slice(0, 2).map((s) => s.charAt(0)).join("").toUpperCase();
+  return name
+    .split(" ")
+    .slice(0, 2)
+    .map((s) => s.charAt(0))
+    .join("")
+    .toUpperCase();
 }
 
 export function ChatAvatar({ user, size = 40 }: { user?: User; size?: number }) {
@@ -57,29 +123,92 @@ export function RotuloDeSituacao({ situacao }: { situacao: SituacaoNoChat }) {
 }
 
 /**
+ * O status personalizado de alguém, só o emoji (19/10/2026) — ao lado do nome
+ * nas listas, onde não cabe o texto. O texto inteiro e o "até quando" ficam no
+ * título (passar o mouse).
+ */
+export function EmojiDoStatus({ userId, className = "" }: { userId: string; className?: string }) {
+  const { statusDe } = useChat();
+  const s = statusDe(userId);
+  if (!s) return null;
+  const titulo = [statusEmTexto(s), rotuloDoAte(s.ate)].filter(Boolean).join(" · ");
+  return (
+    <span title={titulo} aria-label={titulo} className={`shrink-0 leading-none ${className}`}>
+      {s.emoji || "💬"}
+    </span>
+  );
+}
+
+/** O status personalizado por extenso ("🚜 Em campo"), para cabeçalhos e cartões. */
+export function TextoDoStatus({
+  userId,
+  comAte = false,
+  comSeparador = false,
+  className = "",
+}: {
+  userId: string;
+  /** Mostra também "até 14:30" — no cabeçalho da conversa, onde cabe. */
+  comAte?: boolean;
+  /** Um "·" antes, para ficar ao lado de outro texto (o disponível/ocupado). */
+  comSeparador?: boolean;
+  className?: string;
+}) {
+  const { statusDe } = useChat();
+  const s = statusDe(userId);
+  if (!s) return null;
+  const ate = rotuloDoAte(s.ate);
+  return (
+    <span
+      title={[statusEmTexto(s), ate].filter(Boolean).join(" · ")}
+      className={`inline-flex min-w-0 items-center gap-1 ${className}`}
+    >
+      {comSeparador && <span className="shrink-0 opacity-60">·</span>}
+      {s.emoji && <span className="shrink-0">{s.emoji}</span>}
+      {s.texto && <span className="truncate">{s.texto}</span>}
+      {comAte && ate && <span className="shrink-0 opacity-70">· {ate}</span>}
+    </span>
+  );
+}
+
+/**
  * Onde a pessoa escolhe o próprio status.
  *
  * A lista abre num portal, e não dentro do painel: o painel de conversas tem
  * `overflow-hidden` (é o que arredonda os cantos da animação), e uma lista
  * absoluta lá dentro seria cortada na borda.
+ *
+ * (19/10/2026) O mesmo popover ganhou o status personalizado, no topo: o
+ * status atual com Editar/Limpar, e o editor (emoji, texto, prontos e até
+ * quando) no lugar da lista enquanto se edita — sem diálogo à parte, para não
+ * empilhar duas camadas por cima do chat.
  */
 export function SeletorDeStatus({ className = "" }: { className?: string }) {
-  const { meuEstado, mudarMeuEstado } = useChat();
+  const { meuEstado, mudarMeuEstado, meuStatus, mudarMeuStatus } = useChat();
   const [aberto, setAberto] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [editando, setEditando] = useState(false);
+  const [pos, setPos] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    maxH: number;
+  } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const painelRef = useRef<HTMLDivElement>(null);
   const info = INFO_DO_ESTADO[meuEstado];
+  const statusAtual = statusVigente(meuStatus);
 
   useEffect(() => {
     if (!aberto) return;
+    const fechar = () => {
+      setAberto(false);
+      setEditando(false);
+    };
     const fora = (e: MouseEvent) => {
       const t = e.target as Node;
       if (painelRef.current?.contains(t) || btnRef.current?.contains(t)) return;
-      setAberto(false);
+      fechar();
     };
-    const fechar = () => setAberto(false);
-    const tecla = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
+    const tecla = (e: KeyboardEvent) => e.key === "Escape" && fechar();
     document.addEventListener("mousedown", fora);
     document.addEventListener("keydown", tecla);
     window.addEventListener("resize", fechar);
@@ -90,17 +219,35 @@ export function SeletorDeStatus({ className = "" }: { className?: string }) {
     };
   }, [aberto]);
 
+  const fecharTudo = () => {
+    setAberto(false);
+    setEditando(false);
+  };
+
   const abrir = () => {
     const r = btnRef.current?.getBoundingClientRect();
     if (!r) return;
-    const largura = 288;
-    const altura = 250;
-    setPos({
-      // Vira para cima quando não cabe embaixo — o painel do chat mora no rodapé.
-      top: r.bottom + 6 + altura > window.innerHeight ? Math.max(8, r.top - altura - 6) : r.bottom + 6,
-      left: Math.max(8, Math.min(r.left, window.innerWidth - largura - 8)),
-    });
+    const largura = 320;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - largura - 8));
+    const embaixo = window.innerHeight - r.bottom - 14;
+    const emCima = r.top - 14;
+    /* O editor é mais alto que a lista: abre para o lado com mais espaço e
+       rola por dentro se nem assim couber. Para cima, ancora pelo rodapé — o
+       painel do chat mora no rodapé, e trocar a lista pelo editor não pode
+       descolar o popover do botão. */
+    setPos(
+      embaixo >= 420 || embaixo >= emCima
+        ? { top: r.bottom + 6, left, maxH: embaixo }
+        : { bottom: window.innerHeight - r.top + 6, left, maxH: emCima },
+    );
+    setEditando(false);
     setAberto(true);
+  };
+
+  const limpar = () => {
+    void mudarMeuStatus(null).catch(() =>
+      toast.error("Não deu para limpar o status. Tente de novo."),
+    );
   };
 
   return (
@@ -108,60 +255,310 @@ export function SeletorDeStatus({ className = "" }: { className?: string }) {
       <button
         ref={btnRef}
         type="button"
-        onClick={() => (aberto ? setAberto(false) : abrir())}
-        aria-haspopup="listbox"
+        onClick={() => (aberto ? fecharTudo() : abrir())}
+        aria-haspopup="dialog"
         aria-expanded={aberto}
-        title="Mudar meu status"
+        title={
+          statusAtual ? `Mudar meu status · ${statusEmTexto(statusAtual)}` : "Mudar meu status"
+        }
         className={`inline-flex items-center gap-1.5 rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold transition hover:bg-white/10 ${className}`}
       >
         <span className={`h-2 w-2 rounded-full ${info.ponto}`} />
+        {statusAtual?.emoji && <span className="leading-none">{statusAtual.emoji}</span>}
         {info.rotulo}
-        <ChevronDown className={`h-3 w-3 opacity-70 transition-transform ${aberto ? "rotate-180" : ""}`} />
+        <ChevronDown
+          className={`h-3 w-3 opacity-70 transition-transform ${aberto ? "rotate-180" : ""}`}
+        />
       </button>
-      {aberto && pos && typeof document !== "undefined" &&
+      {aberto &&
+        pos &&
+        typeof document !== "undefined" &&
         createPortal(
           <div
             ref={painelRef}
-            role="listbox"
+            role="dialog"
             aria-label="Meu status"
-            className="fixed z-200 w-72 overflow-hidden rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
-            style={{ top: pos.top, left: pos.left }}
+            className="fixed z-200 w-80 overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
+            style={{ top: pos.top, bottom: pos.bottom, left: pos.left, maxHeight: pos.maxH }}
           >
-            <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              Meu status no chat
-            </div>
-            {ESTADOS.map((estado) => {
-              const i = INFO_DO_ESTADO[estado];
-              const sel = estado === meuEstado;
-              return (
-                <button
-                  key={estado}
-                  type="button"
-                  role="option"
-                  aria-selected={sel}
-                  onClick={() => {
-                    mudarMeuEstado(estado);
-                    setAberto(false);
-                  }}
-                  className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
-                    sel ? "bg-secondary" : "hover:bg-secondary/60"
-                  }`}
-                >
-                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${i.ponto}`} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">{i.rotulo}</span>
-                    <span className="block text-[11px] leading-snug text-muted-foreground">
-                      {i.descricao}
+            {editando ? (
+              <EditorDeStatusPersonalizado
+                inicial={statusAtual}
+                aoCancelar={() => setEditando(false)}
+                aoSalvar={async (novo) => {
+                  try {
+                    await mudarMeuStatus(novo);
+                    fecharTudo();
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Não deu para salvar o status.");
+                  }
+                }}
+              />
+            ) : (
+              <>
+                <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Status personalizado
+                </div>
+                {statusAtual ? (
+                  <div className="mx-1 mb-1 flex items-center gap-2 rounded-lg border border-border bg-secondary/40 px-2.5 py-2">
+                    <span className="text-lg leading-none">{statusAtual.emoji || "💬"}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">
+                        {statusAtual.texto}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        {rotuloDoAte(statusAtual.ate) || "não limpa sozinho"}
+                      </span>
                     </span>
-                  </span>
-                  {sel && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
-                </button>
-              );
-            })}
+                    <button
+                      type="button"
+                      onClick={() => setEditando(true)}
+                      className="rounded-md px-1.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={limpar}
+                      title="Limpar o status"
+                      aria-label="Limpar o status"
+                      className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditando(true)}
+                    className="mx-1 mb-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg border border-dashed border-border px-2.5 py-2 text-left text-sm text-muted-foreground transition hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground"
+                  >
+                    <Smile className="h-4 w-4" />
+                    Definir um status…
+                    <span className="ml-auto text-[11px]">🚜 🍽️ 🏖️</span>
+                  </button>
+                )}
+                <div className="my-1 h-px bg-border" />
+                <div className="px-2.5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                  Meu status no chat
+                </div>
+                <div role="listbox" aria-label="Meu status no chat">
+                  {ESTADOS.map((estado) => {
+                    const i = INFO_DO_ESTADO[estado];
+                    const sel = estado === meuEstado;
+                    return (
+                      <button
+                        key={estado}
+                        type="button"
+                        role="option"
+                        aria-selected={sel}
+                        onClick={() => {
+                          mudarMeuEstado(estado);
+                          fecharTudo();
+                        }}
+                        className={`flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
+                          sel ? "bg-secondary" : "hover:bg-secondary/60"
+                        }`}
+                      >
+                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${i.ponto}`} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold">{i.rotulo}</span>
+                          <span className="block text-[11px] leading-snug text-muted-foreground">
+                            {i.descricao}
+                          </span>
+                        </span>
+                        {sel && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>,
           document.body,
         )}
     </>
+  );
+}
+
+/**
+ * O editor do status personalizado: emoji, texto (até 60), os prontos e até
+ * quando vale. Começa no status atual, quando há; escolher um pronto troca o
+ * emoji, o texto e a duração de uma vez, e dá para ajustar antes de salvar.
+ */
+function EditorDeStatusPersonalizado({
+  inicial,
+  aoCancelar,
+  aoSalvar,
+}: {
+  inicial: StatusPersonalizado | null;
+  aoCancelar: () => void;
+  aoSalvar: (s: StatusPersonalizado) => Promise<void>;
+}) {
+  const [emoji, setEmoji] = useState(inicial?.emoji || "💬");
+  const [texto, setTexto] = useState(inicial?.texto ?? "");
+  /* Quem edita um status que já existe mantém o "até" dele, a menos que
+     escolha outra duração — reabrir para corrigir um erro de digitação não
+     pode estender o almoço. */
+  const [duracao, setDuracao] = useState<Duracao | "manter">(
+    inicial ? (inicial.ate ? "manter" : "nunca") : "hoje",
+  );
+  const [data, setData] = useState(() => hojeNoCampoDeData());
+  const [escolhendoEmoji, setEscolhendoEmoji] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const campoRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    campoRef.current?.focus();
+  }, []);
+
+  const podeSalvar = texto.trim().length > 0 && !salvando;
+
+  const salvar = async () => {
+    if (!podeSalvar) return;
+    setSalvando(true);
+    const ate =
+      duracao === "manter" ? (inicial?.ate ?? null) : ateDaDuracao(duracao, new Date(), data);
+    try {
+      await aoSalvar({ emoji, texto: texto.trim().slice(0, MAX_TEXTO_DO_STATUS), ate });
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 p-1.5">
+      <div className="flex items-center justify-between px-1 pt-0.5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          Status personalizado
+        </span>
+        <button
+          type="button"
+          onClick={aoCancelar}
+          className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          aria-label="Voltar"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 focus-within:border-primary">
+        <button
+          type="button"
+          onClick={() => setEscolhendoEmoji((v) => !v)}
+          title="Escolher o emoji"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-lg hover:bg-secondary"
+        >
+          {emoji}
+        </button>
+        <input
+          ref={campoRef}
+          value={texto}
+          maxLength={MAX_TEXTO_DO_STATUS}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void salvar();
+            }
+          }}
+          placeholder="Qual é o seu status?"
+          className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+        />
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+          {MAX_TEXTO_DO_STATUS - texto.length}
+        </span>
+      </div>
+
+      {escolhendoEmoji && (
+        <div className="grid grid-cols-10 gap-0.5 rounded-lg border border-border p-1">
+          {EMOJIS_DE_STATUS.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => {
+                setEmoji(e);
+                setEscolhendoEmoji(false);
+              }}
+              className={`grid h-7 place-items-center rounded text-base hover:bg-secondary ${
+                e === emoji ? "bg-secondary" : ""
+              }`}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <div className="px-1 pb-0.5 text-[10px] font-semibold text-muted-foreground">Prontos</div>
+        {PRESETS_DE_STATUS.map((p) => (
+          <button
+            key={p.texto}
+            type="button"
+            onClick={() => {
+              setEmoji(p.emoji);
+              setTexto(p.texto);
+              setDuracao(p.duracao);
+              campoRef.current?.focus();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-secondary/60"
+          >
+            <span className="w-5 text-center">{p.emoji}</span>
+            <span className="flex-1">{p.texto}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {DURACOES.find((d) => d.id === p.duracao)?.rotulo}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <label className="block px-1">
+        <span className="mb-0.5 block text-[10px] font-semibold text-muted-foreground">
+          Limpar depois de
+        </span>
+        <select
+          value={duracao}
+          onChange={(e) => setDuracao(e.target.value as Duracao | "manter")}
+          className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm outline-none focus:border-primary"
+        >
+          {inicial?.ate && <option value="manter">Manter ({rotuloDoAte(inicial.ate)})</option>}
+          {DURACOES.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.rotulo}
+            </option>
+          ))}
+        </select>
+      </label>
+      {duracao === "data" && (
+        <input
+          type="date"
+          value={data}
+          min={hojeNoCampoDeData()}
+          onChange={(e) => setData(e.target.value)}
+          aria-label="Até o dia"
+          className="mx-1 w-[calc(100%-0.5rem)] rounded-md border border-border bg-background px-2 py-1 text-sm outline-none focus:border-primary"
+        />
+      )}
+
+      <div className="flex justify-end gap-1.5 px-1 pb-0.5 pt-1">
+        <button
+          type="button"
+          onClick={aoCancelar}
+          className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-secondary"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={!podeSalvar}
+          onClick={() => void salvar()}
+          className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+        >
+          {salvando ? "Salvando…" : "Salvar"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -314,7 +711,11 @@ export function MessageList({ peerId, compact = false }: { peerId: string; compa
  */
 function SeparadorDeDia({ rotulo }: { rotulo: string }) {
   return (
-    <div role="separator" aria-label={rotulo} className="sticky top-0 z-10 flex justify-center py-1">
+    <div
+      role="separator"
+      aria-label={rotulo}
+      className="sticky top-0 z-10 flex justify-center py-1"
+    >
       <span className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
         {rotulo}
       </span>
@@ -336,13 +737,16 @@ function LinhaDeAviso({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
     <div className="flex flex-col items-center gap-0.5 py-1">
       {aviso.tipo === "emoji" && <div className="text-5xl leading-none">{aviso.emoji}</div>}
       <span className="max-w-[90%] rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-center text-[11px] font-medium text-foreground">
-        {aviso.tipo === "cutucada" && `🔔 ${quem} ${mine ? "chamou a atenção" : "chamou sua atenção!"}`}
+        {aviso.tipo === "cutucada" &&
+          `🔔 ${quem} ${mine ? "chamou a atenção" : "chamou sua atenção!"}`}
         {aviso.tipo === "trator" && (
           <>
             🚜 {quem} mandou um trator: <b>“{aviso.texto}”</b>
           </>
         )}
         {aviso.tipo === "emoji" && `${quem} mandou um emoji gigante`}
+        {aviso.tipo === "avatar" &&
+          `${REACOES_DO_AVATAR[aviso.reacao].emoji} ${quem} ${REACOES_DO_AVATAR[aviso.reacao].noChat}`}
         <span className="ml-1.5 text-[9px] text-muted-foreground">{fmtTime(m.created_at)}</span>
       </span>
     </div>
@@ -352,6 +756,8 @@ function LinhaDeAviso({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
 function Balao({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
   if (lerAviso(m.body)) return <LinhaDeAviso m={m} mine={mine} />;
   const hasImg = m.att_data && m.att_type && isImage(m.att_type);
+  /* Recado de voz e gravação de tela (19/10/2026) tocam no próprio balão. */
+  const midia = m.att_data && (ehAudio(m.att_type) || ehVideo(m.att_type));
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div
@@ -374,7 +780,18 @@ function Balao({ m, mine }: { m: MensagemDaConversa; mine: boolean }) {
             />
           </button>
         )}
-        {m.att_data && !hasImg && (
+        {midia && ehAudio(m.att_type) && (
+          <ReprodutorDeAudio
+            src={m.att_data!}
+            semente={m.att_name ?? m.id}
+            variante={mine ? "primario" : "padrao"}
+            className="mb-1"
+          />
+        )}
+        {midia && ehVideo(m.att_type) && (
+          <ReprodutorDeVideo src={m.att_data!} className="mb-1 min-w-[240px]" />
+        )}
+        {m.att_data && !hasImg && !midia && (
           <button
             type="button"
             onClick={() => openAttachment({ dataUrl: m.att_data!, name: m.att_name || "arquivo" })}
@@ -450,7 +867,11 @@ function Visto({ lidaEm }: { lidaEm: string | null }) {
     );
   }
   return (
-    <span title={`Visualizada ${quandoLida(lidaEm)}`} className="inline-flex" style={{ color: COR_LIDA }}>
+    <span
+      title={`Visualizada ${quandoLida(lidaEm)}`}
+      className="inline-flex"
+      style={{ color: COR_LIDA }}
+    >
       <CheckCheck className="h-3 w-3" aria-hidden="true" />
       <span className="sr-only">Visualizada</span>
     </span>
@@ -498,13 +919,18 @@ export function Composer({ peerId }: { peerId: string }) {
   const textoRef = useRef(text);
   textoRef.current = text;
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [pending, setPending] = useState<{ name: string; type: string; dataUrl: string } | null>(null);
+  const [pending, setPending] = useState<{ name: string; type: string; dataUrl: string } | null>(
+    null,
+  );
   /* Envios em fila, um depois do outro. Com o campo liberado na hora, dá para
      mandar "oi" e "tudo bem?" antes de o primeiro chegar — e sem a fila os dois
      disputariam o servidor e poderiam chegar invertidos. */
   const filaRef = useRef<Promise<void>>(Promise.resolve());
   const fileRef = useRef<HTMLInputElement>(null);
   const campoRef = useRef<HTMLTextAreaElement>(null);
+  /* Gravando recado de voz: a pílula da gravação ocupa a linha inteira, como
+     no WhatsApp, e o resto (emoji, anexo, campo) sai da frente. */
+  const [gravandoVoz, setGravandoVoz] = useState(false);
 
   /* Pronto para digitar assim que a conversa abre.
      Depende de `peerId` e não de `[]`: trocar de contato remonta o conteúdo mas
@@ -559,6 +985,20 @@ export function Composer({ peerId }: { peerId: string }) {
             ? "Não foi possível enviar. A mensagem voltou para o campo."
             : `Não foi possível enviar: "${corpo.length > 60 ? corpo.slice(0, 60) + "…" : corpo}"`,
         );
+      });
+  };
+
+  /* Recado de voz (ao parar) e gravação de tela (ao "Enviar" da prévia),
+     19/10/2026: saem direto, sem passar pelo campo — entram na mesma fila das
+     mensagens, para não chegarem fora de ordem. Se falhar, o arquivo volta
+     como anexo pendente e a pessoa manda de novo com Enter. */
+  const enviarGravacao = (a: Attachment) => {
+    const anexo = { name: a.name, type: a.type, dataUrl: a.dataUrl };
+    filaRef.current = filaRef.current
+      .then(() => sendMessage(peerId, "", anexo))
+      .catch(() => {
+        setPending((p) => p ?? anexo);
+        toast.error("Não foi possível enviar a gravação. Ela voltou para o campo — tente de novo.");
       });
   };
 
@@ -627,6 +1067,10 @@ export function Composer({ peerId }: { peerId: string }) {
               alt="Prévia da imagem"
               className="max-h-40 max-w-[60%] rounded-lg border border-border object-contain shadow-sm"
             />
+          ) : ehAudio(pending.type) ? (
+            <ReprodutorDeAudio src={pending.dataUrl} semente={pending.name} className="max-w-[60%]" />
+          ) : ehVideo(pending.type) ? (
+            <ReprodutorDeVideo src={pending.dataUrl} className="max-h-40 max-w-[60%]" />
           ) : (
             <Paperclip className="h-4 w-4" />
           )}
@@ -666,17 +1110,20 @@ export function Composer({ peerId }: { peerId: string }) {
         </>
       )}
 
+      {/* Enquanto grava a voz, o resto da linha some com `hidden` em vez de
+          sair da árvore: o botão de voz e o de gravar tela precisam continuar
+          MONTADOS — desmontar no meio descartaria a gravação. */}
       <div className="flex items-end gap-1.5">
         <button
           onClick={() => setEmojiOpen((v) => !v)}
-          className="rounded-md p-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className={`rounded-md p-2 text-muted-foreground hover:bg-secondary hover:text-foreground ${gravandoVoz ? "hidden" : ""}`}
           title="Emoji"
         >
           <Smile className="h-5 w-5" />
         </button>
         <button
           onClick={() => fileRef.current?.click()}
-          className="rounded-md p-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className={`rounded-md p-2 text-muted-foreground hover:bg-secondary hover:text-foreground ${gravandoVoz ? "hidden" : ""}`}
           title="Anexar"
         >
           <Paperclip className="h-5 w-5" />
@@ -708,16 +1155,36 @@ export function Composer({ peerId }: { peerId: string }) {
           onPaste={colar}
           rows={1}
           placeholder={pending ? "Legenda (opcional)…" : "Mensagem… (Ctrl+V cola um print)"}
-          className="max-h-28 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+          className={`max-h-28 flex-1 resize-none rounded-2xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary ${gravandoVoz ? "hidden" : ""}`}
         />
-        <button
-          onClick={send}
-          disabled={!text.trim() && !pending}
-          className="rounded-full bg-primary p-2.5 text-primary-foreground transition hover:brightness-110 disabled:opacity-40"
-          title="Enviar"
-        >
-          <Send className="h-4 w-4" />
-        </button>
+        <span className={gravandoVoz ? "hidden" : "contents"}>
+          <BotaoGravarTela
+            aoConcluir={enviarGravacao}
+            rotulo={null}
+            tamanhoIcone="h-5 w-5"
+            className="rounded-md p-2"
+          />
+        </span>
+        {/* Campo vazio: o botão da direita é o microfone, como no WhatsApp.
+            Com texto ou anexo, volta a ser o enviar. Gravando, a pílula da
+            gravação toma a linha. */}
+        {!gravandoVoz && (text.trim() || pending) ? (
+          <button
+            onClick={send}
+            className="rounded-full bg-primary p-2.5 text-primary-foreground transition hover:brightness-110"
+            title="Enviar"
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        ) : null}
+        {!gravandoVoz && (text.trim() || pending) ? null : (
+          <BotaoRecadoDeVoz
+            aoGravar={enviarGravacao}
+            aoMudarGravando={setGravandoVoz}
+            tamanhoIcone="h-5 w-5"
+            className="rounded-full p-2"
+          />
+        )}
       </div>
     </div>
   );

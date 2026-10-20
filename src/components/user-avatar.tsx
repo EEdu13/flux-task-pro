@@ -1,6 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
 import { assinarFotos, carimboDaFoto } from "@/lib/foto-versao";
+import {
+  assinarAniversarios,
+  fazAniversarioHoje,
+  garantirAniversariosDeHoje,
+  versaoDosAniversarios,
+} from "@/lib/aniversario-hoje";
 
 /**
  * Foto da pessoa, com as iniciais como reserva.
@@ -45,17 +51,27 @@ export function UserAvatar({
   // Pessoa diferente (ou foto nova): tenta de novo, senão o 404 de uma gruda na próxima.
   useEffect(() => setFalhou(false), [nome, carimbo]);
 
+  /* Aniversário (Mural, 14/10/2026): no dia, a pessoa ganha um chapeuzinho de
+     festa em todo avatar. A lista de hoje vem uma vez por sessão (o primeiro
+     avatar a montar pede); aqui é só uma consulta a um conjunto na memória. */
+  useSyncExternalStore(assinarAniversarios, versaoDosAniversarios, () => 0);
+  useEffect(() => garantirAniversariosDeHoje(), []);
+  const festa = fazAniversarioHoje(nome);
+
   const temNome = nome.trim().length >= 3;
 
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full font-bold",
+        // Com o chapéu, o recorte redondo passa para a foto (`rounded-full`
+        // nela), senão o chapéu, que sai para fora do círculo, seria cortado.
+        "relative flex shrink-0 items-center justify-center rounded-full font-bold",
+        !festa && "overflow-hidden",
         !style && "bg-primary text-primary-foreground",
         className,
       )}
       style={style}
-      title={title ?? nome}
+      title={title ?? (festa ? `${nome} — hoje é aniversário! 🎂` : nome)}
     >
       <span>{iniciais}</span>
       {temNome && !falhou && (
@@ -65,10 +81,28 @@ export function UserAvatar({
           aria-hidden
           loading="lazy"
           referrerPolicy="no-referrer"
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full rounded-full object-cover"
           onError={() => setFalhou(true)}
         />
       )}
+      {festa && <ChapeuDeFesta />}
     </div>
+  );
+}
+
+/** O chapeuzinho: em %, para servir do avatar de 16px ao de 96px. */
+function ChapeuDeFesta() {
+  return (
+    <svg
+      viewBox="0 0 32 40"
+      aria-hidden
+      className="pointer-events-none absolute -right-[18%] -top-[52%] z-10 h-[72%] w-[58%] rotate-[22deg] drop-shadow-sm"
+    >
+      <path d="M16 4 L29 36 Q16 40 3 36 Z" fill="#f43f5e" />
+      <path d="M10.6 17 Q16 18.6 21.4 17 L23.6 22.6 Q16 24.8 8.4 22.6 Z" fill="#facc15" />
+      <path d="M6.2 28 Q16 30.6 25.8 28 L27.4 32 Q16 35 4.6 32 Z" fill="#38bdf8" />
+      <circle cx="16" cy="4" r="3.6" fill="#facc15" />
+      <path d="M3 36 Q16 40 29 36" stroke="#fff" strokeWidth="1.6" fill="none" opacity="0.8" />
+    </svg>
   );
 }

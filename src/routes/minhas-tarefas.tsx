@@ -27,6 +27,8 @@ import {
   ChevronDown,
   Search,
   X,
+  FileSpreadsheet,
+  Loader2 as Girando,
 } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import {
@@ -72,6 +74,7 @@ import { FiltroPessoa, FiltroSetor } from "@/components/filtro-pessoa";
 import { BuscaComTags } from "@/components/busca-com-tags";
 import { FiltroDeTags, SEM_SELECAO_DE_TAGS, type SelecaoDeTags } from "@/components/filtro-de-tags";
 import { ReacoesDaTarefa } from "@/components/reacoes-da-tarefa";
+import { MidiaNoCartao } from "@/components/midia-no-cartao";
 import { SeloNova } from "@/components/selo-nova";
 import {
   SEM_SELECAO_DE_PESSOAS,
@@ -225,6 +228,22 @@ const scopeLabels: Record<Scope, string> = {
 
 function MinhasTarefas() {
   const { tasks, users, currentUser, updateTask, moveTask, openNewTask, openTask } = useFluxo();
+  /* Exportar para Excel (19/10/2026): TODAS as minhas tarefas, inclusive as
+     concluídas e as arquivadas — vem do servidor, não do quadro. */
+  const [exportando, setExportando] = useState(false);
+  const exportar = async () => {
+    if (exportando) return;
+    setExportando(true);
+    try {
+      const { exportarMinhasTarefasXlsx } = await import("@/lib/exportar-minhas-tarefas");
+      const n = await exportarMinhasTarefasXlsx(currentUser.name);
+      toast.success(`Planilha com ${n} ${n === 1 ? "tarefa" : "tarefas"} baixada`);
+    } catch (e) {
+      toast.error("Não foi possível exportar agora", { description: (e as Error)?.message });
+    } finally {
+      setExportando(false);
+    }
+  };
   const { q: initialQ } = Route.useSearch();
   const [scope, setScope] = useState<Scope>("pack");
   const [view, setView] = useState<ViewMode>("quadro");
@@ -515,6 +534,20 @@ function MinhasTarefas() {
             ))}
           </div>
           <div className="flex items-center gap-2 pb-2">
+            <button
+              type="button"
+              onClick={() => void exportar()}
+              disabled={exportando}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-60"
+              title="Baixar todas as minhas tarefas (até as concluídas e arquivadas) em Excel"
+            >
+              {exportando ? (
+                <Girando className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+              )}
+              Exportar para Excel
+            </button>
             <div className="inline-flex rounded-md border border-border p-0.5">
               <button
                 onClick={() => setView("quadro")}
@@ -1850,6 +1883,7 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
           título — ver `CirculoDeConcluir`. */}
       {/* O "visto" de quem recebeu, em emoji, numa linha própria: com as
           fotinhas e os nomes ele não cabe ao lado do prazo. */}
+      <MidiaNoCartao taskId={t.id} className="mt-2.5" />
       <div className="mt-2.5">
         <ReacoesDaTarefa task={t} compacto />
       </div>

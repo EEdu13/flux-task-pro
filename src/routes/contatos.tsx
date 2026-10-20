@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/select";
 import { formatarTelefone, telefoneParaGuardar } from "@/lib/telefone";
 import { toast } from "sonner";
+import { EscritorioDoSetor } from "@/components/escritorio/escritorio-do-setor";
+import { TextoDoStatus } from "@/components/chat-ui";
 
 export const Route = createFileRoute("/contatos")({
   head: () => ({
@@ -43,8 +45,7 @@ export const Route = createFileRoute("/contatos")({
       { title: "Contatos · SGL - CONECTA" },
       {
         name: "description",
-        content:
-          "Busque colaboradores e visualize a hierarquia de reporte até a diretoria.",
+        content: "Busque colaboradores e visualize a hierarquia de reporte até a diretoria.",
       },
     ],
   }),
@@ -84,7 +85,12 @@ function buildChain(users: User[], userId: string): User[] {
 
 function Avatar({ user, size = "md" }: { user: User; size?: "sm" | "md" | "lg" }) {
   const sec = sectorMeta(user.sector);
-  const dim = size === "lg" ? "h-14 w-14 text-lg" : size === "sm" ? "h-8 w-8 text-[10px]" : "h-10 w-10 text-xs";
+  const dim =
+    size === "lg"
+      ? "h-14 w-14 text-lg"
+      : size === "sm"
+        ? "h-8 w-8 text-[10px]"
+        : "h-10 w-10 text-xs";
   return (
     <UserAvatar
       nome={user.name}
@@ -122,9 +128,17 @@ function ContactCard({
           <RoleIcon className="h-3 w-3 text-muted-foreground" />
         </div>
         <div className="truncate text-[11px] text-muted-foreground">{user.jobTitle}</div>
+        {/* O status personalizado (19/10/2026): "🚜 Em campo" antes de ligar. */}
+        <TextoDoStatus
+          userId={user.id}
+          className="max-w-full text-[11px] font-medium text-foreground/80"
+        />
         <div
           className="mt-0.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium"
-          style={{ background: `color-mix(in oklab, ${sec.color} 15%, transparent)`, color: sec.color }}
+          style={{
+            background: `color-mix(in oklab, ${sec.color} 15%, transparent)`,
+            color: sec.color,
+          }}
         >
           <Building2 className="h-2.5 w-2.5" />
           {sec.name}
@@ -225,6 +239,7 @@ function HierarchyNode({
               <RoleIcon className="h-4 w-4" />
             </div>
             <div className="text-xs text-muted-foreground">{user.jobTitle}</div>
+            <TextoDoStatus userId={user.id} comAte className="text-xs font-medium" />
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
               <span
                 className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-medium"
@@ -293,6 +308,8 @@ function ContatosPage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sectorFilter, setSectorFilter] = useState<string>("todos");
+  /* Hierarquia (a linha de reporte) ou o escritório 3D do setor (17/10/2026). */
+  const [vista, setVista] = useState<"hierarquia" | "escritorio">("hierarquia");
   const [callMenu, setCallMenu] = useState<User | null>(null);
   const [roomPicker, setRoomPicker] = useState<User | null>(null);
   // Esc fecha as duas janelas, além do clique fora.
@@ -419,10 +436,7 @@ function ContatosPage() {
   }, [chain, users]);
 
   return (
-    <FluxoLayout
-      title="Contatos"
-      breadcrumb="Pessoas · Hierarquia"
-    >
+    <FluxoLayout title="Contatos" breadcrumb="Pessoas · Hierarquia">
       {/* Altura fixa nas duas colunas: sem isto a lista cresce com o número de
           pessoas e empurra o painel da hierarquia para fora da tela — dá para
           selecionar alguém e não ver o cartão que apareceu lá embaixo. */}
@@ -525,135 +539,173 @@ function ContatosPage() {
 
         {/* Hierarchy panel */}
         <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <AnimatePresence mode="wait">
-            {!selected ? (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex h-full min-h-[300px] flex-col items-center justify-center text-center"
+          <div className="mb-3 inline-flex shrink-0 self-start rounded-full border border-border p-0.5 text-xs font-semibold">
+            {(
+              [
+                ["hierarquia", "Hierarquia"],
+                ["escritorio", "Escritório 3D"],
+              ] as const
+            ).map(([v, rotulo]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVista(v)}
+                className={`rounded-full px-3.5 py-1 transition ${
+                  vista === v
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
-                <div className="mb-3 rounded-full bg-primary/10 p-4 text-primary">
-                  <UsersIcon className="h-8 w-8" />
-                </div>
-                <div className="text-sm font-semibold">Escolha um contato</div>
-                <div className="mt-1 max-w-sm text-xs text-muted-foreground">
-                  Clique em qualquer pessoa da lista para visualizar a linha de reporte,
-                  do colaborador até a diretoria.
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key={selected.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                // Precisa ser coluna flex de altura cheia: sem isso o `flex-1`
-                // da área de arraste não tem contra o que se medir, ela fica com
-                // altura automática e o painel corta o que passar.
-                className="flex h-full min-h-0 flex-col"
-              >
-                <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
-                  <button
-                    onClick={() => setSelectedId(null)}
-                    className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground hover:border-primary/50 hover:text-primary"
-                  >
-                    <ArrowLeft className="h-3 w-3" /> Voltar
-                  </button>
-                  <div className="flex items-center gap-3">
-                    {/* Com o painel de altura fixa, uma linha longa não cabe
+                {rotulo}
+              </button>
+            ))}
+          </div>
+          {vista === "escritorio" ? (
+            <div className="min-h-0 flex-1">
+              <EscritorioDoSetor
+                users={users}
+                setores={setoresComGente}
+                setorInicial={
+                  /* sem filtro nem pessoa escolhida, abre no andar todo */
+                  sectorFilter !== "todos" ? sectorFilter : (selected?.sector ?? "")
+                }
+                aoVerHierarquia={(id) => {
+                  setSelectedId(id);
+                  setVista("hierarquia");
+                }}
+              />
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              {!selected ? (
+                <motion.div
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex h-full min-h-[300px] flex-col items-center justify-center text-center"
+                >
+                  <div className="mb-3 rounded-full bg-primary/10 p-4 text-primary">
+                    <UsersIcon className="h-8 w-8" />
+                  </div>
+                  <div className="text-sm font-semibold">Escolha um contato</div>
+                  <div className="mt-1 max-w-sm text-xs text-muted-foreground">
+                    Clique em qualquer pessoa da lista para visualizar a linha de reporte, do
+                    colaborador até a diretoria.
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key={selected.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  // Precisa ser coluna flex de altura cheia: sem isso o `flex-1`
+                  // da área de arraste não tem contra o que se medir, ela fica com
+                  // altura automática e o painel corta o que passar.
+                  className="flex h-full min-h-0 flex-col"
+                >
+                  <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
+                    <button
+                      onClick={() => setSelectedId(null)}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground hover:border-primary/50 hover:text-primary"
+                    >
+                      <ArrowLeft className="h-3 w-3" /> Voltar
+                    </button>
+                    <div className="flex items-center gap-3">
+                      {/* Com o painel de altura fixa, uma linha longa não cabe
                         inteira — o zoom é o que permite ver todos os níveis. */}
-                    <div className="flex items-center gap-1 rounded-md border border-border bg-background p-0.5">
-                      <button
-                        onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))}
-                        disabled={zoom <= 0.5}
-                        title="Reduzir"
-                        aria-label="Reduzir"
-                        className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-40"
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={resetVista}
-                        title="Voltar ao tamanho e posição originais"
-                        className="min-w-10 px-1 text-[10px] font-semibold tabular-nums text-muted-foreground transition hover:text-foreground"
-                      >
-                        {Math.round(zoom * 100)}%
-                      </button>
-                      <button
-                        onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))}
-                        disabled={zoom >= 1.5}
-                        title="Ampliar"
-                        aria-label="Ampliar"
-                        className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-40"
-                      >
-                        <PlusIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Linha de reporte · {chain.length} {chain.length === 1 ? "nível" : "níveis"}
+                      <div className="flex items-center gap-1 rounded-md border border-border bg-background p-0.5">
+                        <button
+                          onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))}
+                          disabled={zoom <= 0.5}
+                          title="Reduzir"
+                          aria-label="Reduzir"
+                          className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={resetVista}
+                          title="Voltar ao tamanho e posição originais"
+                          className="min-w-10 px-1 text-[10px] font-semibold tabular-nums text-muted-foreground transition hover:text-foreground"
+                        >
+                          {Math.round(zoom * 100)}%
+                        </button>
+                        <button
+                          onClick={() => setZoom((z) => Math.min(1.5, +(z + 0.1).toFixed(2)))}
+                          disabled={zoom >= 1.5}
+                          title="Ampliar"
+                          aria-label="Ampliar"
+                          className="rounded p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                        >
+                          <PlusIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Linha de reporte · {chain.length} {chain.length === 1 ? "nível" : "níveis"}
+                      </div>
                     </div>
                   </div>
-                </div>
-                {/* Área de arraste. `overflow-hidden` + transform em vez de
+                  {/* Área de arraste. `overflow-hidden` + transform em vez de
                     barra de rolagem: com zoom, a rolagem calcula a altura pelo
                     tamanho original e sobra espaço morto. Arrastar dá controle
                     nos dois eixos, que é o que falta quando amplia. */}
-                <div
-                  onPointerDown={iniciarArraste}
-                  onPointerMove={moverArraste}
-                  onPointerUp={soltarArraste}
-                  onPointerCancel={soltarArraste}
-                  className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
-                  style={{ cursor: arraste.current ? "grabbing" : "grab" }}
-                >
                   <div
-                    className="flex flex-col items-center gap-0 pt-3"
-                    style={{
-                      // translate ANTES de scale: assim o arraste anda 1:1 com o
-                      // cursor em qualquer nível de zoom.
-                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                      transformOrigin: "top center",
-                    }}
+                    onPointerDown={iniciarArraste}
+                    onPointerMove={moverArraste}
+                    onPointerUp={soltarArraste}
+                    onPointerCancel={soltarArraste}
+                    className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
+                    style={{ cursor: arraste.current ? "grabbing" : "grab" }}
                   >
-                    {chefeFora && (
-                      <div className="flex w-full flex-col items-center">
-                        <ChefeForaDoFluxo nome={chefeFora} />
-                        <div className="my-2 h-8 w-0.5 bg-gradient-to-b from-border to-primary/40" />
-                      </div>
-                    )}
-                    <AnimatePresence>
-                      {chain.map((u, idx) => (
-                        <div key={u.id} className="flex w-full flex-col items-center">
-                          <HierarchyNode
-                            user={u}
-                            level={idx}
-                            isSelected={u.id === selected.id}
-                            isTop={idx === 0}
-                            onCall={handleCall}
-                          />
-                          {idx < chain.length - 1 && (
-                            <motion.div
-                              initial={{ scaleY: 0, opacity: 0 }}
-                              animate={{ scaleY: 1, opacity: 1 }}
-                              transition={{ delay: idx * 0.12 + 0.15, duration: 0.35 }}
-                              className="my-2 h-8 w-0.5 origin-top bg-gradient-to-b from-primary/60 to-primary/10"
-                            />
-                          )}
+                    <div
+                      className="flex flex-col items-center gap-0 pt-3"
+                      style={{
+                        // translate ANTES de scale: assim o arraste anda 1:1 com o
+                        // cursor em qualquer nível de zoom.
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                        transformOrigin: "top center",
+                      }}
+                    >
+                      {chefeFora && (
+                        <div className="flex w-full flex-col items-center">
+                          <ChefeForaDoFluxo nome={chefeFora} />
+                          <div className="my-2 h-8 w-0.5 bg-gradient-to-b from-border to-primary/40" />
                         </div>
-                      ))}
-                    </AnimatePresence>
-                    {chain.length === 1 && !chefeFora && (
-                      <div className="mt-4 text-center text-[11px] text-muted-foreground">
-                        Esta pessoa está no topo da hierarquia.
-                      </div>
-                    )}
+                      )}
+                      <AnimatePresence>
+                        {chain.map((u, idx) => (
+                          <div key={u.id} className="flex w-full flex-col items-center">
+                            <HierarchyNode
+                              user={u}
+                              level={idx}
+                              isSelected={u.id === selected.id}
+                              isTop={idx === 0}
+                              onCall={handleCall}
+                            />
+                            {idx < chain.length - 1 && (
+                              <motion.div
+                                initial={{ scaleY: 0, opacity: 0 }}
+                                animate={{ scaleY: 1, opacity: 1 }}
+                                transition={{ delay: idx * 0.12 + 0.15, duration: 0.35 }}
+                                className="my-2 h-8 w-0.5 origin-top bg-gradient-to-b from-primary/60 to-primary/10"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </AnimatePresence>
+                      {chain.length === 1 && !chefeFora && (
+                        <div className="mt-4 text-center text-[11px] text-muted-foreground">
+                          Esta pessoa está no topo da hierarquia.
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
         </div>
       </div>
 
@@ -681,7 +733,9 @@ function ContatosPage() {
                 <Avatar user={callMenu} size="lg" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">{callMenu.name}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">{callMenu.jobTitle}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {callMenu.jobTitle}
+                  </div>
                 </div>
                 <button
                   onClick={() => setCallMenu(null)}

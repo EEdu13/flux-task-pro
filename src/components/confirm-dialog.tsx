@@ -28,12 +28,30 @@ export interface OpcoesConfirmacao {
   perigo?: boolean;
 }
 
+/** "sim" = o botão principal; "alternativa" = o terceiro; "nao" = cancelar/fechar/Esc. */
+export type Escolha = "sim" | "alternativa" | "nao";
+
 interface Pedido extends OpcoesConfirmacao {
-  responder: (ok: boolean) => void;
+  /** Um terceiro botão, à esquerda (ex.: "Sair sem salvar"). */
+  alternativa?: string;
+  responder: (r: Escolha) => void;
 }
 
 export function confirmar(opcoes: OpcoesConfirmacao): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const pedido: Pedido = { ...opcoes, responder: (r) => resolve(r === "sim") };
+    window.dispatchEvent(new CustomEvent<Pedido>(EVENTO, { detail: pedido }));
+  });
+}
+
+/**
+ * A mesma janela com três saídas (20/10/2026, sair do avatar sem salvar:
+ * "Salvar e sair" / "Sair sem salvar" / continuar). Fechar, Esc ou clicar fora
+ * é sempre "nao" — nunca a ação que perde alguma coisa.
+ */
+export function escolher(opcoes: OpcoesConfirmacao & { alternativa: string }): Promise<Escolha> {
+  if (typeof window === "undefined") return Promise.resolve("nao");
   return new Promise((resolve) => {
     const pedido: Pedido = { ...opcoes, responder: resolve };
     window.dispatchEvent(new CustomEvent<Pedido>(EVENTO, { detail: pedido }));
@@ -61,15 +79,15 @@ export function ConfirmHost() {
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        responder(false);
+        responder("nao");
       }
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   }, [pedido]);
 
-  const responder = (ok: boolean) => {
-    pedido?.responder(ok);
+  const responder = (r: Escolha) => {
+    pedido?.responder(r);
     setPedido(null);
   };
 
@@ -80,7 +98,7 @@ export function ConfirmHost() {
       className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         // Clicar fora cancela — nunca confirma.
-        if (e.target === e.currentTarget) responder(false);
+        if (e.target === e.currentTarget) responder("nao");
       }}
     >
       <TravaScroll />
@@ -108,7 +126,7 @@ export function ConfirmHost() {
           </div>
           <button
             type="button"
-            onClick={() => responder(false)}
+            onClick={() => responder("nao")}
             className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
             aria-label="Cancelar"
           >
@@ -116,9 +134,18 @@ export function ConfirmHost() {
           </button>
         </div>
         <div className="flex justify-end gap-2 border-t border-border bg-secondary/40 px-4 py-3">
+          {pedido.alternativa && (
+            <button
+              type="button"
+              onClick={() => responder("alternativa")}
+              className="mr-auto rounded-md px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10"
+            >
+              {pedido.alternativa}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => responder(false)}
+            onClick={() => responder("nao")}
             className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-muted"
           >
             {pedido.cancelar ?? "Cancelar"}
@@ -126,7 +153,7 @@ export function ConfirmHost() {
           <button
             ref={confirmarRef}
             type="button"
-            onClick={() => responder(true)}
+            onClick={() => responder("sim")}
             className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
               pedido.perigo
                 ? "bg-destructive text-destructive-foreground hover:brightness-110"

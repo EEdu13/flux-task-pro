@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "@tanstack/react-router";
-import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip } from "lucide-react";
+import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip, HeartHandshake } from "lucide-react";
 import { descartarPendencias, useFluxo } from "@/lib/fluxo-store";
 import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { UserAvatar } from "@/components/user-avatar";
@@ -9,12 +9,15 @@ import { filesToAttachments } from "@/lib/attachments";
 import { subirAnexos } from "@/lib/anexo-upload";
 import type { ActivityKind, Attachment, ChecklistItem } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
+import { BotaoRecadoDeVoz } from "@/components/recado-de-voz";
+import { BotaoGravarTela } from "@/components/gravar-tela";
 import { formatHM, parseHM } from "@/lib/time-log";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import { confirmar } from "@/components/confirm-dialog";
 import { CampoData } from "@/components/campo-data";
 import { CampoDeTags } from "@/components/campo-de-tags";
 import { ReacoesDaTarefa } from "@/components/reacoes-da-tarefa";
+import { abrirAgradecer } from "@/components/mural/agradecer";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
 import {
   DIAS_SEMANA,
@@ -646,6 +649,26 @@ export function TaskDialog() {
       });
   };
 
+  /* Recado de voz direto nos anexos da tarefa (19/10/2026). Sobe na hora,
+     como o arquivo escolhido no "Adicionar arquivo" — em pedaços, porque vem
+     como `blob:` (ver `subirAnexos`). */
+  const anexarRecadoNaTarefa = async (anexo: Attachment) => {
+    if (!editing) return;
+    const idAviso = toast.loading("Enviando recado de voz…");
+    const enviados = await subirAnexos("tarefa", editing.id, [anexo]);
+    toast.dismiss(idAviso);
+    if (enviados.length) addTaskAttachments(editing.id, enviados);
+  };
+
+  /* Recado de voz e gravação de tela no comentário (19/10/2026): parar (ou
+     "Enviar", na prévia da tela) já publica, como no WhatsApp. Vira um
+     comentário próprio, sem texto — o que estiver escrito no campo fica lá,
+     para a pessoa mandar quando quiser. */
+  const comentarComGravacao = (anexo: Attachment) => {
+    if (!editing) return;
+    addComment(editing.id, "", [anexo]);
+  };
+
   const submitComment = () => {
     if (!editing) return;
     if (!newComment.trim() && !pendingCommentAtts.length) return;
@@ -799,8 +822,21 @@ export function TaskDialog() {
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-base font-semibold">{editing ? "Editar tarefa" : "Nova tarefa"}</h2>
           {editing && (
-            <div className="ml-3 mr-auto">
+            <div className="ml-3 mr-auto flex items-center gap-2">
               <ReacoesDaTarefa task={editing} />
+              {/* Mural (14/10/2026): elogio público a quem fez a tarefa. */}
+              {editing.assigneeId !== currentUser.id && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    abrirAgradecer({ pessoas: [editing.assigneeId], tarefaId: editing.id })
+                  }
+                  title="Agradecer no mural"
+                  className="inline-flex items-center gap-1 rounded-full border border-pink-400/40 px-2 py-0.5 text-[11px] font-medium text-pink-700 transition hover:bg-pink-500/10 dark:text-pink-300"
+                >
+                  <HeartHandshake className="h-3.5 w-3.5" /> Agradecer
+                </button>
+              )}
             </div>
           )}
           <button
@@ -1353,13 +1389,21 @@ export function TaskDialog() {
                       ({editing.attachments?.length ?? 0})
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => taskAttInputRef.current?.click()}
-                    className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-primary/50"
-                  >
-                    <Plus className="h-3 w-3" /> Adicionar arquivo
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <BotaoRecadoDeVoz
+                      aoGravar={(a) => void anexarRecadoNaTarefa(a)}
+                      rotulo="Recado de voz"
+                      tamanhoIcone="h-3 w-3"
+                      className="rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-primary/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => taskAttInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] hover:border-primary/50"
+                    >
+                      <Plus className="h-3 w-3" /> Adicionar arquivo
+                    </button>
+                  </div>
                   <input
                     ref={taskAttInputRef}
                     type="file"
@@ -1493,14 +1537,27 @@ export function TaskDialog() {
                     }
                   />
                 )}
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => commentAttInputRef.current?.click()}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  >
-                    <Paperclip className="h-3.5 w-3.5" /> Anexar
-                  </button>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => commentAttInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" /> Anexar
+                    </button>
+                    <BotaoRecadoDeVoz
+                      aoGravar={comentarComGravacao}
+                      rotulo="Voz"
+                      tamanhoIcone="h-3.5 w-3.5"
+                      className="rounded-md px-2 py-1 text-[11px]"
+                    />
+                    <BotaoGravarTela
+                      aoConcluir={comentarComGravacao}
+                      tamanhoIcone="h-3.5 w-3.5"
+                      className="rounded-md px-2 py-1 text-[11px]"
+                    />
+                  </div>
                   <input
                     ref={commentAttInputRef}
                     type="file"

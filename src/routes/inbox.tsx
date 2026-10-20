@@ -137,6 +137,7 @@ function InboxPage() {
                         search: n.projectId ? { projeto: n.projectId } : {},
                       });
                     // Comunicado e marcação no Mural (14/10/2026).
+                    if (n.type === "comunicado" || n.type === "mural") navigate({ to: "/mural" });
                   }}
                   className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-secondary/50 ${
                     n.read ? "opacity-70" : ""

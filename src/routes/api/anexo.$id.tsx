@@ -56,6 +56,29 @@ export const Route = createFileRoute("/api/anexo/$id")({
           { nome: string; tipo_mime: string; url: string } | undefined;
         if (!linha) return new Response("anexo não encontrado", { status: 404 });
 
+        /* Áudio e vídeo (19/10/2026, recado de voz e gravação de tela) saem em
+           fluxo e respeitam o `Range`: o `<video>` pede o arquivo aos pedaços
+           para deixar pular para o meio, e espera 206 com `Content-Range`. O
+           servidor também deixa de segurar o vídeo inteiro na memória. O resto
+           continua pelo caminho de sempre, que já funciona e não muda. */
+        if (/^(audio|video)\//.test(linha.tipo_mime ?? "")) {
+          const { lerDoBlobEmFluxo } = await import("@/integrations/blob.server");
+          const midia = await lerDoBlobEmFluxo(linha.url, request.headers.get("range"));
+          if (!midia) return new Response("anexo indisponível", { status: 404 });
+          return new Response(midia.corpo, {
+            status: midia.status,
+            headers: {
+              ...midia.cabecalhos,
+              // O tipo gravado na linha manda; o do Azure é o reserva.
+              "content-type": linha.tipo_mime || midia.cabecalhos["content-type"] || "",
+              "content-disposition": `${new URL(request.url).searchParams.has("baixar") ? "attachment" : "inline"}; filename="${linha.nome.replace(/["\\]/g, "_").replace(/[^ -~]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(linha.nome)}`,
+              "cache-control": "private, max-age=3600",
+            // O navegador não "adivinha" outro tipo: arquivo enviado não vira página.
+            "x-content-type-options": "nosniff",
+            },
+          });
+        }
+
         const { lerDoBlob } = await import("@/integrations/blob.server");
         const arquivo = await lerDoBlob(linha.url);
         if (!arquivo) return new Response("anexo indisponível", { status: 404 });
@@ -71,12 +94,14 @@ export const Route = createFileRoute("/api/anexo/$id")({
                (WebView2) entende e grava em Downloads — o link de blob, ele
                ignorava. O nome vai também em UTF-8 (filename*), para acento
                não virar lixo no arquivo salvo. */
-            "content-disposition": `${new URL(request.url).searchParams.has("baixar") ? "attachment" : "inline"}; filename="${linha.nome.replace(/"/g, "'").replace(/[^ -~]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(linha.nome)}`,
+            "content-disposition": `${new URL(request.url).searchParams.has("baixar") ? "attachment" : "inline"}; filename="${linha.nome.replace(/["\\]/g, "_").replace(/[^ -~]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(linha.nome)}`,
             /* `private` porque a resposta depende de quem está logado: um cache
                compartilhado no caminho não pode guardar isto e entregar para
                outra pessoa. Uma hora é o bastante — o arquivo não muda, e o id
                é novo a cada envio. */
             "cache-control": "private, max-age=3600",
+            // O navegador não "adivinha" outro tipo: arquivo enviado não vira página.
+            "x-content-type-options": "nosniff",
           },
         });
       },

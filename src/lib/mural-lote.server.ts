@@ -1,6 +1,6 @@
 /*
  * O lote diário do Mural (fase 2, 14/10/2026): as publicações automáticas —
- * conquistas, tempo de casa e boas-vindas — nascem aqui, UMA vez por dia,
+ * conquistas, tempo de casa, boas-vindas e aniversários (17/10/2026) — nascem aqui, UMA vez por dia,
  * e não a cada tela aberta.
  *
  * Como roda (sem relógio nem laço novo):
@@ -93,7 +93,7 @@ const ddmm = (diaMs: number) => {
 
 type Publicacao = {
   chave: string;
-  selo: "pack" | "setor" | "recorde" | "primeira" | "tempo_casa" | "boas_vindas";
+  selo: "pack" | "setor" | "recorde" | "primeira" | "tempo_casa" | "boas_vindas" | "aniversario";
   titulo: string;
   texto: string;
   pessoas: number[];
@@ -133,7 +133,7 @@ async function rodarLote(hoje: DiaBR): Promise<number> {
 }
 
 async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
-  const { pessoasDoMural } = await import("@/lib/mural.server");
+  const { aniversariosProximos, pessoasDoMural } = await import("@/lib/mural.server");
   const { ehFeriadoNacional } = await import("@/lib/dias-uteis");
   const { nomeCurto } = await import("@/lib/nome-curto");
   const { sectors } = await import("@/lib/fluxo-types");
@@ -173,15 +173,15 @@ async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
           AND NOT (t.arquivada_em IS NOT NULL AND t.situacao <> 'concluida')
         GROUP BY t.responsavel_id, d.dia;
 
-       -- 3) Os setores na semana passada (segunda a domingo).
-       SELECT t.setor, COUNT(*) AS total,
+       -- 3) Cada pessoa na semana passada (segunda a domingo): o "Time 100%"
+       --    é de TODO MUNDO do setor, não só de quem teve tarefa (19/10/2026).
+       SELECT t.responsavel_id AS pessoa_id, COUNT(*) AS total,
               SUM(CASE WHEN t.situacao = 'concluida' AND t.concluida_em < @semana_fim
                        THEN 1 ELSE 0 END) AS feitas
          FROM gestor.tarefas t
         WHERE t.prazo >= @semana_ini AND t.prazo < @semana_fim
           AND NOT (t.arquivada_em IS NOT NULL AND t.situacao <> 'concluida')
-          AND t.setor <> N'sem-setor'
-        GROUP BY t.setor;
+        GROUP BY t.responsavel_id;
 
        -- 4) Conclusões por pessoa e dia, no último ano (recorde pessoal).
        SELECT c.pessoa_id, CAST(c.em AT TIME ZONE ${FUSO_SQL} AS DATE) AS dia, COUNT(*) AS n
@@ -193,11 +193,16 @@ async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
        SELECT c.pessoa_id
          FROM gestor.conclusoes c
         GROUP BY c.pessoa_id
-       HAVING MIN(c.em) >= @desde_3;`,
+       HAVING MIN(c.em) >= @desde_3;
+
+       -- 6) O setor de cada pessoa (para montar os times).
+       SELECT pessoa_id, setor FROM gestor.perfis
+        WHERE setor IS NOT NULL AND setor <> N'sem-setor';`,
     );
   const sets = r.recordsets as unknown as Record<string, unknown>[][];
   const foraDoMural = new Set(((sets[0] ?? []) as { pessoa_id: number }[]).map((l) => l.pessoa_id));
-  const pessoas = (await pessoasDoMural()).filter((p) => p.ativa && !foraDoMural.has(p.id));
+  const todasAtivas = (await pessoasDoMural()).filter((p) => p.ativa);
+  const pessoas = todasAtivas.filter((p) => !foraDoMural.has(p.id));
   const porId = new Map(pessoas.map((p) => [p.id, p]));
   const nome = (id: number) => nomeCurto(porId.get(id)?.nome ?? "");
   const iso = (v: unknown) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
@@ -258,17 +263,45 @@ async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
     });
   }
 
-  /* ---- Setor com 100% na semana ---- */
+  /* ---- Time com 100% na semana ----
+     (19/10/2026: "o time tem que ser todos… acho injusto porque tem gente que
+     nem criou tarefa") O selo é do TIME INTEIRO: toda pessoa ativa do setor
+     precisa ter tido tarefa com prazo na semana e concluído todas. Quem não
+     teve tarefa nenhuma impede o selo — 100% de metade do time não é o time.
+     Pelo menos 2 pessoas e SETOR_MINIMO tarefas somadas. O cartão mostra
+     todo mundo do time (menos quem pediu para ficar fora do mural). */
   const nomeDoSetor = new Map(sectors.map((s) => [s.id, s.name]));
-  for (const l of (sets[2] ?? []) as { setor: string; total: number; feitas: number }[]) {
-    if (l.total < SETOR_MINIMO || l.feitas < l.total) continue;
-    const rotulo = nomeDoSetor.get(l.setor) ?? l.setor;
+  const semanaDe = new Map(
+    ((sets[2] ?? []) as { pessoa_id: number; total: number; feitas: number }[]).map((l) => [
+      l.pessoa_id,
+      l,
+    ]),
+  );
+  const ativas = new Set(todasAtivas.map((p) => p.id));
+  const membros = new Map<string, number[]>();
+  for (const l of (sets[5] ?? []) as { pessoa_id: number; setor: string }[]) {
+    if (!ativas.has(l.pessoa_id)) continue;
+    const lista = membros.get(l.setor) ?? [];
+    lista.push(l.pessoa_id);
+    membros.set(l.setor, lista);
+  }
+  for (const [setor, ids] of membros) {
+    if (ids.length < 2) continue;
+    let total = 0;
+    const todosFecharam = ids.every((id) => {
+      const s = semanaDe.get(id);
+      if (!s || s.total === 0 || s.feitas < s.total) return false;
+      total += s.total;
+      return true;
+    });
+    if (!todosFecharam || total < SETOR_MINIMO) continue;
+    const rotulo = nomeDoSetor.get(setor) ?? setor;
     saida.push({
-      chave: `setor:${l.setor}:${isoDe(semanaIni)}`,
+      chave: `setor:${setor}:${isoDe(semanaIni)}`,
       selo: "setor",
       titulo: `Time de ${rotulo} bateu 100% na semana 🏆`,
-      texto: `Todas as ${l.total} tarefas da semana de ${ddmm(semanaIni)} a ${ddmm(segundaDestaSemana - DIA_MS)} foram concluídas. Parabéns, time!`,
-      pessoas: [],
+      texto: `Todo mundo do time — ${ids.length} pessoas — concluiu todas as ${total} tarefas da semana de ${ddmm(semanaIni)} a ${ddmm(segundaDestaSemana - DIA_MS)}. Parabéns, time!`,
+      pessoas: ids.filter((id) => porId.has(id)),
     });
   }
 
@@ -341,6 +374,21 @@ async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
         pessoas: [p.id],
       });
     }
+  }
+
+  /* ---- Aniversário (17/10/2026: "anuncie sempre no mural") ----
+     A mesma lista da lateral: data do RH ou a corrigida pela pessoa, e quem
+     pediu para não aparecer fica de fora (`aniversariosProximos`). */
+  for (const a of await aniversariosProximos()) {
+    if (a.dia !== hoje.dia || a.mes !== hoje.mes || !porId.has(a.pessoaId)) continue;
+    const quem = nome(a.pessoaId);
+    saida.push({
+      chave: `aniver:${a.pessoaId}:${hoje.ano}`,
+      selo: "aniversario",
+      titulo: `Feliz aniversário, ${quem}! 🎂`,
+      texto: `Hoje é aniversário de ${quem}. Deixe seus parabéns nos comentários!`,
+      pessoas: [a.pessoaId],
+    });
   }
 
   return saida;

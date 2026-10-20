@@ -7,7 +7,8 @@ import { primeiroNome } from "@/integrations/iam/types";
 import { tocarNudge } from "@/lib/sons";
 import { avisarNoSistema } from "@/lib/aviso-do-sistema";
 import { PREFIXO_EMOJI } from "@/lib/attention.functions";
-import { abrirConversa, dispararEmojiGigante } from "@/lib/avisos-no-chat";
+import { abrirConversa, dispararEmojiGigante, dispararReacaoDoAvatar } from "@/lib/avisos-no-chat";
+import { PREFIXO_REACAO, REACOES_DO_AVATAR, ehReacaoDoAvatar } from "@/lib/reacoes-do-avatar";
 
 interface AttnEvent {
   fromName: string;
@@ -107,6 +108,26 @@ export function AttentionOverlay() {
              resposta acontece (pedido do usuário, 08/10/2026). A linha "fulano
              chamou sua atenção" já está nela — quem manda a grava junto. */
           abrirConversa(n.from_user_id);
+
+          /* A reação do avatar (17/10/2026) viaja como cutucada com
+             "avatar:beijo" — ver PREFIXO_REACAO. Uma reação que esta versão
+             ainda não conhece segue como cutucada comum, logo abaixo. */
+          const reacao =
+            n.kind === "cutucada" && n.message?.startsWith(PREFIXO_REACAO)
+              ? n.message.slice(PREFIXO_REACAO.length)
+              : null;
+          if (ehReacaoDoAvatar(reacao)) {
+            const def = REACOES_DO_AVATAR[reacao];
+            void avisarNoSistema({
+              titulo: def.faixa(primeiroNome(n.from_name), false),
+              corpo: "",
+              tag: `atencao-${id}`,
+            });
+            dispararReacaoDoAvatar(reacao, n.from_name, n.from_user_id);
+            tocarNudge();
+            void desktopBringToFront();
+            continue;
+          }
 
           // O emoji gigante viaja como cutucada com "emoji:❤️" — ver PREFIXO_EMOJI.
           const emoji =

@@ -787,6 +787,32 @@ export function CallContents({
   }, [doEnd]);
 
   const requestEnd = useCallback(() => {
+    const h = meetingRef.current;
+    /* Quem escreve a ata sai e a reunião continua: a ata passa para quem fica,
+       em vez de ser salva e fechada aqui (19/10/2026 — foi assim que reuniões
+       inteiras se perderam). Só se ninguém puder assumir é que ela é salva. */
+    if (
+      h &&
+      h.escritorDaAta()?.identity === localParticipant.identity &&
+      room.remoteParticipants.size > 0
+    ) {
+      if (saindoRef.current) return;
+      saindoRef.current = true;
+      const aviso = toast.loading("Passando a ata para quem fica na reunião…");
+      void h.passarAAta().then((passou) => {
+        toast.dismiss(aviso);
+        if (passou || mini) {
+          // No mini não cabe a pergunta; o rascunho da ata já está em Atas & Planos.
+          doEndRef.current();
+          return;
+        }
+        saindoRef.current = false;
+        setEndError(null);
+        setEncerrarTodos(null);
+        setEndConfirm("prompt");
+      });
+      return;
+    }
     // In mini mode we don't have room to show the "save minute" prompt, and
     // clicking X on the mini widget should just end the call. Otherwise the
     // user gets stuck: nothing happens, and the call keeps running.
@@ -794,7 +820,6 @@ export function CallContents({
       doEnd();
       return;
     }
-    const h = meetingRef.current;
     if (h && h.hasContent() && !h.hasSavedMinute()) {
       setEndError(null);
       setEncerrarTodos(null);
@@ -802,7 +827,7 @@ export function CallContents({
       return;
     }
     doEnd();
-  }, [doEnd, mini]);
+  }, [doEnd, mini, localParticipant, room]);
 
   const saveThenEnd = useCallback(async () => {
     const h = meetingRef.current;

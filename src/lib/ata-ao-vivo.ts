@@ -12,6 +12,8 @@ export interface FalaDaReuniao {
   hora: string;
   quem: string;
   texto: string;
+  /** O bloco de áudio guardado desta fala (`/api/ata-audio/<ata>/<bloco>`). */
+  audio?: string;
 }
 
 export interface PassoDaAta {
@@ -59,7 +61,9 @@ export function ataDaEntrada(v: unknown): AtaAoVivo {
     resumo: txt(o.resumo, 2000),
     assuntos: (Array.isArray(o.assuntos) ? o.assuntos : []).slice(0, 40).flatMap((a) => {
       const titulo = txt((a as { titulo?: unknown })?.titulo, 200);
-      return titulo ? [{ titulo, pontos: lista((a as { pontos?: unknown })?.pontos, 600, 30) }] : [];
+      return titulo
+        ? [{ titulo, pontos: lista((a as { pontos?: unknown })?.pontos, 600, 30) }]
+        : [];
     }),
     decisoes: lista(o.decisoes, 600),
     proximosPassos: (Array.isArray(o.proximosPassos) ? o.proximosPassos : [])
@@ -68,7 +72,13 @@ export function ataDaEntrada(v: unknown): AtaAoVivo {
         const r = (p ?? {}) as Record<string, unknown>;
         const acao = txt(r.acao, 400);
         return acao
-          ? [{ acao, responsavel: txt(r.responsavel, 120) || null, prazo: txt(r.prazo, 80) || null }]
+          ? [
+              {
+                acao,
+                responsavel: txt(r.responsavel, 120) || null,
+                prazo: txt(r.prazo, 80) || null,
+              },
+            ]
           : [];
       }),
     pontosDeAtencao: lista(o.pontosDeAtencao, 600),
@@ -86,7 +96,14 @@ const marcadores = (itens: string[], vazio: string) =>
  */
 export function ataParaMarkdown(
   a: AtaAoVivo,
-  cabecalho: { titulo: string; participantes: string[] },
+  cabecalho: {
+    titulo: string;
+    participantes: string[];
+    /** O rascunho salvo durante a reunião leva o aviso no topo. */
+    emAndamento?: boolean;
+    /** A transcrição inteira vai no fim: nada do que foi dito se perde, mesmo que a IA erre o resumo. */
+    transcricao?: Pick<FalaDaReuniao, "hora" | "quem" | "texto">[];
+  },
 ): string {
   const passos = a.proximosPassos.length
     ? a.proximosPassos
@@ -104,8 +121,36 @@ export function ataParaMarkdown(
         .join("\n\n")
     : "Nenhum assunto registrado.";
 
+  const transcricao = cabecalho.transcricao?.length
+    ? [
+        "",
+        "### Transcrição da reunião",
+        cabecalho.transcricao.map((f) => `[${f.hora}] **${f.quem}:** ${f.texto}`).join("\n"),
+      ]
+    : [];
+
+  /* Sem ata escrita ainda (reunião em andamento) ou a IA falhou: vai só a
+     transcrição, sem uma parede de "nenhum…" no meio. */
+  if (!ataTemConteudo(a) && transcricao.length) {
+    return [
+      `## Ata — ${cabecalho.titulo}`,
+      cabecalho.emAndamento
+        ? "_Reunião em andamento — a ata é escrita quando ela terminar. Até lá, vale a transcrição abaixo._"
+        : "_A ata desta reunião não pôde ser escrita automaticamente. A transcrição completa está abaixo._",
+      "",
+      `**Participantes:** ${cabecalho.participantes.join(", ") || "não identificados"}`,
+      ...transcricao,
+    ].join("\n");
+  }
+
   return [
     `## Ata — ${cabecalho.titulo}`,
+    ...(cabecalho.emAndamento
+      ? [
+          "_Reunião em andamento — esta ata ainda está sendo escrita e será substituída pela versão final._",
+          "",
+        ]
+      : []),
     `**Participantes:** ${cabecalho.participantes.join(", ") || "não identificados"}`,
     "",
     "### Resumo executivo",
@@ -122,6 +167,7 @@ export function ataParaMarkdown(
     "",
     "### Pontos de atenção",
     marcadores(a.pontosDeAtencao, "Nenhum ponto de atenção registrado."),
+    ...transcricao,
   ].join("\n");
 }
 

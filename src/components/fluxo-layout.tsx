@@ -1,4 +1,5 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { MEU_MES_LIBERADO } from "@/lib/meu-mes-liberado";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -32,6 +33,8 @@ import {
   Contact,
   FolderKanban,
   MessageCircle,
+  Newspaper,
+  Gift,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
@@ -54,6 +57,8 @@ import { useCallInviter } from "@/lib/call-inviter-context";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
+  // Mural (14/10/2026): notícias, comunicados e aniversariantes.
+  { to: "/mural", label: "Mural", icon: Newspaper },
   { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/minhas-tarefas", label: "Minhas tarefas", icon: CheckSquare },
   { to: "/pack", label: "Pack diário", icon: Flame },
@@ -64,6 +69,11 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/atas", label: "Atas & Planos", icon: FileText },
   { to: "/metas", label: "Metas & Score", icon: Target },
   { to: "/calendario", label: "Calendário", icon: Calendar },
+  // A retrospectiva do mês, como o Spotify Wrapped (19/10/2026).
+  // Escondido até o lançamento — ver `meu-mes-liberado.ts`.
+  ...(MEU_MES_LIBERADO ? [{ to: "/meu-mes", label: "Meu mês", icon: Gift }] : []),
+  // Sala de Realidade Virtual escondida por enquanto (16/10/2026): o avatar
+  // foi para Configurações → Meu avatar e aparece no Início. A rota continua.
   { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
@@ -343,6 +353,8 @@ export function FluxoLayout({
     if (n.type === "projeto") {
       navigate({ to: "/projetos", search: n.projectId ? { projeto: n.projectId } : {} });
     }
+    // Comunicado e marcação no Mural (14/10/2026).
+    if (n.type === "comunicado" || n.type === "mural") navigate({ to: "/mural" });
   };
 
   const acoesRef = useRef({

@@ -1,3 +1,4 @@
+import { AbaAvatar, podeSairDoAvatar } from "@/components/aba-avatar";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -18,6 +19,7 @@ import {
   Trash2,
   User as UserIcon,
   Users,
+  Smile,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -40,6 +42,8 @@ import { reduzirFoto } from "@/lib/foto-reduzida";
 import { formatarTelefone, mascararTelefone, telefoneParaGuardar } from "@/lib/telefone";
 import { transicionar } from "@/components/transition-veil";
 import { confirmar } from "@/components/confirm-dialog";
+import { MeuAniversario } from "@/components/mural/meu-aniversario";
+import { ConquistasNoMural } from "@/components/mural/conquistas-no-mural";
 import { useAcaoPendente } from "@/lib/use-acao-pendente";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -57,7 +61,7 @@ export const Route = createFileRoute("/configuracoes")({
   component: SettingsPage,
 });
 
-type Tab = "perfil" | "aparencia" | "notificacoes" | "conta";
+type Tab = "perfil" | "avatar" | "aparencia" | "notificacoes" | "conta";
 
 function SettingsPage() {
   const { currentUser, updateCurrentUser, logout, users } = useFluxo();
@@ -174,6 +178,8 @@ function SettingsPage() {
 
   const tabs: { id: Tab; label: string; icon: typeof UserIcon }[] = [
     { id: "perfil", label: "Perfil e contato", icon: UserIcon },
+    // O provador do avatar 3D saiu da sala de Realidade Virtual (16/10/2026).
+    { id: "avatar", label: "Meu avatar", icon: Smile },
     { id: "aparencia", label: "Aparência", icon: Palette },
     { id: "notificacoes", label: "Notificações", icon: Bell },
     { id: "conta", label: "Conta", icon: LogOut },
@@ -181,14 +187,21 @@ function SettingsPage() {
 
   return (
     <FluxoLayout title="Configurações" breadcrumb="Preferências">
-      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 md:grid-cols-[220px_1fr]">
+      {/* O provador precisa de largura: avatar de um lado, catálogo do outro. */}
+      <div
+        className={`mx-auto grid grid-cols-1 gap-6 ${tab === "avatar" ? "w-full md:grid-cols-[190px_1fr]" : "max-w-5xl md:grid-cols-[220px_1fr]"}`}
+      >
         <aside className="space-y-1">
           {tabs.map((t) => {
             const active = tab === t.id;
             return (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                onClick={async () => {
+                  // Saindo do avatar com mudança não salva: pergunta antes.
+                  if (tab === "avatar" && t.id !== "avatar" && !(await podeSairDoAvatar())) return;
+                  setTab(t.id);
+                }}
                 className={`relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
                   active
                     ? "text-foreground"
@@ -307,6 +320,12 @@ function SettingsPage() {
               </div>
             </section>
           )}
+
+          {/* Mural (14/10/2026): dia e mês do aniversário, sem ano. */}
+          {tab === "avatar" && <AbaAvatar />}
+          {tab === "perfil" && <MeuAniversario />}
+          {/* Mural, fase 2 (14/10/2026): aparecer ou não nas conquistas automáticas. */}
+          {tab === "perfil" && <ConquistasNoMural />}
 
           {tab === "aparencia" && (
             <section className="rounded-lg border border-border bg-card p-6">

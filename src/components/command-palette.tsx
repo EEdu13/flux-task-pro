@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { MEU_MES_LIBERADO } from "@/lib/meu-mes-liberado";
 import { Command } from "cmdk";
 import { useNavigate } from "@tanstack/react-router";
 import { TravaScroll } from "@/components/trava-scroll";
@@ -18,6 +19,7 @@ import {
   Phone,
   DoorOpen,
   Search,
+  Gift,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
@@ -196,6 +198,9 @@ export function CommandPalette() {
                 { to: "/atas", label: "Atas & Planos", icon: FileText },
                 { to: "/metas", label: "Metas & Score", icon: Target },
                 { to: "/calendario", label: "Calendário", icon: Calendar },
+                ...(MEU_MES_LIBERADO
+                  ? [{ to: "/meu-mes", label: "Meu mês (retrospectiva)", icon: Gift }]
+                  : []),
                 { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
                 { to: "/configuracoes", label: "Configurações", icon: Settings },
               ].map((n) => (

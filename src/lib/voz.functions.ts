@@ -27,7 +27,9 @@ const LIMITE_POR_HORA = {
   transcricao: 300,
   interpretacao: 300,
   "transcricao-reuniao": 2000,
-  ata: 240,
+  "ata-final": 30,
+  /** Blocos de ~40 s com o áudio guardado: uma reunião cheia gera ~1 por minuto por pessoa. */
+  "bloco-reuniao": 400,
 } as const;
 const usos = new Map<string, number[]>();
 
@@ -76,6 +78,7 @@ type EntradaTranscricao = {
   nomes: string[];
   contexto: "ditado" | "reuniao";
   falaMs: number | undefined;
+  anterior: string;
 };
 
 export const transcreverVoz = createServerFn({ method: "POST" })
@@ -87,6 +90,7 @@ export const transcreverVoz = createServerFn({ method: "POST" })
         nomes?: string[];
         contexto?: "ditado" | "reuniao";
         falaMs?: number;
+        anterior?: string;
       }): EntradaTranscricao => {
         const audio = typeof e?.audio === "string" ? e.audio.replace(/^data:[^,]*,/, "") : "";
         if (!audio) throw new Error("Trecho de áudio vazio");
@@ -104,7 +108,14 @@ export const transcreverVoz = createServerFn({ method: "POST" })
           typeof e?.falaMs === "number" && Number.isFinite(e.falaMs) && e.falaMs >= 0
             ? Math.min(e.falaMs, 600_000)
             : undefined;
-        return { audio, mime, nomes, contexto: e?.contexto === "reuniao" ? "reuniao" : "ditado", falaMs };
+        return {
+          audio,
+          mime,
+          nomes,
+          contexto: e?.contexto === "reuniao" ? "reuniao" : "ditado",
+          falaMs,
+          anterior: typeof e?.anterior === "string" ? e.anterior.trim().slice(-400) : "",
+        };
       },
     ),
   )
@@ -120,6 +131,7 @@ export const transcreverVoz = createServerFn({ method: "POST" })
           nomes: d.nomes,
           contexto: d.contexto,
           falaMs: d.falaMs,
+          anterior: d.anterior,
         });
         return { texto: textoOuvido };
       });
@@ -202,19 +214,9 @@ export const interpretarVoz = createServerFn({ method: "POST" })
     }),
   );
 
-/* -------------------- Escrever a ata -------------------- */
+/* -------------------- Linhas de fala -------------------- */
 
 type LinhaDeFala = { hora: string; quem: string; texto: string };
-
-type EntradaAta = {
-  titulo: string;
-  data: string;
-  participantes: string[];
-  ata: AtaAoVivo;
-  anteriores: LinhaDeFala[];
-  novas: LinhaDeFala[];
-  chat: LinhaDeFala[];
-};
 
 function linhasDaEntrada(v: unknown, maximo: number): LinhaDeFala[] {
   if (!Array.isArray(v)) return [];
@@ -225,48 +227,191 @@ function linhasDaEntrada(v: unknown, maximo: number): LinhaDeFala[] {
   });
 }
 
-export const atualizarAtaDaReuniao = createServerFn({ method: "POST" })
+/* -------------------- A ata final -------------------- */
+
+type EntradaAtaFinal = {
+  titulo: string;
+  data: string;
+  participantes: string[];
+  rascunho: AtaAoVivo;
+  falas: LinhaDeFala[];
+  chat: LinhaDeFala[];
+};
+
+/** Uns 150 mil tokens de transcrição: mais de três horas de conversa. */
+const MAX_CARACTERES_DA_TRANSCRICAO = 600_000;
+
+export const redigirAtaFinalDaReuniao = createServerFn({ method: "POST" })
   .validator(
     semIdentidade(
       (e: {
         titulo: string;
         data: string;
         participantes?: string[];
-        ata?: AtaAoVivo;
-        anteriores?: LinhaDeFala[];
-        novas?: LinhaDeFala[];
+        rascunho?: AtaAoVivo;
+        falas?: LinhaDeFala[];
         chat?: LinhaDeFala[];
-      }): EntradaAta => {
-        const novas = linhasDaEntrada(e?.novas, 200);
-        const chat = linhasDaEntrada(e?.chat, 100);
-        if (!novas.length && !chat.length) throw new Error("Nada novo para a ata");
+      }): EntradaAtaFinal => {
+        let falas = linhasDaEntrada(e?.falas, 6000);
+        const chat = linhasDaEntrada(e?.chat, 300);
+        if (!falas.length && !chat.length) throw new Error("Nada para a ata");
+        // Reunião enorme: fica o fim (o rascunho ao vivo já cobre o começo).
+        let total = falas.reduce((s, f) => s + f.texto.length + 30, 0);
+        while (total > MAX_CARACTERES_DA_TRANSCRICAO && falas.length > 1) {
+          total -= falas[0]!.texto.length + 30;
+          falas = falas.slice(1);
+        }
         return {
           titulo: texto(e?.titulo, 120) || "Reunião",
           data: texto(e?.data, 10),
           participantes: Array.isArray(e?.participantes)
             ? e.participantes
-                .slice(0, 60)
+                .slice(0, 80)
                 .map((p) => texto(p, 120))
                 .filter(Boolean)
             : [],
-          ata: ataDaEntrada(e?.ata),
-          anteriores: linhasDaEntrada(e?.anteriores, 30),
-          novas,
+          rascunho: ataDaEntrada(e?.rascunho),
+          falas,
           chat,
         };
       },
     ),
   )
   .handler(
-    comSessao(async (eu, d: EntradaAta): Promise<{ ata: AtaAoVivo }> => {
-      conferirLimite("ata", eu);
-      return comFrase("ata", eu, async () => {
-        const { atualizarAta } = await import("@/lib/voz.server");
-        const r = await atualizarAta({ apiKey: process.env.CLAUDE_API_KEY, ...d });
+    comSessao(async (eu, d: EntradaAtaFinal): Promise<{ ata: AtaAoVivo }> => {
+      conferirLimite("ata-final", eu);
+      return comFrase("ata final", eu, async () => {
+        const { redigirAtaFinal, redigirAtaFinalComGpt } = await import("@/lib/voz.server");
+        /* Claude primeiro; se ele falhar (fora do ar, sem crédito), o GPT
+           escreve a mesma ata. Reunião não fica sem ata por um provedor só. */
+        let r;
+        let quem = "claude";
+        try {
+          r = await redigirAtaFinal({ apiKey: process.env.CLAUDE_API_KEY, ...d });
+        } catch (e) {
+          console.warn(
+            `[voz] ata final pelo Claude falhou para ${eu}, indo para o GPT:`,
+            (e as Error)?.message,
+          );
+          quem = "gpt";
+          conferirLimite("ata-final", eu);
+          r = await redigirAtaFinalComGpt({ apiKey: process.env.OPENAI_API_KEY, ...d });
+        }
         console.info(
-          `[voz] ata de ${eu}: ${r.tokens.entrada} in / ${r.tokens.saida} out, ${d.novas.length} fala(s)`,
+          `[voz] ata final (${quem}) de ${eu}: ${r.tokens.entrada} in / ${r.tokens.saida} out, ${d.falas.length} fala(s)`,
         );
         return { ata: r.ata };
+      });
+    }),
+  );
+
+/* -------------------- Bloco de fala da reunião -------------------- */
+
+/** ~55 s de fala em WAV 16 kHz (32 KB/s), já em base64. */
+const MAX_BASE64_BLOCO = 2_500_000;
+
+type EntradaBloco = {
+  ataId: string;
+  blocoId: string;
+  audio: string;
+  nomes: string[];
+  falaMs: number | undefined;
+  anterior: string;
+};
+
+const ehGuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+
+/**
+ * Guarda no Blob o bloco de fala de uma pessoa (a reunião fica gravada, para
+ * ouvir o trecho depois) e devolve a transcrição dele. O áudio vai para
+ * `atas/<ata>/<bloco>.wav`; o banco não recebe nada além do texto da ata.
+ */
+export const transcreverBlocoDaReuniao = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade(
+      (e: {
+        ataId: string;
+        blocoId: string;
+        audio: string;
+        nomes?: string[];
+        falaMs?: number;
+        anterior?: string;
+      }): EntradaBloco => {
+        if (!ehGuid(e?.ataId) || !ehGuid(e?.blocoId)) throw new Error("Bloco inválido");
+        const audio = typeof e?.audio === "string" ? e.audio : "";
+        if (!audio || audio.length > MAX_BASE64_BLOCO) throw new Error("Bloco de áudio inválido");
+        if (!/^[A-Za-z0-9+/=]+$/.test(audio)) throw new Error("Áudio em formato inválido");
+        // "UklGR" é "RIFF" em base64: só WAV entra aqui.
+        if (!audio.startsWith("UklGR")) throw new Error("Áudio em formato inválido");
+        return {
+          ataId: e.ataId.toLowerCase(),
+          blocoId: e.blocoId.toLowerCase(),
+          audio,
+          nomes: Array.isArray(e?.nomes)
+            ? e.nomes
+                .slice(0, 80)
+                .map((n) => texto(n, 60))
+                .filter(Boolean)
+            : [],
+          falaMs:
+            typeof e?.falaMs === "number" && Number.isFinite(e.falaMs) && e.falaMs >= 0
+              ? Math.min(e.falaMs, 600_000)
+              : undefined,
+          anterior: typeof e?.anterior === "string" ? e.anterior.trim().slice(-400) : "",
+        };
+      },
+    ),
+  )
+  .handler(
+    comSessao(async (eu, d: EntradaBloco): Promise<{ texto: string; guardado: boolean }> => {
+      conferirLimite("bloco-reuniao", eu);
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const pode = await pool
+        .request()
+        .input("ata", sql.UniqueIdentifier, d.ataId)
+        .input("eu", sql.Int, eu)
+        .query(
+          `SELECT CASE
+                    WHEN NOT EXISTS (SELECT 1 FROM gestor.atas WHERE id = @ata) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM gestor.atas a
+                                  WHERE a.id = @ata AND (a.criada_por = @eu
+                                    OR EXISTS (SELECT 1 FROM gestor.ata_participantes p
+                                                WHERE p.ata_id = a.id AND p.pessoa_id = @eu)))
+                      THEN 1 ELSE 0 END AS pode`,
+        );
+      if (!(pode.recordset[0] as { pode: number }).pode) throw new Error("Sem acesso a esta ata.");
+      const bytes = Buffer.from(d.audio, "base64");
+      // Guardar não pode impedir a ata: se o Blob falhar, a transcrição segue.
+      let guardado = false;
+      try {
+        const { enviarParaOBlob } = await import("@/integrations/blob.server");
+        const copia = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        // Só cria: um bloco já gravado nunca é trocado (o registro da reunião não se adultera).
+        await enviarParaOBlob(
+          `atas/${d.ataId}/${d.blocoId}.wav`,
+          copia as ArrayBuffer,
+          "audio/wav",
+          {
+            naoSobrescrever: true,
+          },
+        );
+        guardado = true;
+      } catch (e) {
+        console.warn(`[voz] bloco da ata não foi guardado para ${eu}:`, (e as Error)?.message);
+      }
+      return comFrase("transcrição do bloco", eu, async () => {
+        const { transcreverTrecho } = await import("@/lib/voz.server");
+        const textoOuvido = await transcreverTrecho({
+          apiKey: process.env.OPENAI_API_KEY,
+          audio: new Uint8Array(bytes),
+          mime: "audio/wav",
+          nomes: d.nomes,
+          contexto: "reuniao",
+          falaMs: d.falaMs,
+          anterior: d.anterior,
+        });
+        return { texto: textoOuvido, guardado };
       });
     }),
   );

@@ -1,0 +1,54 @@
+/*
+ * gestos.css — animações dos avisos de gesto (pills acima da barra) e da fila de mãos.
+ * Keyframes próprios (e não utilitários) porque a SAÍDA começa num instante calculado
+ * (desde + DURACAO_AVISO_MS − 300 ms): o componente troca a classe e o CSS faz o resto.
+ */
+@keyframes rv-gesto-sobe {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes rv-gesto-some {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes rv-gesto-acende {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.35);
+  }
+}
+
+.rv-aviso-gesto {
+  animation: rv-gesto-sobe 200ms ease-out both;
+}
+
+.rv-aviso-gesto[data-saindo="true"] {
+  animation: rv-gesto-some 300ms ease-in both;
+}
+
+.rv-fila-nova {
+  animation: rv-gesto-acende 900ms ease-in-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-aviso-gesto,
+  .rv-aviso-gesto[data-saindo="true"],
+  .rv-fila-nova {
+    animation: none;
+  }
+}
