@@ -10,10 +10,12 @@ import {
   ArrowRight,
   CheckCircle2,
   Search,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import type { MeetingMinute, MinuteTopic } from "@/lib/fluxo-types";
+import { statusLabels, type MeetingMinute, type MinuteTopic } from "@/lib/fluxo-types";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
 import { PresencasDasReunioes } from "@/components/presencas-reuniao";
@@ -45,8 +47,46 @@ const kindStyle: Record<MinuteTopic["kind"], string> = {
 };
 
 function AtasPage() {
-  const { visibleMinutes, users, currentUser, minuteTopicToTask, deleteMinute, openTask } =
+  const { visibleMinutes, users, currentUser, minuteTopicToTask, deleteMinute, openTask, tasks } =
     useFluxo();
+
+  /* PDF da ata (20/10/2026): a ata completa e o plano de ação, com o andamento
+     de cada item que virou tarefa — quem ficou, prazo e situação de agora. */
+  const [exportando, setExportando] = useState(false);
+  const exportarPdf = async (m: MeetingMinute) => {
+    setExportando(true);
+    try {
+      const nomeDe = (id: string) => users.find((u) => u.id === id)?.name ?? null;
+      const { exportarAtaEmPdf } = await import("@/lib/ata-em-pdf");
+      await exportarAtaEmPdf({
+        titulo: m.roomLabel,
+        criadaEm: m.createdAt,
+        participantes: m.participantNames,
+        geradaPor: m.createdBy ? nomeDe(m.createdBy) : null,
+        markdown: m.markdown,
+        plano: m.topics.map((t) => {
+          const tarefa = t.taskId ? tasks.find((x) => x.id === t.taskId) : undefined;
+          return {
+            tipo: kindLabel[t.kind],
+            texto: t.text,
+            responsavel: tarefa ? nomeDe(tarefa.assigneeId) : null,
+            prazo: tarefa?.dueDate ? new Date(tarefa.dueDate).toLocaleDateString("pt-BR") : null,
+            situacao: tarefa
+              ? statusLabels[tarefa.status]
+              : t.taskId
+                ? "Virou tarefa"
+                : "Não virou tarefa",
+          };
+        }),
+      });
+      toast.success("PDF da ata baixado");
+    } catch (e) {
+      console.warn("[atas] PDF não saiu:", (e as Error)?.message);
+      toast.error("Não foi possível gerar o PDF agora. Tente de novo.");
+    } finally {
+      setExportando(false);
+    }
+  };
   const minutes = visibleMinutes();
   const [selectedId, setSelectedId] = useState<string | null>(minutes[0]?.id ?? null);
   const [q, setQ] = useState("");
@@ -166,6 +206,8 @@ function AtasPage() {
                   if (taskId) toast.success("Tópico virou tarefa");
                 }}
                 onOpenTask={(taskId) => openTask(taskId)}
+                onExportPdf={() => void exportarPdf(selected)}
+                exportando={exportando}
                 onDelete={async () => {
                   const ok = await confirmar({
                     titulo: "Excluir esta ata?",
@@ -199,6 +241,8 @@ function MinuteDetail({
   onConvert,
   onOpenTask,
   onDelete,
+  onExportPdf,
+  exportando,
 }: {
   minute: MeetingMinute;
   usersLookup: Record<string, string>;
@@ -206,6 +250,8 @@ function MinuteDetail({
   onConvert: (topicId: string) => void;
   onOpenTask: (taskId: string) => void;
   onDelete: () => void;
+  onExportPdf: () => void;
+  exportando: boolean;
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -229,6 +275,19 @@ function MinuteDetail({
           )}
         </div>
         <div className="flex gap-1">
+          <button
+            onClick={onExportPdf}
+            disabled={exportando}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-60"
+            title="Baixar a ata completa e o plano de ação em PDF"
+          >
+            {exportando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4" />
+            )}
+            Exportar PDF
+          </button>
           <button
             onClick={() => {
               navigator.clipboard?.writeText(minute.markdown).catch(() => {});
