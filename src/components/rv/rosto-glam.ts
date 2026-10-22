@@ -16,6 +16,14 @@ const OD = 170;
 const OY = 104;
 const DELINEADO = "#15100e";
 
+/* Proporção (21/10/2026). Nos rostos maquiados do Roblox o olho é grande —
+   quase metade da largura do rosto —, a boca é carnuda e larga e a
+   sobrancelha é desenhada; com as peças pequenas, o rosto lia como masculino.
+   As peças continuam desenhadas no tamanho original e ampliadas aqui. */
+const ESCALA_DO_OLHO = 1.42;
+const ESCALA_DA_BOCA = { x: 1.3, y: 1.42 };
+const CENTRO_DA_BOCA = { x: 128, y: 176 };
+
 /** "feliz" = fechado sorrindo (∩); "meio" = pálpebra baixa, olhar de diva (16/10/2026). */
 type TipoOlhoGlam = "aberto" | "fechado" | "feliz" | "meio";
 
@@ -75,7 +83,7 @@ const ESTILOS: Record<string, EstiloGlam> = {
     boca: { meia: 33, sobe: 5, abre: 6 },
     brilho: true,
     glitter: true,
-    escala: 1.2,
+    escala: 1.52,
   },
 };
 
@@ -127,15 +135,36 @@ function paleta(pele: string) {
 /* ——— peças ——— */
 
 function blush(g: CanvasRenderingContext2D, cor: string) {
-  [58, 198].forEach((x) => {
-    const gr = g.createRadialGradient(x, 148, 2, x, 148, 30);
-    gr.addColorStop(0, alfa(cor, 0.42));
+  // Na maçã do rosto, mais largo e esfumado (21/10/2026).
+  [54, 202].forEach((x) => {
+    const gr = g.createRadialGradient(x, 146, 2, x, 146, 40);
+    gr.addColorStop(0, alfa(cor, 0.4));
     gr.addColorStop(1, alfa(cor, 0));
     g.fillStyle = gr;
     g.beginPath();
-    g.ellipse(x, 148, 32, 24, 0, 0, Math.PI * 2);
+    g.ellipse(x, 146, 42, 30, 0, 0, Math.PI * 2);
     g.fill();
   });
+}
+
+/** Só a sugestão do nariz: as duas narinas bem suaves e um brilho na ponta. */
+function nariz(g: CanvasRenderingContext2D, sombra: string, luz: string) {
+  [-1, 1].forEach((lado) => {
+    const gr = g.createRadialGradient(128 + lado * 7, 139, 0.5, 128 + lado * 7, 139, 5);
+    gr.addColorStop(0, alfa(escuro(sombra, 0.2), 0.45));
+    gr.addColorStop(1, alfa(sombra, 0));
+    g.fillStyle = gr;
+    g.beginPath();
+    g.ellipse(128 + lado * 7, 139, 5, 3.5, 0, 0, Math.PI * 2);
+    g.fill();
+  });
+  const gl = g.createRadialGradient(128, 131, 0.5, 128, 131, 7);
+  gl.addColorStop(0, alfa(luz, 0.55));
+  gl.addColorStop(1, alfa(luz, 0));
+  g.fillStyle = gl;
+  g.beginPath();
+  g.arc(128, 131, 7, 0, Math.PI * 2);
+  g.fill();
 }
 
 /** Sobrancelha arqueada e afinada: cabeça mais clara, arco marcado, cauda fina. */
@@ -720,21 +749,30 @@ export function desenharRostoGlam(
   const cores = paleta(c.pele);
 
   blush(g, cores.blush);
+  nariz(g, cores.sombra, cores.luz);
   const sob = estilo.forte ? sobrancelhaForte : sobrancelha;
-  sob(g, OE, -1, corSobrancelha);
-  g.save();
+  /* A sobrancelha sobe e cresce junto com o olho maior, senão encosta nos
+     cílios; fica mais cheia, como sobrancelha desenhada. */
+  const desenharSobrancelha = (x: number, lado: number, ergue: number) => {
+    g.save();
+    g.translate(x, 70 - 12 - ergue);
+    g.scale(1.16, 1.3);
+    g.translate(-x, -70);
+    sob(g, x, lado, corSobrancelha);
+    g.restore();
+  };
+  desenharSobrancelha(OE, -1, 0);
   // Sobrancelha direita erguida (glamDiva, 16/10/2026).
-  if (estilo.ergue) g.translate(0, -6);
-  sob(g, OD, 1, corSobrancelha);
-  g.restore();
+  desenharSobrancelha(OD, 1, estilo.ergue ? 6 : 0);
 
   [OE, OD].forEach((x, i) => {
     const lado = i === 0 ? -1 : 1;
     // Olho glam é um pouco maior que o dos outros rostos (como nas referências).
-    const esc = estilo.escala ?? 1.12;
+    const esc = estilo.escala ?? ESCALA_DO_OLHO;
     g.save();
     g.translate(x, OY);
-    g.scale(esc, esc);
+    // Um pouco mais aberto na vertical: aparece mais o branco do olho.
+    g.scale(esc, esc * 1.12);
     g.translate(-x, -OY);
     const tipo = estilo.olhos[i];
     if (estilo.glitter) glitterPalpebra(g, x, lado);
@@ -750,6 +788,10 @@ export function desenharRostoGlam(
   });
 
   const corLabio = estilo.ombre ? cores.labioOmbre : cores.labio;
+  g.save();
+  g.translate(CENTRO_DA_BOCA.x, CENTRO_DA_BOCA.y + 7);
+  g.scale(ESCALA_DA_BOCA.x, ESCALA_DA_BOCA.y);
+  g.translate(-CENTRO_DA_BOCA.x, -CENTRO_DA_BOCA.y);
   if (estilo.beijo && !bocaAberta) {
     labiosBeijo(g, corLabio, cores.luz);
   } else {
@@ -758,6 +800,7 @@ export function desenharRostoGlam(
       : estilo.boca;
     labios(g, corLabio, cores.luz, boca, estilo.ombre);
   }
+  g.restore();
 
   if (estilo.pinta && c.detalhe !== "pinta") {
     g.fillStyle = "rgba(55,32,24,0.75)";

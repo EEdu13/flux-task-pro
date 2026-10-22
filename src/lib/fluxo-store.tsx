@@ -805,7 +805,11 @@ async function enviarTarefa(t: Task, origem?: string): Promise<void> {
       await sat.salvarSatelites({
         data: {
           tarefaId: t.id,
-          checklist: t.checklist.map((c) => ({ text: c.text, done: c.done })),
+          checklist: t.checklist.map((c) => ({
+            text: c.text,
+            done: c.done,
+            soDestaVez: !!c.soDestaVez,
+          })),
           mentions: t.mentions,
           tags: t.tags,
           recurringWeekdays: t.recurringWeekdays ?? [],

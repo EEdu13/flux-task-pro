@@ -1065,7 +1065,8 @@ async function gravarNoBanco(
              SELECT e.tarefa, c.texto, 0, c.ordem
                FROM @efeito e
                JOIN gestor.itens_de_checklist c ON c.tarefa_id = @anterior
-              WHERE e.nova = 1
+              -- Só os itens fixos: o "só desta vez" fica na ocorrência dele.
+              WHERE e.nova = 1 AND c.so_desta_vez = 0
                 AND NOT EXISTS (SELECT 1 FROM gestor.itens_de_checklist x
                                  WHERE x.tarefa_id = e.tarefa);
            END

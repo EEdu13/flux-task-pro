@@ -76,7 +76,7 @@ export type AnexoDaTarefa = {
 };
 
 export type SatelitesDaTarefa = {
-  checklist: { id: string; text: string; done: boolean }[];
+  checklist: { id: string; text: string; done: boolean; soDestaVez: boolean }[];
   mentions: string[];
   tags: string[];
   recurringWeekdays: number[];
@@ -146,7 +146,7 @@ export const carregarSatelites = createServerFn({ method: "POST" })
 
       const [ck, mc, tg, dr, cm, hs, ax] = await Promise.all([
         req().query(
-          `SELECT id, texto, feito FROM gestor.itens_de_checklist
+          `SELECT id, texto, feito, so_desta_vez FROM gestor.itens_de_checklist
             WHERE tarefa_id=@t ORDER BY ordem`,
         ),
         req().query(`SELECT pessoa_id FROM gestor.mencoes WHERE tarefa_id=@t`),
@@ -220,10 +220,13 @@ export const carregarSatelites = createServerFn({ method: "POST" })
       }
 
       return {
-        checklist: (ck.recordset as { id: string; texto: string; feito: boolean }[]).map((i) => ({
+        checklist: (
+          ck.recordset as { id: string; texto: string; feito: boolean; so_desta_vez: boolean }[]
+        ).map((i) => ({
           id: i.id,
           text: i.texto,
           done: !!i.feito,
+          soDestaVez: !!i.so_desta_vez,
         })),
         // `User.id` é string na interface inteira.
         mentions: (mc.recordset as { pessoa_id: number }[]).map((m) => String(m.pessoa_id)),
@@ -292,7 +295,7 @@ export const salvarSatelites = createServerFn({ method: "POST" })
     semIdentidade(
       (e: {
         tarefaId: string;
-        checklist?: { id?: string; text: string; done?: boolean }[];
+        checklist?: { id?: string; text: string; done?: boolean; soDestaVez?: boolean }[];
         mentions?: string[];
         tags?: string[];
         recurringWeekdays?: number[];
@@ -327,7 +330,11 @@ export const salvarSatelites = createServerFn({ method: "POST" })
           tarefaNova: e?.newTask === true,
           checklist: Array.isArray(e?.checklist)
             ? e.checklist
-                .map((i) => ({ text: texto(i?.text, 300), done: i?.done === true }))
+                .map((i) => ({
+                  text: texto(i?.text, 300),
+                  done: i?.done === true,
+                  soDestaVez: i?.soDestaVez === true,
+                }))
                 .filter((i) => i.text)
             : undefined,
           mentions: Array.isArray(e?.mentions)
@@ -363,7 +370,7 @@ export const salvarSatelites = createServerFn({ method: "POST" })
           tarefaId: string;
           tarefaNova: boolean;
           // Ausente = não mexe nesta tabela. Ver a nota no validador.
-          checklist?: { text: string; done: boolean }[];
+          checklist?: { text: string; done: boolean; soDestaVez: boolean }[];
           mentions?: number[];
           tags?: string[];
           recurringWeekdays?: number[];
@@ -480,9 +487,10 @@ export const salvarSatelites = createServerFn({ method: "POST" })
                 .input("texto", sql.NVarChar, item.text)
                 .input("feito", sql.Bit, item.done)
                 .input("ordem", sql.Int, ordem)
+                .input("so_desta_vez", sql.Bit, item.soDestaVez)
                 .query(
-                  `INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
-                   VALUES (@t, @texto, @feito, @ordem)`,
+                  `INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem, so_desta_vez)
+                   VALUES (@t, @texto, @feito, @ordem, @so_desta_vez)`,
                 );
             }
           }
@@ -611,7 +619,9 @@ export const salvarSatelites = createServerFn({ method: "POST" })
              BEGIN
                DELETE FROM gestor.itens_de_checklist WHERE tarefa_id = @proxima;
                INSERT INTO gestor.itens_de_checklist (tarefa_id, texto, feito, ordem)
-               SELECT @proxima, texto, 0, ordem FROM gestor.itens_de_checklist WHERE tarefa_id = @t;
+               -- Só os itens fixos: o "só desta vez" fica nesta ocorrência (22/10/2026).
+               SELECT @proxima, texto, 0, ordem FROM gestor.itens_de_checklist
+                WHERE tarefa_id = @t AND so_desta_vez = 0;
 
                DELETE FROM gestor.tarefa_etiquetas WHERE tarefa_id = @proxima;
                INSERT INTO gestor.tarefa_etiquetas (tarefa_id, etiqueta_id)

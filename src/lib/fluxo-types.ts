@@ -45,6 +45,11 @@ export interface ChecklistItem {
   id: string;
   text: string;
   done: boolean;
+  /**
+   * Só nesta ocorrência (22/10/2026): numa recorrente, o item não vai para a
+   * próxima. Os itens fixos (sem isto) são copiados a cada ocorrência.
+   */
+  soDestaVez?: boolean;
 }
 
 export type ActivityKind =

@@ -49,7 +49,7 @@ function assinar(f: () => void) {
 // v2 (17/10/2026): fotos tiradas com a câmera do pedido anterior (o "Nenhum"
 // do chapéu saía com o sapato) — ver `Fotografo`.
 // v3 (19/10/2026): o azul do uniforme social mudou — a foto guardada era a do tom antigo.
-const VERSAO_DAS_FOTOS = "v7"; // v4: bandeiras nas mangas do uniforme social
+const VERSAO_DAS_FOTOS = "v8"; // v4: bandeiras nas mangas do uniforme social
 const BANCO = "fluxo-miniaturas-avatar";
 let banco: Promise<IDBDatabase | null> | null = null;
 

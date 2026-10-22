@@ -1,4 +1,5 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { fimDoPrazoEfetivo } from "@/lib/dias-uteis";
 import { MEU_MES_LIBERADO } from "@/lib/meu-mes-liberado";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -651,13 +652,27 @@ export function FluxoLayout({
 
         <nav className="mt-4 flex flex-col gap-0.5 px-2">
           {nav.map((n) => {
+            /* Minhas tarefas (22/10/2026: "cliquei em ver depois, esqueci e
+               ficou perdido"): com atraso, o número é o das ATRASADAS, em
+               vermelho, e fica ali até zerar; sem atraso, o das pendentes. */
+            const atrasadasMinhas =
+              n.to === "/minhas-tarefas"
+                ? tasks.filter(
+                    (t) =>
+                      t.assigneeId === currentUser.id &&
+                      t.status !== "concluida" &&
+                      !!t.dueDate &&
+                      Date.now() > fimDoPrazoEfetivo(t.dueDate),
+                  ).length
+                : 0;
             const active = pathname === n.to;
             /* No chat, o mesmo número do balão do dock: descontado da conversa
                que está aberta na tela, para não acender por uma mensagem que a
                pessoa está lendo naquele instante. */
             const badge =
               n.to === "/minhas-tarefas"
-                ? tasks.filter((t) => t.assigneeId === currentUser.id && t.status !== "concluida").length
+                ? atrasadasMinhas ||
+                  tasks.filter((t) => t.assigneeId === currentUser.id && t.status !== "concluida").length
                 : n.to === "/inbox"
                 ? unread
                 : n.to === "/chat"
@@ -696,7 +711,13 @@ export function FluxoLayout({
                 <span className="absolute left-4 top-1/2 -translate-y-1/2">
                   <n.icon className="h-4 w-4" />
                   {collapsed && badge ? (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sidebar-primary px-1 text-[9px] font-bold text-sidebar-primary-foreground">
+                    <span
+                      className={`absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold ${
+                        atrasadasMinhas
+                          ? "bg-destructive text-destructive-foreground"
+                          : "bg-sidebar-primary text-sidebar-primary-foreground"
+                      }`}
+                    >
                       {badge}
                     </span>
                   ) : null}
@@ -708,7 +729,14 @@ export function FluxoLayout({
                         linha a ficar mais larga que a barra. */}
                     <span className="relative min-w-0 flex-1 truncate">{n.label}</span>
                     {badge ? (
-                      <span className="relative ml-2 shrink-0 rounded-full bg-sidebar-primary px-1.5 py-0.5 text-[10px] font-bold text-sidebar-primary-foreground">
+                      <span
+                        title={atrasadasMinhas ? `${atrasadasMinhas} tarefa(s) atrasada(s)` : undefined}
+                        className={`relative ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                          atrasadasMinhas
+                            ? "bg-destructive text-destructive-foreground"
+                            : "bg-sidebar-primary text-sidebar-primary-foreground"
+                        }`}
+                      >
                         {badge}
                       </span>
                     ) : null}

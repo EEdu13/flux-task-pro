@@ -163,6 +163,7 @@ export function EditorDeAvatar({
     setA({
       pele: um(TONS_DE_PELE),
       corpo: um(OPCOES.corpo).v,
+      cabeca: um(OPCOES.cabeca).v,
       expressao: um(OPCOES.expressao).v,
       olhos: um(CORES_DE_OLHOS),
       detalhe: talvez(OPCOES.detalhe, 0.4),
@@ -288,6 +289,7 @@ export function EditorDeAvatar({
           <div className="flex-1 space-y-5 overflow-y-auto p-4" onMouseLeave={() => prever(null)}>
             {cat === "corpo" && (
               <>
+                <Grupo titulo="Tipo de cabeça">{grade("cabeca", "rosto")}</Grupo>
                 <Grupo titulo="Tipo de corpo">{grade("corpo", "corpo")}</Grupo>
                 <Grupo titulo="Cor da pele">
                   <Cores

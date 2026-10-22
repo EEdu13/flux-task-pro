@@ -32,8 +32,12 @@ import {
   ROUPAS_MASCULINAS_BAIXO,
 } from "@/lib/avatar-catalogo/baixo";
 import { EXTRAS_ACESSORIO, EXTRAS_CORPO } from "@/lib/avatar-catalogo/extras";
+import { EXPRESSOES_FEMININAS } from "@/lib/avatar-generos";
 
 export const OPCOES = {
+  /* Tipo de cabeça (21/10/2026: "coloca masculino e feminino"): a feminina é
+     um pouco mais estreita e mais alta, de cantos mais redondos. */
+  cabeca: op(["masculina", "Masculina"], ["feminina", "Feminina"]),
   corpo: [
     ...op(
       ["classico", "Clássico"],
@@ -360,6 +364,7 @@ export type AvatarConfig = {
   corMechas: string;
   /** Segunda cor da roupa: detalhes, listras, xadrez, forro, cadarço… */
   corRoupa2: string;
+  cabeca: V<"cabeca">;
 };
 
 /** O primeiro é o amarelo clássico dos bonecos de bloco. */
@@ -479,6 +484,7 @@ export const AVATAR_PADRAO: AvatarConfig = {
   mechas: "nenhuma",
   corMechas: CORES_DE_MECHAS[0]!,
   corRoupa2: "#f8fafc",
+  cabeca: "masculina",
 };
 
 /**
@@ -536,9 +542,11 @@ const CAMPOS = [
   "mechas",
   "corMechas",
   "corRoupa2",
+  "cabeca",
 ] as const satisfies readonly (keyof AvatarConfig)[];
 
 const LISTA_DE: Partial<Record<keyof AvatarConfig, Opcao<string>[]>> = {
+  cabeca: OPCOES.cabeca,
   corpo: OPCOES.corpo,
   expressao: OPCOES.expressao,
   detalhe: OPCOES.detalhe,
@@ -582,6 +590,11 @@ export function lerAvatar(bruto: unknown): AvatarConfig | null {
     } else if (typeof valor === "string" && HEX.test(valor)) {
       saida[campo] = valor;
     }
+  }
+  /* Avatar salvo antes do "tipo de cabeça": quem já usava rosto feminino
+     ganha a cabeça feminina, sem precisar refazer o avatar. */
+  if (v.cabeca === undefined) {
+    saida.cabeca = EXPRESSOES_FEMININAS.has(saida.expressao!) ? "feminina" : "masculina";
   }
   return saida as AvatarConfig;
 }

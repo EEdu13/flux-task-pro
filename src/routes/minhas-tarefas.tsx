@@ -29,6 +29,8 @@ import {
   X,
   FileSpreadsheet,
   Loader2 as Girando,
+  AlarmClock,
+  ListTodo,
 } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import {
@@ -103,7 +105,7 @@ import {
 } from "@/lib/projeto-da-tarefa";
 import { semAcento } from "@/lib/texto-busca";
 import { SEM_PRAZO, porPrazo, prazoMs, prazoVencido, rotuloDoPrazo } from "@/lib/prazo";
-import { entregueNoPrazo } from "@/lib/dias-uteis";
+import { diasDeAtraso, entregueNoPrazo, fimDoPrazoEfetivo } from "@/lib/dias-uteis";
 import { BotaoAtribuirProjeto } from "@/components/escolher-projeto";
 
 export const Route = createFileRoute("/minhas-tarefas")({
@@ -121,6 +123,11 @@ export const Route = createFileRoute("/minhas-tarefas")({
   }),
   component: MinhasTarefas,
 });
+
+/** Passou do fim do dia útil do prazo e ainda não foi concluída. */
+function estaAtrasada(t: Task): boolean {
+  return t.status !== "concluida" && !!t.dueDate && Date.now() > fimDoPrazoEfetivo(t.dueDate);
+}
 
 type Scope = "todas" | "atribuidas" | "criadas" | "mencionadas" | "pack";
 type ViewMode = "quadro" | "lista" | "minha-visao";
@@ -255,6 +262,13 @@ function MinhasTarefas() {
   const [setorPessoas, setSetorPessoas] = useState<string>("todos");
   const [filtroTags, setFiltroTags] = useState<SelecaoDeTags>(SEM_SELECAO_DE_TAGS);
   const [datePreset, setDatePreset] = useState<DatePreset>("todas");
+  /* "Ver tarefas atrasadas" (21/10/2026): só o que passou do prazo e não foi
+     concluído — a mesma regra do resto do app (prazo em feriado ou fim de
+     semana vale até o fim do próximo dia útil). */
+  const [soAtrasadas, setSoAtrasadas] = useState(false);
+  /* "Em aberto" (22/10/2026: "não tem filtro de pendências, só se eu buscar
+     datas abertas"): tudo o que não foi concluído, de qualquer data. */
+  const [soEmAberto, setSoEmAberto] = useState(false);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [search, setSearch] = useState(initialQ ?? "");
@@ -341,11 +355,18 @@ function MinhasTarefas() {
         setorPorId.get(t.assigneeId) !== setorPessoas
       )
         return false;
+      if (soAtrasadas && scope !== "pack" && !estaAtrasada(t)) return false;
+      if (soEmAberto && scope !== "pack" && t.status === "concluida") return false;
       if (range && scope !== "pack") {
         // Filtro de período é sobre o prazo; sem prazo, fora do período.
         if (!t.dueDate) return false;
         const due = new Date(t.dueDate).getTime();
-        if (due < range[0] || due > range[1]) return false;
+        /* A atrasada "vem junto" (22/10/2026: "o que não consigo concluir no
+           dia não passa para o próximo"): em Hoje e Esta semana ela continua
+           aparecendo, marcada, até ser concluída — sem mudar o prazo dela. */
+        const carrega =
+          (datePreset === "hoje" || datePreset === "esta-semana") && estaAtrasada(t);
+        if (!carrega && (due < range[0] || due > range[1])) return false;
       }
       /* O responsável entra na busca: o campo lá em cima sempre prometeu
          "tarefa, pessoa, tag" e só cumpria dois terços — procurar pelo nome de
@@ -391,11 +412,23 @@ function MinhasTarefas() {
     datePreset,
     dateFrom,
     dateTo,
+    soAtrasadas,
+    soEmAberto,
   ]);
 
   /* O que o filtro de etiquetas oferece: só as etiquetas das tarefas que a
      tela mostra agora (`base`, sem o filtro de etiquetas), com quantas são.
      As marcadas ficam mesmo sem tarefa, para poder desmarcar. */
+  // Quantas atrasadas há no que a tela mostra (com os outros filtros aplicados).
+  const totalAtrasadas = useMemo(
+    () => (soAtrasadas ? visible.length : visible.filter(estaAtrasada).length),
+    [visible, soAtrasadas],
+  );
+  const totalEmAberto = useMemo(
+    () => visible.filter((t) => t.status !== "concluida").length,
+    [visible],
+  );
+
   const opcoesDeTag = useMemo(() => {
     const porChave = new Map<string, { nome: string; n: number }>();
     let semTags = 0;
@@ -588,6 +621,48 @@ function MinhasTarefas() {
             saído; a busca também acha "#tag". */}
         {scope !== "pack" && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSoAtrasadas((v) => !v)}
+              aria-pressed={soAtrasadas}
+              title={soAtrasadas ? "Mostrar todas de novo" : "Ver só as tarefas atrasadas"}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                soAtrasadas
+                  ? "border-destructive bg-destructive text-destructive-foreground shadow-sm"
+                  : "border-destructive/40 text-destructive hover:bg-destructive/10"
+              }`}
+            >
+              <AlarmClock className="h-3.5 w-3.5" />
+              Atrasadas
+              <span
+                className={`rounded-full px-1.5 text-[10px] tabular-nums ${
+                  soAtrasadas ? "bg-white/25" : "bg-destructive/10"
+                }`}
+              >
+                {totalAtrasadas}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSoEmAberto((v) => !v)}
+              aria-pressed={soEmAberto}
+              title={soEmAberto ? "Mostrar as concluídas de novo" : "Ver só o que ainda não foi concluído, de qualquer data"}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                soEmAberto
+                  ? "border-amber-500 bg-amber-500 text-white shadow-sm"
+                  : "border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+              }`}
+            >
+              <ListTodo className="h-3.5 w-3.5" />
+              Em aberto
+              <span
+                className={`rounded-full px-1.5 text-[10px] tabular-nums ${
+                  soEmAberto ? "bg-white/25" : "bg-amber-500/10"
+                }`}
+              >
+                {totalEmAberto}
+              </span>
+            </button>
             <div className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5">
               {(Object.keys(datePresetLabels) as DatePreset[]).map((p) => (
                 <button
@@ -1889,10 +1964,18 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <span
+            className={`flex items-center gap-1.5 whitespace-nowrap ${estaAtrasada(t) ? "font-semibold text-destructive" : ""}`}
+          >
             <Clock className="h-3 w-3" />
             {rotuloDoPrazo(t, { day: "2-digit", month: "short" })}
           </span>
+          {estaAtrasada(t) && t.dueDate && (
+            <span className="whitespace-nowrap rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-bold text-destructive">
+              Atrasada há {Math.max(1, diasDeAtraso(t.dueDate))}{" "}
+              {Math.max(1, diasDeAtraso(t.dueDate)) === 1 ? "dia" : "dias"}
+            </span>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-2">
           <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />

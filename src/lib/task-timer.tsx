@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useFluxo } from "./fluxo-store";
+import { toast } from "sonner";
 import { appendSession, loadTimeLog, saveTimeLog, type TimerSession } from "./time-log";
 
 interface RunningState {
@@ -34,10 +35,54 @@ interface Ctx {
 
 const TimerCtx = createContext<Ctx | null>(null);
 
+/* O cronômetro em andamento fica guardado neste computador (22/10/2026: o
+   notebook da Milena desligou sozinho com o tempo correndo, e o tempo sumiu).
+   Antes ele vivia só na memória da tela: pausar não gravava, e um desligamento
+   ou uma queda de energia levava a sessão inteira. Agora o estado é guardado a
+   cada mudança e recebe um "sinal de vida" a cada 20 s. Ao abrir de novo, o
+   cronômetro volta pausado com o tempo contado até o último sinal — o tempo em
+   que o computador ficou desligado não entra. */
+const SINAL_MS = 20_000;
+const chaveDoCronometro = (pessoa: string) => `fluxo:cronometro:${pessoa}`;
+type CronometroGuardado = RunningState & { sinal: number };
+
+function guardarCronometro(pessoa: string, estado: RunningState | null) {
+  if (!pessoa) return;
+  try {
+    if (!estado) window.localStorage.removeItem(chaveDoCronometro(pessoa));
+    else
+      window.localStorage.setItem(
+        chaveDoCronometro(pessoa),
+        JSON.stringify({ ...estado, sinal: Date.now() } satisfies CronometroGuardado),
+      );
+  } catch {
+    /* sem armazenamento: o cronômetro funciona, só não sobrevive a uma queda */
+  }
+}
+
+function lerCronometro(pessoa: string): CronometroGuardado | null {
+  if (!pessoa) return null;
+  try {
+    const bruto = window.localStorage.getItem(chaveDoCronometro(pessoa));
+    if (!bruto) return null;
+    const c = JSON.parse(bruto) as Partial<CronometroGuardado>;
+    if (
+      typeof c.taskId !== "string" ||
+      typeof c.startedAt !== "number" ||
+      typeof c.sessionAccum !== "number" ||
+      typeof c.sinal !== "number"
+    )
+      return null;
+    return c as CronometroGuardado;
+  } catch {
+    return null;
+  }
+}
+
 const rid = () => `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
 export function TaskTimerProvider({ children }: { children: ReactNode }) {
-  const { currentUser } = useFluxo();
+  const { currentUser, tasks } = useFluxo();
   const userId = currentUser.id;
   const [running, setRunning] = useState<RunningState | null>(null);
   const [totals, setTotals] = useState<Record<string, number>>(() => loadTimeLog(userId).totals);
@@ -45,12 +90,45 @@ export function TaskTimerProvider({ children }: { children: ReactNode }) {
   const runningRef = useRef<RunningState | null>(null);
   runningRef.current = running;
 
-  // Reload totals when the current user changes
+  /* Ao entrar (ou trocar de pessoa): o cronômetro que ficou guardado volta,
+     pausado, com o tempo contado até o último sinal de vida. */
+  const tarefasRef = useRef(tasks);
+  tarefasRef.current = tasks;
   useEffect(() => {
     setTotals(loadTimeLog(userId).totals);
-    // don't auto-pause if user id "changes" only by re-render; safety: stop existing
-    setRunning(null);
+    const guardado = lerCronometro(userId);
+    if (!guardado) {
+      setRunning(null);
+      return;
+    }
+    const segundos = guardado.paused
+      ? guardado.sessionAccum
+      : guardado.sessionAccum +
+        Math.max(0, Math.floor((guardado.sinal - guardado.startedAt) / 1000));
+    setRunning({
+      taskId: guardado.taskId,
+      startedAt: Date.now(),
+      paused: true,
+      sessionAccum: segundos,
+    });
+    if (!guardado.paused && segundos >= 60) {
+      const titulo = tarefasRef.current.find((t) => t.id === guardado.taskId)?.title;
+      const h = Math.floor(segundos / 3600);
+      const m = Math.floor((segundos % 3600) / 60);
+      toast.info("O cronômetro foi recuperado", {
+        description: `${titulo ? `"${titulo}" · ` : ""}${h ? `${h}h ` : ""}${m}min até o computador desligar. Dê play para continuar de onde parou.`,
+        duration: 12_000,
+      });
+    }
   }, [userId]);
+
+  // Guarda a cada mudança, e o sinal de vida enquanto corre.
+  useEffect(() => {
+    guardarCronometro(userId, running);
+    if (!running || running.paused) return;
+    const id = window.setInterval(() => guardarCronometro(userId, runningRef.current), SINAL_MS);
+    return () => window.clearInterval(id);
+  }, [running, userId]);
 
   /* O banco é a verdade — o local é o que aparece antes dele responder.
      Ao trocar de computador o total local nasce zerado; esta busca o corrige
@@ -199,15 +277,20 @@ export function TaskTimerProvider({ children }: { children: ReactNode }) {
     }
   }, [totals, userId]);
 
-  // Auto-commit if the tab is closing
+  /* Fechou a aba normalmente: grava a sessão e esquece o guardado — senão ela
+     voltaria ao abrir e contaria duas vezes. Desligamento ou queda de energia
+     não chegam aqui; aí vale o guardado (ver acima). */
   useEffect(() => {
     const onUnload = () => {
       const cur = runningRef.current;
-      if (cur) commit(cur);
+      if (cur) {
+        commit(cur);
+        guardarCronometro(userId, null);
+      }
     };
     window.addEventListener("beforeunload", onUnload);
     return () => window.removeEventListener("beforeunload", onUnload);
-  }, [commit]);
+  }, [commit, userId]);
 
   const value: Ctx = {
     activeTaskId: running?.taskId ?? null,

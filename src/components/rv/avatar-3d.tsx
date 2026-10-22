@@ -223,8 +223,19 @@ export function Avatar3D({
           <cylinderGeometry args={[0.08, 0.09, 0.08, 16]} />
           <meshStandardMaterial color={pele} roughness={0.6} />
         </mesh>
-        <group ref={cabeca} position={[0, cabecaY, 0]}>
-          <Bloco tam={[m.cabeca, m.cabeca, m.cabeca * 0.92]} cor={pele} raio={0.1} />
+        {/* Cabeça feminina (21/10/2026: "não pode ficar redondo masculino"): um
+            pouco mais estreita e mais alta, de cantos mais redondos — cabelo,
+            chapéu e rosto acompanham, por estarem no grupo. */}
+        <group
+          ref={cabeca}
+          position={[0, cabecaY, 0]}
+          scale={config.cabeca === "feminina" ? [0.9, 1.05, 0.95] : 1}
+        >
+          <Bloco
+            tam={[m.cabeca, m.cabeca, m.cabeca * 0.92]}
+            cor={pele}
+            raio={config.cabeca === "feminina" ? 0.14 : 0.1}
+          />
           <mesh position={[0, -0.01, (m.cabeca * 0.92) / 2 + 0.003]}>
             <planeGeometry args={[m.cabeca * 0.9, m.cabeca * 0.9]} />
             <meshBasicMaterial

@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "@tanstack/react-router";
-import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip, HeartHandshake } from "lucide-react";
+import { X, AtSign, Trash2, MessageSquare, ListChecks, Activity, Plus, Check, Paperclip, HeartHandshake, Repeat } from "lucide-react";
 import { descartarPendencias, useFluxo } from "@/lib/fluxo-store";
 import { podeMexerNoConteudo } from "@/lib/permissoes";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatRelative } from "@/lib/use-theme";
 import { filesToAttachments } from "@/lib/attachments";
 import { subirAnexos } from "@/lib/anexo-upload";
+import {
+  guardarRascunhoDeComentario,
+  lerRascunhoDeComentario,
+} from "@/lib/rascunho-de-comentario";
 import type { ActivityKind, Attachment, ChecklistItem } from "@/lib/fluxo-types";
 import { AttachmentList, AttachmentBadge } from "@/components/attachment-list";
 import { BotaoRecadoDeVoz } from "@/components/recado-de-voz";
@@ -166,7 +170,7 @@ export function TaskDialog() {
       // Texto e estado, não o id: um item recém-adicionado tem id local
       // (`ck_...`) e o mesmo item vindo do banco tem GUID. Comparar ids faria
       // toda tarefa parecer editada logo depois de salvar.
-      v.checklist.map((i) => [i.text, i.done]),
+      v.checklist.map((i) => [i.text, i.done, !!i.soDestaVez]),
     ]);
 
   /** O formulário como estava ao abrir. Comparar com o atual dá o "sujo". */
@@ -601,7 +605,16 @@ export function TaskDialog() {
       ...itens,
       // Id só para a chave do React e para os cliques desta sessão. O do banco
       // nasce no INSERT — por isso a impressão digital compara texto, não id.
-      { id: `rc-${Date.now().toString(36)}-${itens.length}`, text: texto, done: false },
+      {
+        id: `rc-${Date.now().toString(36)}-${itens.length}`,
+        text: texto,
+        done: false,
+        /* Item acrescentado numa ocorrência que já existe de uma recorrente é,
+           quase sempre, coisa daquela semana (22/10/2026, Luana): nasce "só
+           desta vez" e não vai para as próximas. Na criação, os itens são o
+           roteiro fixo e repetem. Um clique troca. */
+        soDestaVez: !!editing && recurring,
+      },
     ]);
     setNewChecklist("");
   };
@@ -610,6 +623,13 @@ export function TaskDialog() {
     checklistTocadoRef.current = true;
     setChecklistLocal((itens) =>
       itens.map((c) => (c.id === itemId ? { ...c, done: !c.done } : c)),
+    );
+  };
+
+  const alternarRepeticaoDoItem = (itemId: string) => {
+    checklistTocadoRef.current = true;
+    setChecklistLocal((itens) =>
+      itens.map((c) => (c.id === itemId ? { ...c, soDestaVez: !c.soDestaVez } : c)),
     );
   };
 
@@ -669,12 +689,48 @@ export function TaskDialog() {
     addComment(editing.id, "", [anexo]);
   };
 
+  /* O rascunho do comentário sobrevive a uma queda (22/10/2026): ao abrir a
+     tarefa ele volta; enquanto a pessoa escreve ou anexa, é guardado; ao
+     enviar, some. `rascunhoProntoRef` impede que o campo ainda vazio da
+     abertura apague o rascunho antes de ele ser lido. */
+  const rascunhoProntoRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !editingId) return;
+    rascunhoProntoRef.current = null;
+    let vivo = true;
+    void lerRascunhoDeComentario(currentUser.id, editingId).then((r) => {
+      if (!vivo) return;
+      rascunhoProntoRef.current = editingId;
+      if (!r) return;
+      setNewComment((atual) => atual || r.texto);
+      setPendingCommentAtts((atual) => (atual.length ? atual : r.anexos));
+      toast.info("Seu comentário não enviado voltou", {
+        description:
+          r.anexos.length > 0
+            ? `Com ${r.anexos.length} anexo${r.anexos.length > 1 ? "s" : ""}. É só clicar em Comentar.`
+            : "É só clicar em Comentar.",
+      });
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [open, editingId, currentUser.id]);
+  useEffect(() => {
+    if (!editingId || rascunhoProntoRef.current !== editingId) return;
+    const id = window.setTimeout(
+      () => void guardarRascunhoDeComentario(currentUser.id, editingId, newComment, pendingCommentAtts),
+      400,
+    );
+    return () => window.clearTimeout(id);
+  }, [newComment, pendingCommentAtts, editingId, currentUser.id]);
+
   const submitComment = () => {
     if (!editing) return;
     if (!newComment.trim() && !pendingCommentAtts.length) return;
     addComment(editing.id, newComment, pendingCommentAtts);
     setNewComment("");
     setPendingCommentAtts([]);
+    void guardarRascunhoDeComentario(currentUser.id, editing.id, "", []);
   };
 
   const handleDescChange = (val: string) => {
@@ -1490,10 +1546,31 @@ export function TaskDialog() {
                   <span className={`flex-1 text-sm ${c.done ? "text-muted-foreground line-through" : ""}`}>
                     {c.text}
                   </span>
+                  {/* Recorrente: o item repete nas próximas ou é só desta vez. */}
+                  {recurring && (
+                    <button
+                      type="button"
+                      onClick={() => alternarRepeticaoDoItem(c.id)}
+                      title={
+                        c.soDestaVez
+                          ? "Só nesta ocorrência — não vai para as próximas. Clique para repetir sempre."
+                          : "Repete em todas as próximas ocorrências. Clique para deixar só nesta."
+                      }
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition ${
+                        c.soDestaVez
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          : "border-primary/30 bg-primary/10 text-primary"
+                      }`}
+                    >
+                      <Repeat className="h-3 w-3" />
+                      {c.soDestaVez ? "Só desta vez" : "Repete"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removerItemChecklist(c.id)}
-                    className="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                    title="Remover este item"
+                    className="text-muted-foreground transition hover:text-destructive"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
