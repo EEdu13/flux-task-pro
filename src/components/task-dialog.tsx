@@ -508,6 +508,42 @@ export function TaskDialog() {
     return () => window.removeEventListener("keydown", aoTeclar, true);
   }, [open]);
 
+  /* O rascunho do comentário sobrevive a uma queda (22/10/2026): ao abrir a
+     tarefa ele volta; enquanto a pessoa escreve ou anexa, é guardado; ao
+     enviar, some. `rascunhoProntoRef` impede que o campo ainda vazio da
+     abertura apague o rascunho antes de ele ser lido. Fica ANTES do
+     `if (!open) return null`: hook depois dele quebra ao abrir a tarefa. */
+  const rascunhoProntoRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || !editingId) return;
+    rascunhoProntoRef.current = null;
+    let vivo = true;
+    void lerRascunhoDeComentario(currentUser.id, editingId).then((r) => {
+      if (!vivo) return;
+      rascunhoProntoRef.current = editingId;
+      if (!r) return;
+      setNewComment((atual) => atual || r.texto);
+      setPendingCommentAtts((atual) => (atual.length ? atual : r.anexos));
+      toast.info("Seu comentário não enviado voltou", {
+        description:
+          r.anexos.length > 0
+            ? `Com ${r.anexos.length} anexo${r.anexos.length > 1 ? "s" : ""}. É só clicar em Comentar.`
+            : "É só clicar em Comentar.",
+      });
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [open, editingId, currentUser.id]);
+  useEffect(() => {
+    if (!editingId || rascunhoProntoRef.current !== editingId) return;
+    const id = window.setTimeout(
+      () => void guardarRascunhoDeComentario(currentUser.id, editingId, newComment, pendingCommentAtts),
+      400,
+    );
+    return () => window.clearTimeout(id);
+  }, [newComment, pendingCommentAtts, editingId, currentUser.id]);
+
   if (!open) return null;
 
   /* Ao criar, só Detalhes e Checklist. Comentários e Timeline dependem de uma
@@ -688,41 +724,6 @@ export function TaskDialog() {
     if (!editing) return;
     addComment(editing.id, "", [anexo]);
   };
-
-  /* O rascunho do comentário sobrevive a uma queda (22/10/2026): ao abrir a
-     tarefa ele volta; enquanto a pessoa escreve ou anexa, é guardado; ao
-     enviar, some. `rascunhoProntoRef` impede que o campo ainda vazio da
-     abertura apague o rascunho antes de ele ser lido. */
-  const rascunhoProntoRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!open || !editingId) return;
-    rascunhoProntoRef.current = null;
-    let vivo = true;
-    void lerRascunhoDeComentario(currentUser.id, editingId).then((r) => {
-      if (!vivo) return;
-      rascunhoProntoRef.current = editingId;
-      if (!r) return;
-      setNewComment((atual) => atual || r.texto);
-      setPendingCommentAtts((atual) => (atual.length ? atual : r.anexos));
-      toast.info("Seu comentário não enviado voltou", {
-        description:
-          r.anexos.length > 0
-            ? `Com ${r.anexos.length} anexo${r.anexos.length > 1 ? "s" : ""}. É só clicar em Comentar.`
-            : "É só clicar em Comentar.",
-      });
-    });
-    return () => {
-      vivo = false;
-    };
-  }, [open, editingId, currentUser.id]);
-  useEffect(() => {
-    if (!editingId || rascunhoProntoRef.current !== editingId) return;
-    const id = window.setTimeout(
-      () => void guardarRascunhoDeComentario(currentUser.id, editingId, newComment, pendingCommentAtts),
-      400,
-    );
-    return () => window.clearTimeout(id);
-  }, [newComment, pendingCommentAtts, editingId, currentUser.id]);
 
   const submitComment = () => {
     if (!editing) return;
