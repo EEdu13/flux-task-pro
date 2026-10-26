@@ -280,7 +280,7 @@ async function salasDosSetores(sectors: string[]) {
       ? (
           await req.query(
             `SELECT sala AS room_name, privada AS is_private, locutores AS active_speakers,
-                    locutores_em AS speakers_updated_at
+                    locutores_em AS speakers_updated_at, atualizada_em AS updated_at
                FROM gestor.salas WHERE sala IN (${placeholders.join(",")})`,
           )
         ).recordset
@@ -290,6 +290,7 @@ async function salasDosSetores(sectors: string[]) {
     is_private: boolean;
     active_speakers: string | null;
     speakers_updated_at: Date | null;
+    updated_at: Date | null;
   }[];
 
   const privacyMap = new Map<string, boolean>(states.map((s) => [s.room_name, !!s.is_private]));
@@ -321,6 +322,7 @@ async function salasDosSetores(sectors: string[]) {
       activeSpeakers: string[];
     }[]
   > = {};
+  const semResposta = new Set<string>();
 
   await Promise.all(
     sectors.map(async (sector) => {
@@ -338,7 +340,11 @@ async function salasDosSetores(sectors: string[]) {
               })),
               activeSpeakers: speakersMap.get(name) ?? [],
             };
-          } catch {
+          } catch (e) {
+            // "Sala não existe" é sala vazia; qualquer outro erro é não saber —
+            // e sala que não se sabe se está vazia não é reaberta.
+            const msg = String((e as { code?: string })?.code ?? "") + " " + String((e as Error)?.message ?? "");
+            if (!/not[_ ]?found|does not exist/i.test(msg)) semResposta.add(name);
             return {
               name,
               isPrivate: privacyMap.get(name) ?? false,
@@ -350,8 +356,47 @@ async function salasDosSetores(sectors: string[]) {
       );
     }),
   );
+
+  /* Sala privada que esvaziou volta a ser aberta (26/10/2026: "está
+     restringindo as salas sozinha"). Nada desfazia a marca quando a reunião
+     acabava, e a sala ficava RESTRITA para sempre, para quem chegasse depois.
+     Os 2 minutos poupam quem acabou de trancar e ainda está entrando, ou quem
+     caiu e está voltando. A diretoria é sempre privada e não entra aqui. */
+  const atualizadaEm = new Map(states.map((s) => [s.room_name, s.updated_at ? new Date(s.updated_at).getTime() : 0]));
+  const paraAbrir = Object.values(bySector)
+    .flat()
+    .filter(
+      (r) =>
+        r.isPrivate &&
+        r.participants.length === 0 &&
+        !semResposta.has(r.name) &&
+        !isDiretoriaRoom(r.name) &&
+        now - (atualizadaEm.get(r.name) ?? 0) > SALA_VAZIA_REABRE_EM_MS,
+    );
+  if (paraAbrir.length) {
+    try {
+      const reabrir = pool.request();
+      const marcas = paraAbrir.map((r, i) => {
+        reabrir.input(`r${i}`, sql.NVarChar, r.name);
+        return `@r${i}`;
+      });
+      const lista = marcas.join(",");
+      await reabrir.query(
+        `UPDATE gestor.salas SET privada=0, atualizada_em=SYSDATETIMEOFFSET()
+          WHERE privada=1 AND sala IN (${lista});
+         DELETE FROM gestor.sala_pedidos_de_entrada WHERE sala IN (${lista});
+         DELETE FROM gestor.sala_participantes WHERE sala IN (${lista});`,
+      );
+      for (const r of paraAbrir) r.isPrivate = false;
+    } catch (e) {
+      console.warn("[salas] não reabri as salas vazias:", (e as Error)?.message);
+    }
+  }
   return { bySector };
 }
+
+/** Sala privada vazia por mais que isto volta a ser aberta (ver `salasDosSetores`). */
+const SALA_VAZIA_REABRE_EM_MS = 2 * 60_000;
 
 /* As respostas compartilhadas das sondagens de chamada — ver
    `cache-compartilhado.server`. Quem grava uma chamada (ligar, atender,
@@ -626,8 +671,14 @@ export const encerrarLigacao = createServerFn({ method: "POST" })
         identity: p.identity,
         sid: p.sid,
       }));
-    } catch {
-      throw new Error("Não achei esta ligação no servidor. Ela pode já ter terminado.");
+    } catch (e) {
+      /* Sala que já não existe no LiveKit (ele fecha a sala vazia sozinho) é
+         ligação já encerrada: não há ninguém para tirar, e responder com erro
+         deixava a tela de quem clicou presa na confirmação (26/10/2026). Só
+         outro erro (o LiveKit fora do ar) ainda é erro de verdade. */
+      const msg = String((e as { code?: string; message?: string })?.code ?? "") + " " + String((e as Error)?.message ?? "");
+      if (/not[_ ]?found|does not exist/i.test(msg)) return { pessoas: 0 };
+      throw new Error("Não consegui falar com o servidor de chamadas. Tente de novo em instantes.");
     }
     // Só quem está na ligação a encerra. A identidade no LiveKit é "<id>-<nome>".
     if (!presentes.some((p) => Number((p.identity || "").split("-")[0]) === eu)) {
