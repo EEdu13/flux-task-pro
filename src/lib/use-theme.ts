@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { fimDoPrazoEfetivo } from "./dias-uteis";
 
 type Theme = "light" | "dark";
 
@@ -380,13 +381,18 @@ export function formatDueBucket(
   iso: string | null,
 ): "atrasada" | "hoje" | "semana" | "depois" | "sem_prazo" {
   if (!iso) return "sem_prazo";
+  /* "Atrasada" pela regra do dia útil, a mesma do menu e do filtro de Minhas
+     tarefas: prazo no sábado vence no fim de segunda (27/10/2026). Pelo
+     calendário puro, o Início contava atrasadas que o filtro não mostrava. */
+  const fim = fimDoPrazoEfetivo(iso);
+  if (!Number.isFinite(fim)) return "sem_prazo";
+  if (Date.now() > fim) return "atrasada";
   const now = new Date();
   now.setHours(0, 0, 0, 0);
-  const due = new Date(iso);
-  const dueDay = new Date(due);
+  // O dia em que ela vence de fato (o útil), para "hoje", "semana" e "depois".
+  const dueDay = new Date(fim);
   dueDay.setHours(0, 0, 0, 0);
   const diffDays = Math.floor((dueDay.getTime() - now.getTime()) / (24 * 3600e3));
-  if (diffDays < 0) return "atrasada";
   if (diffDays === 0) return "hoje";
   if (diffDays <= 7) return "semana";
   return "depois";

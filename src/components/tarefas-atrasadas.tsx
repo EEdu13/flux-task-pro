@@ -5,6 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { AlarmClock, ArrowRight, CalendarX2, X } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { TravaScroll } from "@/components/trava-scroll";
+import { diasDeAtraso, fimDoPrazoEfetivo } from "@/lib/dias-uteis";
 
 /**
  * A cobrança da entrada: o que já venceu e continua aberto.
@@ -21,13 +22,6 @@ import { TravaScroll } from "@/components/trava-scroll";
 
 const CHAVE_VISTO = "fluxo:atrasadas-visto";
 
-/** Hoje à meia-noite LOCAL. Comparar com ISO cru erra o dia por fuso. */
-function hojeLocal(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 /** `YYYY-MM-DD` do dia local — a marca de "já cobrei hoje". */
 function diaLocal(): string {
   const d = new Date();
@@ -36,17 +30,10 @@ function diaLocal(): string {
   return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
-/**
- * Dias inteiros de atraso. O prazo também vai para a meia-noite local antes da
- * conta: sem isso, uma tarefa das 18h de ontem e outra das 8h de ontem dariam
- * números diferentes de dias, sendo que as duas venceram no mesmo dia.
- */
-function diasDeAtraso(prazoIso: string): number {
-  const prazo = new Date(prazoIso);
-  if (Number.isNaN(prazo.getTime())) return 0;
-  prazo.setHours(0, 0, 0, 0);
-  return Math.round((hojeLocal().getTime() - prazo.getTime()) / 86_400_000);
-}
+/* Atraso e "dias de atraso" pela mesma regra do menu e de Minhas tarefas
+   (`dias-uteis`): prazo no fim de semana ou feriado vale até o fim do dia útil
+   seguinte. Aqui era o calendário puro, e a tarefa de sábado aparecia como
+   atrasada na segunda, sem aparecer no filtro "Atrasadas" (27/10/2026, Luana). */
 
 const CORES_PRIORIDADE: Record<string, string> = {
   alta: "bg-destructive/15 text-destructive",
@@ -70,17 +57,14 @@ export function TarefasAtrasadas() {
 
   const atrasadas = useMemo(() => {
     if (!currentUser.id) return [];
-    const hoje = hojeLocal().getTime();
+    const agora = Date.now();
     return tasks
       .filter((t): t is typeof t & { dueDate: string } => {
         if (t.assigneeId !== currentUser.id) return false;
         if (t.status === "concluida") return false;
         // Sem prazo nunca atrasa.
         if (!t.dueDate) return false;
-        const prazo = new Date(t.dueDate);
-        if (Number.isNaN(prazo.getTime())) return false;
-        prazo.setHours(0, 0, 0, 0);
-        return prazo.getTime() < hoje;
+        return agora > fimDoPrazoEfetivo(t.dueDate);
       })
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
   }, [tasks, currentUser.id]);
