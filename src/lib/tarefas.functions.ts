@@ -532,7 +532,7 @@ async function criarProximaOcorrencia(eu: number, id: string): Promise<void> {
     const linha = r.recordset[0] as LinhaTarefa | undefined;
     if (!linha || !linha.recorrente || !linha.prazo) return;
 
-    const { meiaNoiteDeAmanhaEmBrasilia, proximaOcorrenciaEmBrasilia } =
+    const { inicioDoDiaEmBrasilia, meiaNoiteDeAmanhaEmBrasilia, proximaOcorrenciaEmBrasilia } =
       await import("@/lib/recorrencia");
     const { fimDoPrazoEfetivo } = await import("@/lib/dias-uteis");
     const proxima = proximaOcorrenciaEmBrasilia(paraApp(linha));
@@ -566,9 +566,19 @@ async function criarProximaOcorrencia(eu: number, id: string): Promise<void> {
            depois do dia do prazo dela (15/10/2026). A mensal de 01/11
            concluída em 13/10 fazia a de 01/12 aparecer já no dia 14; a pessoa
            via uma pendente nova, concluía de novo, e o prazo saltava um mês
-           por dia (01/12, 01/01…). Na diária nada muda: o prazo é hoje. */
+           por dia (01/12, 01/01…). Na diária nada muda: o prazo é hoje.
+
+           E se a próxima é para HOJE (a de ontem concluída com atraso,
+           28/10/2026), ela nasce já: o "amanhã" a esconderia até a meia-noite
+           e o card do dia não abriria. */
         nasceEm: new Date(
-          Math.max(meiaNoiteDeAmanhaEmBrasilia().getTime(), fimDoPrazoEfetivo(linha.prazo) + 1),
+          Math.max(
+            Math.min(
+              meiaNoiteDeAmanhaEmBrasilia().getTime(),
+              inicioDoDiaEmBrasilia(proxima).getTime(),
+            ),
+            fimDoPrazoEfetivo(linha.prazo) + 1,
+          ),
         ),
         anteriorId: id,
       },

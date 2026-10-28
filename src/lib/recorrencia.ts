@@ -42,6 +42,10 @@ export const RECORRENCIA_DO_PACK = {
 export function quandoVoltaNoPack(proxima: Date, agora: Date = new Date()): string {
   const amanha = new Date(agora);
   amanha.setDate(amanha.getDate() + 1);
+  // A de ontem concluída hoje: a de hoje já está na lista.
+  if (proxima.toDateString() === agora.toDateString()) {
+    return "Compromisso do pack: o de hoje já está na sua lista.";
+  }
   if (proxima.toDateString() === amanha.toDateString()) {
     return "Compromisso do pack: o próximo aparece amanhã.";
   }
@@ -158,9 +162,36 @@ export function proximaOcorrencia(
   const prazo = new Date(tarefa.dueDate);
   if (Number.isNaN(prazo.getTime())) return null;
 
-  // A contagem parte do prazo, não de hoje: concluir adiantado não deve
-  // empurrar a série toda para frente.
-  const base = prazo.getTime() > apartirDe.getTime() ? prazo : apartirDe;
+  /* A contagem parte do prazo, não de hoje: concluir adiantado não deve
+     empurrar a série toda para frente. E concluir ATRASADO não pode pular o
+     dia de hoje (28/10/2026): a série anda de ocorrência em ocorrência até a
+     primeira que ainda não passou — hoje, se hoje é dia dela. Antes a conta
+     partia de agora, e a diária de ontem concluída hoje gerava a de amanhã: o
+     card de hoje nunca abria (Isabelly, no dia seguinte ao apagão do Azure). */
+  const hoje = new Date(apartirDe.getFullYear(), apartirDe.getMonth(), apartirDe.getDate());
+  let proxima = depoisDe(tarefa, prazo, prazo);
+  if (!proxima) return null;
+  for (let i = 0; i < 1000 && proxima.getTime() < hoje.getTime(); i++) {
+    proxima = depoisDe(tarefa, proxima, prazo)!;
+  }
+
+  // O horário vem sempre do prazo original.
+  proxima.setHours(prazo.getHours(), prazo.getMinutes(), prazo.getSeconds(), 0);
+
+  if (tarefa.recurringUntil) {
+    const limite = new Date(tarefa.recurringUntil);
+    if (!Number.isNaN(limite.getTime()) && proxima.getTime() > limite.getTime()) return null;
+  }
+
+  return proxima;
+}
+
+/** A ocorrência seguinte a `base`, pela regra da tarefa. `prazo` é o original (dia do mês). */
+function depoisDe(
+  tarefa: Pick<Task, "frequency" | "recurringWeekdays" | "recurringMonthDay">,
+  base: Date,
+  prazo: Date,
+): Date | null {
   let proxima: Date;
 
   switch (tarefa.frequency as Frequency) {
@@ -225,30 +256,16 @@ export function proximaOcorrencia(
       /* O mês vem do prazo: a tarefa anual guarda só o dia (`recurringMonthDay`),
          e quem escolhe o mês na tela está movendo o prazo para ele. Assim a série
          não precisa de coluna nova e continua ancorada no prazo, como a mensal.
-
-         Parte do ano do prazo, e não de hoje: concluir com meses de atraso a de
-         dezembro passado gera a deste dezembro, não a do ano que vem. */
+         Concluir com meses de atraso a de dezembro passado gera a deste
+         dezembro, não a do ano que vem (o laço de `proximaOcorrencia`). */
       const dia = tarefa.recurringMonthDay ?? prazo.getDate();
-      const hoje = new Date(apartirDe.getFullYear(), apartirDe.getMonth(), apartirDe.getDate());
-      let ano = prazo.getFullYear() + 1;
-      proxima = comDiaDoMes(new Date(ano, prazo.getMonth(), 1), dia);
-      while (proxima.getTime() < hoje.getTime()) {
-        ano += 1;
-        proxima = comDiaDoMes(new Date(ano, prazo.getMonth(), 1), dia);
-      }
+      proxima = comDiaDoMes(new Date(base.getFullYear() + 1, prazo.getMonth(), 1), dia);
+      proxima.setHours(prazo.getHours(), prazo.getMinutes(), prazo.getSeconds(), 0);
       break;
     }
 
     default:
       return null;
-  }
-
-  // O horário vem sempre do prazo original.
-  proxima.setHours(prazo.getHours(), prazo.getMinutes(), prazo.getSeconds(), 0);
-
-  if (tarefa.recurringUntil) {
-    const limite = new Date(tarefa.recurringUntil);
-    if (!Number.isNaN(limite.getTime()) && proxima.getTime() > limite.getTime()) return null;
   }
 
   return proxima;
@@ -289,6 +306,14 @@ export function proximaOcorrenciaEmBrasilia(
     new Date(agora.getTime() + d),
   );
   return proxima ? new Date(proxima.getTime() - d) : null;
+}
+
+/** A meia-noite (em Brasília) que abre o dia de `d`. */
+export function inicioDoDiaEmBrasilia(d: Date): Date {
+  const desloc = deslocamentoParaBrasilia(d);
+  const local = new Date(d.getTime() + desloc);
+  local.setHours(0, 0, 0, 0);
+  return new Date(local.getTime() - desloc);
 }
 
 /** A próxima meia-noite de Brasília — quando nasce a próxima ocorrência. */
