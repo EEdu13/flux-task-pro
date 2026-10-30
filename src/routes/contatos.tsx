@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEscFecha } from "@/hooks/use-esc-fecha";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { TravaScroll } from "@/components/trava-scroll";
 import {
@@ -38,6 +38,9 @@ import { formatarTelefone, telefoneParaGuardar } from "@/lib/telefone";
 import { toast } from "sonner";
 import { EscritorioDoSetor } from "@/components/escritorio/escritorio-do-setor";
 import { TextoDoStatus } from "@/components/chat-ui";
+
+// three.js só desce quando alguém abre a aba Equipes.
+const EquipesComAvatar = lazy(() => import("@/components/equipes-com-avatar"));
 
 export const Route = createFileRoute("/contatos")({
   head: () => ({
@@ -308,8 +311,9 @@ function ContatosPage() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sectorFilter, setSectorFilter] = useState<string>("todos");
-  /* Hierarquia (a linha de reporte) ou o escritório 3D do setor (17/10/2026). */
-  const [vista, setVista] = useState<"hierarquia" | "escritorio">("hierarquia");
+  /* Hierarquia (a linha de reporte), as equipes com os avatares (29/10/2026)
+     ou o escritório 3D do setor (17/10/2026). */
+  const [vista, setVista] = useState<"hierarquia" | "equipes" | "escritorio">("hierarquia");
   const [callMenu, setCallMenu] = useState<User | null>(null);
   const [roomPicker, setRoomPicker] = useState<User | null>(null);
   // Esc fecha as duas janelas, além do clique fora.
@@ -561,6 +565,7 @@ function ContatosPage() {
             {(
               [
                 ["hierarquia", "Hierarquia"],
+                ["equipes", "Equipes"],
                 ["escritorio", "Escritório 3D"],
               ] as const
             ).map(([v, rotulo]) => (
@@ -578,7 +583,27 @@ function ContatosPage() {
               </button>
             ))}
           </div>
-          {vista === "escritorio" ? (
+          {vista === "equipes" ? (
+            <div className="min-h-0 flex-1">
+              <Suspense
+                fallback={
+                  <div className="py-8 text-center text-xs text-muted-foreground">
+                    Carregando os avatares…
+                  </div>
+                }
+              >
+                {/* A busca e o filtro de setor da esquerda valem aqui também. */}
+                <EquipesComAvatar
+                  users={filtered}
+                  setores={setoresComGente}
+                  aoEscolher={(id) => {
+                    setSelectedId(id);
+                    setVista("hierarquia");
+                  }}
+                />
+              </Suspense>
+            </div>
+          ) : vista === "escritorio" ? (
             <div className="min-h-0 flex-1">
               <EscritorioDoSetor
                 users={users}
