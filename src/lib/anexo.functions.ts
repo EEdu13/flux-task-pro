@@ -183,6 +183,12 @@ export const enviarAnexo = createServerFn({ method: "POST" })
           await esquecerFeed();
         }
 
+        // E na conversa aberta das duas pontas, na próxima pergunta.
+        if (dados.donoTipo === "mensagem") {
+          const { anexoDeMensagemMudou } = await import("@/lib/sinal-das-conversas.server");
+          await anexoDeMensagemMudou(dados.donoId);
+        }
+
         return {
           id,
           nome: dados.nome,
@@ -256,6 +262,10 @@ export const removerAnexo = createServerFn({ method: "POST" })
         await registrarNoHistorico(linha.dono_id, eu, [
           { tipo: "editada", texto: `removeu o anexo "${linha.nome}"` },
         ]);
+      }
+      if (linha.dono_tipo === "mensagem") {
+        const { anexoDeMensagemMudou } = await import("@/lib/sinal-das-conversas.server");
+        await anexoDeMensagemMudou(linha.dono_id);
       }
 
       const { apagarDoBlob } = await import("@/integrations/blob.server");

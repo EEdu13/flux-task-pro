@@ -644,6 +644,11 @@ export function useConversation(peerId: string | null): Conversa {
       return;
     }
     let cancelled = false;
+    /* O número da conversa que esta tela já tem (03/11/2026). Devolvido ao
+       servidor, ele responde só "nada novo" enquanto ninguém gravar nela —
+       sem ir ao banco. Ver `sinal-das-conversas.server`. A leitura forçada
+       (abrir, mandar, ler, voltar à janela) vai sem ele e traz tudo. */
+    let versao: string | undefined;
     const load = async (forcar = false) => {
       /* Janela escondida: não relê a conversa (14/10/2026 — ela ficava aberta
          o dia inteiro relendo a cada 1,5 s e pesava no banco). A lista de
@@ -652,9 +657,12 @@ export function useConversation(peerId: string | null): Conversa {
       if (!forcar && document.hidden) return;
       try {
         const { chatConversation } = await import("@/lib/chat.functions");
-        const res = await chatConversation({ data: { peerId } });
+        const res = await chatConversation({
+          data: { peerId, versao: forcar ? undefined : versao },
+        });
         if (cancelled) return;
-        setMessages(res.messages ?? []);
+        versao = res.versao;
+        if (res.messages) setMessages(res.messages);
         setDigitando(res.peerDigitando === true);
       } catch {
         /* ignore */

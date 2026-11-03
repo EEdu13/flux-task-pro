@@ -36,12 +36,15 @@ const iso = (d: Date | string | null): string | null =>
 
 /**
  * A lista de conversas de uma pessoa fica guardada no servidor (ver
- * `cache-compartilhado.server`) até ela ou o outro lado mandar ou ler uma
- * mensagem — quem grava descarta a lista das duas pontas — e, de qualquer
- * jeito, por no máximo 15 s. Cada aba a pedia a cada 3 s, uma consulta por
- * pessoa, e quase sempre a resposta era a mesma da vez anterior.
+ * `cache-compartilhado.server`) até ela ou o outro lado mandar, ler, anexar ou
+ * limpar — quem grava chama `conversaMudou`, que descarta a lista das pontas
+ * — e, de qualquer jeito, por no máximo `VALIDADE_DA_LISTA_MS`. Cada aba a
+ * pede a cada 3 s, uma consulta por pessoa, e quase sempre a resposta era a
+ * mesma da vez anterior: com 15 s fixos ela ainda somava 180 mil consultas
+ * por semana (03/11/2026). Como toda gravação já descarta a lista na hora, a
+ * validade só cobre gravação por fora do app, e pode ser longa.
  */
-const chaveDasConversas = (pessoa: number) => `chat:conversas:${pessoa}`;
+const VALIDADE_DA_LISTA_MS = 60_000;
 
 /** A lista de quem está online, igual para todo mundo — ver `presenceList`. */
 const CHAVE_PRESENCA = "presenca:lista";
@@ -90,10 +93,10 @@ export const chatSend = createServerFn({ method: "POST" })
          VALUES (@de, @para, @corpo)`,
       );
     const m = res.recordset[0] as { id: string; created_at: Date };
-    // A conversa mudou nas duas pontas: as listas guardadas das duas já não valem.
-    const { esquecer } = await import("@/lib/cache-compartilhado.server");
-    esquecer(chaveDasConversas(eu));
-    esquecer(chaveDasConversas(data.toUserId));
+    // A conversa mudou nas duas pontas: as telas releem e as listas guardadas já não valem.
+    const { conversaMudou, pararDigitando } = await import("@/lib/sinal-das-conversas.server");
+    conversaMudou(eu, data.toUserId);
+    pararDigitando(eu);
     return { message: { ...m, created_at: iso(m.created_at) as string } };
   });
 
@@ -109,24 +112,43 @@ type LinhaMensagem = {
   att_type: string | null;
 };
 
+/** O que a conversa aberta recebe a cada pergunta. */
+export type RespostaDaConversa = {
+  /** Devolver na próxima pergunta: igual ao atual, a resposta vem sem `messages`. */
+  versao: string;
+  peerDigitando: boolean;
+  /** Ausente = nada mudou desde `versao` que a tela mandou; ela mantém o que tem. */
+  messages?: ReturnType<typeof paraMensagem>[];
+};
+
 export const chatConversation = createServerFn({ method: "POST" })
-  .validator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
-  .handler(async ({ data }) => {
+  .validator((input: { peerId: string; versao?: string }) => ({
+    peerId: pessoaAlvo(input?.peerId),
+    versao: typeof input?.versao === "string" ? input.versao.slice(0, 40) : undefined,
+  }))
+  .handler(async ({ data }): Promise<RespostaDaConversa> => {
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
+
+    /* O "está digitando" vem junto, na mesma pergunta: precisa da mesma
+       frequência das mensagens para fazer sentido, e um segundo relógio era o
+       que não podia existir (os intervalos estão calibrados para a latência
+       Brasil↔EUA). Agora vem da memória, sem custo de banco — ver
+       `sinal-das-conversas.server`.
+
+       O número é lido ANTES do banco: se alguém gravar durante a leitura, o
+       número sobe depois deste, e a próxima pergunta relê. Ao contrário, a
+       tela ficaria com o número novo e a lista velha. */
+    const { versaoDaConversa, precisaReler, estaDigitando } =
+      await import("@/lib/sinal-das-conversas.server");
+    const versao = versaoDaConversa(eu, data.peerId);
+    const peerDigitando = estaDigitando(data.peerId, eu);
+    if (!precisaReler(eu, data.peerId, data.versao)) return { versao, peerDigitando };
 
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
     // Como toda linha devolvida tem `@me` numa das duas pontas, e `@me` é
     // imposto pelo servidor, ninguém lê uma conversa da qual não participa.
-    /* Duas consultas num comando só, de propósito.
-       O "está digitando" precisa da mesma frequência das mensagens para fazer
-       sentido, e a conversa já sonda de 1,5 em 1,5 segundo. Pendurar aqui é o
-       que evita criar um segundo relógio — e mais um relógio era exatamente o
-       que não podia acontecer: os intervalos deste app estão calibrados para a
-       latência Brasil↔EUA e não se mexe neles. Como resultado, o indicador não
-       custa NENHUMA requisição a mais, só um EXISTS numa tabela de uma linha
-       por pessoa. */
     const res = await pool
       .request()
       .input("me", sql.Int, eu)
@@ -174,42 +196,34 @@ export const chatConversation = createServerFn({ method: "POST" })
               WHERE x.dono_tipo = 'mensagem' AND x.dono_id = m.id
               ORDER BY x.enviado_em
            ) a
-          ORDER BY m.em DESC;
-
-         -- Digitando: a marca vale 6 segundos. O cliente reavisa a cada 2,5s
-         -- enquanto a pessoa escreve, então a janela cobre um aviso perdido sem
-         -- deixar o indicador aceso depois que ela parou. A comparação
-         -- digitando_para = @me é o que impede alguém aparecer "digitando"
-         -- numa conversa em que está escrevendo para outra pessoa.
-         SELECT CASE WHEN EXISTS (
-                  SELECT 1 FROM gestor.presenca
-                   WHERE pessoa_id = @peer
-                     AND digitando_para = @me
-                     AND digitando_em > DATEADD(second, -6, SYSDATETIMEOFFSET())
-                ) THEN 1 ELSE 0 END AS digitando;`,
+          ORDER BY m.em DESC;`,
       );
     // devolve em ordem cronológica
     return {
-      peerDigitando:
-        ((res.recordsets as unknown as { digitando: number }[][])[1]?.[0]?.digitando ?? 0) === 1,
-      messages: (res.recordset as LinhaMensagem[]).reverse().map((m) => ({
-        ...m,
-        // A interface compara com `User.id`, que é string no app inteiro.
-        from_user_id: String(m.from_user_id),
-        to_user_id: String(m.to_user_id),
-        created_at: iso(m.created_at) as string,
-        read_at: iso(m.read_at),
-        /* `att_data` deixou de carregar o arquivo e passou a carregar o
-           endereço dele. É a premissa 2 do schema em uma linha: a mensagem
-           guarda para onde ir, não o conteúdo.
-
-           O endereço aponta para o nosso proxy, nunca para o Azure direto — a
-           credencial do contêiner tem permissão de apagar tudo e vale até 2030,
-           então ela não pode virar parte de um link que alguém encaminha. */
-        att_data: m.anexo_id ? `/api/anexo/${m.anexo_id}` : null,
-      })),
+      versao,
+      peerDigitando,
+      messages: (res.recordset as LinhaMensagem[]).reverse().map(paraMensagem),
     };
   });
+
+function paraMensagem(m: LinhaMensagem) {
+  return {
+    ...m,
+    // A interface compara com `User.id`, que é string no app inteiro.
+    from_user_id: String(m.from_user_id),
+    to_user_id: String(m.to_user_id),
+    created_at: iso(m.created_at) as string,
+    read_at: iso(m.read_at),
+    /* `att_data` deixou de carregar o arquivo e passou a carregar o
+       endereço dele. É a premissa 2 do schema em uma linha: a mensagem
+       guarda para onde ir, não o conteúdo.
+
+       O endereço aponta para o nosso proxy, nunca para o Azure direto — a
+       credencial do contêiner tem permissão de apagar tudo e vale até 2030,
+       então ela não pode virar parte de um link que alguém encaminha. */
+    att_data: m.anexo_id ? `/api/anexo/${m.anexo_id}` : null,
+  };
+}
 
 /**
  * Limpa a conversa com alguém — PARA MIM, como o "Limpar conversa" do
@@ -235,8 +249,9 @@ export const chatLimparConversa = createServerFn({ method: "POST" })
          ELSE
            INSERT INTO gestor.conversas_limpas (pessoa_id, outro_id) VALUES (@me, @peer);`,
       );
-    const { esquecer } = await import("@/lib/cache-compartilhado.server");
-    esquecer(chaveDasConversas(eu));
+    // Só a minha lista: o outro lado continua vendo tudo.
+    const { conversaMudou } = await import("@/lib/sinal-das-conversas.server");
+    conversaMudou(eu, data.peerId, eu);
     return { ok: true };
   });
 
@@ -246,46 +261,57 @@ export const chatThreads = createServerFn({ method: "POST" }).handler(async () =
   const eu = await pessoaDaSessao();
 
   const { compartilhado } = await import("@/lib/cache-compartilhado.server");
-  return compartilhado(chaveDasConversas(eu), 15_000, () => conversasDe(eu));
+  const { chaveDasConversas } = await import("@/lib/sinal-das-conversas.server");
+  return compartilhado(chaveDasConversas(eu), VALIDADE_DA_LISTA_MS, () => conversasDe(eu));
 });
 
 async function conversasDe(eu: number) {
   const { getPool, sql } = await import("@/integrations/db.server");
   const pool = await getPool();
+  /* Primeiro com quem eu falo, depois a última mensagem de cada conversa —
+     buscas exatas nos índices (de, para, em), uma por pessoa.
+     A versão anterior pegava TODAS as minhas mensagens com um OR e numerava
+     por conversa para ficar com a primeira: varria a tabela inteira e, para
+     quem conversa muito, eram 15 mil leituras por vez, contra ~300 agora
+     (03/11/2026, mesmo resultado conferido nas 34 pessoas com mensagem). */
   const res = await pool
     .request()
     .input("me", sql.Int, eu)
     .query(
-      `WITH conv AS (
-         SELECT
-           CASE WHEN de_pessoa_id=@me THEN para_pessoa_id ELSE de_pessoa_id END AS peer,
-           id, corpo, em, de_pessoa_id
-         FROM gestor.mensagens mm
-         WHERE (de_pessoa_id=@me OR para_pessoa_id=@me)
-           -- Conversa limpa: só o que veio depois — ver chatLimparConversa.
-           AND em > ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl
-                             WHERE cl.pessoa_id=@me
-                               AND cl.outro_id = CASE WHEN mm.de_pessoa_id=@me THEN mm.para_pessoa_id ELSE mm.de_pessoa_id END),
-                           '19000101')
-       ),
-       ranked AS (
-         SELECT *, ROW_NUMBER() OVER (PARTITION BY peer ORDER BY em DESC) rn FROM conv
+      `WITH peers AS (
+         SELECT para_pessoa_id AS peer FROM gestor.mensagens WHERE de_pessoa_id=@me
+         UNION
+         SELECT de_pessoa_id FROM gestor.mensagens WHERE para_pessoa_id=@me
        )
-       SELECT r.peer,
-              r.corpo        AS body,
-              r.em           AS created_at,
-              r.de_pessoa_id AS from_user_id,
+       SELECT p.peer,
+              u.corpo        AS body,
+              u.em           AS created_at,
+              u.de_pessoa_id AS from_user_id,
               -- A lista de conversas mostra "📎 anexo" quando a última mensagem
               -- é um arquivo. Só o tipo basta; o conteúdo fica para quando a
               -- conversa abrir.
               (SELECT TOP 1 x.tipo_mime FROM gestor.anexos x
-                 WHERE x.dono_tipo='mensagem' AND x.dono_id=r.id) AS att_type,
+                 WHERE x.dono_tipo='mensagem' AND x.dono_id=u.id) AS att_type,
               (SELECT COUNT(*) FROM gestor.mensagens m
-                 WHERE m.para_pessoa_id=@me AND m.de_pessoa_id=r.peer AND m.lida_em IS NULL
-                   AND m.em > ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl
-                                       WHERE cl.pessoa_id=@me AND cl.outro_id=r.peer), '19000101')) AS unread
-       FROM ranked r WHERE r.rn=1
-       ORDER BY r.em DESC`,
+                 WHERE m.para_pessoa_id=@me AND m.de_pessoa_id=p.peer AND m.lida_em IS NULL
+                   AND m.em > l.limpa) AS unread
+         FROM peers p
+         -- Conversa limpa: só o que veio depois — ver chatLimparConversa.
+        CROSS APPLY (SELECT ISNULL((SELECT cl.limpa_em FROM gestor.conversas_limpas cl
+                                     WHERE cl.pessoa_id=@me AND cl.outro_id=p.peer),
+                                   '19000101') AS limpa) l
+        -- A última dos dois sentidos. Conversa toda limpa não tem linha aqui
+        -- e some da lista, como antes.
+        CROSS APPLY (SELECT TOP 1 z.* FROM (
+                       SELECT TOP 1 id, corpo, em, de_pessoa_id FROM gestor.mensagens
+                        WHERE de_pessoa_id=@me AND para_pessoa_id=p.peer AND em > l.limpa
+                        ORDER BY em DESC
+                       UNION ALL
+                       SELECT TOP 1 id, corpo, em, de_pessoa_id FROM gestor.mensagens
+                        WHERE de_pessoa_id=p.peer AND para_pessoa_id=@me AND em > l.limpa
+                        ORDER BY em DESC) z
+                      ORDER BY z.em DESC) u
+        ORDER BY u.em DESC`,
     );
   return {
     threads: (
@@ -314,7 +340,7 @@ export const chatMarkRead = createServerFn({ method: "POST" })
 
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
-    await pool
+    const r = await pool
       .request()
       .input("me", sql.Int, eu)
       .input("peer", sql.Int, data.peerId)
@@ -322,9 +348,14 @@ export const chatMarkRead = createServerFn({ method: "POST" })
         `UPDATE gestor.mensagens SET lida_em=SYSDATETIMEOFFSET()
           WHERE para_pessoa_id=@me AND de_pessoa_id=@peer AND lida_em IS NULL`,
       );
-    // As não lidas mudaram: a lista guardada de quem leu já não vale.
-    const { esquecer } = await import("@/lib/cache-compartilhado.server");
-    esquecer(chaveDasConversas(eu));
+    /* As não lidas de quem leu mudaram, e o ✓✓ de quem mandou também: as duas
+       pontas releem. Só se algo foi de fato marcado — marcar de novo o que já
+       estava lido não muda nada, e descartar as listas à toa era refazer a
+       consulta delas. */
+    if ((r.rowsAffected[0] ?? 0) > 0) {
+      const { conversaMudou } = await import("@/lib/sinal-das-conversas.server");
+      conversaMudou(eu, data.peerId);
+    }
     return { ok: true };
   });
 
@@ -354,16 +385,14 @@ export const presenceHeartbeat = createServerFn({ method: "POST" }).handler(asyn
 /**
  * "Estou escrevendo para fulano agora."
  *
- * `UPDATE` puro, sem o `IF EXISTS ... ELSE INSERT` do heartbeat: quem está com
- * o chat aberto já bateu o heartbeat, então a linha existe. Se por acaso não
- * existir, o update não afeta nada e o indicador simplesmente não acende — o
- * lado certo de falhar, porque um indicador a menos é invisível e um a mais é
- * uma mentira na tela de outra pessoa.
+ * Fica na memória do servidor, não no banco (03/11/2026) — ver
+ * `sinal-das-conversas.server`. As colunas `digitando_para`/`digitando_em` de
+ * `gestor.presenca` ficaram sem uso.
  *
- * Não há "parei de digitar": a marca envelhece sozinha em 6 segundos (ver a
- * consulta em `chatConversation`). Um aviso explícito de parada seria mais uma
- * requisição para dizer o que o relógio já diz — e ela se perderia justamente
- * no caso que importa, o de fechar a janela no meio da frase.
+ * Não há "parei de digitar": a marca envelhece sozinha em 6 segundos, e
+ * mandar a mensagem a apaga na hora. Um aviso explícito de parada seria mais
+ * uma requisição para dizer o que o relógio já diz — e ela se perderia
+ * justamente no caso que importa, o de fechar a janela no meio da frase.
  */
 export const chatDigitando = createServerFn({ method: "POST" })
   .validator((input: { peerId: string }) => ({ peerId: pessoaAlvo(input?.peerId) }))
@@ -372,17 +401,8 @@ export const chatDigitando = createServerFn({ method: "POST" })
     const eu = await pessoaDaSessao();
     if (eu === data.peerId) return { ok: true };
 
-    const { getPool, sql } = await import("@/integrations/db.server");
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("me", sql.Int, eu)
-      .input("peer", sql.Int, data.peerId)
-      .query(
-        `UPDATE gestor.presenca
-            SET digitando_para = @peer, digitando_em = SYSDATETIMEOFFSET()
-          WHERE pessoa_id = @me`,
-      );
+    const { marcarDigitando } = await import("@/lib/sinal-das-conversas.server");
+    marcarDigitando(eu, data.peerId);
     return { ok: true };
   });
 

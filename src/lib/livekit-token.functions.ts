@@ -147,11 +147,13 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
        nome, o do cadastro. */
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
-    const { getPool, sql, isRoomMember, getRoomIsPrivate } = await import("@/integrations/db.server");
+    const { getPool, sql, isRoomMember, getRoomIsPrivate } =
+      await import("@/integrations/db.server");
     const pool = await getPool();
     // A diretoria é sempre privada, como em `getRoomAccess` — mesmo que a
     // marca da sala tenha sido zerada.
-    const isPrivate = isDiretoriaRoom(data.roomName) || (await getRoomIsPrivate(pool, data.roomName));
+    const isPrivate =
+      isDiretoriaRoom(data.roomName) || (await getRoomIsPrivate(pool, data.roomName));
     if (isPrivate && !(await isRoomMember(pool, data.roomName, eu))) {
       throw new Error("Sala privada: peça para entrar antes.");
     }
@@ -159,7 +161,9 @@ export const getLiveKitToken = createServerFn({ method: "POST" })
       .request()
       .input("eu", sql.Int, eu)
       .query(`SELECT nome FROM gestor.perfis WHERE pessoa_id=@eu`);
-    const nomeDoCadastro = (perfil.recordset[0] as { nome: string | null } | undefined)?.nome?.trim();
+    const nomeDoCadastro = (
+      perfil.recordset[0] as { nome: string | null } | undefined
+    )?.nome?.trim();
     const nome = (nomeDoCadastro || data.name).slice(0, 64);
     const identidade = `${eu}-${nome.replace(/\s+/g, "_")}`.slice(0, 64);
 
@@ -279,8 +283,7 @@ async function salasDosSetores(sectors: string[]) {
     placeholders.length > 0
       ? (
           await req.query(
-            `SELECT sala AS room_name, privada AS is_private, locutores AS active_speakers,
-                    locutores_em AS speakers_updated_at, atualizada_em AS updated_at
+            `SELECT sala AS room_name, privada AS is_private, atualizada_em AS updated_at
                FROM gestor.salas WHERE sala IN (${placeholders.join(",")})`,
           )
         ).recordset
@@ -288,29 +291,17 @@ async function salasDosSetores(sectors: string[]) {
   ) as {
     room_name: string;
     is_private: boolean;
-    active_speakers: string | null;
-    speakers_updated_at: Date | null;
     updated_at: Date | null;
   }[];
 
   const privacyMap = new Map<string, boolean>(states.map((s) => [s.room_name, !!s.is_private]));
   const now = Date.now();
+  // Quem está falando vem da memória — ver `locutores-das-salas.server`.
+  const { locutoresDe } = await import("@/lib/locutores-das-salas.server");
   const speakersMap = new Map<string, string[]>();
-  for (const s of states) {
-    const ts = s.speakers_updated_at ? new Date(s.speakers_updated_at).getTime() : 0;
-    if (ts && now - ts < 5000 && s.active_speakers) {
-      try {
-        const arr = JSON.parse(s.active_speakers);
-        if (Array.isArray(arr)) {
-          speakersMap.set(
-            s.room_name,
-            arr.filter((x): x is string => typeof x === "string"),
-          );
-        }
-      } catch {
-        /* ignore json inválido */
-      }
-    }
+  for (const sala of todas) {
+    const l = locutoresDe(sala);
+    if (l) speakersMap.set(sala, l);
   }
 
   const bySector: Record<
@@ -343,7 +334,10 @@ async function salasDosSetores(sectors: string[]) {
           } catch (e) {
             // "Sala não existe" é sala vazia; qualquer outro erro é não saber —
             // e sala que não se sabe se está vazia não é reaberta.
-            const msg = String((e as { code?: string })?.code ?? "") + " " + String((e as Error)?.message ?? "");
+            const msg =
+              String((e as { code?: string })?.code ?? "") +
+              " " +
+              String((e as Error)?.message ?? "");
             if (!/not[_ ]?found|does not exist/i.test(msg)) semResposta.add(name);
             return {
               name,
@@ -362,7 +356,9 @@ async function salasDosSetores(sectors: string[]) {
      acabava, e a sala ficava RESTRITA para sempre, para quem chegasse depois.
      Os 2 minutos poupam quem acabou de trancar e ainda está entrando, ou quem
      caiu e está voltando. A diretoria é sempre privada e não entra aqui. */
-  const atualizadaEm = new Map(states.map((s) => [s.room_name, s.updated_at ? new Date(s.updated_at).getTime() : 0]));
+  const atualizadaEm = new Map(
+    states.map((s) => [s.room_name, s.updated_at ? new Date(s.updated_at).getTime() : 0]),
+  );
   const paraAbrir = Object.values(bySector)
     .flat()
     .filter(
@@ -405,16 +401,14 @@ const CHAVE_TOCANDO = "chamadas:tocando";
 const CHAVE_RESPONDIDAS = "chamadas:respondidas";
 
 export const createRoomCall = createServerFn({ method: "POST" })
-  .validator(
-    (input: { targetUserId: string; roomName: string; roomLabel: string }) => {
-      // `callerUserId` saiu: era quem aparecia chamando, escolhido por quem
-      // chamava. Dava para tocar o telefone de alguém no nome de outra pessoa.
-      const targetUserId = pessoaAlvo(input?.targetUserId);
-      const roomName = sanitizeRoomName(input?.roomName);
-      const roomLabel = sanitizeRoomLabel(input?.roomLabel, roomName);
-      return { targetUserId, roomName, roomLabel };
-    },
-  )
+  .validator((input: { targetUserId: string; roomName: string; roomLabel: string }) => {
+    // `callerUserId` saiu: era quem aparecia chamando, escolhido por quem
+    // chamava. Dava para tocar o telefone de alguém no nome de outra pessoa.
+    const targetUserId = pessoaAlvo(input?.targetUserId);
+    const roomName = sanitizeRoomName(input?.roomName);
+    const roomLabel = sanitizeRoomLabel(input?.roomLabel, roomName);
+    return { targetUserId, roomName, roomLabel };
+  })
   .handler(async ({ data }) => {
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
@@ -676,7 +670,10 @@ export const encerrarLigacao = createServerFn({ method: "POST" })
          ligação já encerrada: não há ninguém para tirar, e responder com erro
          deixava a tela de quem clicou presa na confirmação (26/10/2026). Só
          outro erro (o LiveKit fora do ar) ainda é erro de verdade. */
-      const msg = String((e as { code?: string; message?: string })?.code ?? "") + " " + String((e as Error)?.message ?? "");
+      const msg =
+        String((e as { code?: string; message?: string })?.code ?? "") +
+        " " +
+        String((e as Error)?.message ?? "");
       if (/not[_ ]?found|does not exist/i.test(msg)) return { pessoas: 0 };
       throw new Error("Não consegui falar com o servidor de chamadas. Tente de novo em instantes.");
     }
@@ -797,7 +794,8 @@ export const setRoomPrivacy = createServerFn({ method: "POST" })
        privada alheia — e na chamada seguinte entrava, porque sala sem membros
        admite o primeiro que chega. Sala aberta continua livre para fechar:
        quem fecha é o primeiro a entrar, e vira membro no mesmo ato. */
-    const jaEraPrivada = isDiretoriaRoom(data.roomName) || !!(await getRoomIsPrivate(pool, data.roomName));
+    const jaEraPrivada =
+      isDiretoriaRoom(data.roomName) || !!(await getRoomIsPrivate(pool, data.roomName));
     if (jaEraPrivada && !(await isRoomMember(pool, data.roomName, eu))) {
       throw new Error("Só quem participa da sala pode mudar a privacidade dela.");
     }
@@ -865,14 +863,14 @@ export const inviteToRoom = createServerFn({ method: "POST" })
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
 
-    const { getPool, upsertMember, isRoomMember, getRoomIsPrivate } = await import(
-      "@/integrations/db.server"
-    );
+    const { getPool, upsertMember, isRoomMember, getRoomIsPrivate } =
+      await import("@/integrations/db.server");
     const pool = await getPool();
 
     // Convite é um direito de quem está dentro. Em sala aberta a lista de
     // membros não decide entrada, então não há o que proteger.
-    const privada = isDiretoriaRoom(data.roomName) || !!(await getRoomIsPrivate(pool, data.roomName));
+    const privada =
+      isDiretoriaRoom(data.roomName) || !!(await getRoomIsPrivate(pool, data.roomName));
     if (privada && !(await isRoomMember(pool, data.roomName, eu))) {
       throw new Error("Só quem participa da sala pode convidar alguém.");
     }
@@ -1009,8 +1007,7 @@ export const resolveKnock = createServerFn({ method: "POST" })
            FROM gestor.sala_pedidos_de_entrada WHERE id=@id`,
       );
     const knock = kr.recordset[0] as
-      | { id: string; room_name: string; requester_user_id: number; status: string }
-      | undefined;
+      { id: string; room_name: string; requester_user_id: number; status: string } | undefined;
     if (!knock || knock.status !== "esperando") return { ok: false };
 
     /* Aprovar um pedido é o outro caminho para virar membro — e antes não havia
@@ -1023,7 +1020,11 @@ export const resolveKnock = createServerFn({ method: "POST" })
     await pool
       .request()
       .input("id", sql.UniqueIdentifier, knock.id)
-      .input("situacao", sql.NVarChar, data.approve ? PEDIDO_NO_BANCO.approved : PEDIDO_NO_BANCO.denied)
+      .input(
+        "situacao",
+        sql.NVarChar,
+        data.approve ? PEDIDO_NO_BANCO.approved : PEDIDO_NO_BANCO.denied,
+      )
       .input("por", sql.Int, eu)
       .query(
         `UPDATE gestor.sala_pedidos_de_entrada
@@ -1050,18 +1051,12 @@ export const updateActiveSpeakers = createServerFn({ method: "POST" })
     return { roomName, speakers };
   })
   .handler(async ({ data }) => {
-    const { getPool, sql } = await import("@/integrations/db.server");
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("room", sql.NVarChar, data.roomName)
-      .input("spk", sql.NVarChar(sql.MAX), JSON.stringify(data.speakers))
-      .query(
-        `IF EXISTS (SELECT 1 FROM gestor.salas WHERE sala=@room)
-           UPDATE gestor.salas SET locutores=@spk, locutores_em=SYSDATETIMEOFFSET() WHERE sala=@room;
-         ELSE
-           INSERT INTO gestor.salas (sala, locutores, locutores_em) VALUES (@room, @spk, SYSDATETIMEOFFSET());`,
-      );
+    // Só quem está logado: sem isto, qualquer um de fora escrevia no cartão das salas.
+    const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
+    await pessoaDaSessao();
+    // Na memória, não no banco — ver `locutores-das-salas.server`.
+    const { publicarLocutores } = await import("@/lib/locutores-das-salas.server");
+    publicarLocutores(data.roomName, data.speakers);
     return { ok: true };
   });
 
@@ -1098,7 +1093,10 @@ async function signGuestToken(payload: { r: string; e: number }, secret: string)
   return `${body}.${base64UrlEncode(sig)}`;
 }
 
-async function verifyGuestToken(token: string, secret: string): Promise<{ r: string; e: number } | null> {
+async function verifyGuestToken(
+  token: string,
+  secret: string,
+): Promise<{ r: string; e: number } | null> {
   const parts = token.split(".");
   if (parts.length !== 2) return null;
   const [body, sig] = parts;
@@ -1144,12 +1142,12 @@ export const createGuestInvite = createServerFn({ method: "POST" })
     const { pessoaDaSessao } = await import("@/integrations/iam/identidade.server");
     const eu = await pessoaDaSessao();
 
-    const { getPool, upsertMember, isRoomMember, getRoomIsPrivate } = await import(
-      "@/integrations/db.server"
-    );
+    const { getPool, upsertMember, isRoomMember, getRoomIsPrivate } =
+      await import("@/integrations/db.server");
     const pool = await getPool();
 
-    const privada = isDiretoriaRoom(data.roomName) || !!(await getRoomIsPrivate(pool, data.roomName));
+    const privada =
+      isDiretoriaRoom(data.roomName) || !!(await getRoomIsPrivate(pool, data.roomName));
     if (privada && !(await isRoomMember(pool, data.roomName, eu))) {
       throw new Error("Só quem participa da sala pode gerar convite de visitante.");
     }

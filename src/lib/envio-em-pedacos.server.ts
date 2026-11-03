@@ -245,6 +245,11 @@ export async function concluirEnvio(eu: number, envioId: string): Promise<AnexoG
     const { registrarNoHistorico } = await import("@/lib/historico.server");
     await registrarNoHistorico(e.donoId, eu, [{ tipo: "editada", texto: `anexou "${e.nome}"` }]);
   }
+  // O recado de voz aparece na conversa aberta das duas pontas na próxima pergunta.
+  if (e.donoTipo === "mensagem") {
+    const { anexoDeMensagemMudou } = await import("@/lib/sinal-das-conversas.server");
+    await anexoDeMensagemMudou(e.donoId);
+  }
 
   return {
     id: e.id,

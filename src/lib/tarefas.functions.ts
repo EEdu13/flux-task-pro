@@ -164,6 +164,11 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
  *  projeto é o nome dele, e nome de projeto pode ter vírgula. O CAST para MAX
  *  tira o teto de 4000 caracteres do STRING_AGG, que derrubaria a lista
  *  inteira por causa de uma tarefa só.
+ *  O `INNER LOOP JOIN` das etiquetas é de propósito (03/11/2026): sem ele o
+ *  banco percorria as 44 etiquetas para CADA tarefa e procurava cada par —
+ *  347 mil leituras por listagem do gerente, 90% do custo da consulta mais
+ *  pesada do CONECTA. Com a dica, ele parte das etiquetas da tarefa (pela
+ *  chave primária) e busca o nome de cada uma: 3 mil leituras.
  *  `tem_comprovante` diz se a tarefa que exige comprovante já tem anexo, nela
  *  ou num comentário. Os anexos só chegam quando a tarefa é aberta, e sem esta
  *  coluna concluir pelo quadro era barrado mesmo com o comprovante enviado.
@@ -181,7 +186,7 @@ export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, respons
                                (SELECT STRING_AGG(CAST(e.nome AS NVARCHAR(MAX)), NCHAR(31))
                                        WITHIN GROUP (ORDER BY e.nome)
                                   FROM gestor.tarefa_etiquetas te
-                                  JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
+                                  INNER LOOP JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
                                  WHERE te.tarefa_id = t.id) AS etiquetas,
                                (SELECT STRING_AGG(CAST(m.pessoa_id AS VARCHAR(MAX)), ',')
                                   FROM gestor.mencoes m
@@ -1252,7 +1257,7 @@ export const exportarMinhasTarefas = createServerFn({ method: "POST" }).handler(
                 (SELECT STRING_AGG(CAST(e.nome AS NVARCHAR(MAX)), N', ')
                         WITHIN GROUP (ORDER BY e.nome)
                    FROM gestor.tarefa_etiquetas te
-                   JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
+                   INNER LOOP JOIN gestor.etiquetas e ON e.id = te.etiqueta_id
                   WHERE te.tarefa_id = t.id) AS etiquetas,
                 (SELECT COUNT(*) FROM gestor.itens_de_checklist i WHERE i.tarefa_id = t.id) AS passos,
                 (SELECT COUNT(*) FROM gestor.itens_de_checklist i

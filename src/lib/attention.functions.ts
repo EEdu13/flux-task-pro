@@ -67,7 +67,13 @@ export const sendNudgeFn = createServerFn({ method: "POST" })
         // Um emoji só, curto e pictográfico — não vira canal de texto livre.
         if (!texto || texto.length > 16 || !/\p{Extended_Pictographic}/u.test(texto))
           throw new Error("Emoji inválido");
-        return { fromName, fromAvatar, targetUserId, kind: "cutucada" as const, message: `${PREFIXO_EMOJI}${texto}` };
+        return {
+          fromName,
+          fromAvatar,
+          targetUserId,
+          kind: "cutucada" as const,
+          message: `${PREFIXO_EMOJI}${texto}`,
+        };
       }
       if (pedido === "avatar") {
         // Reação do avatar (17/10/2026): só um id do catálogo, nunca texto livre.
@@ -140,16 +146,21 @@ export const listNudgesFn = createServerFn({ method: "POST" })
     const eu = await pessoaDaSessao();
 
     /* Os avisos dos últimos 5 minutos (a maior janela aceita) de TODO mundo,
-       numa consulta só guardada por 1 s (ver `cache-compartilhado.server`);
+       numa consulta só guardada por 30 s (ver `cache-compartilhado.server`);
        cada pessoa fica com os dela. Era uma consulta por pessoa por segundo, a
        sondagem mais frequente do app.
+
+       Os 30 s não atrasam nada: o único lugar que grava aviso (`sendNudgeFn`)
+       descarta a cópia na hora, e o que envelhece dentro dela sai pela conta
+       de idade abaixo. Com 1 s eram 194 mil consultas por semana para quase
+       sempre a mesma resposta vazia (03/11/2026).
 
        A idade de cada aviso sai do SQL, medida pelo relógio do banco contra ele
        mesmo, como o comentário acima pede. Aqui só se soma o tempo que a
        resposta passou guardada, medido pelo relógio do servidor contra ele
        mesmo: nenhum dos dois relógios é comparado com o outro. */
     const { compartilhado } = await import("@/lib/cache-compartilhado.server");
-    const busca = await compartilhado(CHAVE_RECENTES, 1_000, async () => {
+    const busca = await compartilhado(CHAVE_RECENTES, 30_000, async () => {
       const { getPool } = await import("@/integrations/db.server");
       const pool = await getPool();
       const res = await pool.request().query(
@@ -187,8 +198,7 @@ export const listNudgesFn = createServerFn({ method: "POST" })
       nudges: busca.avisos
         .filter(
           (n) =>
-            n.para_pessoa_id === eu &&
-            Number(n.idade_ms) + guardadaHa < data.janelaSegundos * 1000,
+            n.para_pessoa_id === eu && Number(n.idade_ms) + guardadaHa < data.janelaSegundos * 1000,
         )
         .slice(0, 5)
         .map(({ para_pessoa_id: _destinatario, idade_ms: _idade, ...n }) => ({
