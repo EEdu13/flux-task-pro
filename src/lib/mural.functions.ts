@@ -296,13 +296,27 @@ async function buscarPagina(cursor: { em: Date; id: string } | null, filtro: Fil
   const r = await req.query(
     `SET NOCOUNT ON;
      DECLARE @pg TABLE (id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY, ordem INT NOT NULL, fixo BIT NOT NULL);
+     /* O ranking "Conecta em números" mais recente (06/11/2026) abre o feed:
+        fica em primeiro, acima das conquistas automáticas das 7h, até sair um
+        ranking novo ou passar 30 dias. Não é "fixado" (fixado é comunicado e
+        vai para a faixa do Início) — só ganha a ordem 0 na primeira página. */
+     DECLARE @destaque UNIQUEIDENTIFIER = ${
+       filtro === "tudo"
+         ? `(SELECT TOP 1 d.id FROM gestor.mural_posts d
+              WHERE d.selo = N'ranking' AND d.automatico = 1 AND d.excluido_em IS NULL
+                AND d.fixado_em IS NULL AND d.criado_em >= DATEADD(DAY, -30, SYSDATETIMEOFFSET())
+              ORDER BY d.criado_em DESC)`
+         : "NULL"
+     };
      INSERT INTO @pg (id, ordem, fixo)
      SELECT TOP (${POR_PAGINA + 1}) p.id, ROW_NUMBER() OVER (ORDER BY p.criado_em DESC, p.id DESC), 0
        FROM gestor.mural_posts p
       WHERE p.excluido_em IS NULL AND p.fixado_em IS NULL
+        AND (@destaque IS NULL OR p.id <> @destaque)
         ${filtro !== "tudo" ? "AND p.tipo = @tipo" : ""}
         ${cursor ? "AND (p.criado_em < @em OR (p.criado_em = @em AND p.id < @id))" : ""}
       ORDER BY p.criado_em DESC, p.id DESC;
+     ${cursor ? "" : "IF @destaque IS NOT NULL INSERT INTO @pg (id, ordem, fixo) VALUES (@destaque, 0, 0);"}
      ${
        comFixados
          ? `INSERT INTO @pg (id, ordem, fixo)

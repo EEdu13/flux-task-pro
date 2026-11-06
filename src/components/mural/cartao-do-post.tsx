@@ -42,6 +42,7 @@ import { mencionadosNoTexto, useMencoes } from "@/components/mural/mencoes";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
 import { openAttachment } from "@/lib/attachments";
+import { isTauri } from "@/lib/desktop";
 import { reduzirFoto } from "@/lib/foto-reduzida";
 import { subirAnexos } from "@/lib/anexo-upload";
 import { nomeCurto } from "@/lib/nome-curto";
@@ -132,9 +133,25 @@ function ArquivosDoPost({ fotos }: { fotos: FotoDoPost[] }) {
           key={f.id}
           href={f.url}
           /* Abre numa guia nova (o PDF aparece no visualizador do navegador, que
-             tem o botão de baixar): a pessoa escolhe se baixa (06/11/2026). */
+             tem o botão de baixar): a pessoa escolhe se baixa (06/11/2026).
+             No app de mesa o WebView barra a guia nova em silêncio — lá, e se
+             o navegador bloquear, abre a prévia do próprio app (com Baixar). */
           target="_blank"
           rel="noreferrer"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isTauri()) {
+              e.preventDefault();
+              openAttachment({ dataUrl: f.url, name: f.nome, type: f.tipoMime, size: f.tamanho });
+              return;
+            }
+            e.preventDefault();
+            // Sem "noopener" no window.open: com ele o navegador devolve null
+            // mesmo abrindo, e a prévia abriria junto. Corta o opener à mão.
+            const guia = window.open(f.url, "_blank");
+            if (guia) guia.opener = null;
+            else openAttachment({ dataUrl: f.url, name: f.nome, type: f.tipoMime, size: f.tamanho });
+          }}
           className="group flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 transition hover:border-primary hover:bg-primary/10"
         >
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
