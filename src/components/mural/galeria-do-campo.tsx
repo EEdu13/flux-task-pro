@@ -19,7 +19,7 @@ export function GaleriaDoCampo({
   aoAbrirPost: (id: string) => void;
 }) {
   const { users } = useFluxo();
-  const fotos = posts.flatMap((p) => p.fotos.map((f) => ({ foto: f, post: p })));
+  const fotos = posts.flatMap((p) => p.fotos.filter((f) => (f.tipoMime ?? "").startsWith("image/")).map((f) => ({ foto: f, post: p })));
 
   if (!fotos.length) {
     return (

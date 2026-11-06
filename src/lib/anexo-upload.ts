@@ -47,11 +47,11 @@ export async function subirAnexos(
       const local = a.dataUrl.startsWith("blob:");
       // Projeto e mural não têm gravação; um `blob:` ali seria defeito, e
       // mandá-lo pelo envio de base64 gravaria lixo no lugar do arquivo.
-      if (local && donoTipo !== "tarefa" && donoTipo !== "comentario") {
+      if (local && donoTipo !== "tarefa" && donoTipo !== "comentario" && donoTipo !== "mural") {
         throw new Error("Gravação não pode ser anexada aqui");
       }
       const g =
-        local && (donoTipo === "tarefa" || donoTipo === "comentario")
+        local && (donoTipo === "tarefa" || donoTipo === "comentario" || donoTipo === "mural")
           ? await subirArquivoEmPedacos(
               donoTipo,
               donoId,
@@ -146,7 +146,7 @@ function pedacoEmBase64(pedaco: Blob): Promise<string> {
  * de escritório, um soluço no meio de 12 MB é mais provável do que parece.
  */
 export async function subirArquivoEmPedacos(
-  donoTipo: "tarefa" | "comentario" | "mensagem",
+  donoTipo: "tarefa" | "comentario" | "mensagem" | "mural",
   donoId: string,
   arquivo: Blob,
   nome: string,

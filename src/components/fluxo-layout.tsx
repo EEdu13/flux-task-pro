@@ -36,7 +36,9 @@ import {
   MessageCircle,
   Newspaper,
   Gift,
+  BadgeDollarSign,
 } from "lucide-react";
+import { useSouDonoDasRecompensas } from "@/lib/use-recompensas";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
 import { roleLabels, type Notification as Aviso } from "@/lib/fluxo-types";
@@ -79,6 +81,9 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
+/** Só entra no menu do dono do teste de recompensas. */
+const NAV_RECOMPENSAS = { to: "/recompensas", label: "Recompensas", icon: BadgeDollarSign };
+
 function openNotepad() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("fluxo:notepad-open"));
@@ -101,6 +106,7 @@ export function FluxoLayout({
   children: ReactNode;
   actions?: ReactNode;
 }) {
+  const souDonoRecompensas = useSouDonoDasRecompensas();
   const {
     users,
     currentUser,
@@ -651,7 +657,9 @@ export function FluxoLayout({
         </button>
 
         <nav className="mt-4 flex flex-col gap-0.5 px-2">
-          {nav.map((n) => {
+          {/* Recompensas (06/11/2026): aba do teste, só para o dono — ver
+              `use-recompensas.ts`. */}
+          {[...nav, ...(souDonoRecompensas ? [NAV_RECOMPENSAS] : [])].map((n) => {
             /* Minhas tarefas (22/10/2026: "cliquei em ver depois, esqueci e
                ficou perdido"): com atraso, o número é o das ATRASADAS, em
                vermelho, e fica ali até zerar; sem atraso, o das pendentes. */

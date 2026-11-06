@@ -21,7 +21,8 @@
 import type { AnexoGravado } from "@/lib/anexo.functions";
 
 /** Onde o anexo pode ser pendurado por este caminho. Sem tipo novo no banco. */
-export const DONOS_EM_PEDACOS = ["tarefa", "comentario", "mensagem"] as const;
+/* "mural" (06/11/2026): vídeo nos posts do Mural — só vídeo, só o autor. */
+export const DONOS_EM_PEDACOS = ["tarefa", "comentario", "mensagem", "mural"] as const;
 export type DonoEmPedacos = (typeof DONOS_EM_PEDACOS)[number];
 
 /** Tamanho máximo de um pedaço. O navegador manda exatamente isto (o último, menos). */
@@ -29,6 +30,8 @@ export const MAX_PEDACO = 2 * 1024 * 1024;
 
 /** Vídeo de tela: 2 minutos a ~700 kbps dão uns 11 MB; 25 MB é a folga. */
 const MAX_VIDEO = 25 * 1024 * 1024;
+/** Vídeo filmado no celular para o Mural: 1 minuto em 1080p passa fácil de 25 MB. */
+const MAX_VIDEO_MURAL = 60 * 1024 * 1024;
 /** Todo o resto (o recado de voz) fica no teto de sempre. */
 const MAX_OUTROS = 5 * 1024 * 1024;
 
@@ -36,7 +39,15 @@ const MAX_OUTROS = 5 * 1024 * 1024;
  * Só formatos que os gravadores do navegador produzem. O Chrome e o Edge gravam
  * WebM; o Safari grava MP4. OGG fica pelo Firefox antigo.
  */
-const TIPOS_ACEITOS = ["audio/webm", "audio/ogg", "audio/mp4", "video/webm", "video/mp4"];
+/* `video/quicktime` (06/11/2026): o .mov do iPhone, no Mural. */
+const TIPOS_ACEITOS = [
+  "audio/webm",
+  "audio/ogg",
+  "audio/mp4",
+  "video/webm",
+  "video/mp4",
+  "video/quicktime",
+];
 
 /** Envio esquecido (a aba fechou no meio) sai da memória depois disto. */
 const VALIDADE_MS = 30 * 60 * 1000;
@@ -74,8 +85,9 @@ export function tipoBase(mime: string): string {
   return mime.split(";")[0]!.trim().toLowerCase();
 }
 
-export function limiteDoTipo(mime: string): number {
-  return mime.startsWith("video/") ? MAX_VIDEO : MAX_OUTROS;
+export function limiteDoTipo(mime: string, donoTipo?: string): number {
+  if (mime.startsWith("video/")) return donoTipo === "mural" ? MAX_VIDEO_MURAL : MAX_VIDEO;
+  return MAX_OUTROS;
 }
 
 /**
@@ -91,7 +103,7 @@ function assinaturaConfere(mime: string, bytes: Uint8Array): boolean {
   if (mime === "audio/ogg") {
     return b.length >= 4 && b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53;
   }
-  if (mime.endsWith("/mp4")) {
+  if (mime.endsWith("/mp4") || mime === "video/quicktime") {
     // Caixa `ftyp` logo no começo: 4 bytes de tamanho e depois o nome.
     return b.length >= 8 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70;
   }
@@ -115,7 +127,10 @@ export async function comecarEnvio(
     throw new Error("Tipo de arquivo não aceito aqui. Só áudio e vídeo gravados no app.");
   }
   if (!Number.isInteger(dados.tamanho) || dados.tamanho <= 0) throw new Error("Arquivo vazio");
-  const limite = limiteDoTipo(tipoMime);
+  if (dados.donoTipo === "mural" && !tipoMime.startsWith("video/")) {
+    throw new Error("No Mural, por aqui só vídeo.");
+  }
+  const limite = limiteDoTipo(tipoMime, dados.donoTipo);
   if (dados.tamanho > limite) {
     throw new Error(`Arquivo muito grande. O limite é ${Math.round(limite / 1024 / 1024)} MB.`);
   }
@@ -130,6 +145,13 @@ export async function comecarEnvio(
   const { podeVerDonoDeAnexo } = await import("@/lib/permissoes.server");
   if (!(await podeVerDonoDeAnexo(eu, dados.donoTipo, dados.donoId))) {
     throw new Error("Você não tem acesso a onde este arquivo seria anexado.");
+  }
+  // No Mural, a mesma regra das fotos: só o autor, e no máximo 4 por post.
+  if (dados.donoTipo === "mural") {
+    const { podeAnexarNoPost } = await import("@/lib/mural.server");
+    if (!(await podeAnexarNoPost(eu, dados.donoId))) {
+      throw new Error("Este post já tem arquivos demais (ou não é seu).");
+    }
   }
 
   /* O id nomeia o blob e depois vira o id da linha. Gerado aqui e não com
@@ -244,6 +266,11 @@ export async function concluirEnvio(eu: number, envioId: string): Promise<AnexoG
   if (e.donoTipo === "tarefa") {
     const { registrarNoHistorico } = await import("@/lib/historico.server");
     await registrarNoHistorico(e.donoId, eu, [{ tipo: "editada", texto: `anexou "${e.nome}"` }]);
+  }
+  // O vídeo novo aparece no feed guardado do Mural na hora.
+  if (e.donoTipo === "mural") {
+    const { esquecerFeed } = await import("@/lib/mural.server");
+    await esquecerFeed();
   }
   // O recado de voz aparece na conversa aberta das duas pontas na próxima pergunta.
   if (e.donoTipo === "mensagem") {

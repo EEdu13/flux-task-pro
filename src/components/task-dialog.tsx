@@ -33,6 +33,7 @@ import {
 } from "@/lib/recorrencia";
 import { toast } from "sonner";
 import { HORARIO_VALIDO } from "@/lib/prazo";
+import { BotaoBonificar } from "@/components/recompensas/botao-bonificar";
 import {
   sectors,
   freqLabels,
@@ -881,6 +882,8 @@ export function TaskDialog() {
           {editing && (
             <div className="ml-3 mr-auto flex items-center gap-2">
               <ReacoesDaTarefa task={editing} />
+              {/* Recompensas (06/11/2026): só o dono do teste vê. */}
+              <BotaoBonificar tarefaId={editing.id} />
               {/* Mural (14/10/2026): elogio público a quem fez a tarefa. */}
               {editing.assigneeId !== currentUser.id && (
                 <button

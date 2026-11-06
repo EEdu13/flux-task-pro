@@ -63,7 +63,15 @@ export type FiltroDoMural =
 
 /** O selo de uma conquista automática (o desenho do cartão muda por ele). */
 export type SeloDaConquista =
-  "pack" | "setor" | "recorde" | "primeira" | "tempo_casa" | "boas_vindas" | "aniversario";
+  | "pack"
+  | "setor"
+  | "recorde"
+  | "primeira"
+  | "tempo_casa"
+  | "boas_vindas"
+  | "aniversario"
+  /** Ranking "Conecta em números" (06/11/2026): os 10 que mais usaram. */
+  | "ranking";
 
 export type OpcaoDaEnquete = { ordem: number; texto: string; votos: number };
 export type EnqueteDoPost = {

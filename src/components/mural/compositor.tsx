@@ -6,6 +6,7 @@ import {
   Loader2,
   Megaphone,
   PenLine,
+  Play,
   Plus,
   Send,
   TreePine,
@@ -39,6 +40,9 @@ import type { EntradaDoPost } from "@/lib/mural.functions";
  */
 
 const MAX_FOTOS = 4;
+/** Vídeo no post (06/11/2026): sobe em pedaços, até 60 MB (ver envio-em-pedacos). */
+const MAX_VIDEO_MB = 60;
+const TIPOS_DE_VIDEO = ["video/mp4", "video/webm", "video/quicktime"];
 const MAX_TEXTO = 4000;
 const MAX_OPCOES = 6;
 
@@ -85,11 +89,27 @@ export function Compositor({
       toast.info(`No máximo ${MAX_FOTOS} fotos por post.`);
       return;
     }
-    const escolhidas = Array.from(lista).filter((f) => f.type.startsWith("image/"));
+    const escolhidas = Array.from(lista).filter(
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
+    );
     if (escolhidas.length > vagas)
       toast.info(`Só cabem mais ${vagas} — as outras ficaram de fora.`);
     const novas: Foto[] = [];
     for (const f of escolhidas.slice(0, vagas)) {
+      if (f.type.startsWith("video/")) {
+        /* Vídeo não é reduzido nem vira base64: fica como endereço local
+           (`blob:`) e sobe em pedaços depois que o post existe. */
+        if (!TIPOS_DE_VIDEO.includes(f.type)) {
+          toast.error(`"${f.name}": formato de vídeo não aceito. Use MP4 ou MOV.`);
+          continue;
+        }
+        if (f.size > MAX_VIDEO_MB * 1024 * 1024) {
+          toast.error(`"${f.name}" passa de ${MAX_VIDEO_MB} MB. Encurte o vídeo e tente de novo.`);
+          continue;
+        }
+        novas.push({ name: f.name, type: f.type, dataUrl: URL.createObjectURL(f) });
+        continue;
+      }
       try {
         novas.push(await reduzirFoto(f, 1600));
       } catch (e) {
@@ -342,10 +362,27 @@ export function Compositor({
                   key={i}
                   className="group relative h-20 w-20 overflow-hidden rounded-lg border border-border"
                 >
-                  <img src={f.dataUrl} alt="" className="h-full w-full object-cover" />
+                  {f.type.startsWith("video/") ? (
+                    <>
+                      <video src={f.dataUrl} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+                      <span className="pointer-events-none absolute inset-0 grid place-items-center">
+                        <span className="grid h-7 w-7 place-items-center rounded-full bg-black/55 text-white">
+                          <Play className="h-3.5 w-3.5 fill-current" />
+                        </span>
+                      </span>
+                    </>
+                  ) : (
+                    <img src={f.dataUrl} alt="" className="h-full w-full object-cover" />
+                  )}
                   <button
                     type="button"
-                    onClick={() => setFotos((l) => l.filter((_, j) => j !== i))}
+                    onClick={() =>
+                      setFotos((l) => {
+                        const tirada = l[i];
+                        if (tirada?.dataUrl.startsWith("blob:")) URL.revokeObjectURL(tirada.dataUrl);
+                        return l.filter((_, j) => j !== i);
+                      })
+                    }
                     aria-label="Tirar foto"
                     className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white opacity-90 hover:bg-black/80"
                   >
@@ -404,7 +441,7 @@ export function Compositor({
                   <input
                     ref={arquivoRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/mp4,video/webm,video/quicktime"
                     multiple
                     hidden
                     onChange={(e) => {
@@ -423,7 +460,7 @@ export function Compositor({
                           : "text-muted-foreground"
                       }`}
                     >
-                      <ImagePlus className="h-4 w-4" /> Fotos{" "}
+                      <ImagePlus className="h-4 w-4" /> Fotos e vídeo{" "}
                       {fotos.length > 0 && `(${fotos.length}/${MAX_FOTOS})`}
                     </button>
                   )}

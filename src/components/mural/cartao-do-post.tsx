@@ -19,6 +19,7 @@ import {
   TreePine,
   Vote,
   X,
+  FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,6 +27,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { BarraDeReacoes } from "@/components/reacoes-da-tarefa";
 import { confirmar } from "@/components/confirm-dialog";
 import { TextoDoPost } from "@/components/mural/texto-do-post";
+import { BannerDoRanking } from "@/components/mural/banner-do-ranking";
 import { LeiturasDoComunicadoDialog } from "@/components/mural/leituras-do-comunicado";
 import { EnqueteDoPost } from "@/components/mural/enquete-do-post";
 import { EventoDoPost } from "@/components/mural/evento-do-post";
@@ -100,6 +102,8 @@ const FUNDO_DO_SELO: Record<SeloDaConquista, string> = {
     "from-sky-200 via-cyan-100 to-indigo-100 dark:from-sky-500/25 dark:via-cyan-500/10 dark:to-transparent",
   aniversario:
     "from-fuchsia-200 via-pink-100 to-amber-100 dark:from-fuchsia-500/25 dark:via-pink-500/10 dark:to-transparent",
+  ranking:
+    "from-teal-200 via-emerald-100 to-amber-100 dark:from-teal-500/25 dark:via-emerald-500/10 dark:to-transparent",
 };
 
 /** O desenho de cada selo de conquista: o emoji grande e a etiqueta. */
@@ -111,9 +115,49 @@ const SELOS: Record<SeloDaConquista, { emoji: string; rotulo: string; cor: strin
   tempo_casa: { emoji: "🎉", rotulo: "Tempo de casa", cor: "from-pink-500/20 via-rose-400/10" },
   boas_vindas: { emoji: "👋", rotulo: "Boas-vindas", cor: "from-sky-500/20 via-cyan-400/10" },
   aniversario: { emoji: "🎂", rotulo: "Aniversário", cor: "from-fuchsia-500/20 via-pink-400/10" },
+  ranking: { emoji: "🏅", rotulo: "Conecta em números", cor: "from-teal-500/20 via-emerald-400/10" },
 };
 
-function GradeDeFotos({ fotos }: { fotos: FotoDoPost[] }) {
+/** Foto ou vídeo vão na grade; o resto (PDF, planilha) vira botão de baixar (06/11/2026). */
+const ehVideo = (f: FotoDoPost) => (f.tipoMime ?? "").startsWith("video/");
+const ehImagem = (f: FotoDoPost) => (f.tipoMime ?? "").startsWith("image/") || ehVideo(f);
+
+function ArquivosDoPost({ fotos }: { fotos: FotoDoPost[] }) {
+  const docs = fotos.filter((f) => !ehImagem(f));
+  if (!docs.length) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      {docs.map((f) => (
+        <a
+          key={f.id}
+          href={f.url}
+          /* Abre numa guia nova (o PDF aparece no visualizador do navegador, que
+             tem o botão de baixar): a pessoa escolhe se baixa (06/11/2026). */
+          target="_blank"
+          rel="noreferrer"
+          className="group flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 transition hover:border-primary hover:bg-primary/10"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <FileDown className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">Baixe aqui a lista completa</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {f.nome}
+              {f.tamanho ? ` · ${Math.max(1, Math.round(f.tamanho / 1024))} KB` : ""}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs font-semibold text-primary group-hover:underline">
+            Ver e baixar
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function GradeDeFotos({ fotos: todos }: { fotos: FotoDoPost[] }) {
+  const fotos = todos.filter(ehImagem);
   if (!fotos.length) return null;
   const abrir = (f: FotoDoPost) =>
     openAttachment({ dataUrl: f.url, name: f.nome, type: f.tipoMime, size: f.tamanho });
@@ -128,7 +172,19 @@ function GradeDeFotos({ fotos }: { fotos: FotoDoPost[] }) {
           : "grid-cols-2";
   return (
     <div className={`mt-3 grid gap-1 overflow-hidden rounded-lg ${grade}`}>
-      {fotos.map((f, i) => (
+      {fotos.map((f, i) =>
+        ehVideo(f) ? (
+          <video
+            key={f.id}
+            src={f.url}
+            controls
+            playsInline
+            preload="metadata"
+            className={`h-full w-full bg-black object-contain ${
+              n === 1 ? "max-h-[440px]" : n === 3 && i === 0 ? "row-span-2" : "aspect-square"
+            }`}
+          />
+        ) : (
         <button
           key={f.id}
           type="button"
@@ -151,7 +207,8 @@ function GradeDeFotos({ fotos }: { fotos: FotoDoPost[] }) {
             }`}
           />
         </button>
-      ))}
+        ),
+      )}
     </div>
   );
 }
@@ -597,7 +654,19 @@ export function CartaoDoPost({
 
       <div className="relative p-4">
         {/* Conquista: o banner de comemoração no lugar do cabeçalho (19/10/2026). */}
-        {ehConquista && !editando && (
+        {/* Ranking "Conecta em números" (06/11/2026): pódio com os avatares. */}
+        {ehConquista && !editando && post.selo === "ranking" && (
+          <BannerDoRanking
+            titulo={post.titulo}
+            texto={post.texto}
+            homenageados={post.homenageados}
+            users={users}
+            nomeDe={nomeDe}
+            criadoEm={post.criadoEm}
+            menu={podeMenu ? menuDoPost : null}
+          />
+        )}
+        {ehConquista && !editando && post.selo !== "ranking" && (
           <BannerDaConquista
             selo={post.selo}
             titulo={post.titulo}
@@ -752,6 +821,7 @@ export function CartaoDoPost({
         )}
 
         {!editando && <GradeDeFotos fotos={post.fotos} />}
+        {!editando && <ArquivosDoPost fotos={post.fotos} />}
 
         {!editando && post.evento && (
           <EventoDoPost
@@ -1030,7 +1100,10 @@ function BannerDaConquista({
      do nome do setor no título ("Time de PCP bateu…"), com quem é do setor hoje. */
   const { users: todos } = useFluxo();
   const equipe =
-    selo !== "setor"
+    selo === "ranking"
+      ? // o pódio: os três primeiros abraçados (06/11/2026)
+        homenageados.slice(0, 3)
+      : selo !== "setor"
       ? []
       : homenageados.length > 1
         ? homenageados

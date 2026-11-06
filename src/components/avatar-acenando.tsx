@@ -19,9 +19,12 @@ export function AvatarAcenando({
   config,
   className,
   humor = "normal",
+  repetirAcenoMs,
 }: {
   config: AvatarConfig | null | undefined;
   className?: string;
+  /** Repete o tchauzinho a cada N ms (o pódio do ranking no Mural, 06/11/2026). */
+  repetirAcenoMs?: number;
   /**
    * O humor da ofensiva (19/10/2026, como a coruja do Duolingo): triste quando
    * a sequência do pack quebrou — e aí ele não acena —, preocupado quando o
@@ -30,6 +33,12 @@ export function AvatarAcenando({
   humor?: "normal" | "feliz" | "preocupado" | "triste";
 }) {
   const visivel = useAbaVisivel();
+  const [chave, setChave] = useState(0);
+  useEffect(() => {
+    if (!repetirAcenoMs || !visivel) return;
+    const t = window.setInterval(() => setChave((c) => c + 1), repetirAcenoMs);
+    return () => window.clearInterval(t);
+  }, [repetirAcenoMs, visivel]);
   if (!config) return null;
   return (
     <div className={className} aria-hidden>
@@ -52,6 +61,7 @@ export function AvatarAcenando({
               pose="em-pe"
               mostrarNome={false}
               acenar={humor !== "triste"}
+              acenarChave={repetirAcenoMs ? chave : undefined}
               expressaoForcada={
                 humor === "triste"
                   ? "triste"

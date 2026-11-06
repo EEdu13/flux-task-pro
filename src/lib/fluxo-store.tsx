@@ -508,6 +508,19 @@ function naFilaDoProjeto(id: string, gravar: () => Promise<unknown>): void {
 const gravacoesFalhadas = new Map<string, Task>();
 let toastDeFalhaAberto = false;
 
+/**
+ * O que precisa sair do aviso quando ele deixa de ser erro (06/11/2026).
+ * O sonner, ao atualizar um aviso pelo mesmo `id`, MESCLA as opções novas com
+ * as antigas: o "Salvo." herdava a descrição, o motivo e os botões "Tentar
+ * novamente"/"Descartar" do erro anterior — e parecia que a tarefa recém-salva
+ * tinha falhado. Passar os campos como `undefined` é o que os apaga.
+ */
+const SEM_RESTO_DO_ERRO = {
+  description: undefined,
+  action: undefined,
+  cancel: undefined,
+} as const;
+
 /** Avisos que significam "a lista de tarefas mudou" — ver `sincronizarAvisos`. */
 const TIPOS_QUE_MEXEM_NAS_TAREFAS = new Set<string>([
   "atribuida",
@@ -528,11 +541,13 @@ async function tentarNovamente(): Promise<void> {
   const pendentes = [...gravacoesFalhadas.values()];
   gravacoesFalhadas.clear();
   toastDeFalhaAberto = false;
-  toast.loading("Salvando de novo…", { id: "gravacao-tarefa" });
+  toast.loading("Salvando de novo…", { id: "gravacao-tarefa", ...SEM_RESTO_DO_ERRO });
   for (const t of pendentes) await gravarTarefa(t);
   if (gravacoesFalhadas.size === 0) {
     toast.success(pendentes.length === 1 ? "Salvo." : `Salvo — ${pendentes.length} alterações.`, {
       id: "gravacao-tarefa",
+      duration: 2000,
+      ...SEM_RESTO_DO_ERRO,
     });
   }
   // Se ainda houver falha, `avisarFalha` já reabriu o aviso de erro.
@@ -847,7 +862,7 @@ async function enviarTarefa(t: Task, origem?: string): Promise<void> {
     // Com outra falha ainda pendente, o "Salvo." tomaria o lugar do aviso de
     // erro (mesmo `id`) e esconderia justamente o que falta salvar.
     if (gravacoesFalhadas.size === 0) {
-      toast.success("Salvo.", { id: "gravacao-tarefa", duration: 1200 });
+      toast.success("Salvo.", { id: "gravacao-tarefa", duration: 1200, ...SEM_RESTO_DO_ERRO });
     }
   } catch (e) {
     console.warn("[fluxo] tarefa não gravou:", (e as Error)?.message);

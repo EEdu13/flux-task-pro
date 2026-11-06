@@ -28,6 +28,7 @@ import { Route as MuralRouteImport } from './routes/mural'
 import { Route as PackRouteImport } from './routes/pack'
 import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as RealidadeVirtualRouteImport } from './routes/realidade-virtual'
+import { Route as RecompensasRouteImport } from './routes/recompensas'
 import { Route as RelatoriosRouteImport } from './routes/relatorios'
 import { Route as TarefasWaRouteImport } from './routes/tarefas-wa'
 import { Route as ConvidadoRoomNameRouteImport } from './routes/convidado.$roomName'
@@ -139,6 +140,11 @@ const RealidadeVirtualRoute = RealidadeVirtualRouteImport.update({
   path: '/realidade-virtual',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RecompensasRoute = RecompensasRouteImport.update({
+  id: '/recompensas',
+  path: '/recompensas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RelatoriosRoute = RelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -238,6 +244,7 @@ export interface FileRoutesByFullPath {
   '/pack': typeof PackRoute
   '/projetos': typeof ProjetosRoute
   '/realidade-virtual': typeof RealidadeVirtualRoute
+  '/recompensas': typeof RecompensasRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -274,6 +281,7 @@ export interface FileRoutesByTo {
   '/pack': typeof PackRoute
   '/projetos': typeof ProjetosRoute
   '/realidade-virtual': typeof RealidadeVirtualRoute
+  '/recompensas': typeof RecompensasRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -311,6 +319,7 @@ export interface FileRoutesById {
   '/pack': typeof PackRoute
   '/projetos': typeof ProjetosRoute
   '/realidade-virtual': typeof RealidadeVirtualRoute
+  '/recompensas': typeof RecompensasRoute
   '/relatorios': typeof RelatoriosRoute
   '/tarefas-wa': typeof TarefasWaRoute
   '/convidado/$roomName': typeof ConvidadoRoomNameRoute
@@ -349,6 +358,7 @@ export interface FileRouteTypes {
     | '/pack'
     | '/projetos'
     | '/realidade-virtual'
+    | '/recompensas'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -385,6 +395,7 @@ export interface FileRouteTypes {
     | '/pack'
     | '/projetos'
     | '/realidade-virtual'
+    | '/recompensas'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -421,6 +432,7 @@ export interface FileRouteTypes {
     | '/pack'
     | '/projetos'
     | '/realidade-virtual'
+    | '/recompensas'
     | '/relatorios'
     | '/tarefas-wa'
     | '/convidado/$roomName'
@@ -458,6 +470,7 @@ export interface RootRouteChildren {
   PackRoute: typeof PackRoute
   ProjetosRoute: typeof ProjetosRoute
   RealidadeVirtualRoute: typeof RealidadeVirtualRoute
+  RecompensasRoute: typeof RecompensasRoute
   RelatoriosRoute: typeof RelatoriosRoute
   TarefasWaRoute: typeof TarefasWaRoute
   ConvidadoRoomNameRoute: typeof ConvidadoRoomNameRoute
@@ -610,6 +623,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RealidadeVirtualRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/recompensas': {
+      id: '/recompensas'
+      path: '/recompensas'
+      fullPath: '/recompensas'
+      preLoaderRoute: typeof RecompensasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/relatorios': {
       id: '/relatorios'
       path: '/relatorios'
@@ -738,6 +758,7 @@ const rootRouteChildren: RootRouteChildren = {
   PackRoute: PackRoute,
   ProjetosRoute: ProjetosRoute,
   RealidadeVirtualRoute: RealidadeVirtualRoute,
+  RecompensasRoute: RecompensasRoute,
   RelatoriosRoute: RelatoriosRoute,
   TarefasWaRoute: TarefasWaRoute,
   ConvidadoRoomNameRoute: ConvidadoRoomNameRoute,

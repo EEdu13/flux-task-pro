@@ -7,8 +7,9 @@ import type { AnexoGravado } from "@/lib/anexo.functions";
  * entrada, com a validação do que vem do navegador. O porquê de tudo está no
  * topo daquele arquivo. */
 
-type Dono = "tarefa" | "comentario" | "mensagem";
-const DONOS: readonly string[] = ["tarefa", "comentario", "mensagem"];
+/* "mural" (06/11/2026): vídeo no post do Mural. */
+type Dono = "tarefa" | "comentario" | "mensagem" | "mural";
+const DONOS: readonly string[] = ["tarefa", "comentario", "mensagem", "mural"];
 const GUID = /^[0-9a-f-]{36}$/i;
 
 /** 2 MB de pedaço viram ~2,7 MB em base64; acima disso nem decodifica. */

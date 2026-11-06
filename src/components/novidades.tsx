@@ -1,9 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  FileDown,
+  FileText,
+  ListChecks,
+  Ribbon,
+  Users,
+  Zap,
   Building2,
   Cake,
   CalendarCheck,
@@ -35,6 +43,8 @@ import {
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { primeiroNome } from "@/integrations/iam/types";
+import { carregarAvataresDe, type AvatarConfig } from "@/lib/avatar-3d";
+import { sectors } from "@/lib/fluxo-types";
 
 /**
  * "O que mudou" — a janela de novidades que aparece UMA vez por pessoa,
@@ -56,19 +66,69 @@ import { primeiroNome } from "@/integrations/iam/types";
  *
  * Para ver de novo sem mexer no banco: `?novidades=1` na URL.
  */
-const VERSAO = "2026-10-20-avatar-e-mural";
+const VERSAO = "2026-11-06-equipes-ranking-video";
 
 const chaveLocal = (pessoaId: string) => `fluxo:novidades:${pessoaId}`;
 
 type Tela = {
   titulo: string;
   texto: string;
+  /** Apresentada pelo avatar de alguém de um setor sorteado (leva de 06/11/2026). */
+  apresenta?: boolean;
   Ilustracao: (p: { pessoaId: string }) => React.ReactElement;
 };
 
-/* A leva de 20/10/2026: avatar 3D, Mural, escritório 3D, recado de voz e
-   gravação de tela, a ata nova com legenda, e o que mais entrou desde 14/10. */
+/* A leva de 06/11/2026 (a atual): o que entrou desde 20/10. Cada tela é
+   apresentada por alguém de um setor diferente, sorteado. */
 export const TELAS: Tela[] = [
+  {
+    titulo: "Equipes em 3D",
+    texto:
+      "Em Contatos → Equipes, escolha um time e passe avatar por avatar: todo mundo do setor com o seu boneco 3D, cargo e contato. Ótimo para conhecer quem é quem.",
+    Ilustracao: IlustracaoEquipes,
+    apresenta: true,
+  },
+  {
+    titulo: "Tem ranking no Mural",
+    texto:
+      "O Mural agora publica o Conecta em números: o pódio de quem mais organiza o trabalho no CONECTA, com confete, do 4º ao 10º ao lado e a lista completa em PDF para você ver onde ficou.",
+    Ilustracao: IlustracaoRanking,
+    apresenta: true,
+  },
+  {
+    titulo: "Vídeo no Mural",
+    texto:
+      "Além de fotos, agora dá para postar vídeo no Mural (até 60 MB), com player no próprio post. E o PDF anexado abre numa guia nova, para ler e baixar se quiser.",
+    Ilustracao: IlustracaoVideo,
+    apresenta: true,
+  },
+  {
+    titulo: "Atrasadas sempre à vista",
+    texto:
+      "Em Minhas tarefas, os filtros Atrasadas e Em aberto mostram o que ficou para trás, com o selo “Atrasada há N dias”. E o número vermelho no menu só some quando zerar.",
+    Ilustracao: IlustracaoAtrasadas,
+    apresenta: true,
+  },
+  {
+    titulo: "Ata em PDF",
+    texto:
+      "Em Atas & Planos, exporte a ata em PDF: a ata completa, o plano de ação com o andamento de cada tarefa e a transcrição da reunião. Pronta para mandar para quem não estava.",
+    Ilustracao: IlustracaoAtaPdf,
+    apresenta: true,
+  },
+  {
+    titulo: "E mais",
+    texto:
+      "Item de checklist “só desta vez” (não volta na próxima repetição), cronômetro e rascunho de comentário que sobrevivem se o computador desligar, rostos femininos no avatar, um CONECTA mais rápido e a abertura do Novembro Azul.",
+    Ilustracao: IlustracaoMaisNovembro,
+    apresenta: true,
+  },
+];
+
+/* A leva de 20/10/2026: avatar 3D, Mural, escritório 3D, recado de voz e
+   gravação de tela, a ata nova com legenda, e o que mais entrou desde 14/10.
+   Guardada (não aparece mais): quem viu continua tendo visto. */
+export const TELAS_DE_20_10: Tela[] = [
   {
     titulo: "Agora você tem um avatar 3D!",
     texto:
@@ -195,6 +255,7 @@ export function Novidades() {
     setIndice(para);
   };
 
+  const apresentadores = useApresentadores(aberta, TELAS.length);
   const ultima = indice === TELAS.length - 1;
   const tela = TELAS[indice]!;
   const nome = primeiroNome(currentUser.name);
@@ -229,7 +290,10 @@ export function Novidades() {
                 transition={{ duration: 0.25, ease: "easeOut" }}
                 className="flex h-full w-full items-center justify-center"
               >
-                <tela.Ilustracao pessoaId={currentUser.id} />
+                {tela.apresenta && <ApresentadorDaTela a={apresentadores[indice]} />}
+                <div className="h-full min-w-0 flex-1">
+                  <tela.Ilustracao pessoaId={currentUser.id} />
+                </div>
               </motion.div>
             </AnimatePresence>
             <span className="absolute left-4 top-3 rounded-full bg-card/80 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground shadow-sm">
@@ -239,7 +303,7 @@ export function Novidades() {
 
           <div className="px-6 pb-5 pt-4">
             <DialogPrimitive.Title className="text-lg font-semibold tracking-tight">
-              {indice === 0 && nome ? `${nome}, agora você tem um avatar 3D!` : tela.titulo}
+              {indice === 0 && nome ? `${nome}, olha o que chegou: ${tela.titulo}` : tela.titulo}
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-1.5 min-h-[5.5rem] text-sm leading-relaxed text-muted-foreground">
               {tela.texto}
@@ -2326,6 +2390,657 @@ function IlustracaoMais() {
               <span className="absolute left-[266px] flex h-full items-center">
                 {feito ? l.depois : l.antes}
               </span>
+            </div>
+          );
+        })}
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————————————————————————————————————————————————————————————————
+ * A leva de 06/11/2026: Equipes em 3D, ranking e vídeo no Mural,
+ * atrasadas à vista, ata em PDF e o que mais entrou desde 20/10.
+ * Cada tela é apresentada pelo avatar de alguém de um setor diferente,
+ * sorteado (pedido do Eduardo) — ver `useApresentadores`.
+ * ———————————————————————————————————————————————————————————————— */
+
+const AvatarAcenandoNovidade = lazy(() =>
+  import("@/components/avatar-acenando").then((m) => ({ default: m.AvatarAcenando })),
+);
+
+type Apresentador = { id: string; nome: string; setor: string; config: AvatarConfig };
+
+/**
+ * Sorteia um apresentador por tela, cada um de um setor diferente, só entre
+ * quem já montou o avatar. Sorteia uma vez por abertura da janela.
+ */
+function useApresentadores(ativo: boolean, quantos: number): Apresentador[] {
+  const { users } = useFluxo();
+  const [lista, setLista] = useState<Apresentador[]>([]);
+  useEffect(() => {
+    if (!ativo || !users.length || lista.length) return;
+    let vivo = true;
+    const ids = users.map((u) => u.id).filter((id) => /^\d+$/.test(id));
+    carregarAvataresDe(ids)
+      .then((mapa) => {
+        if (!vivo) return;
+        const porSetor = new Map<string, Apresentador[]>();
+        for (const u of users) {
+          const config = mapa.get(u.id);
+          if (!config || !u.sector || u.sector === "sem-setor") continue;
+          const setor = sectors.find((s) => s.id === u.sector)?.name ?? u.sector;
+          const atual = porSetor.get(u.sector) ?? [];
+          atual.push({ id: u.id, nome: u.name, setor, config });
+          porSetor.set(u.sector, atual);
+        }
+        const embaralhar = <T,>(a: T[]) => {
+          const c = [...a];
+          for (let i = c.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [c[i], c[j]] = [c[j]!, c[i]!];
+          }
+          return c;
+        };
+        const setores = embaralhar([...porSetor.values()]);
+        const escolhidos = setores.slice(0, quantos).map((g) => embaralhar(g)[0]!);
+        // Menos setores com avatar que telas: repete a volta.
+        while (escolhidos.length && escolhidos.length < quantos) {
+          escolhidos.push(escolhidos[escolhidos.length % setores.length]!);
+        }
+        setLista(escolhidos);
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [ativo, users, quantos, lista.length]);
+  return lista;
+}
+
+const nomeCurtoDe = (n: string) => {
+  const p = n.split(" ").filter(Boolean);
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  return p.length > 1 ? `${cap(p[0]!)} ${cap(p[p.length - 1]!)}` : cap(p[0] ?? "");
+};
+
+/** O apresentador da tela: o avatar dando tchauzinho, com nome e setor. */
+function ApresentadorDaTela({ a }: { a: Apresentador | undefined }) {
+  const reduz = useReducedMotion() ?? false;
+  return (
+    <div className="relative flex h-full w-[7.5rem] shrink-0 flex-col items-center justify-end pb-2">
+      {a && (
+        <>
+          <motion.span
+            initial={{ opacity: 0, y: 6, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ delay: 0.5 }}
+            className="absolute left-2 top-7 z-10 rounded-xl rounded-bl-sm bg-card px-2 py-1 text-[10px] font-semibold shadow-md"
+          >
+            Olha só! 👋
+          </motion.span>
+          <div className="h-40 w-full">
+            {!reduz && (
+              <Suspense fallback={null}>
+                <AvatarAcenandoNovidade config={a.config} humor="feliz" repetirAcenoMs={3800} className="h-full w-full" />
+              </Suspense>
+            )}
+          </div>
+          <span className="max-w-full truncate rounded-full bg-card/85 px-2 py-0.5 text-[10px] font-semibold shadow-sm">
+            {nomeCurtoDe(a.nome)}
+          </span>
+          <span className="max-w-full truncate text-[9px] text-muted-foreground">{a.setor}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Bolinha de pessoa com iniciais, para as miniaturas. */
+function Bolinha({ t, cor, className = "h-7 w-7 text-[9px]" }: { t: string; cor: string; className?: string }) {
+  return (
+    <span
+      className={`grid shrink-0 place-items-center rounded-full font-bold text-white shadow-sm ${className}`}
+      style={{ background: cor }}
+    >
+      {t}
+    </span>
+  );
+}
+
+/* ————— 1. Equipes em 3D ————— */
+
+const ROTEIRO_EQUIPES: Passo[] = [
+  { id: "inicio", ms: 700, cursor: [190, 150] },
+  { id: "vai-chip", ms: 450, cursor: [236, 52] },
+  { id: "chip", ms: 1300, clica: true },
+  { id: "vai-seta", ms: 450, cursor: [330, 128] },
+  { id: "p2", ms: 1200, clica: true },
+  { id: "p3", ms: 1200, clica: true },
+  { id: "p4", ms: 1800, clica: true },
+];
+
+const TIME_TI = [
+  { t: "EF", n: "Eduardo", c: "Coordenador de TI", cor: "#0f766e" },
+  { t: "MP", n: "Milena", c: "Banco de dados", cor: "#7c3aed" },
+  { t: "LB", n: "Lucas", c: "Infraestrutura", cor: "#0369a1" },
+  { t: "RG", n: "Reginaldo", c: "Bots e IAM", cor: "#b45309" },
+];
+
+function IlustracaoEquipes() {
+  const r = useRoteiro(ROTEIRO_EQUIPES);
+  const noTime = r.ja("chip");
+  const atual = r.ja("p4") ? 3 : r.ja("p3") ? 2 : r.ja("p2") ? 1 : 0;
+  const p = TIME_TI[atual]!;
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <Users className="h-3.5 w-3.5 text-primary" />
+          <span className="text-[11px] font-semibold">Contatos</span>
+          <span className="ml-2 rounded-md px-2 py-0.5 text-[10px] text-muted-foreground">Pessoas</span>
+          <span className="rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">Equipes</span>
+        </div>
+        <div className="flex gap-1.5 px-3 pt-2">
+          {["Financeiro", "RH", "PCP", "TI", "Frotas"].map((s) => (
+            <span
+              key={s}
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition ${
+                s === "TI" && noTime ? "border-primary bg-primary text-primary-foreground" : "border-border"
+              }`}
+            >
+              {s}
+            </span>
+          ))}
+        </div>
+        {noTime ? (
+          <div className="mt-3 flex items-center justify-center gap-3 px-3">
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={atual}
+                initial={{ opacity: 0, x: 30, rotateY: 40 }}
+                animate={{ opacity: 1, x: 0, rotateY: 0 }}
+                exit={{ opacity: 0, x: -30, rotateY: -40 }}
+                transition={{ duration: 0.35 }}
+                className="flex w-44 flex-col items-center rounded-xl border border-border bg-gradient-to-b from-primary/10 to-card px-3 py-2 shadow-md"
+              >
+                <motion.span
+                  animate={r.reduz ? undefined : { y: [0, -4, 0] }}
+                  transition={{ duration: 1.2, repeat: Infinity }}
+                >
+                  <Bolinha t={p.t} cor={p.cor} className="h-12 w-12 text-sm" />
+                </motion.span>
+                <span className="mt-1 text-[12px] font-bold">{p.n}</span>
+                <span className="text-[10px] text-muted-foreground">{p.c}</span>
+              </motion.div>
+            </AnimatePresence>
+            <ChevronRight className="h-4 w-4 text-primary" />
+          </div>
+        ) : (
+          <div className="mt-6 text-center text-[11px] text-muted-foreground">Escolha um time…</div>
+        )}
+        {noTime && (
+          <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+            {TIME_TI.map((x, i) => (
+              <span key={x.t} className={i === atual ? "scale-110 transition" : "opacity-60 transition"}>
+                <Bolinha t={x.t} cor={x.cor} className="h-6 w-6 text-[8px]" />
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— 2. Ranking no Mural ————— */
+
+const ROTEIRO_RANKING: Passo[] = [
+  { id: "inicio", ms: 2600, cursor: [200, 120] },
+  { id: "vai-baixar", ms: 500, cursor: [120, 196] },
+  { id: "baixa", ms: 600, clica: true },
+  { id: "pdf", ms: 2400 },
+];
+
+const CORES_CONFETE = ["#f59e0b", "#10b981", "#3b82f6", "#ec4899", "#8b5cf6", "#ef4444"];
+
+function ConfeteMiniatura() {
+  const reduz = useReducedMotion() ?? false;
+  if (reduz) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+      {Array.from({ length: 16 }, (_, i) => (
+        <motion.span
+          key={i}
+          className="absolute top-0 h-2 w-1.5 rounded-[1px]"
+          style={{ left: `${(i * 37) % 100}%`, background: CORES_CONFETE[i % CORES_CONFETE.length] }}
+          initial={{ y: -10, rotate: 0, opacity: 0 }}
+          animate={{ y: 150, rotate: 360, opacity: [0, 1, 1, 0] }}
+          transition={{ duration: 2.4 + (i % 4) * 0.4, delay: (i % 7) * 0.3, repeat: Infinity, ease: "linear" }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function IlustracaoRanking() {
+  const r = useRoteiro(ROTEIRO_RANKING);
+  const podio = [
+    { pos: 2, t: "MS", cor: "#64748b", h: "h-8", grad: "from-slate-300 to-slate-400" },
+    { pos: 1, t: "MT", cor: "#d97706", h: "h-12", grad: "from-amber-300 to-amber-500" },
+    { pos: 3, t: "LL", cor: "#b45309", h: "h-6", grad: "from-orange-300 to-orange-500" },
+  ];
+  return (
+    <Palco w={380} h={216}>
+      <div className={`${MOLDURA} bg-gradient-to-br from-teal-100 via-emerald-50 to-amber-50 dark:from-teal-500/20 dark:via-card dark:to-card`}>
+        <div className="flex items-center gap-1.5 px-3 pt-2">
+          <span className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-bold shadow-sm dark:bg-black/30">
+            🏅 Conecta em números
+          </span>
+          <span className="text-[9px] text-muted-foreground">CONECTA · agora</span>
+        </div>
+        <div className="flex gap-2 px-3 pt-1.5">
+          <div className="relative flex h-[120px] flex-1 items-end justify-center gap-1.5 rounded-lg bg-white/50 px-1 dark:bg-white/5">
+            <ConfeteMiniatura />
+            {podio.map((x, i) => (
+              <div key={x.pos} className="flex w-14 flex-col items-center">
+                <motion.span
+                  animate={r.reduz ? undefined : { rotate: [0, -12, 12, -12, 0] }}
+                  transition={{ duration: 1.1, delay: i * 0.4, repeat: Infinity, repeatDelay: 1.4 }}
+                  className="relative"
+                >
+                  <Bolinha t={x.t} cor={x.cor} className="h-9 w-9 text-[10px]" />
+                  <span className="absolute -right-2 -top-1 text-[11px]">👋</span>
+                </motion.span>
+                <div className={`mt-1 grid w-full place-items-center rounded-t-md bg-gradient-to-b ${x.grad} ${x.h} text-[12px] font-black text-white`}>
+                  {x.pos}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex w-[118px] flex-col gap-1">
+            {[
+              ["4º", "Alanis", "301"],
+              ["5º", "Mylleny", "256"],
+              ["6º", "Liliane", "231"],
+              ["7º", "Paulo", "217"],
+            ].map(([p, n, v]) => (
+              <span key={p} className="flex items-center gap-1 rounded-md bg-white/75 px-1.5 py-1 text-[9px] shadow-sm dark:bg-white/5">
+                <b className="w-4 text-muted-foreground">{p}</b>
+                <span className="flex-1 truncate font-semibold">{n}</span>
+                <b className="text-teal-700 dark:text-teal-300">{v}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="absolute inset-x-3 bottom-2 flex items-center gap-2 rounded-lg border border-primary/30 bg-card/90 px-2 py-1.5">
+          <span className="grid h-5 w-5 place-items-center rounded bg-primary text-primary-foreground">
+            <FileDown className="h-3 w-3" />
+          </span>
+          <span className="flex-1 text-[10px] font-semibold">Baixe aqui a lista completa</span>
+          <span className="text-[9px] font-semibold text-primary">Ver e baixar</span>
+        </div>
+        <AnimatePresence>
+          {r.ja("pdf") && (
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute right-4 top-4 w-36 rounded-lg border border-border bg-card p-2 shadow-2xl"
+            >
+              <div className="mb-1 flex items-center gap-1 text-[9px] font-semibold text-muted-foreground">
+                <FileText className="h-3 w-3 text-red-500" /> Nova guia · PDF
+              </div>
+              <div className="rounded bg-teal-900 px-1.5 py-1 text-[8px] font-bold text-white">Conecta em números</div>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="mt-1 h-1.5 rounded bg-secondary" style={{ width: `${90 - i * 12}%` }} />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— 3. Vídeo no Mural ————— */
+
+const ROTEIRO_VIDEO: Passo[] = [
+  { id: "inicio", ms: 500, cursor: [200, 60] },
+  { id: "digita", ms: 1500 },
+  { id: "vai-video", ms: 450, cursor: [74, 100] },
+  { id: "video", ms: 1000, clica: true },
+  { id: "vai-publicar", ms: 450, cursor: [322, 100] },
+  { id: "publica", ms: 500, clica: true },
+  { id: "post", ms: 3000 },
+];
+
+function IlustracaoVideo() {
+  const r = useRoteiro(ROTEIRO_VIDEO);
+  const tocando = r.ja("post");
+  const progresso = useContador(tocando && !r.reduz, 120, 100);
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        {!r.ja("post") ? (
+          <div className="p-3">
+            <div className="h-14 rounded-lg border border-border px-2 py-1.5 text-[11px]">
+              {r.ja("digita") ? <Digitando texto="Plantio de hoje no talhão 12 🌱" /> : <span className="text-muted-foreground">Compartilhe uma novidade…</span>}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium ${r.ja("video") ? "bg-secondary" : "text-muted-foreground"}`}>
+                <ImageIcon className="h-3 w-3" /> Fotos e vídeo
+              </span>
+              <span className="ml-auto inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1 text-[10px] font-semibold text-primary-foreground">
+                <Send className="h-3 w-3" /> Publicar
+              </span>
+            </div>
+            {r.ja("video") && (
+              <motion.div
+                initial={{ scale: 0.4, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="relative mt-2 h-16 w-24 overflow-hidden rounded-md bg-gradient-to-br from-emerald-700 to-emerald-900"
+              >
+                <span className="absolute bottom-0 left-0 h-6 w-full bg-gradient-to-t from-amber-900/70 to-transparent" />
+                <span className="absolute inset-0 grid place-items-center">
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white">
+                    <Play className="h-3 w-3 fill-current" />
+                  </span>
+                </span>
+                <span className="absolute bottom-0.5 right-1 text-[8px] font-semibold text-white">0:42</span>
+              </motion.div>
+            )}
+          </div>
+        ) : (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-3">
+            <div className="flex items-center gap-2">
+              <Bolinha t="VC" cor="#0f766e" />
+              <div>
+                <p className="text-[11px] font-semibold">Você</p>
+                <p className="text-[9px] text-muted-foreground">agora · Campo</p>
+              </div>
+            </div>
+            <p className="mt-1.5 text-[11px]">Plantio de hoje no talhão 12 🌱</p>
+            <div className="relative mt-1.5 h-24 overflow-hidden rounded-lg bg-gradient-to-br from-emerald-700 to-emerald-950">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <motion.span
+                  key={i}
+                  className="absolute bottom-3 h-6 w-1 rounded-t-full bg-emerald-300"
+                  style={{ left: `${15 + i * 17}%` }}
+                  animate={r.reduz ? undefined : { scaleY: [1, 1.2, 1] }}
+                  transition={{ duration: 1.4, delay: i * 0.15, repeat: Infinity }}
+                />
+              ))}
+              <div className="absolute inset-x-2 bottom-1.5 flex items-center gap-1.5">
+                <Pause className="h-3 w-3 text-white" />
+                <div className="h-1 flex-1 overflow-hidden rounded bg-white/30">
+                  <div className="h-full bg-white" style={{ width: `${progresso}%` }} />
+                </div>
+                <span className="text-[8px] text-white">0:{String(Math.round((progresso * 42) / 100)).padStart(2, "0")}</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— 4. Atrasadas sempre à vista ————— */
+
+const ROTEIRO_ATRASADAS: Passo[] = [
+  { id: "inicio", ms: 700, cursor: [200, 150] },
+  { id: "vai-filtro", ms: 450, cursor: [190, 22] },
+  { id: "filtro", ms: 1400, clica: true },
+  { id: "vai-concluir", ms: 450, cursor: [126, 62] },
+  { id: "conclui", ms: 2400, clica: true },
+];
+
+function IlustracaoAtrasadas() {
+  const r = useRoteiro(ROTEIRO_ATRASADAS);
+  const filtrou = r.ja("filtro");
+  const concluiu = r.ja("conclui");
+  const tarefas = [
+    { t: "Enviar relatório de horas", d: 3 },
+    { t: "Conferir notas do mês", d: 2 },
+    { t: "Atualizar planilha do EPI", d: 1 },
+  ];
+  return (
+    <Palco w={380} h={216}>
+      <div className={`${MOLDURA} flex`}>
+        <div className="w-[104px] shrink-0 border-r border-border bg-secondary/40 p-2">
+          {["Início", "Mural", "Minhas tarefas", "Pack diário"].map((m) => (
+            <div
+              key={m}
+              className={`mb-1 flex items-center justify-between rounded px-1.5 py-1 text-[9px] ${m === "Minhas tarefas" ? "bg-card font-semibold shadow-sm" : "text-muted-foreground"}`}
+            >
+              {m}
+              {m === "Minhas tarefas" && (
+                <motion.span
+                  key={concluiu ? "2" : "3"}
+                  initial={{ scale: 1.6 }}
+                  animate={{ scale: 1 }}
+                  className="grid h-4 min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[8px] font-bold text-white"
+                >
+                  {concluiu ? 2 : 3}
+                </motion.span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex-1 p-2">
+          <div className="flex gap-1">
+            {["Hoje", "Atrasadas", "Em aberto"].map((f) => (
+              <span
+                key={f}
+                className={`rounded-full border px-2 py-0.5 text-[9px] font-medium ${f === "Atrasadas" && filtrou ? "border-red-500 bg-red-500 text-white" : "border-border"}`}
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {tarefas.map((x, i) => {
+              const feita = concluiu && i === 0;
+              return (
+                <motion.div
+                  key={x.t}
+                  initial={false}
+                  animate={{ opacity: feita ? 0.45 : 1 }}
+                  className="flex items-center gap-1.5 rounded-md border border-border px-1.5 py-1.5"
+                >
+                  <span className={`grid h-3.5 w-3.5 place-items-center rounded-full ${feita ? "bg-success text-white" : "border-2 border-border"}`}>
+                    {feita && <Check className="h-2.5 w-2.5" />}
+                  </span>
+                  <span className={`flex-1 truncate text-[10px] ${feita ? "line-through" : "font-medium"}`}>{x.t}</span>
+                  {filtrou && !feita && (
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: i * 0.12 }}
+                      className="rounded bg-red-500/15 px-1 text-[8px] font-semibold text-red-600 dark:text-red-400"
+                    >
+                      Atrasada há {x.d} dia{x.d > 1 ? "s" : ""}
+                    </motion.span>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— 5. Ata em PDF ————— */
+
+const ROTEIRO_ATA_PDF: Passo[] = [
+  { id: "inicio", ms: 800, cursor: [200, 160] },
+  { id: "vai-btn", ms: 450, cursor: [300, 62] },
+  { id: "exporta", ms: 500, clica: true },
+  { id: "pdf", ms: 3000 },
+];
+
+function IlustracaoAtaPdf() {
+  const r = useRoteiro(ROTEIRO_ATA_PDF);
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <FileText className="h-3.5 w-3.5 text-primary" />
+          <span className="text-[11px] font-semibold">Atas & Planos</span>
+        </div>
+        <div className="m-3 flex items-center gap-2 rounded-lg border border-border p-2">
+          <div className="flex-1">
+            <p className="text-[11px] font-semibold">Reunião de alinhamento · PCP</p>
+            <p className="text-[9px] text-muted-foreground">05/11 · 47 min · 6 pessoas</p>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground">
+            <Download className="h-3 w-3" /> Exportar PDF
+          </span>
+        </div>
+        <AnimatePresence>
+          {r.ja("pdf") && (
+            <motion.div
+              initial={{ y: 80, opacity: 0, rotate: 4 }}
+              animate={{ y: 0, opacity: 1, rotate: -2 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 160, damping: 16 }}
+              className="absolute bottom-2 left-1/2 w-52 -translate-x-1/2 rounded-md border border-border bg-white p-2 text-slate-800 shadow-2xl"
+            >
+              <p className="text-[9px] font-bold">ATA · Reunião de alinhamento</p>
+              <p className="mt-1 text-[7px] font-semibold text-slate-500">RESUMO</p>
+              <div className="h-1 w-11/12 rounded bg-slate-200" />
+              <div className="mt-0.5 h-1 w-9/12 rounded bg-slate-200" />
+              <p className="mt-1 text-[7px] font-semibold text-slate-500">PLANO DE AÇÃO</p>
+              {[80, 45, 100].map((v, i) => (
+                <div key={i} className="mt-0.5 flex items-center gap-1">
+                  <div className="h-1 w-16 rounded bg-slate-200" />
+                  <div className="h-1.5 flex-1 overflow-hidden rounded bg-slate-100">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${v}%` }}
+                      transition={{ delay: 0.3 + i * 0.2, duration: 0.6 }}
+                      className={`h-full ${v === 100 ? "bg-emerald-500" : "bg-amber-400"}`}
+                    />
+                  </div>
+                </div>
+              ))}
+              <p className="mt-1 text-[7px] font-semibold text-slate-500">TRANSCRIÇÃO</p>
+              <div className="h-1 w-10/12 rounded bg-slate-200" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— 6. E mais (novembro) ————— */
+
+const ROTEIRO_MAIS_NOV: Passo[] = [
+  { id: "inicio", ms: 600, cursor: [200, 120] },
+  { id: "vai1", ms: 450, cursor: [305, 34] },
+  { id: "c1", ms: 1000, clica: true },
+  { id: "vai2", ms: 450, cursor: [305, 84] },
+  { id: "c2", ms: 1100, clica: true },
+  { id: "vai3", ms: 450, cursor: [305, 134] },
+  { id: "c3", ms: 1100, clica: true },
+  { id: "vai4", ms: 450, cursor: [305, 184] },
+  { id: "c4", ms: 2200, clica: true },
+];
+
+function IlustracaoMaisNovembro() {
+  const r = useRoteiro(ROTEIRO_MAIS_NOV);
+  const linhas = [
+    {
+      id: "c1",
+      Icone: ListChecks,
+      t: "Checklist “só desta vez”",
+      antes: <span className="text-[10px] text-muted-foreground">☐ Levar o EPI novo</span>,
+      depois: (
+        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-300">
+          só desta vez
+        </span>
+      ),
+    },
+    {
+      id: "c2",
+      Icone: Timer,
+      t: "Cronômetro e rascunho resistem a queda",
+      antes: (
+        <span className="inline-flex h-6 items-center gap-1 rounded-md bg-red-600/90 px-2 text-[10px] font-semibold text-white">
+          ⚡ caiu!
+        </span>
+      ),
+      depois: (
+        <span className="inline-flex h-6 items-center gap-1 rounded-md bg-secondary px-2 text-[10px] font-semibold">
+          <Timer className="h-3 w-3 text-primary" /> voltou em 0:42
+        </span>
+      ),
+    },
+    {
+      id: "c3",
+      Icone: Zap,
+      t: "CONECTA mais rápido",
+      antes: <span className="text-[10px] text-muted-foreground">carregando…</span>,
+      depois: (
+        <span className="inline-flex h-6 items-center gap-1 rounded-md bg-success px-2 text-[10px] font-semibold text-white">
+          <Zap className="h-3 w-3" /> na hora
+        </span>
+      ),
+    },
+    {
+      id: "c4",
+      Icone: Ribbon,
+      t: "Novembro Azul e rostos femininos no avatar",
+      antes: <span className="text-[10px] text-muted-foreground">abrir o login…</span>,
+      depois: (
+        <motion.span
+          initial={{ scale: 0, rotate: -20 }}
+          animate={{ scale: 1, rotate: 0 }}
+          className="inline-flex h-6 items-center gap-1 rounded-md bg-blue-600 px-2 text-[10px] font-semibold text-white"
+        >
+          🎗️ Novembro Azul
+        </motion.span>
+      ),
+    },
+  ];
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        {linhas.map((l, i) => {
+          const feito = r.ja(l.id);
+          return (
+            <div
+              key={l.id}
+              className="absolute inset-x-2 flex h-11 items-center gap-2 rounded-lg px-2"
+              style={{ top: 6 + i * 50 }}
+            >
+              <motion.span
+                key={`${l.id}-${feito}`}
+                initial={feito ? { scale: 0.3 } : false}
+                animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 300, damping: 12 }}
+                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full ${
+                  feito ? "bg-success text-white" : "border-2 border-border"
+                }`}
+              >
+                {feito && <Check className="h-3 w-3" />}
+              </motion.span>
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                <l.Icone className="h-3.5 w-3.5" />
+              </span>
+              <span className={`w-[182px] text-[11px] leading-tight ${feito ? "font-semibold" : ""}`}>{l.t}</span>
+              <span className="absolute left-[266px] flex h-full items-center">{feito ? l.depois : l.antes}</span>
             </div>
           );
         })}
