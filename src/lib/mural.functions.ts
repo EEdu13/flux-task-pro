@@ -235,6 +235,8 @@ const SELOS: readonly SeloDaConquista[] = [
   "tempo_casa",
   "boas_vindas",
   "aniversario",
+  // Ranking "Conecta em números" (06/11/2026): sem isto o feed devolvia o selo vazio.
+  "ranking",
 ];
 
 /** Lista de ids de pessoa vinda da tela: inteiros positivos, sem repetir. */
