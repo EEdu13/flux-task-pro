@@ -232,6 +232,7 @@ async function esquecerQuadroDePessoas(): Promise<void> {
 }
 
 async function quadroDePessoas(): Promise<{ pessoas: PessoaDoQuadro[] }> {
+  const { SQL_ATIVO_NA_IAM } = await import("@/integrations/iam/colaborador.server");
   const { getPool } = await import("@/integrations/db.server");
   const { SQL_SETOR_DO_EXTERNO, SQL_SETOR_DO_INTERNO, chefeDireto, setorParaId } =
     await import("@/integrations/iam/colaborador.server");
@@ -273,6 +274,7 @@ async function quadroDePessoas(): Promise<{ pessoas: PessoaDoQuadro[] }> {
            ORDER BY ext.ATIVO DESC
         ) x
         WHERE p.nome IS NOT NULL
+          ${SQL_ATIVO_NA_IAM}
         ORDER BY p.nome`,
   );
   type Linha = {

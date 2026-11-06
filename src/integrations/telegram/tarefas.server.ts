@@ -233,10 +233,14 @@ export async function possiveisResponsaveis(): Promise<
   { pessoa_id: number; nome: string; setor: string | null }[]
 > {
   const { getPool } = await import("@/integrations/db.server");
+  const { SQL_ATIVO_NA_IAM } = await import("@/integrations/iam/colaborador.server");
   const pool = await getPool();
   const r = await pool
     .request()
-    .query(`SELECT pessoa_id, nome, setor FROM gestor.perfis WHERE nome IS NOT NULL ORDER BY nome`);
+    .query(
+      `SELECT p.pessoa_id, p.nome, p.setor FROM gestor.perfis p
+        WHERE p.nome IS NOT NULL ${SQL_ATIVO_NA_IAM} ORDER BY p.nome`,
+    );
   return r.recordset as { pessoa_id: number; nome: string; setor: string | null }[];
 }
 
@@ -253,11 +257,12 @@ export async function possiveisResponsaveis(): Promise<
  */
 export async function setoresComPessoas(): Promise<{ setor: string; pessoas: number }[]> {
   const { getPool } = await import("@/integrations/db.server");
+  const { SQL_ATIVO_NA_IAM } = await import("@/integrations/iam/colaborador.server");
   const pool = await getPool();
   const r = await pool.request().query(
-    `SELECT ISNULL(NULLIF(LTRIM(RTRIM(setor)),''),'sem-setor') AS setor, COUNT(*) AS pessoas
-       FROM gestor.perfis
-      WHERE nome IS NOT NULL
+    `SELECT ISNULL(NULLIF(LTRIM(RTRIM(p.setor)),''),'sem-setor') AS setor, COUNT(*) AS pessoas
+       FROM gestor.perfis p
+      WHERE p.nome IS NOT NULL ${SQL_ATIVO_NA_IAM}
       GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(setor)),''),'sem-setor')
       ORDER BY setor`,
   );

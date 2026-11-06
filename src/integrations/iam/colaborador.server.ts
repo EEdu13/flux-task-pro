@@ -124,6 +124,25 @@ export const SQL_SETOR_DO_EXTERNO = sqlSetorOuDoSupervisor("ext.AREA", "ext.SUPE
  */
 export const SQL_SETOR_DO_INTERNO = sqlSetorOuDoSupervisor("col.SETOR", "col.SUPERVISOR");
 
+/**
+ * Filtro (`AND ...`) que tira das listas quem a TI desativou na IAM — o
+ * desligado da empresa. `p` é o apelido da linha de `gestor.perfis`, cujo
+ * `pessoa_id` é o `ID` da IAM.
+ *
+ * Pedido do usuário, 05/11/2026: a Sophia, desligada e desativada na IAM em
+ * 28/10, seguia na equipe dele. `perfis` não tem "ativo" — guarda a cópia do
+ * último login —, e ela nem está no organograma, então o setor e o chefe da
+ * cópia valiam para sempre.
+ *
+ * `NOT EXISTS ... ATIVO = 0` e não `EXISTS ... ATIVO = 1`: só some quem a IAM
+ * diz que está desativado. Um perfil sem linha na IAM continua aparecendo, em
+ * vez de sumir por engano. O login dela já é barrado pela própria IAM; isto é
+ * só para não aparecer na equipe, nas escolhas de responsável e nas contagens.
+ * As tarefas e o histórico dela continuam no banco.
+ */
+export const SQL_ATIVO_NA_IAM = `AND NOT EXISTS (SELECT 1 FROM iam.IAM_USUARIOS iu
+                    WHERE iu.ID = p.pessoa_id AND iu.ATIVO = 0)`;
+
 function sqlSetorOuDoSupervisor(setor: string, supervisor: string): string {
   return `COALESCE(NULLIF(LTRIM(RTRIM(${setor})), ''),
     (SELECT TOP 1 NULLIF(LTRIM(RTRIM(cs.SETOR)), '') FROM dbo.COLABORADORES cs
