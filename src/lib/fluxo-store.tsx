@@ -423,6 +423,8 @@ const mesmoId = (a: string | null | undefined, b: string | null | undefined) =>
  * ter que sair e voltar. Ver `recarregarPessoas`.
  */
 function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
+  // Quadro vazio é resposta estranha, não "todo mundo saiu": não limpa a tela.
+  if (!pessoas.length) return s;
   // Sem acento e sem espaço repetido: o nome do organograma ("LILIANE ...") e
   // o da IAM nem sempre são grafados igual, e o servidor compara com CI_AI.
   const chaveNome = (n: string) => semAcento(n).replace(/\s+/g, " ");
@@ -453,7 +455,14 @@ function mesclarQuadro(s: Persisted, pessoas: PessoaDoQuadro[]): Persisted {
       streak: p.sequencia,
     };
   });
-  const soLocais = s.users.filter((u) => !pessoas.some((p) => p.id === u.id));
+  /* "Só local" é só quem nunca teve id do banco (anterior à migração, id não
+     numérico). Quem TEM id numérico e o banco deixou de mandar saiu do quadro
+     — desativado na IAM, o desligado da empresa — e tem de sumir da tela
+     também. Antes ele sobrevivia pela cópia guardada no navegador: a Sophia,
+     desativada, continuava no painel da equipe (05/11/2026). */
+  const soLocais = s.users.filter(
+    (u) => !/^\d+$/.test(u.id) && !pessoas.some((p) => p.id === u.id),
+  );
   return { ...s, users: [...doBanco, ...soLocais] };
 }
 
