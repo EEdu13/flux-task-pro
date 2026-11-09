@@ -1,7 +1,7 @@
 /*
- * Uma sala do andar (18/10/2026): as divisórias de madeira e vidro com a
- * porta listrada para o corredor, a mobília do tipo (setor, gerência,
- * refeitório) e as pessoas.
+ * Uma sala do andar (18/10/2026): a placa da porta, a mobília do tipo (setor,
+ * gerência, refeitório) e as pessoas. As divisórias são do andar (27/10/2026):
+ * duas salas vizinhas dividem a mesma, e ela é levantada uma vez só.
  *
  * Nível de detalhe: a sala mede, a cada poucos quadros, a distância da câmera
  * até ela. Perto (alguém "entrou" com o zoom) → avatares de verdade e nomes;
@@ -16,7 +16,6 @@ import {
   ALTURA_DA_MESA,
   AFASTAMENTO,
   CadeiraReal,
-  Divisoria,
   MesaReal,
   Monitor,
   PlantaAlta,
@@ -49,23 +48,28 @@ export const PERTO = 13;
 /** A cor do carpete de cada tipo de sala (sem cor = porcelanato do andar). */
 const CARPETE: Partial<Record<SalaNoAndar["tipo"], string>> = {
   gerencia: "#5b6170",
-  diretoria: "#6a5c52",
   reuniao: "#56606e",
+  atendimento: "#56606e",
+  espera: "#8b9aa8",
 };
 
 export const EMOJI_DA_SALA: Record<SalaNoAndar["tipo"], string> = {
   setor: "",
   gerencia: "",
-  diretoria: "🏛️ ",
   reuniao: "📅 ",
+  atendimento: "🤝 ",
   recepcao: "🛎️ ",
+  espera: "🛋️ ",
+  banheiro: "🚻 ",
   refeitorio: "☕ ",
 };
 export const LONGE = 16;
 
+/** Sem TV nem planta no canto: salas de passagem e de serviço. */
+const SEM_TV = new Set<SalaNoAndar["tipo"]>(["refeitorio", "recepcao", "espera", "banheiro"]);
+
 export function SalaDoAndar({
   sala,
-  paredeEsquerda,
   configDe,
   elevacoes,
   aoMedir,
@@ -75,8 +79,6 @@ export function SalaDoAndar({
   aoJuntar,
 }: {
   sala: SalaNoAndar;
-  /** A primeira sala da fileira fecha o lado esquerdo; as outras usam a da vizinha. */
-  paredeEsquerda: boolean;
   configDe: (id: string) => AvatarConfig | null;
   elevacoes: Record<string, number>;
   aoMedir: (id: string, m: MedidaDoAvatar) => void;
@@ -95,16 +97,14 @@ export function SalaDoAndar({
   const cx = (sala.x0 + sala.x1) / 2;
   const cz = (sala.z0 + sala.z1) / 2;
 
-  const cima = sala.fileira === "cima";
-  const zFora = cima ? sala.z0 : sala.z1;
-  const zCorredor = cima ? sala.z1 : sala.z0;
-  // A parede de dentro voltada para a sala (TV, quadro): um pouco para dentro da de fora.
-  const zParede = cima ? sala.z0 + 0.1 : sala.z1 - 0.1;
-  const giroDaParede = cima ? 0 : Math.PI;
-  const mundo = paraOMundo(cx, cz, sala.fileira);
-  const c = mundo(-(sala.x1 - sala.x0) / 2 + 0.45, -(sala.z1 - sala.z0) / 2 + 0.45, 0);
+  const W = sala.largura;
+  const D = sala.fundo;
+  const mundo = paraOMundo(cx, cz, sala.giro);
+  // A parede do fundo, de frente para a porta (TV, quadro): um pouco para dentro dela.
+  const fundo = mundo(0, -D / 2 + 0.1, 0);
+  const c = mundo(-W / 2 + 0.45, -D / 2 + 0.45, 0);
   const canto: [number, number, number] = [c.x, 0, c.z];
-  const gerencia = sala.tipo === "gerencia" || sala.tipo === "diretoria";
+  const gerencia = sala.tipo === "gerencia";
 
   /* O que está PARADO na sala (paredes, móveis, mesas e — de longe — os
      peões) vai para o `Estatico`, que troca tudo por poucas malhas. A chave
@@ -140,48 +140,33 @@ export function SalaDoAndar({
           </mesh>
         )}
 
-        {/* paredes: a de fora (alvenaria), a do corredor (com a porta) e as laterais */}
-        <Divisoria de={[sala.x0, zFora]} ate={[sala.x1, zFora]} vidro={false} />
-        {/* a recepção é aberta para o corredor */}
-        {!sala.aberta && (
-          <Divisoria
-            de={[sala.x0, zCorredor]}
-            ate={[sala.x1, zCorredor]}
-            porta={sala.portaX - sala.x0}
-          />
-        )}
-        <Divisoria de={[sala.x1, sala.z0]} ate={[sala.x1, sala.z1]} />
-        {paredeEsquerda && <Divisoria de={[sala.x0, sala.z0]} ate={[sala.x0, sala.z1]} />}
-        {!sala.aberta && (
-          <PlacaDaPorta
-            sala={sala}
-            z={zCorredor + (cima ? 0.06 : -0.06)}
-            giro={cima ? 0 : Math.PI}
-          />
-        )}
+        {!sala.aberta && <PlacaDaPorta sala={sala} />}
 
-        {sala.tipo !== "refeitorio" && sala.tipo !== "recepcao" && (
+        {!SEM_TV.has(sala.tipo) && (
           <>
             <TV
-              pos={[cx, 1.55, zParede]}
-              rotY={giroDaParede}
-              largura={sala.tipo === "gerencia" ? 1.1 : sala.tipo === "reuniao" ? 1.9 : 1.4}
+              pos={[fundo.x, 1.55, fundo.z]}
+              rotY={fundo.rotY}
+              largura={
+                sala.tipo === "gerencia" || sala.tipo === "atendimento"
+                  ? 1.1
+                  : sala.tipo === "reuniao"
+                    ? 1.9
+                    : 1.4
+              }
             />
             <PlantaAlta pos={canto} />
           </>
         )}
-        {sala.tipo === "setor" && sala.x1 - sala.x0 > 5 && (
-          <QuadroBranco
-            pos={[cx + (cima ? 1 : -1) * ((sala.x1 - sala.x0) / 2 - 1.2), 1.5, zParede]}
-            rotY={giroDaParede}
-          />
+        {sala.tipo === "setor" && W > 5 && (
+          <QuadroBranco pos={noFundo(mundo, W / 2 - 1.2, D, 1.5)} rotY={fundo.rotY} />
         )}
         {sala.tipo === "gerencia" && <MoveisDaGerencia mundo={mundo} />}
-        {sala.tipo === "diretoria" && <MoveisDaDiretoria mundo={mundo} />}
         {sala.tipo === "reuniao" && <MoveisDaReuniao mundo={mundo} />}
-        {sala.tipo === "recepcao" && (
-          <MoveisDaRecepcao mundo={mundo} zParede={zParede} giroDaParede={giroDaParede} cx={cx} />
-        )}
+        {sala.tipo === "atendimento" && <MoveisDoAtendimento mundo={mundo} />}
+        {sala.tipo === "recepcao" && <MoveisDaRecepcao mundo={mundo} fundo={D} />}
+        {sala.tipo === "espera" && <MoveisDaEspera mundo={mundo} />}
+        {sala.tipo === "banheiro" && <MoveisDoBanheiro mundo={mundo} fundo={D} />}
         {sala.tipo === "refeitorio" && <MoveisDoRefeitorio sala={sala} mundo={mundo} />}
 
         {sala.mesas.map((mesa, i) => (
@@ -361,13 +346,24 @@ function PessoaNaMesa({
 
 /* ————————————————— Placa da porta ————————————————— */
 
-function PlacaDaPorta({ sala, z, giro }: { sala: SalaNoAndar; z: number; giro: number }) {
-  const cima = sala.fileira === "cima";
-  // ao lado da porta, do lado de dentro do vão
-  const x = sala.portaX + (cima ? -0.85 : 0.85);
+/** Um ponto na parede do fundo, `lx` para o lado, na altura `y`. */
+function noFundo(mundo: Mundo, lx: number, fundo: number, y: number): [number, number, number] {
+  const p = mundo(lx, -fundo / 2 + 0.1, 0);
+  return [p.x, y, p.z];
+}
+
+/** Do lado de fora da porta principal, ao lado dela (do lado do meio da sala). */
+function PlacaDaPorta({ sala }: { sala: SalaNoAndar }) {
+  const porta = sala.portas[0];
   const texto = textoDePlaca(sala.titulo);
+  if (!porta) return null;
+  const cx = (sala.x0 + sala.x1) / 2;
+  const cz = (sala.z0 + sala.z1) / 2;
+  // a porta no referencial da sala (só o lado importa)
+  const lx = (porta.x - cx) * Math.cos(sala.giro) - (porta.z - cz) * Math.sin(sala.giro);
+  const p = paraOMundo(cx, cz, sala.giro)(lx + (lx > 0 ? -0.85 : 0.85), sala.fundo / 2 + 0.06, 0);
   return (
-    <group position={[x, 1.6, z]} rotation-y={giro}>
+    <group position={[p.x, 1.6, p.z]} rotation-y={p.rotY}>
       <mesh>
         <boxGeometry args={[0.62, 0.2, 0.015]} />
         <meshStandardMaterial color="#1c1c1e" roughness={0.4} metalness={0.3} />
@@ -425,11 +421,11 @@ function MoveisDaGerencia({ mundo }: { mundo: Mundo }) {
 }
 
 function MoveisDoRefeitorio({ sala, mundo }: { sala: SalaNoAndar; mundo: Mundo }) {
-  const largura = sala.x1 - sala.x0;
-  const balcao = mundo(-largura / 2 + 2.1, -(sala.z1 - sala.z0) / 2 + 0.38, 0);
-  const geladeira = mundo(largura / 2 - 0.5, -(sala.z1 - sala.z0) / 2 + 0.45, 0);
+  const largura = sala.largura;
+  const balcao = mundo(-largura / 2 + 2.1, -sala.fundo / 2 + 0.38, 0);
+  const geladeira = mundo(largura / 2 - 0.5, -sala.fundo / 2 + 0.45, 0);
   const mesas = mesasCompridasDoRefeitorio(sala.mesasCompridas ?? 2).map((m) => mundo(m.x, m.z, 0));
-  const vaso = mundo(largura / 2 - 0.5, (sala.z1 - sala.z0) / 2 - 0.6, 0);
+  const vaso = mundo(largura / 2 - 0.5, sala.fundo / 2 - 0.6, 0);
   return (
     <group>
       {/* balcão branco com tampo de granito, cuba, cafeteira e micro-ondas */}
@@ -478,7 +474,7 @@ function MoveisDoRefeitorio({ sala, mundo }: { sala: SalaNoAndar; mundo: Mundo }
   );
 }
 
-/* ————————————————— Recepção, reunião e diretoria (18/10/2026) ————————————————— */
+/* ————————————————— Recepção, reunião, espera e atendimento ————————————————— */
 
 /**
  * O balcão alto da recepção, no referencial da cadeira de quem atende (olha
@@ -541,29 +537,17 @@ function BalcaoDeRecepcao() {
 }
 
 /** A recepção: o nome da empresa na parede de madeira e o canto de espera. */
-function MoveisDaRecepcao({
-  mundo,
-  zParede,
-  giroDaParede,
-  cx,
-}: {
-  mundo: Mundo;
-  zParede: number;
-  giroDaParede: number;
-  cx: number;
-}) {
+function MoveisDaRecepcao({ mundo, fundo }: { mundo: Mundo; fundo: number }) {
   const painel = madeiraDoPainel();
   const letreiro = letreiroDaParede("PLANTSIL");
   const geoParede = useMemo(() => planoComUV(3.6, 2.3, 1.0), []);
   const espera = mundo(1.7, 1.2, 0);
   const vaso = mundo(2.6, 2.4, 0);
+  const parede = mundo(-0.9, -fundo / 2 + 0.11, 0);
   return (
     <group>
       {/* a parede de madeira com o nome, atrás do balcão */}
-      <group
-        position={[cx - (giroDaParede ? -0.9 : 0.9), 1.25, zParede + (giroDaParede ? -0.01 : 0.01)]}
-        rotation-y={giroDaParede}
-      >
+      <group position={[parede.x, 1.25, parede.z]} rotation-y={parede.rotY}>
         <mesh geometry={geoParede}>
           <meshStandardMaterial map={painel ?? undefined} roughness={0.45} />
         </mesh>
@@ -654,74 +638,97 @@ function MoveisDaReuniao({ mundo }: { mundo: Mundo }) {
   );
 }
 
-/** Diretoria: mesinha de reunião para quatro, sofá de couro e estante. */
-function MoveisDaDiretoria({ mundo }: { mundo: Mundo }) {
-  const mesa = mundo(0, 1.4, 0);
-  const sofa = mundo(-2.9, 0.4, Math.PI / 2);
-  const estante = mundo(3.3, -0.2, -Math.PI / 2);
-  const cores = ["#7f1d1d", "#1e3a8a", "#14532d", "#78350f", "#334155"];
+/** Sala de atendimento: mesa redonda para três, de frente para a TV. */
+function MoveisDoAtendimento({ mundo }: { mundo: Mundo }) {
+  const mesa = mundo(0, 0.2, 0);
+  return (
+    <group position={[mesa.x, 0, mesa.z]} rotation-y={mesa.rotY}>
+      <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.6, 0.6, 0.04, 32]} />
+        <meshStandardMaterial color="#f7f7f5" roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 0.37, 0]}>
+        <cylinderGeometry args={[0.05, 0.05, 0.72, 10]} />
+        <meshStandardMaterial color="#1c1c1e" metalness={0.4} />
+      </mesh>
+      <mesh position={[0, 0.02, 0]}>
+        <cylinderGeometry args={[0.3, 0.3, 0.03, 20]} />
+        <meshStandardMaterial color="#1c1c1e" metalness={0.4} />
+      </mesh>
+      {[0, 1, 2].map((i) => {
+        const a = (i / 3) * Math.PI * 2;
+        return (
+          <group
+            key={i}
+            position={[Math.sin(a) * 0.9, 0, Math.cos(a) * 0.9]}
+            rotation-y={a + Math.PI}
+          >
+            <CadeiraReal elevacao={0} vazia={false} />
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+/** Sala de espera (o hall): tapete, dois sofás frente a frente, mesinha e plantas. */
+function MoveisDaEspera({ mundo }: { mundo: Mundo }) {
+  const centro = mundo(0, 0, 0);
+  const vasos = [mundo(-1.9, -1.6, 0), mundo(1.9, 1.6, 0)];
   return (
     <group>
-      <group position={[mesa.x, 0, mesa.z]}>
-        <mesh position={[0, 0.74, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[0.65, 0.65, 0.05, 36]} />
-          <meshStandardMaterial color="#3b2a20" roughness={0.35} />
-        </mesh>
-        <mesh position={[0, 0.37, 0]}>
-          <cylinderGeometry args={[0.05, 0.05, 0.72, 10]} />
-          <meshStandardMaterial color="#1c1c1e" metalness={0.4} />
-        </mesh>
-        <mesh position={[0, 0.02, 0]}>
-          <cylinderGeometry args={[0.32, 0.32, 0.03, 20]} />
-          <meshStandardMaterial color="#1c1c1e" metalness={0.4} />
-        </mesh>
-        {[0, 1, 2, 3].map((i) => {
-          const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-          return (
-            <group
-              key={i}
-              position={[Math.sin(a) * 0.95, 0, Math.cos(a) * 0.95]}
-              rotation-y={a + Math.PI}
+      <group position={[centro.x, 0, centro.z]} rotation-y={centro.rotY}>
+        {[-1, 1].map((l) => (
+          <group key={l} position={[0, 0, l * 1.05]} rotation-y={l > 0 ? Math.PI : 0}>
+            <RoundedBox
+              args={[2.2, 0.42, 0.8]}
+              radius={0.08}
+              smoothness={2}
+              position={[0, 0.23, 0]}
+              castShadow
             >
-              <CadeiraReal elevacao={0} vazia={false} />
-            </group>
-          );
-        })}
-      </group>
-      <group position={[sofa.x, 0, sofa.z]} rotation-y={sofa.rotY}>
-        <RoundedBox
-          args={[2.0, 0.42, 0.8]}
-          radius={0.06}
-          smoothness={2}
-          position={[0, 0.23, 0]}
-          castShadow
-        >
-          <meshStandardMaterial color="#2b1d16" roughness={0.45} />
-        </RoundedBox>
-        <RoundedBox
-          args={[2.0, 0.5, 0.2]}
-          radius={0.06}
-          smoothness={2}
-          position={[0, 0.6, -0.31]}
-          castShadow
-        >
-          <meshStandardMaterial color="#2b1d16" roughness={0.45} />
-        </RoundedBox>
-      </group>
-      <group position={[estante.x, 0, estante.z]} rotation-y={estante.rotY}>
-        <mesh position={[0, 0.95, 0]} castShadow>
-          <boxGeometry args={[1.6, 1.9, 0.38]} />
-          <meshStandardMaterial color="#3b2a20" roughness={0.5} />
+              <meshStandardMaterial color="#4b5563" roughness={0.8} />
+            </RoundedBox>
+            <RoundedBox
+              args={[2.2, 0.5, 0.2]}
+              radius={0.06}
+              smoothness={2}
+              position={[0, 0.6, -0.31]}
+              castShadow
+            >
+              <meshStandardMaterial color="#4b5563" roughness={0.8} />
+            </RoundedBox>
+          </group>
+        ))}
+        <mesh position={[0, 0.22, 0]} castShadow>
+          <cylinderGeometry args={[0.4, 0.4, 0.44, 24]} />
+          <meshStandardMaterial color="#b8865a" roughness={0.5} />
         </mesh>
-        {[0.45, 0.95, 1.45].map((y, f) =>
-          [-0.55, -0.35, -0.15, 0.1, 0.35, 0.55].map((x, i) => (
-            <mesh key={`${f}${i}`} position={[x, y, 0.1]}>
-              <boxGeometry args={[0.12, 0.3, 0.24]} />
-              <meshStandardMaterial color={cores[(i + f * 2) % cores.length]!} roughness={0.7} />
-            </mesh>
-          )),
-        )}
       </group>
+      {vasos.map((v) => (
+        <PlantaAlta key={`${v.x}`} pos={[v.x, 0, v.z]} />
+      ))}
+    </group>
+  );
+}
+
+/** O banheiro: a bancada com a cuba e o espelho, na parede do fundo. */
+function MoveisDoBanheiro({ mundo, fundo }: { mundo: Mundo; fundo: number }) {
+  const bancada = mundo(0, -fundo / 2 + 0.35, 0);
+  return (
+    <group position={[bancada.x, 0, bancada.z]} rotation-y={bancada.rotY}>
+      <mesh position={[0, 0.85, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.2, 0.05, 0.5]} />
+        <meshStandardMaterial color="#e7e5e4" roughness={0.25} />
+      </mesh>
+      <mesh position={[0, 0.88, 0.02]}>
+        <cylinderGeometry args={[0.17, 0.17, 0.02, 24]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.15} />
+      </mesh>
+      <mesh position={[0, 1.55, -0.22]}>
+        <boxGeometry args={[0.9, 0.7, 0.02]} />
+        <meshStandardMaterial color="#cbd5e1" roughness={0.05} metalness={0.9} />
+      </mesh>
     </group>
   );
 }

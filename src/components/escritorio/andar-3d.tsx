@@ -20,12 +20,11 @@ import { QualidadeDoAvatar } from "@/components/rv/contexto-avatar";
 import type { MedidaDoAvatar } from "@/components/rv/sala/avatar-na-cadeira";
 import { AVATAR_EM_BRANCO, carregarAvataresDe, type AvatarConfig } from "@/lib/avatar-3d";
 import { comChapeuDeFesta, useAniversariosDeHoje } from "@/lib/festa-de-aniversario";
-import { PlantaAlta } from "./acabamento";
+import { Divisoria, PlantaAlta } from "./acabamento";
 import {
-  LARGURA_DO_CORREDOR,
-  PROFUNDIDADE_DA_SALA,
   montarAndar,
   type AndarMontado,
+  type Caixa,
   type PessoaNoAndar,
   type SalaNoAndar,
   type SetorDoAndar,
@@ -34,13 +33,13 @@ import { planoComUV, porcelanato } from "./materiais";
 import { EMOJI_DA_SALA, LONGE, PERTO, SalaDoAndar } from "./sala-do-andar";
 import { Estatico } from "./mesclar";
 
+const SEM_CONTAGEM = new Set<SalaNoAndar["tipo"]>(["reuniao", "atendimento", "espera", "banheiro"]);
+
 export type FocoDoAndar =
   | { tipo: "andar"; n: number }
   | { tipo: "sala"; id: string; n: number }
   | { tipo: "area"; id: string; n: number }
   | { tipo: "pessoa"; id: string; n: number };
-
-type Caixa = { x0: number; x1: number; z0: number; z1: number };
 
 export default function Andar3D({
   setores,
@@ -87,32 +86,16 @@ export default function Andar3D({
     );
   }, []);
 
-  // A sala com a parede da esquerda: a que não tem vizinha encostada.
-  const comParedeEsquerda = useMemo(() => {
-    const s = new Set<string>();
-    for (const sala of andar.salas) {
-      const vizinha = andar.salas.some(
-        (o) => o !== sala && o.fileira === sala.fileira && Math.abs(o.x1 - sala.x0) < 0.01,
-      );
-      if (!vizinha) s.add(sala.id);
-    }
-    return s;
-  }, [andar]);
-
-  const [entrar, setEntrar] = useState<{
-    caixa: Caixa;
-    fileira?: "cima" | "baixo";
-    n: number;
-  } | null>(null);
+  const [entrar, setEntrar] = useState<{ caixa: Caixa; giro?: number; n: number } | null>(null);
   const visivel = useAbaVisivel();
-  const comprimento = andar.corredor.x1 - andar.corredor.x0;
-  const larguraTotal = LARGURA_DO_CORREDOR + PROFUNDIDADE_DA_SALA * 2;
+  const comprimento = andar.limites.x1 - andar.limites.x0;
+  const larguraTotal = andar.limites.z1 - andar.limites.z0;
 
   // A contagem de cada sala, para o letreiro de longe.
   const contagem = (s: SalaNoAndar) =>
     s.tipo === "refeitorio" ? andar.naCopa.length : s.mesas.filter((m) => m.pessoa).length;
   const letreiros = useRef(new Map<string, HTMLButtonElement>());
-  const entrarNa = (s: SalaNoAndar) => setEntrar({ caixa: s, fileira: s.fileira, n: Date.now() });
+  const entrarNa = (s: SalaNoAndar) => setEntrar({ caixa: s, giro: s.giro, n: Date.now() });
 
   /* Desempenho (18/10/2026: "travando, esquentando o notebook"): o Canvas só
      desenha quando precisa (`frameloop="demand"`) — câmera mexendo, voo, ou
@@ -151,18 +134,15 @@ export default function Andar3D({
           <LuzFixa comprimento={comprimento} largura={larguraTotal} refazer={refazerSombra} />
           <Animador salasPerto={salasPerto} />
 
-          {/* a laje, o porcelanato, o corredor e a convivência: tudo parado */}
-          <Estatico
-            chave={`andar|${comprimento}|${andar.salas.map((s) => `${s.id}:${s.x0.toFixed(2)}:${s.x1.toFixed(2)}`).join(",")}`}
-            aoJuntar={aoJuntar}
-          >
-            <mesh position={[0, -0.16, 0]} receiveShadow>
-              <boxGeometry args={[comprimento + 1.2, 0.3, larguraTotal + 1.2]} />
-              <meshStandardMaterial color="#9ca3af" roughness={0.9} />
-            </mesh>
-            <Piso largura={comprimento} fundo={larguraTotal} />
+          {/* o porcelanato das salas e corredores, as paredes e as plantas: tudo
+              parado (a planta é fixa) */}
+          <Estatico chave={`andar|${comprimento}|${larguraTotal}`} aoJuntar={aoJuntar}>
+            <Piso andar={andar} />
+            {andar.paredes.map((p, i) => (
+              <Divisoria key={i} de={p.de} ate={p.ate} porta={p.porta} vidro={!p.cheia} />
+            ))}
             <EnfeitesDoCorredor andar={andar} />
-            <Convivencia andar={andar} />
+            {andar.entrada && <Entrada porta={andar.entrada} />}
           </Estatico>
 
           <QualidadeDoAvatar.Provider value="media">
@@ -170,7 +150,6 @@ export default function Andar3D({
               <SalaDoAndar
                 key={sala.id}
                 sala={sala}
-                paredeEsquerda={comParedeEsquerda.has(sala.id)}
                 configDe={configDe}
                 elevacoes={elevacoes}
                 aoMedir={aoMedir}
@@ -182,7 +161,13 @@ export default function Andar3D({
             ))}
           </QualidadeDoAvatar.Provider>
 
-          <Camera andar={andar} foco={foco} entrar={entrar} comprimento={comprimento} />
+          {/* A planta é quase quadrada: o afastamento máximo vem do lado maior. */}
+          <Camera
+            andar={andar}
+            foco={foco}
+            entrar={entrar}
+            comprimento={Math.max(comprimento, larguraTotal) * 1.6}
+          />
           <ProjetorDeLetreiros salas={andar.salas} letreiros={letreiros} emFoco={emFoco} />
           <EscolheSalaEmFoco salas={andar.salas} atual={emFoco} aoMudar={aoMudarFoco} />
         </Canvas>
@@ -213,7 +198,8 @@ export default function Andar3D({
               {s.subtitulo ? (
                 <span className="text-[10px] font-semibold text-slate-500">{s.subtitulo}</span>
               ) : (
-                s.tipo !== "reuniao" && (
+                // Sala de passagem ou de reunião não tem "0 pessoas": ninguém mora nela.
+                !SEM_CONTAGEM.has(s.tipo) && (
                   <span className="text-[10px] font-semibold text-slate-500">
                     {n} {s.tipo === "refeitorio" ? "na pausa" : n === 1 ? "pessoa" : "pessoas"}
                   </span>
@@ -248,12 +234,14 @@ function ProjetorDeLetreiros({
      depois os setores maiores. Os que não cabem somem e voltam com o zoom. */
   const ordem = useMemo(() => {
     const peso: Record<SalaNoAndar["tipo"], number> = {
-      diretoria: 0,
       gerencia: 1,
       recepcao: 2,
       refeitorio: 3,
       setor: 4,
       reuniao: 5,
+      atendimento: 6,
+      espera: 6,
+      banheiro: 7,
     };
     return [...salas].sort(
       (a, b) => peso[a.tipo] - peso[b.tipo] || b.mesas.length - a.mesas.length,
@@ -394,23 +382,90 @@ function LuzFixa({
   );
 }
 
-function Piso({ largura, fundo }: { largura: number; fundo: number }) {
-  const textura = porcelanato();
-  const geo = useMemo(() => planoComUV(largura, fundo, 1.6), [largura, fundo]);
-  useEffect(() => () => geo.dispose(), [geo]);
+/**
+ * O chão: a laje cinza só debaixo do que é andar (salas e corredores) e o
+ * porcelanato por cima. Os vãos da planta (fora do prédio) ficam sem chão.
+ */
+/**
+ * A entrada do prédio (09/11/2026): do lado de fora da porta da recepção, a
+ * calçada de concreto e o tapete escuro, para a porta de entrada se destacar
+ * das portas de vidro das salas.
+ */
+function Entrada({ porta }: { porta: AndarMontado["entrada"] & object }) {
+  // Para fora: a direção oposta ao interior da sala, pelo lado da parede.
+  const fora = { n: [0, -1], s: [0, 1], l: [1, 0], o: [-1, 0] }[porta.lado] as [number, number];
+  const deLado = porta.lado === "l" || porta.lado === "o";
+  const ang = deLado ? Math.PI / 2 : 0;
+  const ponto = (d: number): [number, number, number] => [
+    porta.x + fora[0] * d,
+    0,
+    porta.z + fora[1] * d,
+  ];
   return (
-    <mesh geometry={geo} rotation-x={-Math.PI / 2} position={[0, 0.001, 0]} receiveShadow>
-      <meshStandardMaterial map={textura ?? undefined} roughness={0.35} metalness={0.05} />
-    </mesh>
+    <>
+      <group position={ponto(1.4)} rotation-y={ang}>
+        <mesh position={[0, -0.12, 0]} receiveShadow>
+          <boxGeometry args={[3.6, 0.26, 2.6]} />
+          <meshStandardMaterial color="#cbd5e1" roughness={0.95} />
+        </mesh>
+      </group>
+      <group position={ponto(0.75)} rotation-y={ang}>
+        <mesh position={[0, 0.02, 0]} receiveShadow>
+          <boxGeometry args={[1.5, 0.03, 1.0]} />
+          <meshStandardMaterial color="#1f2937" roughness={1} />
+        </mesh>
+      </group>
+    </>
   );
 }
 
-/** Plantas altas no corredor, a cada ~8 m, encostadas nas divisórias. */
+function Piso({ andar }: { andar: AndarMontado }) {
+  const textura = porcelanato();
+  const pedacos = useMemo(
+    () =>
+      [...andar.salas, ...andar.corredores].map((c) => ({
+        cx: (c.x0 + c.x1) / 2,
+        cz: (c.z0 + c.z1) / 2,
+        w: c.x1 - c.x0,
+        d: c.z1 - c.z0,
+        geo: planoComUV(c.x1 - c.x0, c.z1 - c.z0, 1.6),
+      })),
+    [andar],
+  );
+  useEffect(() => () => pedacos.forEach((p) => p.geo.dispose()), [pedacos]);
+  return (
+    <>
+      {pedacos.map((p, i) => (
+        <group key={i} position={[p.cx, 0, p.cz]}>
+          <mesh position={[0, -0.16, 0]} receiveShadow>
+            <boxGeometry args={[p.w + 0.3, 0.3, p.d + 0.3]} />
+            <meshStandardMaterial color="#9ca3af" roughness={0.9} />
+          </mesh>
+          <mesh geometry={p.geo} rotation-x={-Math.PI / 2} position={[0, 0.001, 0]} receiveShadow>
+            <meshStandardMaterial map={textura ?? undefined} roughness={0.35} metalness={0.05} />
+          </mesh>
+        </group>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Plantas altas nos corredores, a cada ~8 m, encostadas num lado e alternando
+ * — longe das portas, para não tapar a passagem.
+ */
 function EnfeitesDoCorredor({ andar }: { andar: AndarMontado }) {
-  const { x0, x1, z0, z1 } = andar.corredor;
+  const portas = andar.salas.flatMap((s) => s.portas);
   const vasos: [number, number, number][] = [];
-  for (let x = x0 + 1.2, i = 0; x < x1 - 0.8; x += 8, i++) {
-    vasos.push([x, 0, i % 2 ? z0 + 0.35 : z1 - 0.35]);
+  for (const c of andar.corredores) {
+    const deitado = c.x1 - c.x0 >= c.z1 - c.z0;
+    const [a, b] = deitado ? [c.x0, c.x1] : [c.z0, c.z1];
+    for (let t = a + 1.2, i = 0; t < b - 0.8; t += 8, i++) {
+      const v: [number, number, number] = deitado
+        ? [t, 0, i % 2 ? c.z0 + 0.35 : c.z1 - 0.35]
+        : [i % 2 ? c.x0 + 0.35 : c.x1 - 0.35, 0, t];
+      if (portas.every((p) => Math.hypot(p.x - v[0], p.z - v[2]) > 1.4)) vasos.push(v);
+    }
   }
   return (
     <>
@@ -421,77 +476,18 @@ function EnfeitesDoCorredor({ andar }: { andar: AndarMontado }) {
   );
 }
 
-/**
- * Os vãos que sobram nas pontas das fileiras (uma fileira termina antes da
- * outra) viram área de convivência: tapete, sofá, poltrona e plantas — em vez
- * de chão vazio.
- */
-function Convivencia({ andar }: { andar: AndarMontado }) {
-  const vaos: { x0: number; x1: number; z: number; fileira: "cima" | "baixo" }[] = [];
-  for (const fileira of ["cima", "baixo"] as const) {
-    const salas = andar.salas.filter((s) => s.fileira === fileira).sort((a, b) => a.x0 - b.x0);
-    let x = andar.corredor.x0 + 0.2;
-    const z =
-      fileira === "cima"
-        ? -LARGURA_DO_CORREDOR / 2 - PROFUNDIDADE_DA_SALA / 2
-        : LARGURA_DO_CORREDOR / 2 + PROFUNDIDADE_DA_SALA / 2;
-    for (const s of [...salas, { x0: andar.corredor.x1 - 0.2, x1: andar.corredor.x1 - 0.2 }]) {
-      if (s.x0 - x > 1.6) vaos.push({ x0: x, x1: s.x0, z, fileira });
-      x = Math.max(x, s.x1);
-    }
-  }
-  return (
-    <>
-      {vaos.map((v) => {
-        const cx = (v.x0 + v.x1) / 2;
-        const w = v.x1 - v.x0;
-        const lado = v.fileira === "cima" ? 1 : -1;
-        return (
-          <group key={`${v.fileira}${v.x0}`}>
-            <mesh rotation-x={-Math.PI / 2} position={[cx, 0.006, v.z]} receiveShadow>
-              <planeGeometry args={[Math.min(w - 0.6, 3.6), 2.4]} />
-              <meshStandardMaterial color="#8b9aa8" roughness={0.95} />
-            </mesh>
-            {/* sofá de costas para a parede de fora, virado para o corredor */}
-            <group
-              position={[cx, 0, v.z - lado * 0.9]}
-              rotation-y={v.fileira === "cima" ? 0 : Math.PI}
-            >
-              <mesh position={[0, 0.22, 0]} castShadow>
-                <boxGeometry args={[Math.min(w - 0.8, 2.2), 0.4, 0.8]} />
-                <meshStandardMaterial color="#4b5563" roughness={0.8} />
-              </mesh>
-              <mesh position={[0, 0.55, -0.32]} castShadow>
-                <boxGeometry args={[Math.min(w - 0.8, 2.2), 0.5, 0.2]} />
-                <meshStandardMaterial color="#4b5563" roughness={0.8} />
-              </mesh>
-            </group>
-            {/* mesinha de centro */}
-            <mesh position={[cx, 0.22, v.z + lado * 0.2]} castShadow>
-              <cylinderGeometry args={[0.35, 0.35, 0.44, 24]} />
-              <meshStandardMaterial color="#b8865a" roughness={0.5} />
-            </mesh>
-            <PlantaAlta pos={[v.x0 + 0.45, 0, v.z - lado * 1.9]} />
-            {w > 2.6 && <PlantaAlta pos={[v.x1 - 0.45, 0, v.z - lado * 1.9]} />}
-          </group>
-        );
-      })}
-    </>
-  );
-}
-
 /* ————————————————— Câmera ————————————————— */
 
 /** Onde a câmera fica para enquadrar `caixa`: por cima, um pouco inclinada. */
-function enquadrar(caixa: Caixa, fileira?: "cima" | "baixo") {
+function enquadrar(caixa: Caixa, giro = 0) {
   const cx = (caixa.x0 + caixa.x1) / 2;
   const cz = (caixa.z0 + caixa.z1) / 2;
   const w = caixa.x1 - caixa.x0;
   const d = caixa.z1 - caixa.z0;
-  const dist = Math.max(w * 1.05, d * 1.25, 6.5);
-  // Olha de quem está no corredor: a fileira de cima é vista de +z; a de baixo, de −z.
-  const lado = fileira === "baixo" ? -1 : 1;
-  const dir = new Vector3(0, 0.86, 0.5 * lado).normalize();
+  const deLado = Math.abs(Math.sin(giro)) > 0.5;
+  const dist = Math.max((deLado ? d : w) * 1.12, (deLado ? w : d) * 1.4, 6.5);
+  // Olha de quem chega pela porta: a câmera fica do lado dela.
+  const dir = new Vector3(0.5 * Math.sin(giro), 0.86, 0.5 * Math.cos(giro)).normalize();
   return {
     alvo: new Vector3(cx, 0.6, cz),
     pos: new Vector3(cx, 0.6, cz).addScaledVector(dir, dist),
@@ -501,19 +497,20 @@ function enquadrar(caixa: Caixa, fileira?: "cima" | "baixo") {
 function caixaDoFoco(
   andar: AndarMontado,
   foco: FocoDoAndar,
-): { caixa: Caixa; fileira?: "cima" | "baixo" } | null {
-  const tudo: Caixa = {
-    x0: andar.corredor.x0,
-    x1: andar.corredor.x1,
-    z0: -LARGURA_DO_CORREDOR / 2 - PROFUNDIDADE_DA_SALA,
-    z1: LARGURA_DO_CORREDOR / 2 + PROFUNDIDADE_DA_SALA,
-  };
+): { caixa: Caixa; giro?: number } | null {
+  /* O andar todo, um pouco puxado para baixo: com a câmera inclinada, a
+     fileira de baixo (reunião 2 e RH) é a que fica mais longe. */
+  const l = andar.limites;
+  const tudo: Caixa = { ...l, z1: l.z1 + 2 };
   switch (foco.tipo) {
     case "andar":
       return { caixa: tudo };
     case "sala": {
-      const s = andar.salas.find((x) => x.id === foco.id);
-      return s ? { caixa: s, fileira: s.fileira } : { caixa: tudo };
+      // Pelo id da sala ou pelo setor de quem senta nela (Compras está em Suprimentos).
+      const s =
+        andar.salas.find((x) => x.id === foco.id) ??
+        andar.salas.find((x) => x.setores.includes(foco.id));
+      return s ? { caixa: s, giro: s.giro } : { caixa: tudo };
     }
     case "area": {
       const a = andar.areas.get(foco.id);
@@ -524,7 +521,7 @@ function caixaDoFoco(
       const s: SalaNoAndar | undefined = naCopa
         ? andar.salas.find((x) => x.tipo === "refeitorio")
         : andar.salas.find((x) => x.mesas.some((m) => m.pessoa?.id === foco.id));
-      return s ? { caixa: s, fileira: s.fileira } : { caixa: tudo };
+      return s ? { caixa: s, giro: s.giro } : { caixa: tudo };
     }
   }
 }
@@ -537,7 +534,7 @@ function Camera({
 }: {
   andar: AndarMontado;
   foco: FocoDoAndar;
-  entrar: { caixa: Caixa; fileira?: "cima" | "baixo"; n: number } | null;
+  entrar: { caixa: Caixa; giro?: number; n: number } | null;
   comprimento: number;
 }) {
   const ref = useRef<OrbitControlsImpl>(null);
@@ -547,8 +544,8 @@ function Camera({
   const primeira = useRef(true);
 
   const voar = useCallback(
-    (caixa: Caixa, fileira?: "cima" | "baixo") => {
-      const v = enquadrar(caixa, fileira);
+    (caixa: Caixa, giro?: number) => {
+      const v = enquadrar(caixa, giro);
       if (primeira.current && ref.current) {
         // A primeira vez já nasce no lugar, sem voo.
         primeira.current = false;
@@ -568,10 +565,10 @@ function Camera({
   andarRef.current = andar;
   useEffect(() => {
     const c = caixaDoFoco(andarRef.current, foco);
-    if (c) voar(c.caixa, c.fileira);
+    if (c) voar(c.caixa, c.giro);
   }, [foco, voar]);
   useEffect(() => {
-    if (entrar) voar(entrar.caixa, entrar.fileira);
+    if (entrar) voar(entrar.caixa, entrar.giro);
   }, [entrar, voar]);
 
   useFrame(() => {

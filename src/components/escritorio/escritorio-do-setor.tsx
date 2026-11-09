@@ -130,11 +130,14 @@ export function EscritorioDoSetor({
             aria-label="Ir para"
           >
             <option value="">Ir para…</option>
-            <optgroup label="Entrada e diretoria">
+            <optgroup label="Entrada e salas comuns">
               <option value="recepcao">🛎️ Recepção</option>
-              <option value="diretoria">🏛️ Diretoria</option>
-              <option value="reuniao-1">📅 Sala de reunião 1</option>
+              <option value="espera">🛋️ Sala de espera</option>
+              <option value="reuniao-1">📅 Sala de reunião</option>
               <option value="reuniao-2">📅 Sala de reunião 2</option>
+              <option value="atendimento-1">🤝 Sala de atendimento</option>
+              <option value="atendimento-2">🤝 Sala de atendimento 2</option>
+              <option value="msagro">🏢 MSAgro</option>
               <option value="refeitorio">☕ Refeitório</option>
             </optgroup>
             <optgroup label="Gerências (com os setores)">

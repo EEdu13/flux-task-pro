@@ -1,27 +1,47 @@
 /*
- * A planta do ANDAR inteiro (18/10/2026: "uma visão global de todos os
- * setores… ir dando zoom e entrando nas salas por cima… e os gerentes, uma
- * sala deles próxima com todas as outras"). Funções puras.
+ * A planta do ANDAR inteiro. Funções puras.
  *
- * Como um andar de escritório de verdade: um corredor comprido no meio e as
- * salas dos dois lados, com a porta para o corredor. Cada GERENTE tem a sua
- * sala, e as salas dos setores que respondem a ele ficam coladas nela (nas
- * duas fileiras, frente a frente). O refeitório fecha o corredor.
+ * (27/10/2026) Pela planta de verdade do escritório, que o usuário mandou com
+ * as divisórias desenhadas por cima: cada sala no lugar dela, com a porta onde
+ * ela fica. Antes (18/10/2026) o andar era inventado — um corredor comprido com
+ * as salas dos dois lados, agrupadas por gerência.
  *
- *   ┌─────────┬──────────┬───────┬───────┬──────────┬───────────┬───────────┐
- *   │RECEPÇÃO │ GERÊNCIA │ setor │ setor │ GERÊNCIA │ DIRETORIA │REFEITÓRIO │
- *   │ (aberta)├──────────┴───────┴───────┴──────────┴───────────┴───────────┤
- *   │                           corredor                                   │
- *   ├─────────┬─────────┬────────────┬───────────┬───────────┬─────────────┤
- *   │REUNIÃO 1│  setor  │   setor    │   setor   │ REUNIÃO 2 │             │
- *   └─────────┴─────────┴────────────┴───────────┴───────────┴─────────────┘
+ *                              ┌──────────────────────────────┐
+ *                              │ REFEITÓRIO · TREINAMENTO     │
+ *                              │          CULTIVAR            │
+ *          ┌──────┬─────┬───┬───┬┴─────────┬──▯─┬──────────────┘
+ *          │REUNIÃO│ALINE│PAU│ELI│CONTROLA- │ c │     TI       │
+ *          │       │     │LO │SAM│  DORIA   │ o │              │
+ *          ├─┬─────┴─────┴───┴───┴──────────┘ r ▯              │
+ *          │WC▯           corredor              r │              │
+ *          ├─┴─▯──┬───────┬──────┬──────────┐ e ├──────────────┤
+ *          │RODRI-│LEANDRO│MSAGRO│FINANCEIRO│ d │ SUPRIMENTOS  │
+ *          │  GO  │       │      │          │ o ├──────────────┤
+ *          ├───┬──┴───────┴──────┴──────────┤ r │    GERAL     │
+ *          │WC2▯         corredor            │   │              │
+ *          └┬──┴──┬────────┬──────┬────────┤   └──────────────┘
+ *           │FROTAS│SEGURAN.│ DHO  │ATEND. 2│   SALA DE ESPERA
+ *           └──────┴────────┴──┬───┴────────┤   ┌──────────┐
+ *              ENTRADA ──▶ ▯ RECEPÇÃO   │   │          │
+ *                              ├────────────┤   │    RH    │
+ *                              │ATENDIMENTO ▯   │          │
+ *                              ├────────────┴─▯─┤          │
+ *                              │ SALA DE REUNIÃO│          │
+ *                              └────────────────┴──────────┘
  *
- * (18/10/2026) Recepção e a primeira sala de reunião na entrada; depois as
- * gerências (Leandro, Rodrigo, Aline) cada uma com os seus setores; a
- * diretoria e a segunda sala de reunião no fundo, antes do refeitório.
+ * (09/11/2026) Pelo segundo esboço do usuário: TI, Suprimentos e Geral são uma
+ * coluna só, rente ao corredor e da mesma largura. O corredor do lado sobe reto
+ * entre a Controladoria e a TI até a porta do refeitório, que é uma sala só
+ * junto com o treinamento do Cultivar, em cima. A sala "Paulo e Contabilidade"
+ * foi dividida ao meio: uma salinha para o Paulo e outra para a Elisama. A
+ * largura da coluna da direita é estimada (foi cortada na foto).
  *
- * Coordenadas: x ao longo do corredor, z para os lados (fileira de cima com
- * z < 0). Dentro de uma sala, o referencial LOCAL tem a porta em +z.
+ * As medidas da planta são em metros e o 3D as aumenta (`ESCALA`): as salas
+ * reais têm 2 a 3 m, pouco para mesas com bonecos em volta. A proporção entre
+ * as salas fica a da planta.
+ *
+ * Coordenadas: x da esquerda para a direita da planta, z de cima para baixo.
+ * Dentro de uma sala, o referencial LOCAL tem a porta principal em +z.
  */
 import type { Situacao } from "./moveis";
 
@@ -70,7 +90,21 @@ export type LugarDePe = {
   naMesa?: "caneca" | "prato";
 };
 
-export type TipoDeSala = "setor" | "gerencia" | "diretoria" | "reuniao" | "recepcao" | "refeitorio";
+export type TipoDeSala =
+  | "setor"
+  | "gerencia"
+  | "reuniao"
+  | "atendimento"
+  | "recepcao"
+  | "espera"
+  | "banheiro"
+  | "refeitorio";
+
+/** O lado da sala na planta: norte (em cima), sul, leste (direita), oeste. */
+export type Lado = "n" | "s" | "l" | "o";
+
+/** Uma porta: o centro dela, no chão (mundo), e a parede onde fica. */
+export type PortaNoAndar = { lado: Lado; x: number; z: number };
 
 export type SalaNoAndar = {
   id: string;
@@ -82,45 +116,67 @@ export type SalaNoAndar = {
   x1: number;
   z0: number;
   z1: number;
-  /** A fileira: em cima a porta fica em +z, embaixo em −z. */
-  fileira: "cima" | "baixo";
-  /** Centro da porta, no eixo x (mundo). */
-  portaX: number;
+  /** O giro do referencial local: para onde a porta principal olha. */
+  giro: number;
+  /** No referencial local: ao longo da parede da porta, e da porta até o fundo. */
+  largura: number;
+  fundo: number;
+  /** A primeira é a principal (a da placa). */
+  portas: PortaNoAndar[];
   mesas: MesaNoAndar[];
   /** A gerência desta área (a chave de `GERENCIAS`, ou o id do gerente). */
   gerenteId: string | null;
+  /** Os setores de quem senta aqui — "Ir para" um setor cai nesta sala. */
+  setores: string[];
   /** Só no refeitório: quantas mesas compridas (com bancos). */
   mesasCompridas?: number;
-  /** Sem divisória para o corredor (a recepção é aberta). */
+  /** Sem divisórias próprias (a sala de espera é o hall). */
   aberta?: boolean;
   /** A etiqueta de longe: linha de cima (no lugar do título) e de baixo (no lugar da contagem). */
   rotulo?: string;
   subtitulo?: string;
 };
 
-export type AndarMontado = {
-  salas: SalaNoAndar[];
-  corredor: { x0: number; x1: number; z0: number; z1: number };
-  /** Quem está ausente e onde fica de pé no refeitório. */
-  naCopa: { pessoa: PessoaNoAndar; lugar: LugarDePe }[];
-  /**
-   * A área de cada gerência (a sala dela + os setores que respondem a ela),
-   * para a câmera ir até lá. Chave: `g:<chave>` e também o id do gerente,
-   * quando ele usa o CONECTA.
-   */
-  areas: Map<string, { x0: number; x1: number; z0: number; z1: number }>;
+/** Um trecho de parede, já sem as repetidas entre salas vizinhas. */
+export type ParedeNoAndar = {
+  de: [number, number];
+  ate: [number, number];
+  /** Distância do `de` até o centro da porta. */
+  porta?: number;
+  /** Parede de fora do prédio: alvenaria, sem vidro. */
+  cheia: boolean;
 };
 
-export const PROFUNDIDADE_DA_SALA = 6.2;
-export const LARGURA_DO_CORREDOR = 2.6;
+export type Caixa = { x0: number; x1: number; z0: number; z1: number };
+
+export type AndarMontado = {
+  salas: SalaNoAndar[];
+  paredes: ParedeNoAndar[];
+  corredores: Caixa[];
+  /** O retângulo que cobre o andar todo. */
+  limites: Caixa;
+  /** A porta de entrada do prédio (na parede de fora), para o tapete e o letreiro. */
+  entrada: PortaNoAndar | null;
+  /** Quem está ausente e onde fica no refeitório. */
+  naCopa: { pessoa: PessoaNoAndar; lugar: LugarDePe }[];
+  /**
+   * A área de cada gerência (a sala dela + as salas dos setores que respondem
+   * a ela), para a câmera ir até lá. Chave: `g:<chave>` e também o id do
+   * gerente, quando ele usa o CONECTA.
+   */
+  areas: Map<string, Caixa>;
+};
+
+/** Metros do 3D por metro da planta. */
+const ESCALA = 2.3;
 const ENTRE_COLUNAS = 1.95;
-const LARGURA_DA_GERENCIA = 4.6;
+const ENTRE_FILAS = 1.8;
 
 /**
- * As gerências do andar (18/10/2026: "sala da gerência do Leandro, Rodrigo e
- * da Aline"). Ficam aqui, com o nome do organograma, porque nem todo gerente
- * usa o CONECTA — a sala existe mesmo assim, com o nome na mesa. Quem entrar
- * no app com esse nome senta ali sozinho.
+ * As gerências (18/10/2026: "sala da gerência do Leandro, Rodrigo e da
+ * Aline"). Ficam aqui, com o nome do organograma, porque nem todo gerente usa
+ * o CONECTA — a sala existe mesmo assim, com o nome na mesa. Quem entrar no
+ * app com esse nome senta ali sozinho.
  */
 export const GERENCIAS = [
   {
@@ -143,13 +199,6 @@ export const GERENCIAS = [
   },
 ] as const;
 
-/**
- * A diretoria (18/10/2026: "uma sala de diretoria para os 2, Ericleia e
- * Marcos"). Pelo primeiro nome — e só quem é gerente ou tem "diretor" no
- * cargo, para não puxar os Marcos do campo.
- */
-export const DIRETORES = ["ERICLEIA", "MARCOS"] as const;
-
 /** Quem fica no balcão da recepção (continua no setor e com o chefe de sempre). */
 export const NA_RECEPCAO = ["TAILINI"] as const;
 
@@ -159,8 +208,8 @@ export const normalizar = (nome: string) =>
 const primeiroNormalizado = (nome: string) => normalizar(nome).split(" ")[0] ?? "";
 
 /**
- * Quem senta na mesa da frente de cada setor: o supervisor com mais gente do
- * setor abaixo dele (gerentes e diretores têm sala própria e não entram aqui).
+ * Quem senta na mesa da frente de cada sala: o supervisor com mais gente
+ * abaixo dele (gerentes têm sala própria e não entram aqui).
  */
 export function escolherGestor<T extends { id: string; role: string; supervisorId?: string }>(
   pessoas: T[],
@@ -171,51 +220,346 @@ export function escolherGestor<T extends { id: string; role: string; supervisorI
   return por("gerente") ?? por("supervisor") ?? null;
 }
 
+/* ————————————————— A planta (em metros) ————————————————— */
+
+type Faixa = [number, number];
+
+type SalaDaPlanta = {
+  id: string;
+  tipo: TipoDeSala;
+  titulo: string;
+  x: Faixa;
+  z: Faixa;
+  /** A primeira é a principal. `em`: fração da parede, a partir do canto de cima/esquerda. */
+  portas: { lado: Lado; em: number }[];
+  cor?: string;
+  /** Quem senta aqui: pelos setores e por nome (o nome manda). */
+  setores?: string[];
+  pessoas?: string[];
+  gerencia?: (typeof GERENCIAS)[number]["chave"];
+  /** A sala que recebe quem não tem sala própria na planta. */
+  resto?: boolean;
+  /** Salinha individual: uma mesa por pessoa, sem a mesa vazia do gestor. */
+  individual?: boolean;
+  /** O nome na mesa da salinha individual enquanto a pessoa não usa o CONECTA. */
+  nomeFixo?: string;
+  aberta?: boolean;
+  /** A porta principal desta sala é a entrada do prédio (dá para fora). */
+  entrada?: boolean;
+};
+
+const PLANTA: SalaDaPlanta[] = [
+  // A fileira de cima, com a porta para o corredor de cima.
+  {
+    id: "reuniao-1",
+    tipo: "reuniao",
+    titulo: "Sala de reunião",
+    x: [0, 2.65],
+    z: [-2.1, 1.1],
+    portas: [{ lado: "s", em: 0.84 }],
+  },
+  {
+    id: "gerencia-aline",
+    tipo: "gerencia",
+    titulo: "Aline",
+    gerencia: "aline",
+    x: [2.65, 4.4],
+    z: [-2.1, 1.1],
+    portas: [{ lado: "s", em: 0.75 }],
+  },
+  // A antiga "Paulo e Contabilidade", dividida ao meio (09/11/2026).
+  {
+    id: "sala-paulo",
+    tipo: "setor",
+    titulo: "Paulo",
+    pessoas: ["PAULO DE JESUS MACHADO"],
+    individual: true,
+    nomeFixo: "Paulo",
+    x: [4.4, 5.58],
+    z: [-2.1, 1.1],
+    portas: [{ lado: "s", em: 0.7 }],
+  },
+  {
+    id: "contabil",
+    tipo: "setor",
+    titulo: "Elisama",
+    setores: ["contabil"],
+    pessoas: ["ELISAMA"],
+    individual: true,
+    nomeFixo: "Elisama",
+    x: [5.58, 6.75],
+    z: [-2.1, 1.1],
+    portas: [{ lado: "s", em: 0.7 }],
+  },
+  {
+    id: "controladoria",
+    tipo: "setor",
+    titulo: "Controladoria",
+    setores: ["controladoria"],
+    x: [6.75, 9.1],
+    z: [-2.1, 1.1],
+    portas: [{ lado: "s", em: 0.75 }],
+  },
+  {
+    id: "ti",
+    tipo: "setor",
+    titulo: "TI",
+    setores: ["ti"],
+    x: [10.4, 14.0],
+    z: [-2.1, 2.45],
+    portas: [{ lado: "o", em: 0.55 }],
+  },
+  // Em cima: refeitório e treinamento do Cultivar, uma sala só, com a porta
+  // no fim do corredor que sobe ao lado da TI.
+  {
+    id: "refeitorio",
+    tipo: "refeitorio",
+    titulo: "Refeitório · Treinamento Cultivar",
+    cor: "#b45309",
+    x: [6.75, 14.0],
+    z: [-5.3, -2.1],
+    portas: [{ lado: "s", em: 0.414 }],
+  },
+  {
+    id: "banheiro",
+    tipo: "banheiro",
+    titulo: "BWC",
+    cor: "#64748b",
+    x: [0, 1.6],
+    z: [1.1, 2.45],
+    portas: [{ lado: "l", em: 0.5 }],
+  },
+  // O bloco do meio. A porta do Rodrigo é em cima, ao lado do banheiro (09/11/2026).
+  {
+    id: "gerencia-rodrigo",
+    tipo: "gerencia",
+    titulo: "Rodrigo",
+    gerencia: "rodrigo",
+    x: [0, 2.35],
+    z: [2.45, 5.6],
+    portas: [{ lado: "n", em: 0.84 }],
+  },
+  // O segundo banheiro, no começo do corredor entre Rodrigo e Frotas.
+  {
+    id: "banheiro-2",
+    tipo: "banheiro",
+    titulo: "BWC 2",
+    cor: "#64748b",
+    x: [0, 1.4],
+    z: [5.6, 6.7],
+    portas: [{ lado: "l", em: 0.5 }],
+  },
+  {
+    id: "gerencia-leandro",
+    tipo: "gerencia",
+    titulo: "Leandro",
+    gerencia: "leandro",
+    x: [2.35, 4.8],
+    z: [2.45, 5.6],
+    portas: [{ lado: "n", em: 0.3 }],
+  },
+  {
+    id: "msagro",
+    tipo: "setor",
+    titulo: "MSAgro",
+    cor: "#0d9488",
+    x: [4.8, 6.55],
+    z: [2.45, 5.6],
+    portas: [{ lado: "n", em: 0.5 }],
+  },
+  {
+    id: "financeiro",
+    tipo: "setor",
+    titulo: "Financeiro",
+    setores: ["financeiro"],
+    x: [6.55, 9.1],
+    z: [2.45, 5.6],
+    portas: [{ lado: "n", em: 0.75 }],
+  },
+  // O bloco de baixo, aberto para o corredor estreito.
+  {
+    id: "frotas",
+    tipo: "setor",
+    titulo: "Frotas",
+    setores: ["frotas"],
+    x: [0.6, 3.15],
+    z: [6.7, 9.4],
+    portas: [{ lado: "n", em: 0.75 }],
+  },
+  {
+    id: "seguranca",
+    tipo: "setor",
+    titulo: "Segurança",
+    setores: ["seguranca"],
+    x: [3.15, 5.35],
+    z: [6.7, 9.4],
+    portas: [{ lado: "n", em: 0.7 }],
+  },
+  {
+    id: "dho",
+    tipo: "setor",
+    titulo: "DHO e C.A.",
+    setores: ["dho"],
+    x: [5.35, 7.3],
+    z: [6.7, 9.4],
+    portas: [{ lado: "n", em: 0.6 }],
+  },
+  {
+    id: "atendimento-2",
+    tipo: "atendimento",
+    titulo: "Sala de atendimento 2",
+    x: [7.3, 9.1],
+    z: [6.7, 9.4],
+    portas: [{ lado: "n", em: 0.5 }],
+  },
+  // A coluna da direita, com a porta para o corredor do lado.
+  {
+    id: "suprimentos",
+    tipo: "setor",
+    titulo: "Suprimentos",
+    setores: ["compras", "suprimentos"],
+    x: [10.4, 14.0],
+    z: [2.45, 4.9],
+    portas: [{ lado: "o", em: 0.5 }],
+  },
+  {
+    id: "geral",
+    tipo: "setor",
+    titulo: "Geral",
+    resto: true,
+    cor: "#475569",
+    x: [10.4, 14.0],
+    z: [4.9, 8.4],
+    portas: [{ lado: "o", em: 0.62 }],
+  },
+  {
+    id: "espera",
+    tipo: "espera",
+    titulo: "Sala de espera",
+    cor: "#0f766e",
+    aberta: true,
+    x: [9.1, 14.0],
+    z: [8.4, 11.5],
+    portas: [{ lado: "o", em: 0.5 }],
+  },
+  {
+    id: "rh",
+    tipo: "setor",
+    titulo: "RH",
+    setores: ["rh"],
+    x: [10.4, 14.0],
+    z: [11.5, 16.5],
+    portas: [{ lado: "n", em: 0.25 }],
+  },
+  // A entrada do prédio é a porta da esquerda da recepção (09/11/2026): de
+  // fora, cai de frente para o balcão. A da direita dá na sala de espera.
+  {
+    id: "recepcao",
+    tipo: "recepcao",
+    titulo: "Recepção",
+    cor: "#0f766e",
+    entrada: true,
+    x: [6.36, 9.1],
+    z: [9.4, 12.0],
+    portas: [
+      { lado: "o", em: 0.5 },
+      { lado: "l", em: 0.4 },
+    ],
+  },
+  {
+    id: "atendimento-1",
+    tipo: "atendimento",
+    titulo: "Sala de atendimento",
+    x: [6.36, 9.1],
+    z: [12.0, 14.5],
+    portas: [{ lado: "l", em: 0.6 }],
+  },
+  {
+    id: "reuniao-2",
+    tipo: "reuniao",
+    titulo: "Sala de reunião 2",
+    x: [6.36, 10.4],
+    z: [14.5, 17.45],
+    portas: [{ lado: "n", em: 0.84 }],
+  },
+];
+
+/** As passagens (sem parede própria: as paredes são as das salas). */
+const CORREDORES: { x: Faixa; z: Faixa }[] = [
+  { x: [1.6, 9.1], z: [1.1, 2.45] },
+  // O corredor do lado: reto, da porta do refeitório até a sala de espera.
+  { x: [9.1, 10.4], z: [-2.1, 8.4] },
+  { x: [1.4, 9.1], z: [5.6, 6.7] },
+  { x: [9.1, 10.4], z: [11.5, 14.5] },
+];
+
+const COR_DO_TIPO: Record<TipoDeSala, string> = {
+  setor: "#475569",
+  gerencia: "#7c3aed",
+  reuniao: "#0369a1",
+  atendimento: "#0369a1",
+  recepcao: "#0f766e",
+  espera: "#0f766e",
+  banheiro: "#64748b",
+  refeitorio: "#b45309",
+};
+
+const GIRO: Record<Lado, number> = { s: 0, n: Math.PI, l: Math.PI / 2, o: -Math.PI / 2 };
+
+/* ————————————————— A montagem ————————————————— */
+
 export function montarAndar(setores: SetorDoAndar[], pessoas: PessoaNoAndar[]): AndarMontado {
   const porId = new Map(pessoas.map((p) => [p.id, p]));
   const porNome = new Map(pessoas.map((p) => [normalizar(p.nome), p]));
+  const setorPorId = new Map(setores.map((s) => [s.id, s]));
 
-  /* ---- as gerências: as do organograma + quem mais for gerente no app ---- */
-  type Gerencia = {
-    chave: string;
-    titulo: string;
-    nome: string;
-    cor: string;
-    pessoa: PessoaNoAndar | null;
-  };
-  const gerencias: Gerencia[] = GERENCIAS.map((g) => ({
-    chave: g.chave,
-    titulo: g.titulo,
-    nome: g.nome,
-    cor: g.cor,
-    pessoa: porNome.get(normalizar(g.nome)) ?? null,
-  }));
-  for (const p of pessoas) {
-    if (p.role !== "gerente" || gerencias.some((g) => g.pessoa?.id === p.id)) continue;
-    const ehDiretor = DIRETORES.includes(primeiroNormalizado(p.nome) as never);
-    if (ehDiretor) continue;
-    gerencias.push({ chave: p.id, titulo: "Gerência", nome: p.nome, cor: "#7c3aed", pessoa: p });
-  }
-  const gerenciaPorNome = new Map(gerencias.map((g) => [normalizar(g.nome), g.chave]));
+  // A planta em metros vira mundo, com o centro do andar em (0, 0).
+  const todas = [...PLANTA.map((s) => ({ x: s.x, z: s.z })), ...CORREDORES];
+  const px0 = Math.min(...todas.map((c) => c.x[0]));
+  const px1 = Math.max(...todas.map((c) => c.x[1]));
+  const pz0 = Math.min(...todas.map((c) => c.z[0]));
+  const pz1 = Math.max(...todas.map((c) => c.z[1]));
+  const mx = (v: number) => (v - (px0 + px1) / 2) * ESCALA;
+  const mz = (v: number) => (v - (pz0 + pz1) / 2) * ESCALA;
 
-  const diretores = DIRETORES.map((primeiro) => ({
-    primeiro,
-    pessoa:
-      pessoas.find(
-        (p) =>
-          primeiroNormalizado(p.nome) === primeiro &&
-          (p.role === "gerente" || /DIRET/.test(normalizar(p.cargo))),
-      ) ?? null,
-  }));
+  /* ---- quem senta onde ---- */
+  const gerentes = new Map(
+    GERENCIAS.map((g) => [g.chave as string, porNome.get(normalizar(g.nome)) ?? null]),
+  );
   const naRecepcao = pessoas.filter((p) =>
     NA_RECEPCAO.includes(primeiroNormalizado(p.nome) as never),
   );
-  const foraDosSetores = new Set<string>([
-    ...gerencias.flatMap((g) => (g.pessoa ? [g.pessoa.id] : [])),
-    ...diretores.flatMap((d) => (d.pessoa ? [d.pessoa.id] : [])),
+  const ocupados = new Set<string>([
+    ...[...gerentes.values()].flatMap((p) => (p ? [p.id] : [])),
     ...naRecepcao.map((p) => p.id),
   ]);
+  const ocupantes = new Map<string, PessoaNoAndar[]>();
+  // Primeiro por nome (o Paulo é "Gestão" no organograma e senta na Contabilidade)…
+  for (const s of PLANTA) {
+    for (const nome of s.pessoas ?? []) {
+      // Nome inteiro casa exato; um nome só ("ELISAMA") casa pelo primeiro nome.
+      const p = nome.includes(" ")
+        ? porNome.get(normalizar(nome))
+        : pessoas.find((x) => primeiroNormalizado(x.nome) === normalizar(nome));
+      if (!p || ocupados.has(p.id)) continue;
+      ocupados.add(p.id);
+      ocupantes.set(s.id, [...(ocupantes.get(s.id) ?? []), p]);
+    }
+  }
+  // …depois pelo setor; quem sobrar vai para a sala do resto (Geral).
+  const resto = PLANTA.find((s) => s.resto)!;
+  for (const p of pessoas) {
+    if (ocupados.has(p.id)) continue;
+    const sala = PLANTA.find((s) => s.setores?.includes(p.setor)) ?? resto;
+    ocupantes.set(sala.id, [...(ocupantes.get(sala.id) ?? []), p]);
+  }
 
+  /* ---- a gerência de cada sala (para "Ver a área") ---- */
+  const gerenciaPorNome = new Map(GERENCIAS.map((g) => [normalizar(g.nome), g.chave as string]));
+  for (const p of pessoas) {
+    if (p.role === "gerente" && !gerenciaPorNome.has(normalizar(p.nome)))
+      gerenciaPorNome.set(normalizar(p.nome), p.id);
+  }
   /** Sobe a linha de reporte (pelo id ou pelo nome do chefe) até uma gerência. */
   const gerenciaAcima = (inicio: PessoaNoAndar | undefined): string | null => {
     let p = inicio;
@@ -232,333 +576,312 @@ export function montarAndar(setores: SetorDoAndar[], pessoas: PessoaNoAndar[]): 
     return null;
   };
 
-  /* ---- os setores, cada um com o seu gestor e a gerência a quem responde ---- */
-  type Bloco = {
-    setor: SetorDoAndar;
-    gestor: PessoaNoAndar | null;
-    equipe: PessoaNoAndar[];
-    gerenteId: string | null;
-  };
-  const blocos: Bloco[] = [];
-  for (const s of setores) {
-    const membros = pessoas
-      .filter((p) => p.setor === s.id && !foraDosSetores.has(p.id))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
-    if (!membros.length) continue;
-    const gestor = escolherGestor(membros);
-    const equipe = membros.filter((p) => p !== gestor);
-    // A gerência do setor: pela linha de quem senta na frente; sem ela, a mais
-    // votada entre os membros.
-    let gerenteId = gerenciaAcima(gestor ?? undefined);
-    if (!gerenteId) {
-      const votos = new Map<string, number>();
-      for (const m of membros) {
-        const g = gerenciaAcima(m);
-        if (g) votos.set(g, (votos.get(g) ?? 0) + 1);
+  /* ---- as salas ---- */
+  const salas: SalaNoAndar[] = PLANTA.map((d) => {
+    const x0 = mx(d.x[0]);
+    const x1 = mx(d.x[1]);
+    const z0 = mz(d.z[0]);
+    const z1 = mz(d.z[1]);
+    const lado = d.portas[0]!.lado;
+    const deLado = lado === "l" || lado === "o";
+    const membros = (ocupantes.get(d.id) ?? []).sort((a, b) => a.nome.localeCompare(b.nome));
+    const doSetor = d.setores?.length === 1 ? setorPorId.get(d.setores[0]!) : undefined;
+    const sala: SalaNoAndar = {
+      id: d.id,
+      tipo: d.tipo,
+      titulo: d.titulo,
+      cor: d.cor ?? doSetor?.cor ?? COR_DO_TIPO[d.tipo],
+      x0,
+      x1,
+      z0,
+      z1,
+      giro: GIRO[lado],
+      largura: deLado ? z1 - z0 : x1 - x0,
+      fundo: deLado ? x1 - x0 : z1 - z0,
+      portas: d.portas.map((p) => {
+        const v = p.lado === "l" || p.lado === "o";
+        return {
+          lado: p.lado,
+          x: v ? (p.lado === "l" ? x1 : x0) : x0 + (x1 - x0) * p.em,
+          z: v ? z0 + (z1 - z0) * p.em : p.lado === "s" ? z1 : z0,
+        };
+      }),
+      mesas: [],
+      gerenteId: null,
+      setores: [...new Set([...(d.setores ?? []), ...membros.map((m) => m.setor)])],
+      aberta: d.aberta,
+    };
+    const mundo = paraOMundo((x0 + x1) / 2, (z0 + z1) / 2, sala.giro);
+    if (d.gerencia) {
+      const g = GERENCIAS.find((x) => x.chave === d.gerencia)!;
+      mobiliarGerencia(sala, g, gerentes.get(g.chave) ?? null, mundo);
+    } else if (d.tipo === "recepcao") {
+      sala.mesas.push({
+        ...mundo(-0.9, -0.6, 0),
+        gestor: false,
+        pessoa: naRecepcao[0] ?? null,
+        nomeFixo: naRecepcao[0] ? undefined : "Recepção",
+        balcao: true,
+      });
+    } else if (d.tipo === "setor" && d.individual) {
+      sentarSozinhos(sala, membros, d.nomeFixo, mundo);
+      sala.gerenteId = maisVotada(
+        membros.map((m) => gerenciaAcima(m)).filter((g): g is string => !!g),
+      );
+    } else if (d.tipo === "setor") {
+      const gestor = escolherGestor(membros);
+      const equipe = membros.filter((p) => p !== gestor);
+      sentarEquipe(sala, gestor, equipe, mundo);
+      sala.gerenteId =
+        gerenciaAcima(gestor ?? undefined) ??
+        maisVotada(membros.map((m) => gerenciaAcima(m)).filter((g): g is string => !!g));
+      // A sala que junta vários setores diz quais são, no letreiro.
+      const comNome = sala.setores.filter((id) => id !== "sem-setor");
+      if (d.resto && comNome.length) {
+        sala.subtitulo = comNome.map((id) => setorPorId.get(id)?.nome ?? id).join(" · ");
       }
-      gerenteId = [...votos].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
     }
-    blocos.push({ setor: s, gestor, equipe, gerenteId });
-  }
-
-  /* ---- distribuição ---- */
-  const salas: SalaNoAndar[] = [];
-  const cursor = { cima: 0, baixo: 0 };
-  const areas = new Map<string, { x0: number; x1: number; z0: number; z1: number }>();
-  const zCima = -LARGURA_DO_CORREDOR / 2 - PROFUNDIDADE_DA_SALA / 2;
-  const zBaixo = LARGURA_DO_CORREDOR / 2 + PROFUNDIDADE_DA_SALA / 2;
-
-  const por = (
-    fileira: "cima" | "baixo",
-    largura: number,
-    montar: (cx: number, cz: number, fileira: "cima" | "baixo") => SalaNoAndar,
-  ) => {
-    const x0 = cursor[fileira];
-    cursor[fileira] += largura;
-    salas.push(montar(x0 + largura / 2, fileira === "cima" ? zCima : zBaixo, fileira));
-  };
-  const maisCurta = (): "cima" | "baixo" => (cursor.cima < cursor.baixo ? "cima" : "baixo");
-  const alinhar = () => {
-    cursor.cima = cursor.baixo = Math.max(cursor.cima, cursor.baixo);
-    return cursor.cima;
-  };
-
-  // 1) A entrada: a recepção (aberta para o corredor) e a primeira sala de reunião.
-  por("cima", 6.2, (cx, cz, f) => salaDaRecepcao(naRecepcao[0] ?? null, cx, cz, f));
-  por("baixo", 6.2, (cx, cz, f) => salaDeReuniao("reuniao-1", "Sala de reunião 1", cx, cz, f));
-
-  // 2) Cada gerência com os setores dela, frente a frente no corredor.
-  const grupos: { gerencia: Gerencia | null; blocos: Bloco[] }[] = gerencias.map((g) => ({
-    gerencia: g,
-    blocos: blocos.filter((b) => b.gerenteId === g.chave),
-  }));
-  const semGerencia = blocos.filter(
-    (b) => !b.gerenteId || !gerencias.some((g) => g.chave === b.gerenteId),
-  );
-  if (semGerencia.length) grupos.push({ gerencia: null, blocos: semGerencia });
-  for (const grupo of grupos) {
-    const inicio = alinhar();
-    const g = grupo.gerencia;
-    if (g) por("cima", LARGURA_DA_GERENCIA, (cx, cz, f) => salaDaGerencia(g, cx, cz, f));
-    for (const b of grupo.blocos) {
-      const largura = larguraDoSetor(b.equipe.length);
-      por(maisCurta(), largura, (cx, cz, f) => salaDoSetor(b, cx, cz, f, largura));
-    }
-    if (g) {
-      const area = {
-        x0: inicio,
-        x1: Math.max(cursor.cima, cursor.baixo),
-        z0: -LARGURA_DO_CORREDOR / 2 - PROFUNDIDADE_DA_SALA,
-        z1: LARGURA_DO_CORREDOR / 2 + PROFUNDIDADE_DA_SALA,
-      };
-      areas.set(`g:${g.chave}`, area);
-      if (g.pessoa) areas.set(g.pessoa.id, area);
-    }
-  }
-
-  // 3) A diretoria e a segunda sala de reunião, juntas, no fundo do andar.
-  alinhar();
-  por("cima", 7.2, (cx, cz, f) => salaDaDiretoria(diretores, cx, cz, f));
-  por("baixo", 6.2, (cx, cz, f) => salaDeReuniao("reuniao-2", "Sala de reunião 2", cx, cz, f));
-
-  // 4) O refeitório fecha o corredor, com lugar para quem está ausente.
-  const ausentes = pessoas.filter((p) => p.situacao === "ausente");
-  /* (19/10/2026: "aumentar o refeitório… mesa maior retangular com bancos e
-     eles sentados") Mesas compridas de 6 lugares, duas fileiras; de cada 4
-     pessoas, uma fica de pé no balcão do café (até 3). */
-  const noBalcao = Math.min(3, Math.floor(ausentes.length / 4));
-  const mesasDoRefeitorio = Math.max(2, Math.ceil((ausentes.length - noBalcao) / 6));
-  const larguraRef = Math.max(8.5, Math.ceil(mesasDoRefeitorio / 2) * 3.4 + 2.6);
-  let lugaresRef: LugarDePe[] = [];
-  por(maisCurta(), larguraRef, (cx, cz, f) => {
-    const sala = salaVazia(
-      "refeitorio",
-      "refeitorio",
-      "Refeitório",
-      "#b45309",
-      cx,
-      cz,
-      f,
-      larguraRef,
-      null,
-    );
-    lugaresRef = lugaresDoRefeitorio(sala, mesasDoRefeitorio, noBalcao);
-    sala.mesasCompridas = mesasDoRefeitorio;
     return sala;
   });
+
+  /* ---- o refeitório, com lugar para quem está ausente ---- */
+  const refeitorio = salas.find((s) => s.tipo === "refeitorio")!;
+  const ausentes = pessoas.filter((p) => p.situacao === "ausente");
+  /* (19/10/2026: "aumentar o refeitório… mesa maior retangular com bancos e
+     eles sentados") Mesas compridas de 6 lugares; de cada 4 pessoas, uma fica
+     de pé no balcão do café (até 3). O refeitório agora tem tamanho fixo: cabem
+     até 4 mesas, e quem passar disso divide um lugar. */
+  const noBalcao = Math.min(3, Math.floor(ausentes.length / 4));
+  const cabem = Math.max(1, Math.floor((refeitorio.largura - 2.6) / 3.4)) * 2;
+  refeitorio.mesasCompridas = Math.min(
+    cabem,
+    Math.max(2, Math.ceil((ausentes.length - noBalcao) / 6)),
+  );
+  const lugaresRef = lugaresDoRefeitorio(refeitorio, refeitorio.mesasCompridas, noBalcao);
   const naCopa = ausentes.map((pessoa, i) => ({
     pessoa,
     lugar: lugaresRef[i % lugaresRef.length]!,
   }));
 
-  // Centraliza o andar em x = 0.
-  const comprimento = Math.max(cursor.cima, cursor.baixo);
-  const dx = -comprimento / 2;
-  for (const s of salas) {
-    s.x0 += dx;
-    s.x1 += dx;
-    s.portaX += dx;
-    for (const m of s.mesas) m.x += dx;
+  /* ---- a área de cada gerência: a sala dela e as dos setores dela ---- */
+  const areas = new Map<string, Caixa>();
+  for (const g of GERENCIAS) {
+    const daArea = salas.filter((s) => s.id === `gerencia-${g.chave}` || s.gerenteId === g.chave);
+    if (!daArea.length) continue;
+    const area = envolver(daArea);
+    areas.set(`g:${g.chave}`, area);
+    const p = gerentes.get(g.chave);
+    if (p) areas.set(p.id, area);
   }
-  for (const c of naCopa) c.lugar = { ...c.lugar, x: c.lugar.x + dx };
-  for (const [k, a] of areas) areas.set(k, { ...a, x0: a.x0 + dx, x1: a.x1 + dx });
 
+  const corredores = CORREDORES.map((c) => ({
+    x0: mx(c.x[0]),
+    x1: mx(c.x[1]),
+    z0: mz(c.z[0]),
+    z1: mz(c.z[1]),
+  }));
   return {
     salas,
-    corredor: {
-      x0: dx - 0.2,
-      x1: comprimento + dx + 0.2,
-      z0: -LARGURA_DO_CORREDOR / 2,
-      z1: LARGURA_DO_CORREDOR / 2,
-    },
+    paredes: levantarParedes(salas, corredores),
+    corredores,
+    limites: { x0: mx(px0), x1: mx(px1), z0: mz(pz0), z1: mz(pz1) },
+    entrada: salas[PLANTA.findIndex((d) => d.entrada)]?.portas[0] ?? null,
     naCopa,
     areas,
   };
 }
 
-/* ————————————————— As salas ————————————————— */
+const maisVotada = (votos: string[]): string | null => {
+  const n = new Map<string, number>();
+  for (const v of votos) n.set(v, (n.get(v) ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+};
 
-function larguraDoSetor(equipe: number) {
-  const colunas = Math.max(2, Math.ceil(equipe / 2));
-  return Math.max(4.6, colunas * ENTRE_COLUNAS + 0.9);
-}
+const envolver = (caixas: Caixa[]): Caixa => ({
+  x0: Math.min(...caixas.map((c) => c.x0)),
+  x1: Math.max(...caixas.map((c) => c.x1)),
+  z0: Math.min(...caixas.map((c) => c.z0)),
+  z1: Math.max(...caixas.map((c) => c.z1)),
+});
 
-/** Do referencial da sala (porta em +z) para o mundo. */
-export function paraOMundo(cx: number, cz: number, fileira: "cima" | "baixo") {
-  const vira = fileira === "baixo";
+/** Do referencial da sala (porta principal em +z) para o mundo. */
+export function paraOMundo(cx: number, cz: number, giro: number) {
+  const cos = Math.cos(giro);
+  const sin = Math.sin(giro);
   return (lx: number, lz: number, rot: number) => ({
-    x: vira ? cx - lx : cx + lx,
-    z: vira ? cz - lz : cz + lz,
-    rotY: vira ? rot + Math.PI : rot,
+    x: cx + lx * cos + lz * sin,
+    z: cz - lx * sin + lz * cos,
+    rotY: rot + giro,
   });
 }
 
-function salaVazia(
-  id: string,
-  tipo: TipoDeSala,
-  titulo: string,
-  cor: string,
-  cx: number,
-  cz: number,
-  fileira: "cima" | "baixo",
-  largura: number,
-  gerenteId: string | null,
-): SalaNoAndar {
-  const vira = fileira === "baixo";
-  return {
-    id,
-    tipo,
-    titulo,
-    cor,
-    x0: cx - largura / 2,
-    x1: cx + largura / 2,
-    z0: cz - PROFUNDIDADE_DA_SALA / 2,
-    z1: cz + PROFUNDIDADE_DA_SALA / 2,
-    fileira,
-    // a porta fica perto do canto, como nas salas da foto
-    portaX: vira ? cx - (largura / 2 - 0.85) : cx + (largura / 2 - 0.85),
-    mesas: [],
-    gerenteId,
-  };
-}
+type Mundo = ReturnType<typeof paraOMundo>;
 
-function salaDoSetor(
-  b: {
-    setor: SetorDoAndar;
-    gestor: PessoaNoAndar | null;
-    equipe: PessoaNoAndar[];
-    gerenteId: string | null;
-  },
-  cx: number,
-  cz: number,
-  fileira: "cima" | "baixo",
-  largura: number,
-): SalaNoAndar {
-  const sala = salaVazia(
-    b.setor.id,
-    "setor",
-    b.setor.nome,
-    b.setor.cor,
-    cx,
-    cz,
-    fileira,
-    largura,
-    b.gerenteId,
-  );
-  const mundo = paraOMundo(cx, cz, fileira);
-  const D = PROFUNDIDADE_DA_SALA;
-  // O gestor no fundo, de frente para a porta; a equipe em duas fileiras.
-  sala.mesas.push({ ...mundo(0, -D / 2 + 0.95, 0), gestor: true, pessoa: b.gestor });
-  const colunas = Math.max(2, Math.ceil(b.equipe.length / 2));
-  const total = Math.max(b.equipe.length, 2);
-  for (let i = 0; i < total; i++) {
-    const fila = i < colunas ? 0 : 1;
-    const col = fila === 0 ? i : i - colunas;
-    const lx = (col - (colunas - 1) / 2) * ENTRE_COLUNAS;
-    const lz = fila === 0 ? -0.55 : 1.25;
-    sala.mesas.push({ ...mundo(lx, lz, 0), gestor: false, pessoa: b.equipe[i] ?? null });
+/* ————————————————— As paredes ————————————————— */
+
+/**
+ * As paredes do andar, cada uma uma vez só. Duas salas vizinhas dividem a
+ * mesma divisória: desenhada pelas duas, as faces brigavam (o vidro piscava).
+ * Então cada lado de sala entra só no trecho que ainda não tem parede. Onde do
+ * outro lado não há sala nem corredor, é a parede de fora: cheia, sem vidro.
+ */
+function levantarParedes(salas: SalaNoAndar[], corredores: Caixa[]): ParedeNoAndar[] {
+  const ja = new Map<string, Faixa[]>();
+  const saida: ParedeNoAndar[] = [];
+  const dentro = (x: number, z: number) =>
+    [...salas, ...corredores].some((c) => x > c.x0 && x < c.x1 && z > c.z0 && z < c.z1);
+  const portas = salas.flatMap((s) => s.portas);
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+
+  for (const s of salas) {
+    if (s.aberta) continue;
+    // [horizontal?, coordenada fixa, de, até]
+    const lados: [boolean, number, number, number][] = [
+      [true, s.z0, s.x0, s.x1],
+      [true, s.z1, s.x0, s.x1],
+      [false, s.x0, s.z0, s.z1],
+      [false, s.x1, s.z0, s.z1],
+    ];
+    for (const [horizontal, fixo, a, b] of lados) {
+      const chave = `${horizontal ? "h" : "v"}${r(fixo)}`;
+      const tomados = ja.get(chave) ?? [];
+      for (const [p, q] of subtrair([a, b], tomados)) {
+        tomados.push([p, q]);
+        const ponto = (t: number): [number, number] => (horizontal ? [t, fixo] : [fixo, t]);
+        // As portas que caem neste trecho; com mais de uma, o trecho é partido entre elas.
+        const aqui = portas
+          .map((d) =>
+            horizontal
+              ? Math.abs(d.z - fixo) < 0.01
+                ? d.x
+                : null
+              : Math.abs(d.x - fixo) < 0.01
+                ? d.z
+                : null,
+          )
+          .filter((t): t is number => t !== null && t > p + 0.5 && t < q - 0.5)
+          .sort((m, n) => m - n);
+        const cortes = [p, ...aqui.slice(0, -1).map((t, i) => (t + aqui[i + 1]!) / 2), q];
+        for (let i = 0; i < cortes.length - 1; i++) {
+          const de = cortes[i]!;
+          const ate = cortes[i + 1]!;
+          const meio = (de + ate) / 2;
+          const [mxp, mzp] = ponto(meio);
+          const cheia = horizontal
+            ? !dentro(mxp, mzp - 0.3) || !dentro(mxp, mzp + 0.3)
+            : !dentro(mxp - 0.3, mzp) || !dentro(mxp + 0.3, mzp);
+          const porta = aqui[i];
+          saida.push({
+            de: ponto(de),
+            ate: ponto(ate),
+            porta: porta !== undefined && porta > de && porta < ate ? porta - de : undefined,
+            cheia,
+          });
+        }
+      }
+      ja.set(chave, tomados);
+    }
   }
-  return sala;
+  return saida;
 }
 
-function salaDaGerencia(
-  g: { chave: string; titulo: string; nome: string; cor: string; pessoa: PessoaNoAndar | null },
-  cx: number,
-  cz: number,
-  fileira: "cima" | "baixo",
-): SalaNoAndar {
-  const primeiro = g.nome.trim().split(/\s+/)[0] ?? g.nome;
-  const nome = primeiro.charAt(0) + primeiro.slice(1).toLowerCase();
-  const sala = salaVazia(
-    `gerencia-${g.chave}`,
-    "gerencia",
-    `${g.titulo} · ${nome}`,
-    g.cor,
-    cx,
-    cz,
-    fileira,
-    LARGURA_DA_GERENCIA,
-    g.chave,
-  );
-  sala.rotulo = nome;
-  sala.subtitulo = g.titulo;
-  const mundo = paraOMundo(cx, cz, fileira);
-  sala.mesas.push({
-    ...mundo(-0.6, -PROFUNDIDADE_DA_SALA / 2 + 1.0, 0),
-    gestor: true,
-    pessoa: g.pessoa,
-    nomeFixo: g.pessoa ? undefined : nome,
-  });
-  return sala;
-}
-
-/** A diretoria: duas mesas executivas lado a lado no fundo, uma para cada diretor. */
-function salaDaDiretoria(
-  diretores: { primeiro: string; pessoa: PessoaNoAndar | null }[],
-  cx: number,
-  cz: number,
-  fileira: "cima" | "baixo",
-): SalaNoAndar {
-  const sala = salaVazia(
-    "diretoria",
-    "diretoria",
-    "Diretoria",
-    "#0f172a",
-    cx,
-    cz,
-    fileira,
-    7.2,
-    null,
-  );
-  const mundo = paraOMundo(cx, cz, fileira);
-  sala.subtitulo = diretores
-    .map((d) => d.primeiro.charAt(0) + d.primeiro.slice(1).toLowerCase())
-    .join(" e ");
-  diretores.forEach((d, i) => {
-    const nome = d.primeiro.charAt(0) + d.primeiro.slice(1).toLowerCase();
-    sala.mesas.push({
-      ...mundo(i === 0 ? -1.7 : 1.7, -PROFUNDIDADE_DA_SALA / 2 + 1.05, 0),
-      gestor: true,
-      pessoa: d.pessoa,
-      nomeFixo: d.pessoa ? undefined : nome,
+/** O que sobra de [a, b] tirando os trechos já tomados. */
+function subtrair([a, b]: Faixa, tomados: Faixa[]): Faixa[] {
+  let livres: Faixa[] = [[a, b]];
+  for (const [p, q] of tomados) {
+    livres = livres.flatMap(([x, y]): Faixa[] => {
+      if (q <= x + 0.01 || p >= y - 0.01) return [[x, y]];
+      const sobra: Faixa[] = [];
+      if (p > x + 0.01) sobra.push([x, p]);
+      if (q < y - 0.01) sobra.push([q, y]);
+      return sobra;
     });
-  });
-  return sala;
+  }
+  return livres.filter(([x, y]) => y - x > 0.05);
 }
 
-/** Sala de reunião: só a mobília (mesa comprida, cadeiras, TV) — ninguém mora nela. */
-function salaDeReuniao(
-  id: string,
-  titulo: string,
-  cx: number,
-  cz: number,
-  fileira: "cima" | "baixo",
+/* ————————————————— Mesas ————————————————— */
+
+/**
+ * O gestor no fundo, de frente para a porta; a equipe em fileiras, todos
+ * virados para a porta. Quantas colunas e fileiras: o que a sala comporta —
+ * e, se a equipe não couber, as mesas se apertam em vez de vazar da sala.
+ */
+function sentarEquipe(
+  sala: SalaNoAndar,
+  gestor: PessoaNoAndar | null,
+  equipe: PessoaNoAndar[],
+  mundo: Mundo,
 ) {
-  return salaVazia(id, "reuniao", titulo, "#0369a1", cx, cz, fileira, 6.2, null);
+  const W = sala.largura;
+  const D = sala.fundo;
+  sala.mesas.push({ ...mundo(0, -D / 2 + 0.95, 0), gestor: true, pessoa: gestor });
+  const total = Math.max(equipe.length, 2);
+  const zIni = -D / 2 + 2.6;
+  const zFim = D / 2 - 1.4;
+  const maxColunas = Math.max(1, Math.floor((W - 0.5) / 1.6));
+  const maxFilas = Math.max(1, Math.floor((zFim - zIni) / 1.55) + 1);
+  let filas = Math.min(maxFilas, Math.ceil(total / maxColunas));
+  if (filas * maxColunas < total) filas = Math.ceil(total / maxColunas);
+  const colunas = Math.ceil(total / filas);
+  const entreColunas = Math.min(ENTRE_COLUNAS, (W - 0.5) / colunas);
+  const entreFilas = filas > 1 ? Math.min(ENTRE_FILAS, (zFim - zIni) / (filas - 1)) : 0;
+  for (let i = 0; i < total; i++) {
+    const fila = Math.floor(i / colunas);
+    const nestaFila = Math.min(colunas, total - fila * colunas);
+    const col = i - fila * colunas;
+    const lx = (col - (nestaFila - 1) / 2) * entreColunas;
+    const lz = zIni + fila * entreFilas;
+    sala.mesas.push({ ...mundo(lx, lz, 0), gestor: false, pessoa: equipe[i] ?? null });
+  }
 }
 
 /**
- * A recepção, na entrada do andar: aberta para o corredor, com o balcão alto
- * de frente para quem chega e o sofá de espera.
+ * A salinha individual: a mesa no fundo, de frente para a porta. Se mais
+ * alguém cair nela (pelo setor), ganha uma mesa logo à frente.
  */
-function salaDaRecepcao(
-  pessoa: PessoaNoAndar | null,
-  cx: number,
-  cz: number,
-  fileira: "cima" | "baixo",
+function sentarSozinhos(
+  sala: SalaNoAndar,
+  membros: PessoaNoAndar[],
+  nomeFixo: string | undefined,
+  mundo: Mundo,
 ) {
-  const sala = salaVazia("recepcao", "recepcao", "Recepção", "#0f766e", cx, cz, fileira, 6.2, null);
-  sala.aberta = true;
-  const mundo = paraOMundo(cx, cz, fileira);
-  sala.mesas.push({
-    ...mundo(-0.9, -0.6, 0),
-    gestor: false,
-    pessoa,
-    nomeFixo: pessoa ? undefined : "Recepção",
-    balcao: true,
-  });
-  return sala;
+  const D = sala.fundo;
+  const lugares = Math.max(1, membros.length);
+  const passo = lugares > 1 ? Math.min(1.7, (D - 2.2) / (lugares - 1)) : 0;
+  for (let i = 0; i < lugares; i++) {
+    const pessoa = membros[i] ?? null;
+    sala.mesas.push({
+      ...mundo(0, -D / 2 + 1.0 + i * passo, 0),
+      gestor: i === 0,
+      pessoa,
+      nomeFixo: pessoa ? undefined : nomeFixo,
+    });
+  }
 }
+
+function mobiliarGerencia(
+  sala: SalaNoAndar,
+  g: (typeof GERENCIAS)[number],
+  pessoa: PessoaNoAndar | null,
+  mundo: Mundo,
+) {
+  const primeiro = g.nome.trim().split(/\s+/)[0] ?? g.nome;
+  const nome = primeiro.charAt(0) + primeiro.slice(1).toLowerCase();
+  sala.titulo = `${g.titulo} · ${nome}`;
+  sala.cor = g.cor;
+  sala.rotulo = nome;
+  sala.subtitulo = g.titulo;
+  sala.gerenteId = g.chave;
+  sala.mesas.push({
+    ...mundo(-0.6, -sala.fundo / 2 + 1.0, 0),
+    gestor: true,
+    pessoa,
+    nomeFixo: pessoa ? undefined : nome,
+  });
+}
+
+/* ————————————————— Refeitório ————————————————— */
 
 /** Mesa comprida do refeitório: comprimento, profundidade e onde ficam os bancos. */
 export const MESA_DO_REFEITORIO = { comp: 2.6, prof: 0.85, banco: 0.72 } as const;
@@ -587,13 +910,10 @@ export function mesasCompridasDoRefeitorio(mesas: number): { x: number; z: numbe
 function lugaresDoRefeitorio(sala: SalaNoAndar, mesas: number, noBalcao: number): LugarDePe[] {
   const cx = (sala.x0 + sala.x1) / 2;
   const cz = (sala.z0 + sala.z1) / 2;
-  const largura = sala.x1 - sala.x0;
-  const mundo = paraOMundo(cx, cz, sala.fileira);
+  const mundo = paraOMundo(cx, cz, sala.giro);
   const saida: LugarDePe[] = [];
   for (let i = 0; i < noBalcao; i++) {
-    saida.push(
-      mundo(-largura / 2 + 1.3 + i * 0.95, -PROFUNDIDADE_DA_SALA / 2 + 1.25, 0.25 - i * 0.25),
-    );
+    saida.push(mundo(-sala.largura / 2 + 1.3 + i * 0.95, -sala.fundo / 2 + 1.25, 0.25 - i * 0.25));
   }
   const { banco } = MESA_DO_REFEITORIO;
   for (const m of mesasCompridasDoRefeitorio(mesas)) {
