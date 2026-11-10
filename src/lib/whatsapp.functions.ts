@@ -233,15 +233,24 @@ export const tarefasDoWhatsapp = createServerFn({ method: "POST" }).handler(
   comSessaoSemEntrada(async (eu): Promise<{ tarefas: TarefaDoBanco[] }> => {
     const { getPool, sql } = await import("@/integrations/db.server");
     const pool = await getPool();
+    /* 10/11/2026: a consulta parte de `entrada_whatsapp`, não de `tarefas`.
+       Com o EXISTS no fim, o banco percorria as tarefas e sondava a entrada
+       uma vez por linha — 15 mil leituras por chamada, a cada minuto, por
+       pessoa logada, com a entrada vazia. Agora lê primeiro as (poucas)
+       tarefas que vieram do WhatsApp e só então confere dono, arquivo e
+       data. O LOOP fixa essa ordem. Mesmo resultado: o DISTINCT faz o papel
+       do EXISTS (uma tarefa com duas entradas continua saindo uma vez). */
     const r = await pool
       .request()
       .input("eu", sql.Int, eu)
       .query(
-        `SELECT ${COLUNAS_TAREFA} FROM gestor.tarefas t
+        `SELECT ${COLUNAS_TAREFA}
+           FROM (SELECT DISTINCT w.tarefa_id FROM gestor.entrada_whatsapp w
+                  WHERE w.tarefa_id IS NOT NULL) w
+           INNER LOOP JOIN gestor.tarefas t ON t.id = w.tarefa_id
           WHERE t.responsavel_id = @eu
             AND t.arquivada_em IS NULL
             AND t.criada_em >= DATEADD(DAY, -7, SYSDATETIMEOFFSET())
-            AND EXISTS (SELECT 1 FROM gestor.entrada_whatsapp w WHERE w.tarefa_id = t.id)
           ORDER BY t.criada_em DESC`,
       );
     return { tarefas: (r.recordset as LinhaTarefa[]).map(paraApp) };

@@ -60,14 +60,34 @@ export const listarConclusoes = createServerFn({ method: "POST" }).handler(
        mais as conclusões dela e de quem responde a ela. Sem isto, o gráfico de
        "últimos 7 dias · time" contaria só quem está olhando. Os parênteses
        existem porque abaixo vem um `AND` de data. */
-    const { sqlListaDeTarefas, SQL_MEUS_SUBORDINADOS, SQL_PREPARA_SUBORDINADOS } = await import(
-      "@/lib/permissoes.server"
-    );
+    const { SQL_PREPARA_SUBORDINADOS } = await import("@/lib/permissoes.server");
+
+    /* 10/11/2026: o alcance acima, escrito como UNIÃO em vez de um OR só.
+       O OR (o de `sqlListaDeTarefas` mais as conclusões minhas e dos meus)
+       fazia o banco sondar menções e @subs uma vez por conclusão dos 90
+       dias — ~12 mil leituras por chamada, a consulta mais cara do Fluxo
+       depois da do WhatsApp. A conta é a mesma, montada por partes:
+         - `p`   = eu + quem responde a mim (@subs);
+         - `vis` = tarefas com responsável ou criador em `p`, mais as em que
+                   fui mencionado — exatamente `sqlListaDeTarefas`;
+         - a conclusão entra se a tarefa está em `vis` OU se quem concluiu
+           está em `p`.
+       Conferido no banco (327, 280, 303): mesmas linhas e mesmos pontos,
+       ~900 leituras em vez de ~8.400. Se a regra de `sqlListaDeTarefas`
+       mudar, esta aqui muda junto. */
     const filtro =
       papel === "gerente"
         ? "1=1"
-        : `(${sqlListaDeTarefas(papel, "t.")} OR c.pessoa_id=@eu
-            OR c.pessoa_id IN ${SQL_MEUS_SUBORDINADOS})`;
+        : `c.id IN (SELECT c1.id FROM gestor.conclusoes c1 JOIN vis ON vis.id = c1.tarefa_id
+                    UNION
+                    SELECT c2.id FROM gestor.conclusoes c2 JOIN p ON p.id = c2.pessoa_id)`;
+    const comAlcance =
+      papel === "gerente"
+        ? ""
+        : `WITH p AS (SELECT @eu AS id UNION SELECT id FROM @subs),
+           vis AS (SELECT t.id FROM gestor.tarefas t JOIN p ON t.responsavel_id = p.id
+                   UNION SELECT t.id FROM gestor.tarefas t JOIN p ON t.criado_por = p.id
+                   UNION SELECT m.tarefa_id FROM gestor.mencoes m WHERE m.pessoa_id = @eu)`;
 
     const req = pool.request().input("eu", sql.Int, eu);
 
@@ -81,6 +101,7 @@ export const listarConclusoes = createServerFn({ method: "POST" }).handler(
        sempre e a tela inicial ficaria mais lenta a cada ano de uso. */
     const r = await req.query(
       `${SQL_PREPARA_SUBORDINADOS}
+       ${comAlcance}
        SELECT c.id, c.tarefa_id, c.pessoa_id, c.pontos, c.prioridade, c.no_prazo, c.em
          FROM gestor.conclusoes c
          JOIN gestor.tarefas t ON t.id = c.tarefa_id
