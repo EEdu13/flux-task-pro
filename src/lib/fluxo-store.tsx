@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -26,6 +27,7 @@ import type {
   User,
 } from "./fluxo-types";
 import { priorityMultiplier } from "./fluxo-types";
+import { mesclarAtas } from "./atas-cache";
 import { createRoomCall } from "./livekit-token.functions";
 import { iamLogout, iamMe } from "@/integrations/iam/auth.functions";
 // Só a regra de iniciais, que é string pura e roda no navegador. Reescrevê-la
@@ -192,6 +194,8 @@ interface Store {
   addMissedCallNotification: (fromUserId: string, roomName: string, roomLabel: string) => void;
   // meeting minutes
   minutes: MeetingMinute[];
+  /** Relê as atas autorizadas, inclusive as recuperadas depois do login. */
+  recarregarAtas: () => Promise<void>;
   /** Com `id` de uma ata que já existe (o rascunho da reunião), atualiza a mesma. */
   saveMinute: (
     m: Omit<MeetingMinute, "id" | "createdAt" | "createdBy"> & { id?: string },
@@ -1290,6 +1294,25 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     [state.users, state.currentUserId],
   );
 
+  const atasSemConfirmacao = useRef(new Map<string, symbol>());
+  const recarregarAtas = useCallback(async () => {
+    const pessoa = currentUser.id;
+    if (!pessoa) return;
+    const noInicio = new Set(atasSemConfirmacao.current.keys());
+    const { listarAtas } = await import("@/lib/atas.functions");
+    const { atas } = await listarAtas();
+    setState((s) => {
+      if (s.currentUserId !== pessoa) return s;
+      const locais = s.minutes ?? [];
+      const preservar = new Set([
+        ...noInicio,
+        ...atasSemConfirmacao.current.keys(),
+        ...locais.filter((ata) => !ehGuid(ata.id)).map((ata) => ata.id),
+      ]);
+      return { ...s, minutes: mesclarAtas(atas, locais, preservar) };
+    });
+  }, [currentUser.id]);
+
   /**
    * Quem pode ser responsável por uma tarefa: a empresa inteira.
    *
@@ -1860,7 +1883,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
                 ).subirAnexos("comentario", gravado.id, arquivos)
               : [];
             if (enviados.some((x) => /^(audio|video)\//.test(x.type))) {
-              void import("@/components/midia-no-cartao").then((m) => m.renovarMidiaDaTarefa(taskId));
+              void import("@/components/midia-no-cartao").then((m) =>
+                m.renovarMidiaDaTarefa(taskId),
+              );
             }
 
             setState((s2) => ({
@@ -2427,6 +2452,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     closeQuickCreate: () => setQuickCreate({ open: false }),
 
     minutes: state.minutes ?? [],
+    recarregarAtas,
     saveMinute: (m) => {
       /* UUID na ata e em cada tópico. Os tópicos chegam com `top-mf3k2a` de
          `meeting-extras`, e é aqui que viram id de banco — normalizar na
@@ -2438,6 +2464,8 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
         createdBy: currentUser.id,
         topics: m.topics.map((t) => ({ ...t, id: ehGuid(t.id) ? t.id.toUpperCase() : novoId() })),
       };
+      const versaoDaGravacao = Symbol();
+      atasSemConfirmacao.current.set(minute.id.toLowerCase(), versaoDaGravacao);
       setState((s) => ({
         ...s,
         minutes: [minute, ...(s.minutes ?? []).filter((x) => x.id.toUpperCase() !== minute.id)],
@@ -2475,6 +2503,9 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
               topicos: minute.topics.map((t) => ({ id: t.id, text: t.text, kind: t.kind })),
             },
           });
+          if (atasSemConfirmacao.current.get(minute.id.toLowerCase()) === versaoDaGravacao) {
+            atasSemConfirmacao.current.delete(minute.id.toLowerCase());
+          }
         } catch (e) {
           console.warn("[fluxo] ata não gravou:", (e as Error)?.message);
         }

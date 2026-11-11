@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileText,
   Users as UsersIcon,
@@ -12,6 +12,7 @@ import {
   Search,
   FileDown,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -47,8 +48,33 @@ const kindStyle: Record<MinuteTopic["kind"], string> = {
 };
 
 function AtasPage() {
-  const { visibleMinutes, users, currentUser, minuteTopicToTask, deleteMinute, openTask, tasks } =
-    useFluxo();
+  const {
+    visibleMinutes,
+    recarregarAtas,
+    users,
+    currentUser,
+    minuteTopicToTask,
+    deleteMinute,
+    openTask,
+    tasks,
+  } = useFluxo();
+  const [carregandoAtas, setCarregandoAtas] = useState(true);
+  const [erroDasAtas, setErroDasAtas] = useState<string | null>(null);
+  const atualizarAtas = useCallback(async () => {
+    setCarregandoAtas(true);
+    setErroDasAtas(null);
+    try {
+      await recarregarAtas();
+    } catch (e) {
+      console.warn("[atas] lista não carregou:", (e as Error)?.message);
+      setErroDasAtas("Não foi possível buscar as atas. Use Atualizar para tentar novamente.");
+    } finally {
+      setCarregandoAtas(false);
+    }
+  }, [recarregarAtas]);
+  useEffect(() => {
+    void atualizarAtas();
+  }, [atualizarAtas]);
 
   /* PDF da ata (20/10/2026): a ata completa e o plano de ação, com o andamento
      de cada item que virou tarefa — quem ficou, prazo e situação de agora. */
@@ -146,15 +172,38 @@ function AtasPage() {
                   className="w-full rounded-md border border-border bg-background py-2 pl-8 pr-2 text-sm outline-none focus:border-primary"
                 />
               </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                {minutes.length} ata{minutes.length === 1 ? "" : "s"} · você é participante
+              <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  {minutes.length} ata{minutes.length === 1 ? "" : "s"} · você é participante
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void atualizarAtas()}
+                  disabled={carregandoAtas}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 font-semibold text-primary hover:bg-muted disabled:opacity-50"
+                  aria-label="Atualizar atas"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${carregandoAtas ? "animate-spin" : ""}`} />
+                  Atualizar
+                </button>
               </div>
+              {erroDasAtas && (
+                <p role="alert" className="mt-2 text-xs text-destructive">
+                  {erroDasAtas}
+                </p>
+              )}
             </div>
             <div className="max-h-[70vh] flex-1 overflow-y-auto">
               {filtered.length === 0 ? (
                 <div className="p-8 text-center text-sm text-muted-foreground">
                   <FileText className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                  Nenhuma ata ainda. Gere uma ao final de uma reunião.
+                  {carregandoAtas
+                    ? "Buscando suas atas…"
+                    : erroDasAtas
+                      ? "A lista de atas não pôde ser atualizada."
+                      : q.trim()
+                        ? "Nenhuma ata encontrada para esta busca."
+                        : "Nenhuma ata disponível para esta conta."}
                 </div>
               ) : (
                 filtered.map((m) => (
