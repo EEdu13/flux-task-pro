@@ -904,13 +904,13 @@ function DesktopDiagnostics() {
   );
 }
 
-/** Aciona o trator da Larsil puxando a faixa (o timer automático vem depois). */
+/** Aciona o trator da PlantSil puxando a faixa (o timer automático vem depois). */
 function TractorControl() {
   const [message, setMessage] = useState("Hora da pausa — beba água! 💧");
   const [dur, setDur] = useState(16);
   return (
     <div>
-      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">🚜 Trator da Larsil</h3>
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">🚜 Trator da PlantSil</h3>
       <p className="mb-3 text-[11px] text-muted-foreground">
         Um trator atravessa a tela puxando uma faixa com a sua mensagem. Depois a gente configura de
         quanto em quanto tempo ele passa sozinho.

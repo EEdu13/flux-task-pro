@@ -60,7 +60,7 @@ export const Route = createFileRoute("/mural")({
       { title: "Mural · SGL - CONECTA" },
       {
         name: "description",
-        content: "Notícias, comunicados e aniversariantes da Larsil.",
+        content: "Notícias, comunicados e aniversariantes da PlantSil.",
       },
     ],
   }),

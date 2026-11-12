@@ -377,7 +377,7 @@ export function SeloNovembroAzul() {
         color: AZUL_CLARO,
       }}
     >
-      🎗️ Novembro Azul — cuide da sua saúde. Prevenção salva vidas.
+      💙 Novembro Azul — cuide da sua saúde. Prevenção salva vidas.
     </motion.div>
   );
 }

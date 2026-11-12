@@ -115,7 +115,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         name: "description",
         content: "Visão executiva com foco de hoje, ranking e metas do time.",
       },
-      { name: "author", content: "Larsil" },
+      { name: "author", content: "PlantSil Florestal" },
       { property: "og:title", content: "SGL - CONECTA · Painel de desempenho" },
       {
         property: "og:description",
@@ -132,7 +132,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:image", content: `${ENDERECO_PUBLICO}/og-sgl.png` },
       { property: "og:image:width", content: "1200" },
       { property: "og:image:height", content: "630" },
-      { property: "og:image:alt", content: "SGL - CONECTA, da Larsil" },
+      { property: "og:image:alt", content: "SGL - CONECTA, da PlantSil Florestal" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "SGL - CONECTA · Painel de desempenho" },
       {
@@ -164,10 +164,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      // O símbolo da Larsil, o mesmo do app de desktop (src-tauri/icons). O
+      // O emblema da PlantSil, o mesmo do app de desktop (src-tauri/icons). O
       // `?v=` força o navegador a buscar de novo: ele guarda o ícone da aba por
       // muito tempo e seguiria mostrando o antigo, que era o do Lovable.
-      { rel: "icon", href: "/favicon.ico?v=sgl", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.ico?v=plantsil25", type: "image/x-icon" },
     ],
   }),
   shellComponent: RootShell,

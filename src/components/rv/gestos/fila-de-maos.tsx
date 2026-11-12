@@ -7,7 +7,7 @@
  * abaixam a própria mão.
  *
  * Fechada por padrão (uma linha: "✋ 1 Marcos · 2 Rafael"): o card aberto, opaco, tapava o
- * canto superior esquerdo do palco — os balões de quem senta à esquerda e a placa LARSIL.
+ * canto superior esquerdo do palco — os balões de quem senta à esquerda e a placa PLANTSIL.
  * Abre ao passar o mouse, ao focar pelo teclado ou num clique (que a deixa aberta).
  */
 import { useEffect, useState } from "react";

@@ -7,6 +7,16 @@ export const KEY = "fluxo.theme";
 export const PALETTE_KEY = "fluxo.palette";
 
 /**
+ * Virada para a marca PlantSil 25 anos (11/11/2026): uma vez por navegador, a
+ * paleta passa para "plantsil", não importa o que estava. Depois disso a
+ * escolha volta a ser livre — quem trocar de cor fica com a que trocou.
+ * `MARCA_REMOTA_KEY` faz o mesmo com a preferência guardada no banco, que
+ * senão traria a cor antiga de volta logo depois do login.
+ */
+export const MARCA_KEY = "fluxo.marca.plantsil25";
+const MARCA_REMOTA_KEY = "fluxo.marca.plantsil25.banco";
+
+/**
  * Script que aplica tema e paleta ANTES da primeira pintura.
  *
  * Os hooks abaixo rodam em `useEffect`, ou seja, depois que a tela já foi
@@ -15,6 +25,7 @@ export const PALETTE_KEY = "fluxo.palette";
  * e roda de forma síncrona, então a primeira pintura já sai certa.
  */
 export const SCRIPT_TEMA_INICIAL = `(function(){try{
+if(!localStorage.getItem(${JSON.stringify(MARCA_KEY)})){localStorage.setItem(${JSON.stringify(PALETTE_KEY)},"plantsil");localStorage.setItem(${JSON.stringify(MARCA_KEY)},"1");}
 var p=localStorage.getItem(${JSON.stringify(PALETTE_KEY)});
 if(p&&p!=="forest")document.documentElement.setAttribute("data-palette",p);
 var t=localStorage.getItem(${JSON.stringify(KEY)});
@@ -22,6 +33,7 @@ if(t!=="light")document.documentElement.classList.add("dark");
 }catch(e){}})()`;
 
 export type Palette =
+  | "plantsil"
   | "forest"
   | "ocean"
   | "sunset"
@@ -38,9 +50,15 @@ export const paletteOptions: {
   swatch: string[];
 }[] = [
   {
+    id: "plantsil",
+    name: "PlantSil 25 anos",
+    description: "Verde PlantSil, dourado e terra da marca nova. Padrão do SGL - CONECTA.",
+    swatch: ["#f4f1ea", "#1e3d2f", "#d9ae5c", "#8a5a2b"],
+  },
+  {
     id: "forest",
     name: "Forest Precision",
-    description: "Verde profundo com creme quente. Padrão do SGL - CONECTA.",
+    description: "Verde profundo com lima elétrico. O padrão antigo do SGL - CONECTA.",
     swatch: ["#f4efe4", "#2f4a34", "#c8e26a", "#1a2820"],
   },
   {
@@ -314,7 +332,22 @@ export async function sincronizarPreferencias(): Promise<void> {
     if (tema === "light" || tema === "dark") lojaTema.definir(tema, true);
 
     const paleta = guardadas.paleta;
-    if (paleta && paletteOptions.some((p) => p.id === paleta)) {
+    let marcaNoBanco = true;
+    try {
+      marcaNoBanco = localStorage.getItem(MARCA_REMOTA_KEY) === "1";
+      if (!marcaNoBanco) localStorage.setItem(MARCA_REMOTA_KEY, "1");
+    } catch {
+      /* sem armazenamento: segue o que o banco disser */
+    }
+    if (!marcaNoBanco) {
+      // Primeira vez depois da virada: o banco passa a guardar a PlantSil.
+      lojaPaleta.definir("plantsil", true);
+      if (paleta !== "plantsil") {
+        void import("@/lib/perfil.functions")
+          .then((m) => m.salvarPreferencia({ data: { chave: "paleta", valor: "plantsil" } }))
+          .catch(() => {});
+      }
+    } else if (paleta && paletteOptions.some((p) => p.id === paleta)) {
       lojaPaleta.definir(paleta as Palette, true);
     }
   } catch {

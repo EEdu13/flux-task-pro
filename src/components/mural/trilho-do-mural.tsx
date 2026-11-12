@@ -378,7 +378,7 @@ export function TrilhoDoMural({
                     key={t.id}
                     id={t.id}
                     nome={t.nome}
-                    detalhe={`${t.jaFez ? "Completou" : "Completa"} ${t.anos} ${t.anos === 1 ? "ano" : "anos"} de Larsil · ${t.dia}/${String(hojeBR.getMonth() + 1).padStart(2, "0")}`}
+                    detalhe={`${t.jaFez ? "Completou" : "Completa"} ${t.anos} ${t.anos === 1 ? "ano" : "anos"} de PlantSil · ${t.dia}/${String(hojeBR.getMonth() + 1).padStart(2, "0")}`}
                   />
                 )}
               />

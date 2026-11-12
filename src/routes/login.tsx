@@ -14,7 +14,9 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import larsilSimbolo from "@/assets/bolabranca.png";
+import plantsilEmblema from "@/assets/plantsil-emblema.svg";
+import plantsil25 from "@/assets/plantsil-25anos-escuro.svg";
+import { motion } from "framer-motion";
 import { useFluxo } from "@/lib/fluxo-store";
 import { UserAvatar } from "@/components/user-avatar";
 import { roleLabels } from "@/lib/fluxo-types";
@@ -42,14 +44,14 @@ import {
   SeloOutubroRosa,
   ehOutubro,
 } from "@/components/abertura-outubro-rosa";
+import { SeloNovembroAzul, ehNovembro } from "@/components/abertura-novembro-azul";
 import {
-  AberturaNovembroAzul,
-  OAzul,
-  SeloNovembroAzul,
-  ehNovembro,
-} from "@/components/abertura-novembro-azul";
+  AberturaPlantsil25,
+  FestaDeFundo,
+  OPlantsil,
+} from "@/components/abertura-plantsil-25";
 
-type Campanha = "rosa" | "azul";
+type Campanha = "rosa" | "azul" | "plantsil";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -58,7 +60,7 @@ export const Route = createFileRoute("/login")({
       {
         name: "description",
         content:
-          "SGL - CONECTA: o ambiente completo da Larsil para organizar tarefas, conectar equipes e transformar trabalho em resultado.",
+          "SGL - CONECTA: o ambiente completo da PlantSil Florestal para organizar tarefas, conectar equipes e transformar trabalho em resultado.",
       },
     ],
   }),
@@ -89,15 +91,15 @@ function LoginPage() {
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-[var(--auth-base)] text-white">
       <Aurora />
+      <FestaDeFundo />
       <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-10 px-6 py-12 lg:grid-cols-2 lg:gap-16 lg:py-0">
         {/* Em outubro, a abertura do Outubro Rosa termina na marca (16/10/2026). */}
-        {/* Em novembro, a do Novembro Azul (05/11/2026). */}
+        {/* Desde 11/11/2026, a da PlantSil 25 anos — que em novembro traz o
+            Novembro Azul junto (chuva azul, laço no selo e o selo do mês). */}
         {ehOutubro() ? (
           <AberturaOutubroRosa marca={<Marca campanha="rosa" />} />
-        ) : ehNovembro() ? (
-          <AberturaNovembroAzul marca={<Marca campanha="azul" />} />
         ) : (
-          <Marca />
+          <AberturaPlantsil25 marca={<Marca campanha={ehNovembro() ? "azul" : "plantsil"} />} />
         )}
         <div className="relative">
           <div
@@ -227,7 +229,7 @@ function FormIam() {
         onSubmit={submit}
         className="relative rounded-2xl border border-white/10 bg-[color-mix(in_oklab,var(--auth-base)_88%,white)]/90 p-8 backdrop-blur-xl"
       >
-        <Cabecalho subtitulo="Acesso corporativo Larsil" login={login} />
+        <Cabecalho subtitulo="Acesso corporativo PlantSil Florestal" login={login} />
 
         <div className="mb-1 flex items-center justify-between gap-2">
           <label
@@ -334,7 +336,7 @@ function FormIam() {
           )}
         </button>
 
-        {/* O símbolo da Larsil no lugar do escudo genérico que estava aqui.
+        {/* O emblema da PlantSil no lugar do escudo genérico que estava aqui.
 
             A frase fala dos "outros sistemas da empresa", e a marca ao lado é
             justamente o que responde qual empresa — vira informação, onde o
@@ -345,7 +347,7 @@ function FormIam() {
             quadrado (650x644) e já vem em branco puro, então cai certo num
             slot de ícone sem precisar de recorte nem filtro. */}
         <p className="mt-4 flex items-center justify-center gap-2 text-center text-[11px] text-white/50">
-          <img src={larsilSimbolo} alt="" aria-hidden className="h-4 w-4 opacity-80" />
+          <img src={plantsilEmblema} alt="" aria-hidden className="h-4 w-4" />
           Mesmo usuário e senha dos outros sistemas da empresa.
         </p>
       </form>
@@ -386,7 +388,7 @@ function FormDemo() {
       onSubmit={submit}
       className="relative rounded-2xl border border-white/10 bg-[color-mix(in_oklab,var(--auth-base)_88%,white)]/90 p-8 backdrop-blur-xl"
     >
-      <Cabecalho subtitulo="Workspace Larsil" />
+      <Cabecalho subtitulo="Workspace PlantSil" />
 
       <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/60">
         Perfil de acesso
@@ -768,88 +770,58 @@ function Aurora() {
 }
 
 function Marca({ campanha }: { campanha?: Campanha }) {
-  const AnelDoO = campanha === "azul" ? OAzul : ORosa;
+  /* Marca PlantSil 25 anos (11/11/2026). O logotipo comemorativo vem em cima,
+     como assinatura festiva; o título continua sendo o SGL - CONECTA, agora
+     com o emblema da PlantSil no lugar do "O" (as medidas em em, a folga de
+     0.056em e o overshoot de 0.76em seguem a conta antiga da Sora).
+
+     Em outubro o "O" ainda é o anel rosa da campanha; no resto do ano é o
+     emblema que pousa vindo da abertura (layoutId "conecta-o"). */
+  const comAbertura = campanha === "azul" || campanha === "plantsil";
   return (
-    <div className="space-y-8">
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs backdrop-blur">
+    <div className="space-y-7">
+      <motion.img
+        src={plantsil25}
+        alt="PlantSil Florestal · 25 anos"
+        className="h-auto w-full max-w-md"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.15 }}
+        style={{ filter: "drop-shadow(0 6px 24px rgba(0,0,0,0.35))" }}
+      />
+      <div className="inline-flex items-center gap-2 rounded-full border border-[#D9AE5C]/40 bg-[#D9AE5C]/10 px-3 py-1 text-xs text-[#f3dca6] backdrop-blur">
         <Sparkles className="h-3.5 w-3.5" />
-        <span>Task OS · v2.0</span>
+        <span>25 anos plantando futuro · PlantSil Florestal</span>
       </div>
       <h1 className="text-5xl font-semibold leading-tight tracking-tight sm:text-6xl">
         SGL -{" "}
-        {/* A logo é o "O" de CONECTA. Ela volta a ser LETRA, não ornamento:
-            redonda, no lugar de uma letra redonda — o mesmo trabalho que fazia
-            no título antigo, agora dentro da palavra.
-
-            `alt="O"` não é preguiça: para quem usa leitor de tela a imagem
-            precisa valer o que ela substitui, e aqui ela substitui uma letra.
-            Assim o título continua sendo lido como "SGL - CONECTA".
-
-            As medidas em `em` e não em pixel: a logo acompanha sozinha o salto
-            de text-5xl para text-6xl e qualquer mudança futura de corpo.
-
-            Os números saem da própria fonte, lidos da tabela OS/2 do arquivo
-            woff2 da Sora: unitsPerEm 1000, altura de caixa alta 730 — ou seja,
-            0.730em exatos. Vale igual aqui: CONECTA é tudo em caixa alta, e a
-            imagem tem os dois "C" ao lado como referência de altura.
-
-            A logo fica um fio acima disso, em 0.76em. Letra redonda precisa
-            passar da linha das letras retas para PARECER do mesmo tamanho: é o
-            "overshoot" que todo desenhista de tipo aplica no O, no C e no G.
-            Cortada na altura exata da caixa alta, ela pareceria menor que os
-            "C" vizinhos. Os 4% aqui são um pouco mais que os 1 a 3% de um "O"
-            de texto, e de propósito — o desenho da marca tem vazados internos,
-            o que a faz pesar menos que um glifo maciço do mesmo tamanho.
-
-            O -0.015em de alinhamento é metade da sobra: assim ela se reparte
-            entre acima da caixa alta e abaixo da linha de base, como no desenho
-            de um "O" de verdade. Sem isso a imagem sentaria com a base na linha
-            e toda a sobra iria para cima.
-
-            A margem de 0.056em existe porque uma LETRA carrega folga embutida e
-            uma IMAGEM não. Todo glifo reserva um vão de cada lado (o
-            "sidebearing") — é ele que impede as letras de se encostarem. O
-            bolabranca.png não tem nada disso: a marca sangra nas quatro bordas
-            do arquivo (medido: 650x644, caixa pintada 650x644, zero de folga),
-            então ela colava no "C" anterior.
-
-            O valor sai da própria Sora, lido do hmtx do woff2: o "O" tem
-            advance 865 e lsb 56 em unitsPerEm 1000 — 0.056em de folga de cada
-            lado. De quebra a conta fecha: 865 − 56 − 56 = 753, ou seja, a
-            largura PINTADA do "O" é 0.753em, praticamente os 0.76em da imagem.
-            O tamanho já estava certo; faltava só o vão.
-
-            Simétrico de propósito. A sensação de que o lado esquerdo é mais
-            apertado vem do desenho da fonte, não daqui: o "N" que vem depois
-            tem lsb de 106 (0.106em), quase o dobro do "O", enquanto o "C" que
-            vem antes fecha com bem menos. Um "O" de verdade ali sofreria a
-            mesma diferença — é o espacejamento que o desenhista quis para
-            "CON".
-
-            Ela fica DENTRO do span do gradiente de propósito: `bg-clip-text`
-            recorta o fundo do próprio span e não toca em elementos filhos, então
-            o degradê continua atravessando o "C" e o "NECTA" como se a palavra
-            fosse inteira, e a marca passa branca e acesa por cima dele. */}
         <span
           className="bg-clip-text text-transparent"
           style={{
-            backgroundImage: "linear-gradient(90deg, var(--auth-deep), var(--auth-glow))",
+            backgroundImage:
+              "linear-gradient(90deg, color-mix(in oklab, var(--auth-glow) 30%, white), var(--auth-glow))",
           }}
         >
-          {campanha ? (
-            /* Campanha do mês: o círculo da abertura pousa aqui (layoutId) e
-               as letras chegam dos lados depois dele. */
+          {comAbertura ? (
             <>
               <LetrasQueChegam de="esq">C</LetrasQueChegam>
               <span style={{ margin: "0 0.056em" }}>
-                <AnelDoO>
+                <OPlantsil azul={campanha === "azul"} />
+              </span>
+              <LetrasQueChegam de="dir">NECTA</LetrasQueChegam>
+            </>
+          ) : campanha === "rosa" ? (
+            <>
+              <LetrasQueChegam de="esq">C</LetrasQueChegam>
+              <span style={{ margin: "0 0.056em" }}>
+                <ORosa>
                   <img
-                    src={larsilSimbolo}
+                    src={plantsilEmblema}
                     alt="O"
                     className="block"
                     style={{ height: "0.76em", width: "0.76em" }}
                   />
-                </AnelDoO>
+                </ORosa>
               </span>
               <LetrasQueChegam de="dir">NECTA</LetrasQueChegam>
             </>
@@ -857,7 +829,7 @@ function Marca({ campanha }: { campanha?: Campanha }) {
             <>
               C
               <img
-                src={larsilSimbolo}
+                src={plantsilEmblema}
                 alt="O"
                 className="inline-block"
                 style={{
@@ -866,7 +838,7 @@ function Marca({ campanha }: { campanha?: Campanha }) {
                   verticalAlign: "-0.015em",
                   margin: "0 0.056em",
                   filter:
-                    "drop-shadow(0 0 10px color-mix(in oklab, var(--auth-glow) 55%, transparent)) drop-shadow(0 0 26px color-mix(in oklab, var(--auth-glow) 28%, transparent))",
+                    "drop-shadow(0 0 10px color-mix(in oklab, var(--auth-glow) 55%, transparent))",
                 }}
               />
               NECTA
@@ -875,8 +847,8 @@ function Marca({ campanha }: { campanha?: Campanha }) {
         </span>
       </h1>
       <p className="max-w-lg text-sm leading-relaxed text-white/70">
-        O ambiente completo da Larsil para organizar tarefas, conectar equipes e transformar
-        trabalho em resultado.
+        O ambiente completo da PlantSil Florestal para organizar tarefas, conectar equipes e
+        transformar trabalho em resultado.
       </p>
       {campanha === "rosa" && <SeloOutubroRosa />}
       {campanha === "azul" && <SeloNovembroAzul />}
@@ -896,27 +868,11 @@ function Marca({ campanha }: { campanha?: Campanha }) {
         ))}
       </ul>
 
-      {/* Assinatura da empresa.
-
-          Fica por último, e isso é a decisão principal: esta tela vende o
-          Fluxo — o título é o herói. A Larsil é quem assina, não quem se
-          anuncia. Na ordem de leitura, o último lugar é exatamente o peso
-          que uma assinatura tem.
-
-          Também é de propósito que não esteja dentro do cartão de login.
-          Logo de empresa colada em campo de senha é a composição que todo
-          phishing imita; manter a marca longe da área de credencial é hábito
-          barato e que não custa nada aqui.
-
-          Texto e não marca: o símbolo já aparece duas vezes nesta tela, sobre
-          o título e no rodapé do cartão. Uma terceira imagem da mesma coisa
-          viraria repetição; a linha de direitos faz um trabalho que nenhuma
-          delas fazia.
-
-          O ano sai do relógio em vez de estar escrito. Rodapé com ano fixo
-          envelhece no dia 1º de janeiro, e ninguém lembra de voltar aqui. */}
+      {/* Assinatura: fica por último e fora do cartão de login (logo colada em
+          campo de senha é o que phishing imita). O ano sai do relógio. */}
       <p className="pt-2 text-[11px] text-white/40">
-        © {new Date().getFullYear()} Larsil · Todos os direitos reservados
+        © {new Date().getFullYear()} PlantSil Florestal · Silvicultura de qualidade · Todos os
+        direitos reservados
       </p>
     </div>
   );

@@ -359,8 +359,8 @@ async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
       saida.push({
         chave: `casa:${p.id}:${hoje.ano}`,
         selo: "tempo_casa",
-        titulo: `${anos} ${anos === 1 ? "ano" : "anos"} de Larsil 🎉`,
-        texto: `${nomeCurto(p.nome)} completa hoje ${anos} ${anos === 1 ? "ano" : "anos"} de Larsil. Obrigado por fazer parte!`,
+        titulo: `${anos} ${anos === 1 ? "ano" : "anos"} de PlantSil 🎉`,
+        texto: `${nomeCurto(p.nome)} completa hoje ${anos} ${anos === 1 ? "ano" : "anos"} de PlantSil. Obrigado por fazer parte!`,
         pessoas: [p.id],
       });
     }
@@ -370,7 +370,7 @@ async function calcularPublicacoes(hoje: DiaBR): Promise<Publicacao[]> {
         chave: `boasvindas:${p.id}`,
         selo: "boas_vindas",
         titulo: `Boas-vindas, ${nomeCurto(p.nome)}! 👋`,
-        texto: `${nomeCurto(p.nome)} chegou à Larsil em ${ddmm(admissaoMs)}. Deixe um oi nos comentários!`,
+        texto: `${nomeCurto(p.nome)} chegou à PlantSil em ${ddmm(admissaoMs)}. Deixe um oi nos comentários!`,
         pessoas: [p.id],
       });
     }

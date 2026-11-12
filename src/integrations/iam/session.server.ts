@@ -19,16 +19,36 @@ const FALLBACK_MAX_AGE_S = 8 * 3600;
  * evitando o caso chato de sessão "viva" no navegador com credencial já vencida.
  * Quem valida de verdade é a IAM, no /auth/resolve.
  */
-function expDoToken(token: string): number | null {
+function claimNumerica(token: string, nome: "exp" | "iat"): number | null {
   try {
     const payload = token.split(".")[1];
     if (!payload) return null;
     const json = Buffer.from(payload, "base64url").toString("utf8");
-    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
-    return typeof exp === "number" && Number.isFinite(exp) ? exp : null;
+    const valor = (JSON.parse(json) as Record<string, unknown>)[nome];
+    return typeof valor === "number" && Number.isFinite(valor) ? valor : null;
   } catch {
     return null;
   }
+}
+
+function expDoToken(token: string): number | null {
+  return claimNumerica(token, "exp");
+}
+
+/**
+ * Sessões emitidas antes deste instante deixam de valer e a pessoa volta ao
+ * login. Para derrubar todo mundo de novo (troca de marca, incidente), basta
+ * avançar esta data e publicar.
+ *
+ * 12/11/2026: troca para PlantSil 25 anos — todos entram de novo e veem a
+ * abertura nova. Token sem `iat` legível passa (não dá para saber a idade, e
+ * prender alguém num laço de login seria pior).
+ */
+const SESSOES_VALIDAS_DESDE_S = Math.floor(Date.parse("2026-11-12T13:21:46Z") / 1000);
+
+function emitidoAntesDoCorte(token: string): boolean {
+  const iat = claimNumerica(token, "iat");
+  return iat !== null && iat < SESSOES_VALIDAS_DESDE_S;
 }
 
 /**
@@ -63,7 +83,12 @@ export function definirSessao(token: string): void {
 
 export function lerSessao(): string | null {
   const token = getCookie(IAM_COOKIE);
-  return token && token.length > 0 ? token : null;
+  if (!token) return null;
+  if (emitidoAntesDoCorte(token)) {
+    limparSessao();
+    return null;
+  }
+  return token;
 }
 
 export function limparSessao(): void {

@@ -1,9 +1,9 @@
 import { useEffect, useRef, type RefObject } from "react";
-import larsilSimbolo from "@/assets/bolabranca.png";
+import plantsilEmblema from "@/assets/plantsil-emblema.svg";
 import type { LeituraDoMicrofone } from "@/lib/use-microfone";
 
 /**
- * A faixa de voz da Tarefa por voz: a logo da Larsil no centro, com o anel de
+ * A faixa de voz da Tarefa por voz: o emblema da PlantSil no centro, com o anel de
  * plasma em volta, e a voz se espalhando dela para os dois lados — ondas e
  * barras de espectro que vão até as bordas, na largura da caixa de cima.
  *
@@ -562,8 +562,8 @@ export function FaixaDeVoz({
       <canvas ref={canvasRef} aria-hidden="true" className="absolute left-0 top-0" />
       <img
         ref={logoRef}
-        src={larsilSimbolo}
-        alt="Larsil"
+        src={plantsilEmblema}
+        alt="PlantSil Florestal"
         draggable={false}
         className="pointer-events-none absolute left-1/2 top-1/2 select-none"
         style={{ width: logo, height: logo, transform: "translate(-50%, -50%)" }}

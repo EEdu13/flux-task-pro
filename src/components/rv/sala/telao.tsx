@@ -85,12 +85,14 @@ function desenharEspera(
   // Topo: marca, nome da sala e relógio.
   g.textBaseline = "middle";
   g.fillStyle = "#e7dcc6";
-  g.font = `800 30px ${FONTE}`;
+  g.font = `800 26px ${FONTE}`;
   g.textAlign = "left";
-  g.fillText("LARSIL", 40, 46);
+  g.fillText("PLANT", 40, 46);
+  g.fillStyle = "#d9ae5c";
+  g.fillText("SIL", 40 + g.measureText("PLANT").width, 46);
   g.fillStyle = "rgba(231,220,198,0.75)";
   g.font = `500 26px ${FONTE}`;
-  g.fillText(cortarTexto(g, nomeDaSala, 560), 190, 47);
+  g.fillText(cortarTexto(g, nomeDaSala, 540), 210, 47);
   g.textAlign = "right";
   g.fillStyle = "#f8fafc";
   g.font = `600 32px ${FONTE}`;

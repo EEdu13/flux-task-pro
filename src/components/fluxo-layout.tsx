@@ -4,7 +4,7 @@ import { MEU_MES_LIBERADO } from "@/lib/meu-mes-liberado";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TravaScroll } from "@/components/trava-scroll";
-import larsilSimbolo from "@/assets/bolabranca.png";
+import plantsilEmblema from "@/assets/plantsil-emblema.svg";
 import {
   BarChart3,
   Bell,
@@ -609,8 +609,8 @@ export function FluxoLayout({
               ou vira uma mancha sem foco. Proporcional às medidas do login
               (10 e 26px), ajustada para os 36px daqui. */}
           <img
-            src={larsilSimbolo}
-            alt="Larsil"
+            src={plantsilEmblema}
+            alt="PlantSil Florestal"
             className="h-9 w-9 shrink-0 object-contain"
             style={{
               filter:
@@ -1016,7 +1016,7 @@ export function FluxoLayout({
           </button>
           <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
             <Building2 className="hidden h-4 w-4 sm:block" />
-            <span className="hidden sm:inline">Larsil</span>
+            <span className="hidden sm:inline">PlantSil</span>
             {breadcrumb && (
               <>
                 <span className="hidden sm:inline">/</span>

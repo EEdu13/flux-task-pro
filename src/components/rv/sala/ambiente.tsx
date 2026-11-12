@@ -315,7 +315,7 @@ function Forro() {
 
 /* ───────── Janelas com vista ───────── */
 
-/** Céu, morro e talhões de eucalipto — a vista da Larsil, desenhada por código. */
+/** Céu, morro e talhões de eucalipto — a vista da PlantSil, desenhada por código. */
 function desenharPaisagem(g: CanvasRenderingContext2D, w: number, h: number) {
   const ceu = g.createLinearGradient(0, 0, 0, h * 0.6);
   ceu.addColorStop(0, "#6fb6e8");
@@ -476,14 +476,18 @@ function desenharLogo(g: CanvasRenderingContext2D, w: number, h: number) {
   g.fillStyle = "#13352a";
   g.fillRect(0, 0, w, h);
   g.fillStyle = "#e7dcc6";
-  g.font = `800 ${Math.round(h * 0.62)}px ${FONTE}`;
+  g.font = `800 ${Math.round(h * 0.52)}px ${FONTE}`;
   g.textAlign = "center";
   g.textBaseline = "middle";
   // Letras espaçadas à mão (letterSpacing do canvas ainda não é universal).
-  const texto = "LARSIL";
-  const passo = w * 0.13;
+  // PLANT em creme e SIL em dourado, como no logotipo (11/11/2026).
+  const texto = "PLANTSIL";
+  const passo = w * 0.105;
   const x0 = w / 2 - (passo * (texto.length - 1)) / 2;
-  for (let i = 0; i < texto.length; i++) g.fillText(texto[i], x0 + i * passo, h * 0.54);
+  for (let i = 0; i < texto.length; i++) {
+    g.fillStyle = i >= 5 ? "#d9ae5c" : "#e7dcc6";
+    g.fillText(texto[i], x0 + i * passo, h * 0.54);
+  }
 }
 
 function Logo() {
