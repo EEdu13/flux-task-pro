@@ -122,10 +122,11 @@ function comSufixo(nome: string): string {
 /**
  * Baixa o anexo e AVISA onde ele foi parar (pedido do usuário, 09/10/2026).
  *
- * No app de mesa a 0.2.2 grava direto em Downloads pelo comando
- * `save_attachment_file` e devolve o caminho — o aviso mostra o caminho e
- * oferece "Mostrar na pasta". O app instalado antes da 0.2.2 não tem o
- * comando: aí cai no "abrir no programa", de onde a pessoa salva.
+ * No app de mesa o próprio app grava em Downloads (`gravarNoApp`, em
+ * `@/lib/baixar-arquivo`) e devolve o caminho — o aviso mostra o caminho e
+ * oferece "Mostrar na pasta". Quando o app não grava aquele anexo (instalado
+ * antes da 0.2.2, tipo fora da lista dele, ou acima do teto: 12 MB antes da
+ * 0.2.3), vai pelo download comum do servidor ou, sem endereço, abre no programa.
  *
  * No navegador o download é do próprio navegador, que não conta o caminho;
  * o aviso diz o nome e a pasta de costume.
@@ -144,41 +145,31 @@ export function downloadAttachment(a: { dataUrl: string; name: string }) {
     const { toast } = await import("sonner");
     try {
       if (isTauri()) {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const data = Array.from(new Uint8Array(await (await blobDoAnexo(a.dataUrl)).arrayBuffer()));
-        let caminho: string;
-        try {
-          caminho = await invoke<string>("save_attachment_file", { name: a.name, data });
-        } catch (e) {
-          if (/not allowed|not found|unknown|denied|permiss/i.test(String(e))) {
-            /* App instalado antes da 0.2.2 (sem o comando). O download comum
-               do servidor ele entende: o WebView2 grava em Downloads e mostra
-               o próprio balão. Só o anexo recém-escolhido, que ainda não subiu
-               (data:), não tem endereço — esse abre no programa. */
-            if (!ehDataUrl(a.dataUrl)) {
-              baixarPeloServidor(a.dataUrl);
-              toast.success(`Baixando: ${a.name}`, {
-                description: "O arquivo vai para a pasta Downloads do computador.",
-                duration: 6000,
-              });
-            } else {
-              abrirNoPrograma(a);
-            }
-            return;
+        const { gravarNoApp, mostrarNaPasta, pastaDe } = await import("@/lib/baixar-arquivo");
+        const r = await gravarNoApp(a.name, await blobDoAnexo(a.dataUrl));
+        if (!r.ok) {
+          if (r.motivo === "erro") throw r.erro;
+          /* O app não grava este anexo (sem o comando, tipo fora da lista dele ou
+             acima do teto). O download comum do servidor ele entende: o WebView2
+             grava em Downloads e mostra o próprio balão. Só o anexo recém-escolhido,
+             que ainda não subiu (data:), não tem endereço — esse abre no programa. */
+          if (!ehDataUrl(a.dataUrl)) {
+            baixarPeloServidor(a.dataUrl);
+            toast.success(`Baixando: ${a.name}`, {
+              description: "O arquivo vai para a pasta Downloads do computador.",
+              duration: 6000,
+            });
+          } else {
+            abrirNoPrograma(a);
           }
-          throw e;
+          return;
         }
-        const pasta = caminho.slice(
-          0,
-          Math.max(caminho.lastIndexOf("\\"), caminho.lastIndexOf("/")),
-        );
+        const caminho = r.caminho;
+        const pasta = pastaDe(caminho);
         toast.success(`Baixado: ${caminho.slice(pasta.length + 1)}`, {
           description: `Salvo na pasta ${pasta}`,
           duration: 8000,
-          action: {
-            label: "Mostrar na pasta",
-            onClick: () => void invoke("show_in_folder", { path: caminho }).catch(avisarFalha),
-          },
+          action: { label: "Mostrar na pasta", onClick: () => mostrarNaPasta(caminho) },
         });
         return;
       }

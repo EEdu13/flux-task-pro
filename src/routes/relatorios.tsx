@@ -1,4 +1,4 @@
-import { baixarXlsx } from "@/lib/planilha-xlsx";
+import { baixarXlsx } from "@/lib/baixar-arquivo";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -358,7 +358,9 @@ function Relatorios() {
           seconds: s.seconds,
         };
       });
-    baixarXlsx(`fluxo-sessoes-${sufixo}`, [{ nome: "Sessões", linhas: linhasDeSessoes(rows) }]);
+    void baixarXlsx(`fluxo-sessoes-${sufixo}`, [
+      { nome: "Sessões", linhas: linhasDeSessoes(rows) },
+    ]);
   };
 
   const exportarResumo = () => {
@@ -410,7 +412,7 @@ function Relatorios() {
           lastAt: r.lastAt,
         };
       });
-    baixarXlsx(`fluxo-tempo-por-tarefa-${sufixo}`, [
+    void baixarXlsx(`fluxo-tempo-por-tarefa-${sufixo}`, [
       { nome: "Tempo por tarefa", linhas: linhasDeResumo(rows) },
     ]);
   };

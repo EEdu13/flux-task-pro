@@ -19,6 +19,7 @@ import type {
 import { Captions, Circle, Square } from "lucide-react";
 import { LegendaDaReuniao } from "@/components/legenda-da-reuniao";
 import { toast } from "sonner";
+import { isTauri } from "@/lib/desktop";
 import { updateActiveSpeakers } from "@/lib/livekit-token.functions";
 import { criarCompositor, type Compositor, type FonteDeVideo } from "@/lib/composicao-gravacao";
 import { useAtaDaReuniao } from "@/lib/use-ata-da-reuniao";
@@ -73,8 +74,78 @@ function useActiveSpeakerBroadcast(roomName: string) {
  * clique da pessoa é um gesto de usuário de verdade, que é o que as políticas de
  * download costumam exigir. O `revoke` foi de 5s para 2min pelo mesmo motivo —
  * com 5 segundos o botão de repetir apontaria para um endereço já morto.
+ *
+ * No app de mesa (12/11/2026) o link não serve — o WebView2 o ignora —, e quem
+ * grava é o próprio app, direto em Downloads (`gravarNoApp`, até 4 GB para
+ * vídeo: uma reunião de uma hora passa fácil de 1 GB). O aviso mostra o
+ * andamento e, no fim, a pasta. O app anterior à 0.2.3 não grava vídeo: ali
+ * sobra o link, e o aviso diz o que fazer.
  */
 function entregarGravacao(blob: Blob, nome: string): void {
+  if (isTauri()) {
+    void salvarGravacaoNoApp(blob, nome);
+    return;
+  }
+  entregarGravacaoPorLink(blob, nome);
+}
+
+async function salvarGravacaoNoApp(blob: Blob, nome: string): Promise<void> {
+  const id = "gravacao-reuniao";
+  const mb = (blob.size / 1024 / 1024).toFixed(1);
+  const descricao = `${nome} (${mb} MB). Não feche o CONECTA até terminar.`;
+  toast.loading("Salvando a gravação…", { id, description: descricao, duration: Infinity });
+  // Fechar no meio do salvar perderia a gravação: o navegador pergunta antes.
+  const perguntar = (e: BeforeUnloadEvent) => e.preventDefault();
+  window.addEventListener("beforeunload", perguntar);
+  try {
+    await salvarGravacao(blob, nome, id, mb, descricao);
+  } finally {
+    window.removeEventListener("beforeunload", perguntar);
+  }
+}
+
+async function salvarGravacao(
+  blob: Blob,
+  nome: string,
+  id: string,
+  mb: string,
+  descricao: string,
+): Promise<void> {
+  const { fraseDeGrandeDemais, gravarNoApp, mostrarNaPasta, pastaDe } =
+    await import("@/lib/baixar-arquivo");
+  let mostrado = 0;
+  const r = await gravarNoApp(nome, blob, (fracao) => {
+    const pct = Math.floor(fracao * 100);
+    if (pct - mostrado < 5) return;
+    mostrado = pct;
+    toast.loading(`Salvando a gravação… ${pct}%`, {
+      id,
+      description: descricao,
+      duration: Infinity,
+    });
+  });
+  if (r.ok) {
+    const pasta = pastaDe(r.caminho);
+    toast.success("Gravação salva.", {
+      id,
+      duration: 30_000,
+      description: `${r.caminho.slice(pasta.length + 1)} (${mb} MB), na pasta ${pasta}.`,
+      action: { label: "Mostrar na pasta", onClick: () => mostrarNaPasta(r.caminho) },
+    });
+    return;
+  }
+  if (r.motivo === "erro") console.warn("[gravação] o app não salvou", nome, r.erro);
+  const aviso =
+    r.motivo === "grande"
+      ? fraseDeGrandeDemais(r.limite, "use o botão: o download pode não começar no app de mesa.")
+      : r.motivo === "erro"
+        ? "O app não conseguiu salvar. Use o botão; se nada aparecer em Downloads, grave a próxima pelo CONECTA no navegador."
+        : "Esta versão do app de mesa não salva gravação: use o botão e, se nada aparecer em Downloads, grave a próxima pelo navegador. A versão nova do app chega sozinha.";
+  entregarGravacaoPorLink(blob, nome, aviso);
+}
+
+/** O caminho do navegador (e o último recurso no app): o link de download, com o botão de repetir. */
+function entregarGravacaoPorLink(blob: Blob, nome: string, aviso?: string): void {
   const url = URL.createObjectURL(blob);
   const baixar = () => {
     const a = document.createElement("a");
@@ -89,7 +160,7 @@ function entregarGravacao(blob: Blob, nome: string): void {
   toast.success("Gravação encerrada.", {
     id: "gravacao-reuniao",
     duration: 30_000,
-    description: `${nome} (${mb} MB). Se o download não começou sozinho, use o botão.`,
+    description: aviso ?? `${nome} (${mb} MB). Se o download não começou sozinho, use o botão.`,
     action: { label: "Baixar", onClick: baixar },
   });
   window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
@@ -105,6 +176,15 @@ function useMeetingRecorder(roomName: string) {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const compositorRef = useRef<Compositor | null>(null);
+
+  /* Fechar a aba (ou a janela da chamada, ou F5) no meio da gravação perderia tudo o que foi
+     gravado, que só vira arquivo ao parar: o navegador pergunta antes (12/11/2026). */
+  useEffect(() => {
+    if (!recording) return;
+    const perguntar = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", perguntar);
+    return () => window.removeEventListener("beforeunload", perguntar);
+  }, [recording]);
 
   const stop = useCallback(() => {
     const rec = recorderRef.current;

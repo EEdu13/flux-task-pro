@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { baixarArquivo } from "@/lib/baixar-arquivo";
 import { ataTemConteudo, type AtaAoVivo } from "@/lib/ata-ao-vivo";
 import type { AtaDaReuniao } from "@/lib/use-ata-da-reuniao";
 import { ReprodutorDeAudio } from "@/components/reprodutor-de-midia";
@@ -302,13 +303,9 @@ export function PainelDaAta({
       .then(() => toast.success("Ata copiada"))
       .catch(() => {});
   };
+  // No app de mesa grava em Downloads pelo comando do app (o link ele ignora) — ver `baixar-arquivo.ts`.
   const baixar = () => {
-    const url = URL.createObjectURL(new Blob([ata.markdown()], { type: "text/markdown" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = nomeDoArquivo;
-    a.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    void baixarArquivo(nomeDoArquivo, new Blob([ata.markdown()], { type: "text/markdown" }));
   };
   const salvar = async () => {
     setSalvando(true);

@@ -1,4 +1,5 @@
-import { baixarXlsx, type Celula } from "@/lib/planilha-xlsx";
+import { baixarXlsx } from "@/lib/baixar-arquivo";
+import type { Celula } from "@/lib/planilha-xlsx";
 import {
   freqLabels,
   priorityLabels,
@@ -17,6 +18,9 @@ import {
  * as concluídas e as arquivadas, que o quadro não mostra — e baixa uma
  * planilha .xlsx com duas abas: "Tarefas" (uma linha por tarefa, tudo o que
  * se sabe dela) e "Resumo" (os totais). Devolve quantas tarefas saíram.
+ *
+ * O aviso de "baixada" é dado por quem baixa (`baixarXlsx`): no app de mesa ele
+ * diz em que pasta a planilha foi gravada, e não aparece se o app não salvou.
  */
 export async function exportarMinhasTarefasXlsx(nomeDaPessoa: string): Promise<number> {
   const { exportarMinhasTarefas } = await import("@/lib/tarefas.functions");
@@ -91,9 +95,14 @@ export async function exportarMinhasTarefasXlsx(nomeDaPessoa: string): Promise<n
   ];
 
   const hoje = new Date().toLocaleDateString("pt-BR").replace(/\//g, "-");
-  baixarXlsx(`minhas-tarefas-${hoje}`, [
-    { nome: "Tarefas", linhas },
-    { nome: "Resumo", linhas: resumo },
-  ]);
-  return tarefas.length;
+  const n = tarefas.length;
+  await baixarXlsx(
+    `minhas-tarefas-${hoje}`,
+    [
+      { nome: "Tarefas", linhas },
+      { nome: "Resumo", linhas: resumo },
+    ],
+    { titulo: `Planilha com ${n} ${n === 1 ? "tarefa" : "tarefas"} baixada` },
+  );
+  return n;
 }

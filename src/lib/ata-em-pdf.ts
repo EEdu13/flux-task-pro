@@ -11,6 +11,7 @@
  * O jsPDF entra só no clique (import dinâmico): ninguém carrega o PDF para
  * abrir a tela de atas.
  */
+import { baixarArquivo } from "@/lib/baixar-arquivo";
 
 export interface ItemDoPlano {
   tipo: string;
@@ -224,5 +225,11 @@ export async function exportarAtaEmPdf(ata: AtaParaPdf): Promise<void> {
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase();
-  doc.save(`ata-${nome || "reuniao"}-${quando.toISOString().slice(0, 10)}.pdf`);
+  /* Não o `doc.save` do jsPDF: ele baixa por link, que o app de mesa ignora
+     (05/11/2026). O aviso de "baixado" também é de quem baixa: no app ele diz a pasta. */
+  await baixarArquivo(
+    `ata-${nome || "reuniao"}-${quando.toISOString().slice(0, 10)}.pdf`,
+    doc.output("blob"),
+    { titulo: "PDF da ata baixado" },
+  );
 }

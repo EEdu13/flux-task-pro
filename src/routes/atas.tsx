@@ -105,7 +105,7 @@ function AtasPage() {
           };
         }),
       });
-      toast.success("PDF da ata baixado");
+      // O aviso de "baixado" (no app de mesa, com a pasta) vem de `baixarArquivo`.
     } catch (e) {
       console.warn("[atas] PDF não saiu:", (e as Error)?.message);
       toast.error("Não foi possível gerar o PDF agora. Tente de novo.");

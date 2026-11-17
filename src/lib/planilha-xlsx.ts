@@ -12,8 +12,48 @@
  * vai como número (dá para somar no Excel); `Date` vira data de verdade.
  */
 
-export type Celula = string | number | Date | null | undefined;
-export type Aba = { nome: string; linhas: Celula[][] };
+/**
+ * `{ data }`: só a data, sem a hora (dd/mm/aaaa) — o PDF → Excel do conversor (11/11/2026). Um
+ * `Date` solto continua saindo com a hora, como sempre.
+ *
+ * `{ numero, formato }` (12/11/2026): número com cara de dinheiro — "decimal" sai como 1.234,56 e
+ * "moeda" como R$ 1.234,56 —, e continua número, que dá para somar.
+ */
+export type Celula =
+  | string
+  | number
+  | Date
+  | { data: Date }
+  | { numero: number; formato: "decimal" | "moeda" }
+  | null
+  | undefined;
+
+/** Um bloco de células que vira uma só no Excel (0 = primeira linha e primeira coluna). */
+export type Mescla = { linha: number; coluna: number; linhas: number; colunas: number };
+
+/**
+ * `cabecalho: false` (o PDF → Excel do conversor, 11/11/2026): a primeira linha sai como as
+ * outras — sem negrito, sem congelar e sem filtro. Sem o campo, ela é o cabeçalho, como sempre.
+ * `mesclas` (12/11/2026): as células mescladas, como na tabela do PDF.
+ */
+export type Aba = { nome: string; linhas: Celula[][]; cabecalho?: boolean; mesclas?: Mescla[] };
+
+function soData(v: Celula): v is { data: Date } {
+  return typeof v === "object" && v !== null && "data" in v && v.data instanceof Date;
+}
+
+function comFormato(v: Celula): v is { numero: number; formato: "decimal" | "moeda" } {
+  return typeof v === "object" && v !== null && "numero" in v && typeof v.numero === "number";
+}
+
+/** Como o número aparece no Excel em português, para estimar a largura da coluna. */
+function comoAparece(v: { numero: number; formato: "decimal" | "moeda" }): string {
+  const texto = v.numero.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return v.formato === "moeda" ? `R$ ${texto}` : texto;
+}
 
 const enc = new TextEncoder();
 
@@ -57,21 +97,38 @@ function serial(d: Date): number {
 }
 
 function folha(aba: Aba): string {
+  const cabecalho = aba.cabecalho !== false;
   const larguras: number[] = [];
   const linhas = aba.linhas
     .map((linha, r) => {
       const cels = linha
         .map((v, c) => {
           const ref = `${coluna(c)}${r + 1}`;
-          const negrito = r === 0 ? ' s="1"' : "";
+          const negrito = cabecalho && r === 0 ? ' s="1"' : "";
           const texto =
-            v instanceof Date ? "00/00/0000 00:00" : v === null || v === undefined ? "" : String(v);
+            v instanceof Date
+              ? "00/00/0000 00:00"
+              : soData(v)
+                ? "00/00/0000"
+                : comFormato(v)
+                  ? comoAparece(v)
+                  : v === null || v === undefined
+                    ? ""
+                    : String(v);
           larguras[c] = Math.max(larguras[c] ?? 0, Math.min(60, texto.length + 2));
           if (v === null || v === undefined || v === "") return "";
           if (typeof v === "number" && Number.isFinite(v))
             return `<c r="${ref}"${negrito}><v>${v}</v></c>`;
+          if (comFormato(v))
+            return Number.isFinite(v.numero)
+              ? `<c r="${ref}" s="${v.formato === "moeda" ? 5 : 4}"><v>${v.numero}</v></c>`
+              : "";
           if (v instanceof Date && !Number.isNaN(v.getTime()))
             return `<c r="${ref}" s="2"><v>${serial(v)}</v></c>`;
+          if (soData(v))
+            return Number.isNaN(v.data.getTime())
+              ? ""
+              : `<c r="${ref}" s="3"><v>${Math.floor(serial(v.data))}</v></c>`;
           return `<c r="${ref}" t="inlineStr"${negrito}><is><t xml:space="preserve">${xml(String(v))}</t></is></c>`;
         })
         .join("");
@@ -82,13 +139,25 @@ function folha(aba: Aba): string {
     .map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${Math.max(8, w)}" customWidth="1"/>`)
     .join("");
   const ultima = `${coluna(Math.max(0, larguras.length - 1))}${Math.max(1, aba.linhas.length)}`;
+  const mesclas = (aba.mesclas ?? [])
+    .filter((m) => m.linhas * m.colunas > 1)
+    .map(
+      (m) =>
+        `<mergeCell ref="${coluna(m.coluna)}${m.linha + 1}:${coluna(m.coluna + m.colunas - 1)}${m.linha + m.linhas}"/>`,
+    );
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+    (cabecalho
+      ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+      : `<sheetViews><sheetView workbookViewId="0"/></sheetViews>`) +
     (cols ? `<cols>${cols}</cols>` : "") +
     `<sheetData>${linhas}</sheetData>` +
-    (aba.linhas.length > 1 ? `<autoFilter ref="A1:${ultima}"/>` : "") +
+    (cabecalho && aba.linhas.length > 1 ? `<autoFilter ref="A1:${ultima}"/>` : "") +
+    // O Excel pede as mesclas DEPOIS do filtro (a ordem dos elementos da folha é fixa).
+    (mesclas.length > 0
+      ? `<mergeCells count="${mesclas.length}">${mesclas.join("")}</mergeCells>`
+      : "") +
     `</worksheet>`
   );
 }
@@ -215,7 +284,7 @@ export function gerarXlsx(abas: Aba[]): Uint8Array {
         `<definedNames>` +
         abas
           .map((a, i) =>
-            a.linhas.length > 1
+            a.cabecalho !== false && a.linhas.length > 1
               ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xml(nomes[i]!.replace(/'/g, "''"))}'!$A$1:$${coluna(Math.max(0, Math.max(...a.linhas.map((l) => l.length)) - 1))}$${a.linhas.length}</definedName>`
               : "",
           )
@@ -235,16 +304,17 @@ export function gerarXlsx(abas: Aba[]): Uint8Array {
         `<Relationship Id="rId${abas.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     },
     {
-      // Estilos: 0 normal, 1 negrito (cabeçalho), 2 data e hora dd/mm/aaaa hh:mm.
+      // Estilos: 0 normal, 1 negrito (cabeçalho), 2 data e hora dd/mm/aaaa hh:mm, 3 só a data
+      // dd/mm/aaaa, 4 decimal (#.##0,00, o formato 4 de fábrica do Excel), 5 moeda (R$ #.##0,00).
       nome: "xl/styles.xml",
       texto:
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-        `<numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy hh:mm"/></numFmts>` +
+        `<numFmts count="3"><numFmt numFmtId="164" formatCode="dd/mm/yyyy hh:mm"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/><numFmt numFmtId="166" formatCode="&quot;R$&quot;\\ #,##0.00"/></numFmts>` +
         `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
         `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
         `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
         `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-        `<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>` +
+        `<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>` +
         `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
         `</styleSheet>`,
     },
@@ -255,16 +325,6 @@ export function gerarXlsx(abas: Aba[]): Uint8Array {
 
 export const TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-/** Gera e baixa no navegador. `nome` sem extensão ou com ".xlsx". */
-export function baixarXlsx(nome: string, abas: Aba[]): void {
-  const bytes = gerarXlsx(abas);
-  const blob = new Blob([bytes as BlobPart], { type: TIPO_XLSX });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = nome.toLowerCase().endsWith(".xlsx") ? nome : `${nome}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
+/* Baixar na tela é com o `baixarXlsx` de `baixar-arquivo.ts` (05/11/2026): ele
+   sabe gravar no app de mesa, e este arquivo continua sem nada de tela — o
+   servidor também gera planilha com ele (`api/presencas.$id.ts`). */

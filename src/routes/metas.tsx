@@ -1,4 +1,5 @@
-import { baixarXlsx, type Celula } from "@/lib/planilha-xlsx";
+import { baixarArquivo, baixarXlsx } from "@/lib/baixar-arquivo";
+import type { Celula } from "@/lib/planilha-xlsx";
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -688,7 +689,7 @@ function ExportarPeriodo({
         ],
       );
     }
-    baixarXlsx(`fluxo-score-${range.label.replace(/\s+/g, "-").toLowerCase()}`, [
+    void baixarXlsx(`fluxo-score-${range.label.replace(/\s+/g, "-").toLowerCase()}`, [
       { nome: "Score", linhas: rows },
     ]);
     setBusy(false);
@@ -977,7 +978,8 @@ function ExportarPeriodo({
         list.length === 1
           ? `fluxo-score-${list[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${stamp}.pdf`
           : `fluxo-score-${stamp}.pdf`;
-      doc.save(filename);
+      // Não o `doc.save` do jsPDF: ele baixa por link, que o app de mesa ignora (05/11/2026).
+      await baixarArquivo(filename, doc.output("blob"));
     } catch (e) {
       // Passou a existir uma ida à rede que antes não existia: sem internet, ou
       // com o arquivo trocado por um deploy no meio da sessão, o import falha.

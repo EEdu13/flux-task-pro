@@ -243,8 +243,8 @@ function MinhasTarefas() {
     setExportando(true);
     try {
       const { exportarMinhasTarefasXlsx } = await import("@/lib/exportar-minhas-tarefas");
-      const n = await exportarMinhasTarefasXlsx(currentUser.name);
-      toast.success(`Planilha com ${n} ${n === 1 ? "tarefa" : "tarefas"} baixada`);
+      // O aviso de "baixada" (e, no app de mesa, a pasta onde ficou) vem de quem baixa.
+      await exportarMinhasTarefasXlsx(currentUser.name);
     } catch (e) {
       toast.error("Não foi possível exportar agora", { description: (e as Error)?.message });
     } finally {
