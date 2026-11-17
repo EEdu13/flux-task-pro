@@ -81,6 +81,16 @@ export function ConfirmHost() {
         e.preventDefault();
         responder("nao");
       }
+      /* Com um diálogo do Radix aberto por baixo, ele toma o foco de volta, e o Enter
+         apertaria o último botão focado atrás da confirmação. O foco devia estar no
+         botão de confirmar, então é ele que responde. */
+      if (
+        e.key === "Enter" &&
+        !document.querySelector('[role="alertdialog"]')?.contains(document.activeElement)
+      ) {
+        e.preventDefault();
+        responder("sim");
+      }
     };
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
@@ -95,7 +105,7 @@ export function ConfirmHost() {
 
   return (
     <div
-      className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="pointer-events-auto fixed inset-0 z-[500] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={(e) => {
         // Clicar fora cancela — nunca confirma.
         if (e.target === e.currentTarget) responder("nao");

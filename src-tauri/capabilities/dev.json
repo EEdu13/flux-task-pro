@@ -20,6 +20,8 @@
     "allow-save-attachment-file",
     "allow-show-in-folder",
     "allow-tempo-ocioso-segundos",
+    "allow-converter-com-office",
+    "allow-salvar-arquivo",
     "core:default",
     "notification:default",
     "autostart:allow-enable",

@@ -37,6 +37,8 @@ import {
   Newspaper,
   Gift,
   BadgeDollarSign,
+  ClipboardList,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useSouDonoDasRecompensas } from "@/lib/use-recompensas";
 import { useFluxo } from "@/lib/fluxo-store";
@@ -57,6 +59,9 @@ import { UserAvatar } from "@/components/user-avatar";
 import { transicionar } from "@/components/transition-veil";
 import { toast } from "sonner";
 import { useCallInviter } from "@/lib/call-inviter-context";
+import { abrirConversor } from "@/components/conversor/abrir";
+import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
+import { useTemEstrutura } from "@/lib/estrutura-cliente";
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
@@ -84,6 +89,9 @@ const nav: { to: string; label: string; icon: typeof Home }[] = [
 /** Só entra no menu do dono do teste de recompensas. */
 const NAV_RECOMPENSAS = { to: "/recompensas", label: "Recompensas", icon: BadgeDollarSign };
 
+/** Estrutura do dia (Parte A): só para quem tem equipe de estrutura, logo depois de "Pack diário". */
+const NAV_ESTRUTURA = { to: "/estrutura", label: "Estrutura do dia", icon: ClipboardList };
+
 function openNotepad() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("fluxo:notepad-open"));
@@ -107,6 +115,7 @@ export function FluxoLayout({
   actions?: ReactNode;
 }) {
   const souDonoRecompensas = useSouDonoDasRecompensas();
+  const temEstrutura = useTemEstrutura();
   const {
     users,
     currentUser,
@@ -659,7 +668,10 @@ export function FluxoLayout({
         <nav className="mt-4 flex flex-col gap-0.5 px-2">
           {/* Recompensas (06/11/2026): aba do teste, só para o dono — ver
               `use-recompensas.ts`. */}
-          {[...nav, ...(souDonoRecompensas ? [NAV_RECOMPENSAS] : [])].map((n) => {
+          {[
+            ...nav.flatMap((n) => (n.to === "/pack" && temEstrutura ? [n, NAV_ESTRUTURA] : [n])),
+            ...(souDonoRecompensas ? [NAV_RECOMPENSAS] : []),
+          ].map((n) => {
             /* Minhas tarefas (22/10/2026: "cliquei em ver depois, esqueci e
                ficou perdido"): com atraso, o número é o das ATRASADAS, em
                vermelho, e fica ali até zerar; sem atraso, o das pendentes. */
@@ -765,6 +777,27 @@ export function FluxoLayout({
             <StickyNote className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-amber-400" />
             {!collapsed && <span className="min-w-0 flex-1 truncate text-left">Bloco de notas</span>}
           </button>
+
+          {/* Conversor de arquivos (04/11/2026): abre a paleta por cima, como o
+              bloco de notas — não é página. No celular a gaveta fecha antes,
+              senão ficaria aberta por baixo (ela só fecha sozinha ao trocar de
+              rota). */}
+          {CONVERSOR_ABERTO && (
+            <button
+              type="button"
+              onClick={() => {
+                setMobileOpen(false);
+                abrirConversor();
+              }}
+              title={collapsed ? "Conversor" : undefined}
+              className={`relative flex h-8 items-center overflow-hidden rounded-md text-sm text-sidebar-foreground/80 transition hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground ${
+                collapsed ? "pr-2" : "pl-10.5 pr-3"
+              }`}
+            >
+              <ArrowRightLeft className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2" />
+              {!collapsed && <span className="min-w-0 flex-1 truncate text-left">Conversor</span>}
+            </button>
+          )}
 
           {/* Salas Online — with submenu */}
           {(() => {

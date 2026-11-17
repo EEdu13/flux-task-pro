@@ -23,6 +23,7 @@ import { AneisDoPlacar, DiasDaSemana, MinhaCarga, Podio } from "@/components/pai
 import { RankingDeTempo, TempoTrabalhado } from "@/components/tempo-trabalhado";
 import { SemanaDoTime } from "@/components/semana-do-time";
 import { FaixaDoMuralNoInicio } from "@/components/mural/faixa-do-inicio";
+import { CartaoDaEstruturaNoInicio } from "@/components/estrutura/cartao-no-inicio";
 import { UserAvatar } from "@/components/user-avatar";
 import { BlocoEntrada } from "@/components/stagger";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
@@ -349,6 +350,10 @@ function Home() {
         {/* Mural (14/10/2026): aniversário de hoje e comunicado não lido. Sem
             nada a mostrar, não ocupa espaço. */}
         <FaixaDoMuralNoInicio />
+
+        {/* Estrutura do dia (Parte A): pendente em vermelho com "Enviar agora", ou uma linha verde.
+            Sem equipe de estrutura (quase todo mundo), não desenha nada. */}
+        <CartaoDaEstruturaNoInicio />
 
         <BlocoEntrada indice={1} className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
           <TempoTrabalhado

@@ -20,9 +20,14 @@ import {
   DoorOpen,
   Search,
   Gift,
+  ArrowRightLeft,
+  ClipboardList,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
 import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
+import { abrirConversor } from "@/components/conversor/abrir";
+import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
+import { useTemEstrutura } from "@/lib/estrutura-cliente";
 import { DEPARTMENT_ROOMS } from "@/lib/rooms";
 import { useCallInviter } from "@/lib/call-inviter-context";
 import { toast } from "sonner";
@@ -51,6 +56,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const temEstrutura = useTemEstrutura();
   const {
     tasks,
     users,
@@ -187,6 +193,41 @@ export function CommandPalette() {
                 keywords={["sala", "reuniao", "reunião", "reservar", "agendador", "maior", "menor"]}
                 onSelect={() => go(() => abrirReservaDeSala())}
               />
+              {/* Conversor de arquivos (04/11/2026). As palavras-chave são o que
+                  a pessoa digita pensando no que quer fazer com o arquivo. */}
+              {CONVERSOR_ABERTO && (
+                <PaletteItem
+                  icon={ArrowRightLeft}
+                  label="Converter arquivo…"
+                  hint="PDF, Office e imagens"
+                  keywords={[
+                    "converter",
+                    "conversor",
+                    "pdf",
+                    "juntar",
+                    "separar",
+                    "girar",
+                    "imagem",
+                    "foto",
+                    "heic",
+                    "jpg",
+                    "png",
+                    "webp",
+                    "reduzir",
+                    "comprimir",
+                    "word",
+                    "docx",
+                    "excel",
+                    "planilha",
+                    "xlsx",
+                    "powerpoint",
+                    "pptx",
+                    "ocr",
+                    "escaneado",
+                  ]}
+                  onSelect={() => go(() => abrirConversor())}
+                />
+              )}
             </Command.Group>
 
             <Command.Group heading="Navegar" className="mb-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground">
@@ -212,6 +253,16 @@ export function CommandPalette() {
                   onSelect={() => go(() => navigate({ to: n.to }))}
                 />
               ))}
+              {/* Estrutura do dia (Parte A): só para quem tem equipe de estrutura. */}
+              {temEstrutura && (
+                <PaletteItem
+                  icon={ClipboardList}
+                  label="Estrutura do dia"
+                  hint="enviar a estrutura da equipe"
+                  keywords={["estrutura", "apontamento", "equipe", "enviar", "/estrutura"]}
+                  onSelect={() => go(() => navigate({ to: "/estrutura" }))}
+                />
+              )}
             </Command.Group>
 
             <Command.Group

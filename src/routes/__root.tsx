@@ -41,6 +41,7 @@ import { AvisoDeAppNovo } from "@/components/aviso-app-novo";
 import { MotionConfig } from "framer-motion";
 import { ChatProvider } from "@/lib/chat-store";
 import { isTauri } from "@/lib/desktop";
+import { useTravaDeSoltar } from "@/lib/trava-de-soltar";
 
 function NotFoundComponent() {
   return (
@@ -227,6 +228,8 @@ function RootComponent() {
   useApplyPalette();
   useApplyTheme();
   useBloquearMenuNativo();
+  // Arquivo ou link solto fora de quem o recebe não abre na janela (nem derruba a chamada).
+  useTravaDeSoltar();
   // A janela pequena de chamada (/chamada) é um card isolado: sem barra de
   // título, sem FAB, sem widgets — só o próprio card.
   const pathname = useRouterState({ select: (s) => s.location.pathname });

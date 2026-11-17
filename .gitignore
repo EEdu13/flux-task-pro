@@ -35,3 +35,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# OCR do conversor: copiado de node_modules por scripts/copiar-tesseract.mjs (predev/prebuild)
+public/tesseract/

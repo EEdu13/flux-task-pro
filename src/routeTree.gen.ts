@@ -19,6 +19,7 @@ import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as ContatosRouteImport } from './routes/contatos'
 import { Route as CriarTarefaRouteImport } from './routes/criar-tarefa'
 import { Route as EquipeRouteImport } from './routes/equipe'
+import { Route as EstruturaRouteImport } from './routes/estrutura'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MetasRouteImport } from './routes/metas'
@@ -93,6 +94,11 @@ const CriarTarefaRoute = CriarTarefaRouteImport.update({
 const EquipeRoute = EquipeRouteImport.update({
   id: '/equipe',
   path: '/equipe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EstruturaRoute = EstruturaRouteImport.update({
+  id: '/estrutura',
+  path: '/estrutura',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InboxRoute = InboxRouteImport.update({
@@ -235,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/contatos': typeof ContatosRoute
   '/criar-tarefa': typeof CriarTarefaRoute
   '/equipe': typeof EquipeRoute
+  '/estrutura': typeof EstruturaRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
@@ -272,6 +279,7 @@ export interface FileRoutesByTo {
   '/contatos': typeof ContatosRoute
   '/criar-tarefa': typeof CriarTarefaRoute
   '/equipe': typeof EquipeRoute
+  '/estrutura': typeof EstruturaRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
@@ -310,6 +318,7 @@ export interface FileRoutesById {
   '/contatos': typeof ContatosRoute
   '/criar-tarefa': typeof CriarTarefaRoute
   '/equipe': typeof EquipeRoute
+  '/estrutura': typeof EstruturaRoute
   '/inbox': typeof InboxRoute
   '/login': typeof LoginRoute
   '/metas': typeof MetasRoute
@@ -349,6 +358,7 @@ export interface FileRouteTypes {
     | '/contatos'
     | '/criar-tarefa'
     | '/equipe'
+    | '/estrutura'
     | '/inbox'
     | '/login'
     | '/metas'
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/contatos'
     | '/criar-tarefa'
     | '/equipe'
+    | '/estrutura'
     | '/inbox'
     | '/login'
     | '/metas'
@@ -423,6 +434,7 @@ export interface FileRouteTypes {
     | '/contatos'
     | '/criar-tarefa'
     | '/equipe'
+    | '/estrutura'
     | '/inbox'
     | '/login'
     | '/metas'
@@ -461,6 +473,7 @@ export interface RootRouteChildren {
   ContatosRoute: typeof ContatosRoute
   CriarTarefaRoute: typeof CriarTarefaRoute
   EquipeRoute: typeof EquipeRoute
+  EstruturaRoute: typeof EstruturaRoute
   InboxRoute: typeof InboxRoute
   LoginRoute: typeof LoginRoute
   MetasRoute: typeof MetasRoute
@@ -558,6 +571,13 @@ declare module '@tanstack/react-router' {
       path: '/equipe'
       fullPath: '/equipe'
       preLoaderRoute: typeof EquipeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/estrutura': {
+      id: '/estrutura'
+      path: '/estrutura'
+      fullPath: '/estrutura'
+      preLoaderRoute: typeof EstruturaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbox': {
@@ -749,6 +769,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContatosRoute: ContatosRoute,
   CriarTarefaRoute: CriarTarefaRoute,
   EquipeRoute: EquipeRoute,
+  EstruturaRoute: EstruturaRoute,
   InboxRoute: InboxRoute,
   LoginRoute: LoginRoute,
   MetasRoute: MetasRoute,

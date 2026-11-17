@@ -5,7 +5,9 @@ type ToasterProps = React.ComponentProps<typeof Sonner>;
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      className="toaster group"
+      /* `pointer-events-auto`: um modal do Radix aberto (a roda de conversão, por exemplo)
+          põe `pointer-events: none` no `body`, e o aviso herdava — o botão dele não respondia. */
+      className="toaster group pointer-events-auto"
       toastOptions={{
         classNames: {
           toast:

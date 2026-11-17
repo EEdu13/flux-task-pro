@@ -142,8 +142,10 @@ export function ProjectFilesModal({
 
         {/* Corpo com scroll */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          {/* Zona de upload */}
+          {/* Zona de upload. `data-aceita-arquivo`: a faixa do conversor sai da
+              frente aqui (`conversor/use-arraste-de-arquivo.ts`, 04/11/2026). */}
           <div
+            data-aceita-arquivo=""
             onDragOver={(e) => {
               e.preventDefault();
               setDragOver(true);

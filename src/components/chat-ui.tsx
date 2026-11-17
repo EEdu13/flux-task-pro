@@ -1039,6 +1039,8 @@ export function Composer({ peerId }: { peerId: string }) {
   return (
     <div
       className="relative border-t border-border bg-card p-2"
+      /* A faixa do conversor sai da frente aqui (`conversor/use-arraste-de-arquivo.ts`, 04/11/2026). */
+      data-aceita-arquivo=""
       onDragOver={(e) => {
         if (!Array.from(e.dataTransfer.types).includes("Files")) return;
         e.preventDefault();

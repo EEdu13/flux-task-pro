@@ -12,6 +12,7 @@ import {
   ChevronRight,
   AudioLines,
   DoorOpen,
+  ArrowRightLeft,
 } from "lucide-react";
 
 import { useFluxo } from "@/lib/fluxo-store";
@@ -25,6 +26,8 @@ import { alternarLancadores, useLancadoresRecolhidos } from "@/lib/lancadores";
 import { useFecharAoSair } from "@/hooks/use-fechar-ao-sair";
 import { TarefaPorVoz } from "@/components/tarefa-por-voz";
 import { abrirReservaDeSala } from "@/components/reserva-de-sala-modal";
+import { abrirConversor } from "@/components/conversor/abrir";
+import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
 
 type Mode = "menu" | "quick" | "mention" | "pack";
 type PackTab = "concluir" | "meu" | "outro";
@@ -303,6 +306,20 @@ export function QuickFab() {
               abrirReservaDeSala();
             }}
           />
+          {/* Conversor de arquivos (04/11/2026): também abre segurando o Ctrl,
+              pela barra lateral, pelo Ctrl+K e arrastando um arquivo. */}
+          {CONVERSOR_ABERTO && (
+            <FabItem
+              icon={ArrowRightLeft}
+              label="Converter arquivo"
+              hint="PDF, Office e imagens, no seu computador"
+              onClick={() => {
+                setOpen(false);
+                setMode("menu");
+                abrirConversor();
+              }}
+            />
+          )}
         </div>
       )}
 

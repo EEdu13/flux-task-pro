@@ -21,6 +21,9 @@ import { PortaDoAgradecer } from "@/components/mural/agradecer";
 import { PortaDoEventoDaTarefa } from "@/components/mural/tarefa-em-evento";
 import { PortaDoWrapped } from "@/components/wrapped/porta-do-wrapped";
 import { ConfeteDeAniversario } from "@/components/confete-de-aniversario";
+import { Conversor } from "@/components/conversor/conversor";
+import { VigiaDaEstrutura } from "@/components/estrutura/vigia-da-estrutura";
+import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
 
 /** Páginas que não usam o `FluxoLayout` — e não querem as janelas globais. */
 const SEM_GLOBAIS = ["/login", "/convidado", "/chamada", "/conferir-dados-antigos"];
@@ -70,6 +73,12 @@ export function GlobaisDoApp() {
       {/* Wrapped do mês (19/10/2026): abre sozinho no dia 1º (06:30) — ver `porta-do-wrapped.tsx`. */}
       <PortaDoWrapped />
       <ConfeteDeAniversario />
+      {/* Conversor de arquivos (04/11/2026): Ctrl segurado, raio, barra lateral,
+          Ctrl+K e arrastar arquivo para a janela — ver `conversor/conversor.tsx`. */}
+      {CONVERSOR_ABERTO && <Conversor />}
+      {/* Estrutura do dia (Parte A): lê a cobrança a cada 5 min para o card do Início e o
+          lembrete do Pack. Só liga para quem tem permissão e equipe — ver `vigia-da-estrutura.tsx`. */}
+      <VigiaDaEstrutura />
     </>
   );
 }

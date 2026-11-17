@@ -44,6 +44,8 @@ import { transicionar } from "@/components/transition-veil";
 import { confirmar } from "@/components/confirm-dialog";
 import { MeuAniversario } from "@/components/mural/meu-aniversario";
 import { ConquistasNoMural } from "@/components/mural/conquistas-no-mural";
+import { OpcaoDoCtrl } from "@/components/conversor/opcao-do-ctrl";
+import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
 import { useAcaoPendente } from "@/lib/use-acao-pendente";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -410,6 +412,13 @@ function SettingsPage() {
                   })}
                 </div>
               </div>
+
+              {/* Conversor de arquivos (04/11/2026): o atalho do Ctrl segurado. */}
+              {CONVERSOR_ABERTO && (
+                <div className="mt-6 border-t border-border pt-6">
+                  <OpcaoDoCtrl />
+                </div>
+              )}
 
               <div className="mt-6 border-t border-border pt-6">
                 <TractorControl />

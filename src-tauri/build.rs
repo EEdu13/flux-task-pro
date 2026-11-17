@@ -17,6 +17,8 @@ fn main() {
         "save_attachment_file",
         "show_in_folder",
         "tempo_ocioso_segundos",
+        "converter_com_office",
+        "salvar_arquivo",
       ]),
     ),
   )

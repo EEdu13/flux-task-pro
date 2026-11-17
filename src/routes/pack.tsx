@@ -30,6 +30,7 @@ import { TravaScroll } from "@/components/trava-scroll";
 import { UserAvatar } from "@/components/user-avatar";
 import { CriadorDePack, EdicaoDoItemDoPack, RascunhoDePack } from "@/components/criador-de-pack";
 import { openTaskContext } from "@/components/task-context-menu";
+import { LembreteDaEstruturaNoPack } from "@/components/estrutura/lembrete-no-pack";
 import {
   PRIORIDADES_DO_PACK,
   chaveDoTitulo,
@@ -240,6 +241,9 @@ function PackPage() {
                   <Progresso feitos={myPack.length - pending.length} total={myPack.length} />
                 )}
               </div>
+              {/* Estrutura do dia (Parte A, opção A do Eduardo): um lembrete do SISTEMA, fora do
+                  X/Y, da ofensiva e das tarefas do pack — só desenho, ver `lembrete-no-pack.tsx`. */}
+              <LembreteDaEstruturaNoPack />
               {myPack.length === 0 ? (
                 <div className="mt-4 rounded-lg border border-dashed border-border px-4 py-10 text-center text-xs text-muted-foreground">
                   Nenhum item no seu pack de hoje. Escreva ao lado e aperte Enter.

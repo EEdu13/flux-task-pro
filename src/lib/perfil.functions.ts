@@ -430,6 +430,9 @@ const CHAVES = [
   /* O último "Wrapped do mês" que a pessoa já viu, "AAAA-MM" (19/10/2026):
      abre sozinho uma vez por mês, e nunca de novo depois de visto. */
   "wrapped_visto",
+  /* "Abrir o conversor segurando Ctrl", "1" ou "0" (04/11/2026). Ligada por
+     padrão: sem linha aqui, vale ligada — ver `conversor/preferencia.ts`. */
+  "conversor_ctrl",
 ] as const;
 type Chave = (typeof CHAVES)[number];
 const chaveValida = (v: unknown): v is Chave =>

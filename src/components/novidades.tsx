@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import {
@@ -40,11 +40,26 @@ import {
   Trophy,
   Video,
   X,
+  Cloud,
+  Highlighter,
+  ImagePlus,
+  MousePointer2,
+  Pencil,
+  RefreshCw,
+  ShieldCheck,
+  Signature,
+  Type,
+  ClipboardList,
+  Plus,
+  Truck,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
+import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
 import { primeiroNome } from "@/integrations/iam/types";
 import { carregarAvataresDe, type AvatarConfig } from "@/lib/avatar-3d";
 import { sectors } from "@/lib/fluxo-types";
+import { ESTILO_DO_ACENTO } from "@/components/conversor/acento";
+import { BLOCOS, BLOCOS_PRONTOS } from "@/components/conversor/blocos";
 
 /**
  * "O que mudou" — a janela de novidades que aparece UMA vez por pessoa,
@@ -66,7 +81,7 @@ import { sectors } from "@/lib/fluxo-types";
  *
  * Para ver de novo sem mexer no banco: `?novidades=1` na URL.
  */
-const VERSAO = "2026-11-06-equipes-ranking-video";
+const VERSAO = "2026-11-17-conversor";
 
 const chaveLocal = (pessoaId: string) => `fluxo:novidades:${pessoaId}`;
 
@@ -78,9 +93,65 @@ type Tela = {
   Ilustracao: (p: { pessoaId: string }) => React.ReactElement;
 };
 
-/* A leva de 06/11/2026 (a atual): o que entrou desde 20/10. Cada tela é
-   apresentada por alguém de um setor diferente, sorteado. */
+/* A leva do conversor de arquivos (montada em 05/11/2026), para TODOS. Vai no MESMO deploy do
+   conversor, nunca antes (especificação, C.2): a janela nem abre enquanto `CONVERSOR_LIBERADO` for
+   `false` (ver `estrutura-liberada.ts`). O conversor foi liberado em 17/11/2026, antes da estrutura
+   (decisão do usuário): a estrutura ganha a leva própria dela na liberação (`TELAS_DA_ESTRUTURA`).
+   A tela 3 vale porque tudo roda no computador da pessoa: no navegador, ou pelo Office instalado
+   no app de mesa (11/11/2026). Se um dia algum bloco passar a mandar o arquivo a um servidor, o
+   texto precisa mudar. */
 export const TELAS: Tela[] = [
+  {
+    titulo: "Converta arquivos sem sair do CONECTA",
+    texto:
+      "Segure o Ctrl por um instante e a roda de conversão aparece. Arraste o arquivo até o bloco, ou clique nele e escolha nas pastas: juntar e separar PDFs, girar páginas, comprimir PDF, PDF em imagem ou em planilha, OCR de PDF escaneado, fotos em PDF, foto do iPhone em JPG e reduzir imagem — e, no app de mesa, Word, Excel e PowerPoint em PDF e PDF em Word. Arrastou um arquivo para a janela? Passe por cima do círculo que aparece no meio da tela e a roda abre.",
+    Ilustracao: IlustracaoConversor,
+    apresenta: true,
+  },
+  {
+    titulo: "Edite o PDF aqui mesmo",
+    texto:
+      "No bloco Editar PDF você troca o texto que já está no arquivo, escreve por cima, põe imagem e assinatura, realça, desenha e organiza as páginas. É só clicar no texto e digitar — sem instalar programa nenhum.",
+    Ilustracao: IlustracaoEditorDePdf,
+    apresenta: true,
+  },
+  {
+    titulo: "Seus documentos não saem do computador",
+    texto:
+      "Nada de site de conversão: tudo é feito no seu próprio computador, e o arquivo não vai para a internet — nem para o servidor da empresa. Contrato, nota fiscal e holerite ficam só com você.",
+    Ilustracao: IlustracaoConversorSeguro,
+    apresenta: true,
+  },
+];
+
+/**
+ * A leva da ESTRUTURA DO DIA (10/11/2026), guardada para a liberação dela (o conversor saiu antes,
+ * em 17/11/2026). Na liberação: `VERSAO` nova, estas telas como a leva ativa (a do conversor fica
+ * guardada como `TELAS_DO_CONVERSOR`), e a janela só para quem tem equipe para enviar
+ * (`useTemEstrutura`, a mesma regra do item "Estrutura do dia" no menu), esperando a estrutura
+ * responder (`useEstrutura().pronto`) antes de decidir. Quem não tem estrutura não vê esta leva.
+ */
+export const TELAS_DA_ESTRUTURA: Tela[] = [
+  {
+    titulo: "A estrutura do dia, direto no CONECTA",
+    texto:
+      "Quem lidera uma equipe agora manda a estrutura por aqui: marque o status de cada pessoa e de cada veículo e envie. Vai para o mesmo sistema de apontamento do app de campo. O cartão do Início e o lembrete do Pack avisam quando o dia ainda não foi enviado.",
+    Ilustracao: IlustracaoEstrutura,
+    apresenta: true,
+  },
+  {
+    titulo: "Quem sai da equipe sai de verdade",
+    texto:
+      "Marcou NÃO ESTÁ NA EQUIPE? Ao enviar, a pessoa ou o veículo sai da sua equipe e deixa de aparecer todo dia. O veículo continua no projeto, e a equipe que estiver com ele o puxa de volta em Adicionar. PJ e estagiário mudam de equipe pela TI.",
+    Ilustracao: IlustracaoEstruturaRetirada,
+    apresenta: true,
+  },
+];
+
+/* A leva de 06/11/2026 (Eduardo): o que entrou desde 20/10. Cada tela é
+   apresentada por alguém de um setor diferente, sorteado. Guardada quando entrou
+   a do conversor: quem viu continua tendo visto. */
+export const TELAS_DE_NOVEMBRO: Tela[] = [
   {
     titulo: "Equipes em 3D",
     texto:
@@ -202,9 +273,15 @@ export function Novidades() {
   const [indice, setIndice] = useState(0);
   const [sentido, setSentido] = useState(1);
 
+  /* A leva ativa é a do conversor, igual para todos (17/11/2026). A da estrutura entra na
+     liberação dela (ver `TELAS_DA_ESTRUTURA`). */
+  const telas = TELAS;
+
   /* Decide se mostra: a cópia local responde na hora; sem ela, pergunta ao
      banco — a pessoa pode ter visto em outro computador. */
   useEffect(() => {
+    // A leva é do conversor: sem a chave dele, a janela nem abre.
+    if (!CONVERSOR_ABERTO) return;
     if (!isAuthenticated || !currentUser.id) return;
     if (new URLSearchParams(window.location.search).get("novidades") === "1") {
       setIndice(0);
@@ -255,9 +332,9 @@ export function Novidades() {
     setIndice(para);
   };
 
-  const apresentadores = useApresentadores(aberta, TELAS.length);
-  const ultima = indice === TELAS.length - 1;
-  const tela = TELAS[indice]!;
+  const apresentadores = useApresentadores(aberta, telas.length);
+  const ultima = indice === telas.length - 1;
+  const tela = telas[indice]!;
   const nome = primeiroNome(currentUser.name);
 
   return (
@@ -297,7 +374,7 @@ export function Novidades() {
               </motion.div>
             </AnimatePresence>
             <span className="absolute left-4 top-3 rounded-full bg-card/80 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground shadow-sm">
-              Novidade {indice + 1} de {TELAS.length}
+              Novidade {indice + 1} de {telas.length}
             </span>
           </div>
 
@@ -316,7 +393,7 @@ export function Novidades() {
                 role="tablist"
                 aria-label="Telas de novidades"
               >
-                {TELAS.map((t, i) => (
+                {telas.map((t, i) => (
                   <button
                     key={t.titulo}
                     type="button"
@@ -3044,6 +3121,860 @@ function IlustracaoMaisNovembro() {
             </div>
           );
         })}
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— Conversor 1. O conversor: segurar o Ctrl, a roda, soltar o arquivo ————— */
+
+/*
+ * A roda de verdade em miniatura: os blocos prontos (os que aparecem para todo
+ * mundo), na ordem da tela, lidos do próprio catálogo. O escuro é o da roda (ver
+ * `conversor/visual.ts`): ela é escura nos dois temas, e o destaque é o
+ * `--acento`, que sai da cor primária da paleta de cada pessoa.
+ */
+const BLOCOS_DA_RODA = BLOCOS.filter((b) => BLOCOS_PRONTOS.has(b.id));
+
+/**
+ * O bloco da mini-roda encolhe quando a roda enche: com 32 px, a partir de 14 blocos um
+ * encostaria no outro (a distância entre os centros é a corda de 2π/n no raio 70).
+ */
+function blocoDaMiniRoda(n: number, raio: number): number {
+  return Math.min(32, Math.floor(0.82 * 2 * raio * Math.sin(Math.PI / Math.max(n, 2))));
+}
+
+/** A janela do app no palco (à esquerda dela fica a "área de trabalho") e a roda dentro dela. */
+const JANELA_X = 78;
+const RODA = {
+  cx: 151,
+  cy: 108,
+  raio: 70,
+  bloco: blocoDaMiniRoda(BLOCOS_DA_RODA.length, 70),
+  miolo: 84,
+};
+
+function posicaoNaRoda(i: number, n: number) {
+  const angulo = (i / n) * 2 * Math.PI; // 0 = alto, sentido do relógio, como na roda
+  return { x: RODA.cx + RODA.raio * Math.sin(angulo), y: RODA.cy - RODA.raio * Math.cos(angulo) };
+}
+
+/** O bloco onde a foto é solta: "Reduzir imagem" converte direto, sem tela no meio. */
+const ID_DO_ALVO = "reduzir-imagem";
+const ALVO = posicaoNaRoda(
+  Math.max(
+    0,
+    BLOCOS_DA_RODA.findIndex((b) => b.id === ID_DO_ALVO),
+  ),
+  BLOCOS_DA_RODA.length,
+);
+
+const ROTEIRO_CONVERSOR: Passo[] = [
+  { id: "inicio", ms: 900, cursor: [262, 176] },
+  { id: "ctrl", ms: 1100 }, // a tecla afunda e fica segurada
+  { id: "roda", ms: 900, cursor: [34, 46] }, // a roda abre; o cursor vai até a foto
+  { id: "pega", ms: 450, clica: true },
+  { id: "arrasta", ms: 700, cursor: [JANELA_X + ALVO.x, ALVO.y + 2] },
+  { id: "sobre", ms: 700 }, // o bloco sob o arquivo cresce e o centro diz o que ele faz
+  { id: "solta", ms: 1300, clica: true },
+  { id: "pronto", ms: 2700, cursor: [250, 128] }, // a roda fecha; o resultado fica no aviso
+];
+
+const SOMBRA_DO_ATIVO =
+  "0 0 0 2px var(--acento), 0 8px 26px color-mix(in oklab, var(--acento) 55%, transparent)";
+const SOMBRA_DO_QUE_ACEITA =
+  "0 0 0 1.5px color-mix(in oklab, var(--acento) 85%, transparent), 0 0 16px color-mix(in oklab, var(--acento) 45%, transparent)";
+
+/** A foto de exemplo: céu, morro e sol, como a do "colar imagem". */
+function FotoDeExemplo() {
+  return (
+    <span className="relative block h-full w-full overflow-hidden bg-gradient-to-b from-sky-300 to-sky-100">
+      <span className="absolute bottom-0 left-0 h-[45%] w-[70%] rounded-tr-full bg-emerald-500" />
+      <span className="absolute bottom-0 right-0 h-[60%] w-[55%] rounded-tl-full bg-emerald-600" />
+      <span className="absolute right-[14%] top-[12%] h-[22%] w-[18%] rounded-full bg-amber-300" />
+    </span>
+  );
+}
+
+function IlustracaoConversor() {
+  const r = useRoteiro(ROTEIRO_CONVERSOR);
+  /* Com "menos movimento" a cena fica parada, e o quadro parado é a roda aberta com o
+     bloco escolhido — o último passo (a roda já fechada, só o aviso) não mostraria a novidade. */
+  const parada = r.reduz;
+  const segurando = !parada && r.ja("ctrl") && !r.ja("pega");
+  const rodaAberta = parada || (r.ja("roda") && !r.ja("pronto"));
+  const arrastando = !parada && r.ja("pega") && !r.ja("solta");
+  // Como na roda de verdade: o bloco cresce com o arquivo em cima e volta ao tamanho no soltar.
+  const sobre = parada || r.em("sobre");
+  return (
+    <Palco w={380} h={216}>
+      {/* a "área de trabalho": a foto que vai ser arrastada */}
+      <div className="absolute left-[8px] top-[24px] flex w-[52px] flex-col items-center gap-1">
+        <span className="h-[36px] w-[44px] overflow-hidden rounded-md shadow-md ring-1 ring-black/10">
+          <FotoDeExemplo />
+        </span>
+        <span className="text-center text-[8px] font-medium leading-tight">
+          campo.jpg
+          <span className="block text-muted-foreground">4,2 MB</span>
+        </span>
+      </div>
+
+      {/* a tecla Ctrl, que afunda e fica segurada até a roda abrir */}
+      <div className="absolute left-[9px] top-[140px] flex w-[52px] flex-col items-center gap-1">
+        <span
+          className={`grid h-[32px] w-[52px] place-items-center rounded-lg border border-border bg-card text-[11px] font-semibold transition-all duration-100 ${
+            segurando ? "translate-y-[3px] shadow-none" : "shadow-[0_3px_0_var(--border)]"
+          }`}
+        >
+          Ctrl
+        </span>
+        <span className="mt-1 h-1 w-[44px] overflow-hidden rounded-full bg-border">
+          <motion.span
+            className="block h-full rounded-full bg-primary"
+            initial={false}
+            animate={{ width: segurando ? "100%" : "0%" }}
+            transition={{ duration: segurando && !r.reduz ? 0.4 : 0.15, ease: "linear" }}
+          />
+        </span>
+        <span className="text-[8px] font-medium text-muted-foreground">segure</span>
+      </div>
+
+      {/* a janela do CONECTA */}
+      <div className={MOLDURA} style={{ left: JANELA_X, ...ESTILO_DO_ACENTO }}>
+        {/* o app por trás: o menu e uma lista de tarefas */}
+        <div className="absolute inset-y-0 left-0 w-[30px] border-r border-border bg-secondary/60 pt-1">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span key={i} className="mx-auto mt-2 block h-3.5 w-3.5 rounded bg-border" />
+          ))}
+        </div>
+        <div className="absolute left-[42px] right-3 top-3 space-y-1.5">
+          <span className="block h-2.5 w-24 rounded bg-foreground/15" />
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <span
+              key={i}
+              className="flex items-center gap-2 rounded-md border border-border/70 px-2 py-1.5"
+            >
+              <span className="h-2.5 w-2.5 rounded-full border border-border" />
+              <span
+                className="h-1.5 rounded bg-foreground/10"
+                style={{ width: 70 + ((i * 41) % 100) }}
+              />
+            </span>
+          ))}
+        </div>
+
+        <AnimatePresence>
+          {rodaAberta && (
+            <motion.div
+              key="roda"
+              className="absolute inset-0 z-10 text-white"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* o véu escuro, sem desfoque, como o de verdade */}
+              <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/75 via-zinc-950/80 to-zinc-950/90" />
+              <div
+                className="absolute rounded-full"
+                style={{
+                  left: RODA.cx - 92,
+                  top: RODA.cy - 92,
+                  width: 184,
+                  height: 184,
+                  background:
+                    "radial-gradient(circle, color-mix(in oklab, var(--acento) 16%, transparent) 0%, transparent 68%)",
+                }}
+              />
+              <div
+                className="absolute rounded-full border border-white/10"
+                style={{
+                  left: RODA.cx - RODA.raio,
+                  top: RODA.cy - RODA.raio,
+                  width: RODA.raio * 2,
+                  height: RODA.raio * 2,
+                }}
+              />
+              {/* o miolo: o que o bloco sob o arquivo faz */}
+              <div
+                className="absolute grid place-items-center rounded-full border border-white/10 bg-white/[0.06] px-2 text-center"
+                style={{
+                  left: RODA.cx - RODA.miolo / 2,
+                  top: RODA.cy - RODA.miolo / 2,
+                  width: RODA.miolo,
+                  height: RODA.miolo,
+                }}
+              >
+                {r.em("solta") ? (
+                  <span className="text-[9px] font-semibold leading-tight">
+                    Reduzindo…
+                    <span className="mt-0.5 block text-[13px] text-[var(--acento)]">
+                      <NumeroSobe alvo={100} dur={1} sufixo="%" />
+                    </span>
+                  </span>
+                ) : sobre ? (
+                  <span className="leading-tight">
+                    <span className="block text-[6.5px] font-bold uppercase tracking-wider text-white/50">
+                      Imagem
+                    </span>
+                    <span className="block text-[9.5px] font-semibold">Reduzir imagem</span>
+                    <span className="mt-0.5 block whitespace-nowrap text-[7px] font-medium text-[var(--acento)]">
+                      Foto → Imagem leve
+                    </span>
+                  </span>
+                ) : (
+                  <span className="leading-tight">
+                    <span className="block text-[9.5px] font-semibold">Converter arquivo</span>
+                    <span className="mt-0.5 block text-[7px] text-white/60">
+                      {arrastando ? "Solte num bloco aceso" : "Arraste até um bloco"}
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              {BLOCOS_DA_RODA.map((b, i) => {
+                const p = posicaoNaRoda(i, BLOCOS_DA_RODA.length);
+                const ehAlvo = b.id === ID_DO_ALVO;
+                const ativo = ehAlvo && sobre;
+                // Uma foto: os blocos de PDF apagam, os de imagem acendem (como no arraste de verdade).
+                const aceita = b.aceita.ext.includes("jpg");
+                const Icone = b.icone;
+                return (
+                  <motion.div
+                    key={b.id}
+                    className="absolute"
+                    style={{
+                      left: p.x - RODA.bloco / 2,
+                      top: p.y - RODA.bloco / 2,
+                      width: RODA.bloco,
+                      height: RODA.bloco,
+                      zIndex: ativo ? 2 : 1,
+                    }}
+                    initial={{ x: RODA.cx - p.x, y: RODA.cy - p.y, scale: 0.3, opacity: 0 }}
+                    animate={{ x: 0, y: 0, scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 240, damping: 22, delay: i * 0.03 }}
+                  >
+                    <motion.span
+                      className={`relative grid h-full w-full place-items-center rounded-full border transition-[opacity,filter,background-color,border-color] duration-200 ${
+                        ativo ? "border-[var(--acento)] bg-white/20" : "border-white/15 bg-white/10"
+                      } ${arrastando && !aceita ? "opacity-35 grayscale" : ""}`}
+                      style={{
+                        boxShadow: ativo
+                          ? SOMBRA_DO_ATIVO
+                          : arrastando && aceita
+                            ? SOMBRA_DO_QUE_ACEITA
+                            : "0 4px 12px rgb(0 0 0 / 0.35)",
+                      }}
+                      animate={{ scale: ativo ? 1.3 : 1 }}
+                      transition={{ type: "spring", stiffness: 420, damping: 26, mass: 0.6 }}
+                    >
+                      <Icone className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      {ehAlvo && r.em("solta") && (
+                        <svg
+                          className="pointer-events-none absolute inset-0 h-full w-full -rotate-90"
+                          viewBox="0 0 100 100"
+                        >
+                          <motion.circle
+                            cx="50"
+                            cy="50"
+                            r="46"
+                            fill="none"
+                            stroke="var(--acento)"
+                            strokeWidth="6"
+                            strokeLinecap="round"
+                            initial={{ pathLength: 0 }}
+                            animate={{ pathLength: 1 }}
+                            transition={{ duration: 1, ease: "easeOut" }}
+                          />
+                        </svg>
+                      )}
+                    </motion.span>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* a roda fechou: o resultado fica no aviso */}
+        <AnimatePresence>
+          {!parada && r.ja("pronto") && (
+            <motion.div
+              key="aviso"
+              className="absolute bottom-3 right-3 z-20 flex w-[180px] items-start gap-2 rounded-lg border border-border bg-card p-2 shadow-xl"
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 22 }}
+            >
+              <span className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full bg-success text-white">
+                <Check className="h-2.5 w-2.5" />
+              </span>
+              <span className="min-w-0 text-[9px] leading-tight">
+                <span className="block truncate font-semibold">Pronto: campo-reduzida.jpg</span>
+                <span className="text-muted-foreground">380 KB · antes, 4,2 MB</span>
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* a foto indo junto com o cursor, e entrando no bloco ao soltar */}
+      <motion.div
+        className="pointer-events-none absolute left-0 top-0 z-30 h-[30px] w-[38px] overflow-hidden rounded-md shadow-lg ring-2 ring-white"
+        initial={false}
+        animate={{
+          x: r.cursor[0] - 12,
+          y: r.cursor[1] - 4,
+          opacity: arrastando ? 0.95 : 0,
+          scale: r.ja("solta") ? 0.2 : 1,
+          rotate: arrastando ? -6 : 0,
+        }}
+        transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+      >
+        <FotoDeExemplo />
+      </motion.div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— Conversor 2. O Editor de PDF ————— */
+
+const ROTEIRO_EDITOR: Passo[] = [
+  { id: "inicio", ms: 900, cursor: [330, 172] },
+  { id: "vai", ms: 550, cursor: [214, 99] }, // até o valor, no texto do próprio PDF
+  { id: "clica", ms: 700, clica: true }, // a linha vira campo de edição
+  { id: "digita", ms: 1500 },
+  { id: "vai-assinar", ms: 550, cursor: [91, 16] },
+  { id: "assinar", ms: 450, clica: true },
+  { id: "assina", ms: 1500, cursor: [262, 182] },
+  { id: "vai-salvar", ms: 550, cursor: [343, 16] },
+  { id: "salva", ms: 2600, clica: true },
+];
+
+/** As ferramentas da barra, na ordem da tela: Editar, Texto, Imagem, Assinatura | Realce, Desenho, Caixa. */
+const FERRAMENTAS_DO_EDITOR = [
+  MousePointer2,
+  Type,
+  ImagePlus,
+  Signature,
+  Highlighter,
+  Pencil,
+  Square,
+] as const;
+
+function IlustracaoEditorDePdf() {
+  const r = useRoteiro(ROTEIRO_EDITOR);
+  const editando = r.ja("clica") && !r.ja("vai-assinar");
+  const assinando = r.ja("assinar") && !r.ja("vai-salvar");
+  const ferramenta = assinando ? 3 : 0;
+  return (
+    <Palco w={380} h={216}>
+      <div
+        className="absolute inset-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-900 text-white shadow-2xl"
+        style={ESTILO_DO_ACENTO}
+      >
+        {/* a barra das ferramentas, com o Salvar na cor de destaque */}
+        <div className="absolute inset-x-0 top-0 flex h-[32px] items-center gap-0.5 border-b border-white/10 px-2">
+          {FERRAMENTAS_DO_EDITOR.map((Icone, i) => (
+            <span key={i} className="flex items-center">
+              {i === 4 && <span className="mx-1 h-4 w-px bg-white/10" />}
+              <span
+                className={`grid h-[22px] w-[22px] place-items-center rounded-md transition-colors ${
+                  ferramenta === i ? "bg-white/20 text-white" : "text-white/60"
+                }`}
+              >
+                <Icone className="h-3 w-3" />
+              </span>
+            </span>
+          ))}
+          <motion.span
+            className="ml-auto inline-flex h-[20px] items-center gap-1 rounded-full bg-[var(--acento)] px-2.5 text-[9px] font-semibold text-neutral-950"
+            animate={r.em("salva") && !r.reduz ? { scale: [1, 0.9, 1] } : { scale: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Check className="h-2.5 w-2.5" /> Salvar
+          </motion.span>
+        </div>
+
+        {/* as páginas, na coluna da esquerda */}
+        <div className="absolute bottom-0 left-0 top-[32px] w-[52px] space-y-2 border-r border-white/10 px-[9px] pt-2.5">
+          <span className="block h-[46px] w-[34px] rounded-sm bg-white ring-2 ring-[var(--acento)]" />
+          <span className="block h-[46px] w-[34px] rounded-sm bg-white/75" />
+          <span className="block h-[46px] w-[34px] rounded-sm bg-white/75" />
+        </div>
+
+        {/* a página: o texto é o do PDF, e é ele que muda */}
+        <div className="absolute left-[112px] top-[42px] h-[200px] w-[196px] rounded-sm bg-white text-neutral-800 shadow-lg">
+          <div className="absolute left-[14px] top-[10px] text-[8.5px] font-bold tracking-wide">
+            CONTRATO DE SERVIÇO
+          </div>
+          {[150, 168, 122].map((w, i) => (
+            <span
+              key={i}
+              className="absolute left-[14px] h-[3px] rounded bg-neutral-300"
+              style={{ top: 26 + i * 7, width: w }}
+            />
+          ))}
+          <div
+            className={`absolute left-[11px] top-[49px] flex h-[16px] items-center rounded-sm px-[3px] text-[9px] ${
+              editando ? "ring-2 ring-[var(--acento)]" : ""
+            }`}
+          >
+            <span>Valor mensal:&nbsp;</span>
+            {r.ja("digita") ? (
+              <span className="font-semibold">
+                {r.em("digita") ? <Digitando texto="R$ 1.350,00" cadaMs={110} /> : "R$ 1.350,00"}
+                {editando && !r.reduz && (
+                  <motion.span
+                    className="ml-px inline-block h-[10px] w-px translate-y-[1px] bg-neutral-900"
+                    animate={{ opacity: [1, 0, 1] }}
+                    transition={{ duration: 0.9, repeat: Infinity }}
+                  />
+                )}
+              </span>
+            ) : (
+              <span className={`font-semibold ${r.em("clica") ? "rounded-[2px] bg-sky-200" : ""}`}>
+                R$ 1.200,00
+              </span>
+            )}
+          </div>
+          {[164, 140, 158, 96].map((w, i) => (
+            <span
+              key={i}
+              className="absolute left-[14px] h-[3px] rounded bg-neutral-300"
+              style={{ top: 74 + i * 7, width: w }}
+            />
+          ))}
+          {/* a assinatura, sobre a linha */}
+          <svg className="absolute left-[44px] top-[112px] h-[30px] w-[110px]" viewBox="0 0 110 30">
+            {r.ja("assina") && (
+              <motion.path
+                d="M4 22 C 12 4, 20 4, 18 18 C 17 26, 28 10, 34 14 C 40 18, 42 24, 50 12 C 56 4, 60 22, 68 18 C 76 14, 80 8, 88 16 C 94 22, 100 14, 106 12"
+                fill="none"
+                stroke="#1e3a8a"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                initial={{ pathLength: r.reduz ? 1 : 0 }}
+                animate={{ pathLength: 1 }}
+                transition={{ duration: 1, delay: 0.35, ease: "easeInOut" }}
+              />
+            )}
+          </svg>
+          <span className="absolute left-[44px] top-[143px] h-px w-[110px] bg-neutral-400" />
+          <span className="absolute left-[44px] top-[146px] w-[110px] text-center text-[7px] text-neutral-500">
+            Contratante
+          </span>
+        </div>
+
+        {/* salvo: o arquivo novo sai pronto */}
+        <AnimatePresence>
+          {r.ja("salva") && (
+            <motion.div
+              key="salvo"
+              className="absolute bottom-3 right-3 z-20 flex w-[196px] items-start gap-2 rounded-lg border border-border bg-card p-2 text-foreground shadow-xl"
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{
+                type: "spring",
+                stiffness: 260,
+                damping: 22,
+                delay: r.reduz ? 0 : 0.25,
+              }}
+            >
+              <span className="mt-px grid h-4 w-4 shrink-0 place-items-center rounded-full bg-success text-white">
+                <Check className="h-2.5 w-2.5" />
+              </span>
+              <span className="min-w-0 text-[9px] leading-tight">
+                <span className="block truncate font-semibold">Pronto: contrato-editado.pdf</span>
+                <span className="text-muted-foreground">Texto trocado e assinado</span>
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— Conversor 3. Os documentos não saem do computador ————— */
+
+const ROTEIRO_SEGURO: Passo[] = [
+  { id: "inicio", ms: 900 },
+  { id: "converte", ms: 1500 },
+  { id: "bloqueia", ms: 1300 },
+  { id: "fim", ms: 2800 },
+];
+
+/** Um arquivo pequeno, com a etiqueta do tipo. */
+function ArquivoMini({ nome, tipo, cor }: { nome: string; tipo: string; cor: string }) {
+  return (
+    <span className="flex w-[64px] flex-col items-center gap-1">
+      <span className="relative block h-[56px] w-[44px] rounded-md border border-border bg-background shadow-sm">
+        <span className="absolute right-0 top-0 h-3 w-3 rounded-bl-md border-b border-l border-border bg-secondary" />
+        {[24, 20, 26].map((w, i) => (
+          <span
+            key={i}
+            className="absolute left-[7px] h-[2px] rounded bg-foreground/15"
+            style={{ top: 16 + i * 5, width: w }}
+          />
+        ))}
+        <span
+          className={`absolute bottom-2 left-1 rounded-sm px-1 text-[7px] font-bold text-white ${cor}`}
+        >
+          {tipo}
+        </span>
+      </span>
+      <span className="max-w-full truncate text-[8px] font-medium">{nome}</span>
+    </span>
+  );
+}
+
+function IlustracaoConversorSeguro() {
+  const r = useRoteiro(ROTEIRO_SEGURO);
+  const convertendo = r.em("converte") && !r.reduz;
+  return (
+    <Palco w={380} h={216}>
+      {/* o computador da pessoa: é aqui dentro que tudo acontece */}
+      <div
+        className={`absolute left-[14px] top-[6px] h-[150px] w-[214px] overflow-hidden rounded-xl border bg-card shadow-2xl transition-[box-shadow,border-color] duration-500 ${
+          r.ja("fim")
+            ? "border-success shadow-[0_0_0_3px_color-mix(in_oklab,var(--success)_30%,transparent)]"
+            : "border-border"
+        }`}
+      >
+        <div className="flex h-6 items-center gap-1.5 border-b border-border px-2.5 text-[9px] font-semibold text-muted-foreground">
+          <Monitor className="h-3 w-3" /> Seu computador
+        </div>
+        <div className="relative h-[124px]">
+          <span className="absolute left-[16px] top-[22px]">
+            <ArquivoMini nome="contrato.pdf" tipo="PDF" cor="bg-red-500" />
+          </span>
+          <motion.span
+            className="absolute left-[93px] top-[38px] grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-primary"
+            animate={convertendo ? { rotate: 360 } : { rotate: 0 }}
+            transition={
+              convertendo ? { duration: 1, repeat: Infinity, ease: "linear" } : { duration: 0 }
+            }
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </motion.span>
+          <AnimatePresence>
+            {r.ja("converte") && (
+              <motion.span
+                key="convertido"
+                className="absolute left-[136px] top-[22px]"
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{
+                  delay: r.reduz ? 0 : 0.9,
+                  type: "spring",
+                  stiffness: 260,
+                  damping: 18,
+                }}
+              >
+                <ArquivoMini nome="contrato.png" tipo="PNG" cor="bg-sky-500" />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+      {/* o pé do monitor */}
+      <span
+        className="absolute left-[105px] top-[156px] h-[14px] w-[32px] bg-border"
+        style={{ clipPath: "polygon(22% 0, 78% 0, 100% 100%, 0 100%)" }}
+      />
+      <span className="absolute left-[86px] top-[169px] h-[5px] w-[70px] rounded-full bg-border" />
+
+      {/* o site de conversão, lá fora: o caminho até ele fica fechado */}
+      <svg className="absolute left-[230px] top-[50px] h-[34px] w-[46px]" viewBox="0 0 46 34">
+        <motion.path
+          d="M2 30 C 14 28, 28 12, 44 4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeDasharray="3 3"
+          className="text-muted-foreground"
+          initial={false}
+          // Só a opacidade: animar o comprimento do traço troca o tracejado por linha contínua.
+          animate={{ opacity: r.ja("converte") ? 1 : 0 }}
+          transition={{ duration: 0.6 }}
+        />
+      </svg>
+      <AnimatePresence>
+        {r.ja("bloqueia") && (
+          <motion.span
+            key="x"
+            className="absolute left-[244px] top-[54px] grid h-6 w-6 place-items-center rounded-full bg-red-500 text-white shadow-lg"
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 14 }}
+          >
+            <X className="h-3.5 w-3.5" />
+          </motion.span>
+        )}
+      </AnimatePresence>
+      <motion.div
+        className="absolute left-[274px] top-[20px] flex w-[96px] flex-col items-center gap-1 text-muted-foreground"
+        initial={false}
+        animate={{ opacity: r.ja("bloqueia") ? 0.4 : 1 }}
+        transition={{ duration: 0.4 }}
+      >
+        <Cloud className="h-12 w-12" strokeWidth={1.4} />
+        <span className="text-center text-[9px] font-medium leading-tight">
+          site de conversão
+          <span className="block">na internet</span>
+        </span>
+      </motion.div>
+
+      {/* o selo do fim */}
+      <AnimatePresence>
+        {r.ja("fim") && (
+          <motion.div
+            key="selo"
+            className="absolute bottom-[10px] right-[10px] flex items-center gap-1.5 rounded-full bg-success px-3 py-1.5 text-[10px] font-semibold text-white shadow-lg"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20 }}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" /> Nada foi enviado
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Palco>
+  );
+}
+
+/* ————— Estrutura 1. Marcar o status de cada um e enviar ————— */
+
+const ROTEIRO_ESTRUTURA: Passo[] = [
+  { id: "inicio", ms: 700, cursor: [200, 150] },
+  { id: "vai-1", ms: 450, cursor: [137, 56] },
+  { id: "marca-1", ms: 550, clica: true },
+  { id: "vai-2", ms: 400, cursor: [197, 94] },
+  { id: "marca-2", ms: 550, clica: true },
+  { id: "vai-3", ms: 400, cursor: [137, 132] },
+  { id: "marca-3", ms: 550, clica: true },
+  { id: "vai-envia", ms: 450, cursor: [330, 190] },
+  { id: "envia", ms: 500, clica: true },
+  { id: "enviado", ms: 2600 },
+];
+
+/** A cor do status marcado, no mesmo espírito dos botões de status da tela de verdade. */
+const COR_DO_STATUS_MINI: Record<string, string> = {
+  ADM: "border-primary bg-primary text-primary-foreground",
+  FOLGA: "border-sky-600 bg-sky-600 text-white",
+  "À DISPOSIÇÃO": "border-emerald-600 bg-emerald-600 text-white",
+};
+
+function IlustracaoEstrutura() {
+  const r = useRoteiro(ROTEIRO_ESTRUTURA);
+  const linhas = [
+    { nome: "Ana Souza", opcoes: ["ADM", "FOLGA", "FALTA"], escolha: 0, passo: "marca-1" },
+    { nome: "Bruno Lima", opcoes: ["ADM", "FOLGA", "FALTA"], escolha: 1, passo: "marca-2" },
+    {
+      nome: "EXE0004",
+      opcoes: ["À DISPOSIÇÃO", "OFICINA", "APOIO"],
+      escolha: 0,
+      passo: "marca-3",
+      veiculo: true,
+    },
+  ];
+  const marcados = linhas.filter((l) => r.ja(l.passo)).length;
+  const enviou = r.ja("envia");
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        <div className="flex h-8 items-center gap-1.5 border-b border-border px-3">
+          <ClipboardList className="h-3.5 w-3.5 text-primary" />
+          <span className="text-[11px] font-semibold">Estrutura do dia</span>
+          <span className="ml-auto rounded-full bg-secondary px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
+            Equipe 400AC
+          </span>
+        </div>
+        {linhas.map((l, i) => (
+          <div
+            key={l.nome}
+            className="absolute left-3 right-3 flex h-8 items-center gap-1 rounded-lg border border-border px-2"
+            style={{ top: 40 + i * 38 }}
+          >
+            <span className="flex w-[84px] shrink-0 items-center gap-1 text-[10px] font-medium">
+              {"veiculo" in l && <Truck className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              <span className="truncate">{l.nome}</span>
+            </span>
+            {l.opcoes.map((op, k) => {
+              const marcado = r.ja(l.passo) && k === l.escolha;
+              return (
+                <span
+                  key={op}
+                  className={`grid h-5 w-[56px] place-items-center rounded-full border text-[7px] font-semibold transition-colors duration-300 ${
+                    marcado
+                      ? (COR_DO_STATUS_MINI[op] ?? "border-border")
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {op}
+                </span>
+              );
+            })}
+          </div>
+        ))}
+        <div className="absolute bottom-3 left-3 right-3 flex items-center">
+          <span className="text-[9px] text-muted-foreground">{marcados} de 3 marcados</span>
+          <span
+            className={`ml-auto inline-flex h-7 items-center gap-1 rounded-md px-3 text-[10px] font-semibold transition-colors duration-300 ${
+              marcados === 3
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-muted-foreground"
+            }`}
+          >
+            <Send className="h-3 w-3" /> Enviar
+          </span>
+        </div>
+        <AnimatePresence>
+          {enviou && (
+            <motion.div
+              key="enviado"
+              className="absolute bottom-[10px] right-[10px] flex items-center gap-1.5 rounded-full bg-success px-3 py-1.5 text-[10px] font-semibold text-white shadow-lg"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 20 }}
+            >
+              <Check className="h-3.5 w-3.5" /> Estrutura enviada
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— Estrutura 2. Quem sai da equipe volta para o projeto, e quem está com ele o puxa ————— */
+
+const ROTEIRO_ESTRUTURA_RETIRADA: Passo[] = [
+  { id: "inicio", ms: 700, cursor: [200, 170] },
+  { id: "vai-marca", ms: 450, cursor: [66, 97] },
+  { id: "marca", ms: 700, clica: true },
+  { id: "vai-envia", ms: 450, cursor: [66, 190] },
+  { id: "envia", ms: 900, clica: true },
+  { id: "vai-add", ms: 900, cursor: [314, 148] },
+  { id: "add", ms: 600, clica: true },
+  { id: "fim", ms: 2400 },
+];
+
+/** Um veículo em miniatura, com o status embaixo. `fora` = o cinza de NÃO ESTÁ NA EQUIPE / SEM EQUIPE. */
+function VeiculoMini({ nome, status, fora }: { nome: string; status: string; fora?: boolean }) {
+  return (
+    <div className="flex h-9 flex-col justify-center gap-0.5 rounded-lg border border-border bg-card px-1.5">
+      <span className="flex items-center gap-1 text-[10px] font-medium">
+        <Truck className="h-3 w-3 text-muted-foreground" /> {nome}
+      </span>
+      <span
+        className={`block rounded-full text-center text-[7px] font-semibold leading-[14px] transition-colors duration-300 ${
+          fora
+            ? "bg-zinc-700 text-white dark:bg-zinc-300 dark:text-zinc-900"
+            : "bg-emerald-600 text-white"
+        }`}
+      >
+        {status}
+      </span>
+    </div>
+  );
+}
+
+function IlustracaoEstruturaRetirada() {
+  const r = useRoteiro(ROTEIRO_ESTRUTURA_RETIRADA);
+  const marcou = r.ja("marca");
+  const enviou = r.ja("envia");
+  const naDireita = r.ja("add");
+  const noMeio = enviou && !naDireita;
+  const saindo = { opacity: 0, x: 30 };
+  const entrando = { opacity: 0, x: -40 };
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        {/* a equipe de quem marca */}
+        <div className="absolute left-[10px] top-[10px] w-[112px]">
+          <p className="mb-1.5 text-[9px] font-semibold text-muted-foreground">Sua equipe</p>
+          <VeiculoMini nome="EXE0001" status="À DISPOSIÇÃO" />
+          <div className="mt-1 h-9">
+            <AnimatePresence>
+              {!enviou && (
+                <motion.div key="sai" exit={saindo} transition={{ duration: 0.35 }}>
+                  <VeiculoMini
+                    nome="EXE0004"
+                    status={marcou ? "NÃO ESTÁ NA EQUIPE" : "À DISPOSIÇÃO"}
+                    fora={marcou}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+        <span
+          className={`absolute bottom-3 left-[10px] inline-flex h-7 w-[112px] items-center justify-center gap-1 rounded-md text-[10px] font-semibold transition-colors duration-300 ${
+            marcou ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"
+          }`}
+        >
+          <Send className="h-3 w-3" /> Enviar
+        </span>
+
+        {/* o projeto: quem está sem equipe, à vista de todas as equipes dele */}
+        <div className="absolute left-[134px] top-[10px] h-[116px] w-[112px] rounded-lg border border-dashed border-border bg-secondary/30 p-1.5">
+          <p className="text-[8px] font-semibold leading-tight text-muted-foreground">
+            Projeto 400
+            <span className="block">sem equipe</span>
+          </p>
+          <div className="mt-2 h-9">
+            <AnimatePresence>
+              {noMeio && (
+                <motion.div
+                  key="meio"
+                  initial={entrando}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={saindo}
+                  transition={{ duration: 0.35 }}
+                >
+                  <VeiculoMini nome="EXE0004" status="SEM EQUIPE" fora />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* a equipe que está com o veículo: puxa pelo Adicionar */}
+        <div className="absolute left-[258px] top-[10px] w-[112px]">
+          <p className="mb-1.5 text-[9px] font-semibold text-muted-foreground">Quem está com ele</p>
+          <VeiculoMini nome="EXE0007" status="À DISPOSIÇÃO" />
+          <div className="mt-1 h-9">
+            <AnimatePresence>
+              {naDireita && (
+                <motion.div
+                  key="direita"
+                  initial={entrando}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.35 }}
+                >
+                  <VeiculoMini nome="EXE0004" status="À DISPOSIÇÃO" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+        <span className="absolute left-[258px] top-[134px] inline-flex h-7 w-[112px] items-center justify-center gap-1 rounded-md border border-border text-[10px] font-semibold">
+          <Plus className="h-3 w-3" /> Adicionar
+        </span>
       </div>
       <Cursor r={r} />
     </Palco>

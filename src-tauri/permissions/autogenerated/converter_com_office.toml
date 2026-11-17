@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-converter-com-office"
+description = "Enables the converter_com_office command without any pre-configured scope."
+commands.allow = ["converter_com_office"]
+
+[[permission]]
+identifier = "deny-converter-com-office"
+description = "Denies the converter_com_office command without any pre-configured scope."
+commands.deny = ["converter_com_office"]

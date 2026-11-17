@@ -1,4 +1,8 @@
 use std::io::Write;
+
+mod office;
+mod salvar;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -14,6 +18,9 @@ const ALLOWED_EXTS: &[&str] = &[
     // documentos
     "pdf", "txt", "csv", "md", "rtf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
     "odt", "ods", "odp",
+    // áudio e vídeo (12/11/2026): a gravação da reunião, o recado de voz e os vídeos
+    // anexados e do Mural, que abrem no player do Windows.
+    "webm", "mp4", "mov", "m4a", "mp3", "ogg", "wav",
 ];
 
 /// Limite defensivo do tamanho do anexo recebido do frontend (o app já limita
@@ -33,7 +40,12 @@ fn nome_seguro(name: &str, data: &[u8]) -> Result<String, String> {
     if data.len() > MAX_ATTACHMENT_BYTES {
         return Err("arquivo muito grande".into());
     }
+    nome_valido(name)
+}
 
+/// A parte do `nome_seguro` que não depende do conteúdo: também a usa o `salvar_arquivo`
+/// (`salvar.rs`), que recebe o arquivo em pedaços e confere o tamanho por conta própria.
+pub(crate) fn nome_valido(name: &str) -> Result<String, String> {
     // Sanitiza o nome: remove separadores de caminho e qualquer caractere
     // fora de [alfanumérico . - _ espaço], impedindo path traversal e injeção
     // no cmd (os args já vão separados, mas mantemos a higiene).
@@ -107,6 +119,27 @@ fn save_attachment_file(app: tauri::AppHandle, name: String, data: Vec<u8>) -> R
     let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
     f.write_all(&data).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Reserva em `dir` um nome que ainda não existe, como o navegador faz ("planilha.xlsx",
+/// "planilha (1).xlsx"…), criando o arquivo vazio na hora: dois salvamentos ao mesmo tempo
+/// nunca ficam com o mesmo nome, e nada é sobrescrito.
+pub(crate) fn reservar_caminho_livre(
+    dir: &std::path::Path,
+    file_name: &str,
+) -> Result<std::path::PathBuf, String> {
+    let base = std::path::Path::new(file_name);
+    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("arquivo").to_string();
+    let ext = base.extension().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    for n in 0..1000 {
+        let path = if n == 0 { dir.join(file_name) } else { dir.join(format!("{stem} ({n}).{ext}")) };
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => return Ok(path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err("muitos arquivos com o mesmo nome em Downloads".into())
 }
 
 /// Abre o Explorer com o arquivo baixado selecionado ("Mostrar na pasta").
@@ -281,7 +314,9 @@ pub fn run() {
             open_attachment_file,
             save_attachment_file,
             show_in_folder,
-            tempo_ocioso_segundos
+            tempo_ocioso_segundos,
+            office::converter_com_office,
+            salvar::salvar_arquivo
         ])
         .setup(|app| {
             // Atualização automática (só no app de verdade, não no `tauri dev`).

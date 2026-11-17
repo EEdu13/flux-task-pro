@@ -1477,6 +1477,9 @@ export function InlineTaskCreator({
               cardDrag ? "border-primary ring-2 ring-primary/30" : "border-foreground/70"
             }`
       }
+      /* Recebe arquivo arrastado: a faixa do conversor sai da frente aqui
+         (`conversor/use-arraste-de-arquivo.ts`, 04/11/2026). */
+      data-aceita-arquivo=""
       onDragEnter={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         dragDepth.current += 1;
