@@ -35,6 +35,8 @@ export type TarefaDoBanco = {
   dueDate: string | null;
   /** "HH:mm" quando a pessoa escolheu o horário do prazo. */
   dueTime: string | null;
+  /** ISO do início (Gantt); `null` = não definido. */
+  startDate: string | null;
   recurring: boolean;
   recurringUntil?: string | null;
   recurringMonthDay?: number | null;
@@ -78,6 +80,15 @@ const texto = (v: unknown, max: number): string =>
   typeof v === "string" ? v.trim().slice(0, max) : "";
 const guid = (v: unknown): string | null =>
   typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
+
+const DIA_EM_BRASILIA = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+/** "yyyy-MM-dd" do dia de `d` no calendário de Brasília. */
+const diaEmBrasilia = (d: Date): string => DIA_EM_BRASILIA.format(d);
 
 /**
  * As tarefas que esta pessoa pode ver.
@@ -176,7 +187,7 @@ export const listarTarefas = createServerFn({ method: "POST" }).handler(
  *  chega quando a tarefa é aberta, e o cartão de quem não a abriu não mostrava
  *  progresso nenhum. */
 export const COLUNAS_TAREFA = `id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
-                               frequencia, situacao, prioridade, pontos, prazo, recorrente,
+                               frequencia, situacao, prioridade, pontos, prazo, inicio, recorrente,
                                recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
                                no_pack, ordem, criada_em, concluida_em, data_real_de_conclusao,
                                CONVERT(CHAR(5), horario, 108) AS horario,
@@ -219,6 +230,8 @@ export type LinhaTarefa = {
   prioridade: string;
   pontos: number;
   prazo: Date | null;
+  /** O início do Gantt (17/11/2026). Opcional no tipo: leituras com colunas próprias não o trazem. */
+  inicio?: Date | null;
   recorrente: boolean;
   recorre_ate: Date | null;
   dia_do_mes: number | null;
@@ -265,6 +278,7 @@ export function paraApp(t: LinhaTarefa): TarefaDoBanco {
     score: t.pontos,
     dueDate: t.prazo ? t.prazo.toISOString() : null,
     dueTime: t.prazo && t.horario ? t.horario : null,
+    startDate: t.inicio ? t.inicio.toISOString() : null,
     recurring: !!t.recorrente,
     recurringUntil: t.recorre_ate ? t.recorre_ate.toISOString() : null,
     recurringMonthDay: t.dia_do_mes,
@@ -307,6 +321,13 @@ export type EntradaTarefa = {
   prazo: Date | null;
   /** "HH:mm". Com ele, o SQL acerta a hora do prazo para bater. */
   horario: string | null;
+  /**
+   * O início do Gantt (17/11/2026). Só é gravado com `mexeNoInicio`: quem não manda o campo (a aba
+   * aberta com a versão de antes, a API, a próxima ocorrência) deixa o banco com o que já tinha —
+   * a gravação reescreve a linha inteira, e sem esta trava apagaria o início de quem o definiu.
+   */
+  inicio?: Date | null;
+  mexeNoInicio?: boolean;
   recorrente: boolean;
   recorreAte: Date | null;
   diaDoMes: number | null;
@@ -352,6 +373,8 @@ export const salvarTarefa = createServerFn({ method: "POST" })
         dueDate: string | null;
         /** "HH:mm", o horário escolhido para o prazo. */
         dueTime?: string | null;
+        /** ISO do início (Gantt). Ausente = não mexe; `null` = tira o início. */
+        startDate?: string | null;
         recurring?: boolean;
         recurringUntil?: string | null;
         recurringMonthDay?: number | null;
@@ -382,6 +405,18 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           prazo && typeof e?.dueTime === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(e.dueTime)
             ? e.dueTime
             : null;
+
+        /* O início segue a mesma regra do prazo (nulo = sem início; texto que não vira data é
+           erro), com uma diferença: AUSENTE quer dizer "não mexe", e não "sem início". A ordem
+           início ≤ prazo não é conferida aqui: o diálogo da tarefa muda o prazo e devolve o início
+           como estava, e barrar essa gravação travaria o diálogo. O Gantt desenha a barra a partir
+           do dia do prazo quando o início passou dele. */
+        const mexeNoInicio = e?.startDate !== undefined;
+        const inicio =
+          e?.startDate === undefined || e.startDate === null || e.startDate === ""
+            ? null
+            : new Date(typeof e.startDate === "string" ? e.startDate : NaN);
+        if (inicio && Number.isNaN(inicio.getTime())) throw new Error("Início inválido");
 
         const numero = (v: unknown, teto: number): number | null => {
           const n = Number(v);
@@ -420,6 +455,8 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           pontos: Math.max(0, Math.min(100, Math.trunc(Number(e?.score) || 0))),
           prazo,
           horario,
+          inicio,
+          mexeNoInicio,
           recorrente: e?.recurring === true,
           recorreAte:
             typeof e?.recurringUntil === "string" && !Number.isNaN(Date.parse(e.recurringUntil))
@@ -479,24 +516,31 @@ export const salvarTarefa = createServerFn({ method: "POST" })
           await pool
             .request()
             .input("id", sql.UniqueIdentifier, d.id)
-            .query(`SELECT responsavel_id, situacao, prazo FROM gestor.tarefas WHERE id=@id`)
+            .query(
+              `SELECT responsavel_id, situacao, prazo, inicio FROM gestor.tarefas WHERE id=@id`,
+            )
         ).recordset[0] as
-          { responsavel_id: number; situacao: string; prazo: Date | null } | undefined;
+          | { responsavel_id: number; situacao: string; prazo: Date | null; inicio: Date | null }
+          | undefined;
         if (atual && atual.responsavel_id !== eu) {
-          const mesmoPrazo =
-            (atual.prazo?.getTime() ?? null) === (d.prazo?.getTime() ?? null) ||
-            // O prazo vai e volta pela tela com o horário acertado no SQL; só
-            // conta como mudança o que muda o dia.
-            (!!atual.prazo &&
-              !!d.prazo &&
-              atual.prazo.toISOString().slice(0, 10) === d.prazo.toISOString().slice(0, 10));
+          /* O prazo vai e volta pela tela com o horário acertado no SQL; só conta como mudança
+             o que muda o DIA, e o dia de Brasília. Até 17/11/2026 era o dia em UTC: 20/11 às
+             23:59 (21/11 em UTC) e 21/11 às 09:00 eram "o mesmo dia", e quem só fora mencionado
+             passava a tarefa para o dia seguinte. O início do Gantt segue a mesma regra, e só
+             conta quando veio na gravação. */
+          const mesmoDia = (a: Date | null | undefined, b: Date | null | undefined) =>
+            (a?.getTime() ?? null) === (b?.getTime() ?? null) ||
+            (!!a && !!b && diaEmBrasilia(a) === diaEmBrasilia(b));
+          const mesmoPrazo = mesmoDia(atual.prazo, d.prazo);
+          const mesmoInicio = !d.mexeNoInicio || mesmoDia(atual.inicio, d.inicio);
           if (
             d.responsavelId !== atual.responsavel_id ||
             d.situacao !== atual.situacao ||
-            !mesmoPrazo
+            !mesmoPrazo ||
+            !mesmoInicio
           ) {
             throw new Error(
-              "Só o responsável ou quem criou a tarefa pode mudar responsável, situação ou prazo.",
+              "Só o responsável, quem criou, a chefia ou a gerência mudam o responsável, a situação, o prazo ou o início desta tarefa.",
             );
           }
         }
@@ -654,6 +698,8 @@ async function gravarNoBanco(
     .input("prazo", sql.DateTimeOffset, d.prazo)
     // Texto, pelo mesmo motivo da data real: um TIME vindo do JS passaria pelo fuso.
     .input("horario", sql.NVarChar(5), d.horario)
+    .input("inicio", sql.DateTimeOffset, d.inicio ?? null)
+    .input("mexe_inicio", sql.Bit, d.mexeNoInicio === true)
     .input("recorrente", sql.Bit, d.recorrente)
     .input("recorre_ate", sql.DateTimeOffset, d.recorreAte)
     .input("dia_do_mes", sql.SmallInt, d.diaDoMes)
@@ -759,7 +805,9 @@ async function gravarNoBanco(
            prioridade_antes   NVARCHAR(10),
            recorrente_antes   BIT,
            recorrente         BIT,
-           no_pack_antes      BIT
+           no_pack_antes      BIT,
+           inicio_antes       DATETIMEOFFSET(3),
+           inicio             DATETIMEOFFSET(3)
          );
 
          IF @id IS NOT NULL AND EXISTS (SELECT 1 FROM gestor.tarefas WHERE id=@id)
@@ -775,6 +823,8 @@ async function gravarNoBanco(
                   frequencia=@frequencia, situacao=@situacao, prioridade=@prioridade,
                   pontos = CASE WHEN @pode_conteudo = 1 THEN @pontos ELSE pontos END,
                   prazo=@prazo, horario=@hora, recorrente=@recorrente,
+                  /* Só quem manda o início mexe nele (ver EntradaTarefa.inicio). */
+                  inicio = CASE WHEN @mexe_inicio = 1 THEN @inicio ELSE inicio END,
                   recorre_ate=@recorre_ate, dia_do_mes=@dia_do_mes,
                   minutos_estimados=@minutos,
                   exige_comprovante = CASE WHEN @pode_conteudo = 1 THEN @comprovante
@@ -795,7 +845,8 @@ async function gravarNoBanco(
                   inserted.no_pack,
                   deleted.data_real_de_conclusao, inserted.data_real_de_conclusao,
                   deleted.titulo, deleted.prioridade,
-                  deleted.recorrente, inserted.recorrente, deleted.no_pack
+                  deleted.recorrente, inserted.recorrente, deleted.no_pack,
+                  deleted.inicio, inserted.inicio
              INTO @efeito (tarefa, criador, nova,
                            responsavel_antes, responsavel_depois,
                            situacao_antes, situacao_depois,
@@ -805,7 +856,8 @@ async function gravarNoBanco(
                            no_pack,
                            dia_real_antes, dia_real_depois,
                            titulo_antes, prioridade_antes,
-                           recorrente_antes, recorrente, no_pack_antes)
+                           recorrente_antes, recorrente, no_pack_antes,
+                           inicio_antes, inicio)
             WHERE id=@id;
          END
          ELSE
@@ -824,7 +876,7 @@ async function gravarNoBanco(
               gravações simultâneas não passam as duas pelo "ainda não existe". */
            INSERT INTO gestor.tarefas
              (id, titulo, descricao, setor, criado_por, responsavel_id, projeto_id,
-              frequencia, situacao, prioridade, pontos, prazo, horario, recorrente,
+              frequencia, situacao, prioridade, pontos, prazo, horario, inicio, recorrente,
               recorre_ate, dia_do_mes, minutos_estimados, exige_comprovante,
               no_pack, ordem, concluida_em, data_real_de_conclusao, criada_em)
            OUTPUT inserted.id, inserted.criado_por, CAST(1 AS BIT),
@@ -844,7 +896,7 @@ async function gravarNoBanco(
                            no_pack,
                            dia_real_antes, dia_real_depois)
            SELECT COALESCE(@id, NEWID()), @titulo, @descricao, @setor, @por, @responsavel, @projeto,
-                  @frequencia, @situacao, @prioridade, @pontos, @prazo, @hora, @recorrente,
+                  @frequencia, @situacao, @prioridade, @pontos, @prazo, @hora, @inicio, @recorrente,
                   @recorre_ate, @dia_do_mes, @minutos, @comprovante,
                   @no_pack, @ordem,
                   CASE WHEN @situacao = 'concluida' THEN SYSDATETIMEOFFSET() ELSE NULL END,
@@ -977,6 +1029,8 @@ async function gravarNoBanco(
                                 CONVERT(NVARCHAR(5), CAST(p.antes AS TIME), 108) AS hora_antes,
                                 CONVERT(NVARCHAR(5), p.depois, 103) AS dia_depois,
                                 CONVERT(NVARCHAR(5), CAST(p.depois AS TIME), 108) AS hora_depois) f
+            CROSS APPLY (SELECT CAST(e.inicio_antes AT TIME ZONE @fuso AS DATE) AS antes,
+                                CAST(e.inicio AT TIME ZONE @fuso AS DATE) AS depois) i
             CROSS APPLY (
               SELECT 0 AS ordem, N'criada' AS tipo,
                      ISNULL(@origem, N'criou esta tarefa') AS texto
@@ -1083,6 +1137,22 @@ async function gravarNoBanco(
                      CASE WHEN e.no_pack = 1 THEN N'pôs a tarefa no pack'
                           ELSE N'tirou a tarefa do pack' END
                WHERE e.nova = 0 AND e.no_pack_antes <> e.no_pack
+              UNION ALL
+              /* O início do Gantt (17/11/2026), pelo dia de Brasília: arrastar a barra muda o
+                 início e o prazo juntos, e a Timeline conta os dois. Tirar ou pôr tem linha
+                 própria pelo mesmo motivo do prazo (comparar com nulo não dá verdadeiro). */
+              SELECT 10, N'editada',
+                     N'mudou o início de ' + CONVERT(NVARCHAR(5), i.antes, 103)
+                     + N' para ' + CONVERT(NVARCHAR(5), i.depois, 103)
+               WHERE e.nova = 0 AND i.antes <> i.depois
+              UNION ALL
+              SELECT 10, N'editada',
+                     CASE WHEN i.depois IS NULL
+                          THEN N'removeu o início, que era ' + CONVERT(NVARCHAR(5), i.antes, 103)
+                          ELSE N'definiu o início para ' + CONVERT(NVARCHAR(5), i.depois, 103) END
+               WHERE e.nova = 0
+                 AND ((i.antes IS NULL AND i.depois IS NOT NULL)
+                      OR (i.antes IS NOT NULL AND i.depois IS NULL))
             ) h;
          END TRY
          BEGIN CATCH

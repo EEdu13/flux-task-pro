@@ -796,6 +796,8 @@ async function enviarTarefa(t: Task, origem?: string): Promise<void> {
         score: t.score,
         dueDate: t.dueDate,
         dueTime: t.dueDate ? (t.dueTime ?? null) : null,
+        /* Ausente (cópia da tarefa de antes do Gantt) = o servidor não mexe no início. */
+        startDate: t.startDate,
         recurring: t.recurring,
         recurringUntil: t.recurringUntil,
         recurringMonthDay: t.recurringMonthDay,

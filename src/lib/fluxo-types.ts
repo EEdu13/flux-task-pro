@@ -93,6 +93,12 @@ export interface Task {
    * regra de sempre, fim da tarde ou fim do dia, e a hora não é mostrada.
    */
   dueTime?: string | null;
+  /**
+   * ISO. O dia em que a tarefa começa, no Gantt (17/11/2026). `null` ou ausente =
+   * não definido: a barra começa em `createdAt`. Só o Gantt o muda; os outros
+   * caminhos o mandam de volta como está. Ausente na gravação = o servidor não mexe.
+   */
+  startDate?: string | null;
   recurring: boolean;
   recurringUntil?: string | null;
   /**
