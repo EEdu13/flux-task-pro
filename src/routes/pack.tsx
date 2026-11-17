@@ -12,6 +12,7 @@ import {
   Users,
   Layers,
   ArrowLeftRight,
+  Pencil,
   Plus,
   X,
 } from "lucide-react";
@@ -21,13 +22,14 @@ import { motion } from "framer-motion";
 
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
-import { ehChefeDe, podeEditarModeloDePack } from "@/lib/permissoes";
+import { ehChefeDe, podeEditarModeloDePack, podeMexerNoConteudo } from "@/lib/permissoes";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { TaskTimerControls } from "@/components/task-timer-controls";
 import type { PackTemplateScope, Task, User } from "@/lib/fluxo-types";
 import { TravaScroll } from "@/components/trava-scroll";
 import { UserAvatar } from "@/components/user-avatar";
-import { CriadorDePack, RascunhoDePack } from "@/components/criador-de-pack";
+import { CriadorDePack, EdicaoDoItemDoPack, RascunhoDePack } from "@/components/criador-de-pack";
+import { openTaskContext } from "@/components/task-context-menu";
 import {
   PRIORIDADES_DO_PACK,
   chaveDoTitulo,
@@ -91,6 +93,8 @@ function PackPage() {
     deletePackTemplate,
     applyPackTemplate,
     transferPack,
+    hidratarTarefa,
+    openTask,
   } = useFluxo();
   const [tab, setTab] = useState<Tab>("meu");
   /* O que está sendo montado para os outros mora aqui, e não na aba: trocar
@@ -145,6 +149,19 @@ function PackPage() {
      conclusão abre (o mesmo de qualquer outra tela), não por um segundo
      clique aqui: o item concluído hoje fica travado, riscado, até amanhã. */
   const concluir = (id: string) => updateTask(id, { status: "concluida" });
+
+  /* Editar um item na própria linha (09/11/2026): um por vez. A tarefa é "hidratada" ao abrir,
+     porque mudar a repetição grava os dias da semana, que só existem depois disso. O pack é de
+     quem o recebe: quem recebeu edita e tira o que quiser, mesmo o que o chefe mandou. */
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const editar = (id: string) => {
+    hidratarTarefa(id);
+    setEditandoId(id);
+  };
+  const salvarEdicao = (id: string, patch: Partial<Task>) => {
+    updateTask(id, patch);
+    setEditandoId(null);
+  };
 
   /** Abre "Montar para alguém" já com a pessoa escolhida. */
   const montarPara = (id: string) => {
@@ -232,10 +249,34 @@ function PackPage() {
                   <ul className="mt-3 space-y-1">
                     {myPack.map((t) => {
                       const done = concluidaHoje(t);
+                      // Editando: a linha vira campos, como o rascunho de criação.
+                      if (editandoId === t.id && !done) {
+                        return (
+                          <li key={t.id}>
+                            <EdicaoDoItemDoPack
+                              tarefa={t}
+                              aoSalvar={(patch) => salvarEdicao(t.id, patch)}
+                              aoCancelar={() => setEditandoId(null)}
+                              aoExcluir={() => {
+                                deleteTask(t.id);
+                                setEditandoId(null);
+                              }}
+                              aoMaisOpcoes={() => {
+                                setEditandoId(null);
+                                openTask(t.id);
+                              }}
+                            />
+                          </li>
+                        );
+                      }
                       return (
                         <li key={t.id}>
                           <div
-                            className={`flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              openTaskContext(t.id, e.clientX, e.clientY);
+                            }}
+                            className={`group flex w-full items-center gap-2 rounded-md border px-3 py-2 text-sm transition ${
                               done
                                 ? "border-emerald-500/40 bg-emerald-500/10 text-muted-foreground"
                                 : "border-border hover:bg-secondary"
@@ -263,6 +304,17 @@ function PackPage() {
                               {t.title}
                             </button>
                             {!done && <DetalhesDoItem t={t} />}
+                            {!done && (
+                              <button
+                                type="button"
+                                onClick={() => editar(t.id)}
+                                title="Editar este item"
+                                aria-label={`Editar "${t.title}"`}
+                                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                             {done ? (
                               <span className="shrink-0 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                                 Concluída hoje
@@ -522,10 +574,43 @@ function MontarParaAlguem({
     setUltimoEnvio({ para, titulos });
     setRascunho([]);
 
+    /* O aviso-resumo para quem recebeu (09/11/2026). O servidor cala o aviso de cada item do
+       pack (seriam dez de uma vez), e o modelo, a transferência e o botão rápido mandam um só,
+       por fora. Este envio não mandava nenhum, e a pessoa não ficava sabendo do pack montado
+       para ela. Sai quando o "Desfazer" some (10 s): pack desfeito não avisa ninguém. */
+    const avisos = envios
+      .filter((e) => e.itens.length > 0 && e.u.id !== currentUser.id)
+      .map((e) => ({ para: e.u.id, itens: e.itens.map((i) => i.titulo) }));
+    const timerDoAviso = window.setTimeout(() => {
+      void import("@/lib/notificacoes.functions")
+        .then(({ avisar }) =>
+          Promise.all(
+            avisos.map((a) =>
+              avisar({
+                data: {
+                  paraPessoaId: a.para,
+                  tipo: "atribuida",
+                  titulo: "Pack de hoje montado para você",
+                  descricao: `${primeiroNome(currentUser)} acrescentou ${a.itens.length} ${
+                    a.itens.length === 1 ? "item" : "itens"
+                  }: ${a.itens.join(", ")}`,
+                },
+              }).catch((e: unknown) =>
+                console.warn("[pack] aviso do pack não saiu:", (e as Error)?.message),
+              ),
+            ),
+          ),
+        )
+        .catch((e: unknown) =>
+          console.warn("[pack] aviso do pack não saiu:", (e as Error)?.message),
+        );
+    }, 10_500);
+
     /* Desfazer: arquiva o que acabou de sair e devolve a lista ao rascunho.
        As tarefas são achadas pelo que as identifica — quem criou, para quem,
        o título e o instante —, porque o `createTask` não devolve o id. */
     const desfazer = () => {
+      window.clearTimeout(timerDoAviso);
       const alvos = tasksRef.current.filter(
         (t) =>
           t.inPack &&
@@ -879,7 +964,8 @@ function Progresso({ feitos, total }: { feitos: number; total: number }) {
 
 /**
  * O pack de hoje de cada pessoa da equipe: quanto já foi feito, o que falta e
- * quem está sem pack. Só leitura — concluir é com a própria pessoa; para
+ * quem está sem pack. Concluir é com a própria pessoa. O chefe direto e a gerência
+ * editam e tiram itens do pack dela (o lápis de cada item, 09/11/2026); para
  * acrescentar itens, o botão leva à aba de montar já com ela escolhida.
  */
 function PackDaEquipe({
@@ -899,6 +985,21 @@ function PackDaEquipe({
 }) {
   const [filtro, setFiltro] = useState<FiltroEquipe>("todos");
   const [busca, setBusca] = useState("");
+  const { users, currentUser, updateTask, deleteTask, hidratarTarefa } = useFluxo();
+  /* Editar o pack dos outros: a mesma regra do servidor (`podeMexerNoConteudo`, que é o chefe
+     direto e a gerência). Tirar um item pede confirmação, porque a pessoa recebe um aviso. */
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const tirarDoPack = async (t: Task, u: User) => {
+    const ok = await confirmar({
+      titulo: "Tirar do pack?",
+      descricao: `Tirar "${t.title}" do pack de ${u.name}? A pessoa recebe um aviso.`,
+      confirmar: "Tirar do pack",
+      perigo: true,
+    });
+    if (!ok) return;
+    deleteTask(t.id);
+    setEditandoId(null);
+  };
 
   const linhas = useMemo(
     () =>
@@ -1039,8 +1140,25 @@ function PackDaEquipe({
                 <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
                   {pack.map((t) => {
                     const done = concluidaHoje(t);
+                    const editavel = !done && podeMexerNoConteudo(t, currentUser, users);
+                    if (editandoId === t.id && editavel) {
+                      return (
+                        <li key={t.id}>
+                          <EdicaoDoItemDoPack
+                            compacto
+                            tarefa={t}
+                            aoSalvar={(patch) => {
+                              updateTask(t.id, patch);
+                              setEditandoId(null);
+                            }}
+                            aoCancelar={() => setEditandoId(null)}
+                            aoExcluir={() => void tirarDoPack(t, u)}
+                          />
+                        </li>
+                      );
+                    }
                     return (
-                      <li key={t.id} className="flex items-center gap-2 text-[12px]">
+                      <li key={t.id} className="group flex items-center gap-2 text-[12px]">
                         <span
                           className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
                             done ? "border-emerald-500 bg-emerald-500 text-white" : "border-border"
@@ -1049,10 +1167,24 @@ function PackDaEquipe({
                           {done && <Check className="h-2.5 w-2.5" />}
                         </span>
                         <span
-                          className={`truncate ${done ? "text-muted-foreground line-through" : ""}`}
+                          className={`min-w-0 flex-1 truncate ${done ? "text-muted-foreground line-through" : ""}`}
                         >
                           {t.title}
                         </span>
+                        {editavel && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              hidratarTarefa(t.id);
+                              setEditandoId(t.id);
+                            }}
+                            title={`Editar o item de ${u.name}`}
+                            aria-label={`Editar "${t.title}"`}
+                            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
                       </li>
                     );
                   })}
@@ -1071,9 +1203,6 @@ function PackDaEquipe({
     </section>
   );
 }
-
-// keep Trash2 tree-shaken from warning
-void Trash2;
 
 type ModelosProps = {
   users: ReturnType<typeof useFluxo>["users"];

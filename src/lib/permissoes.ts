@@ -28,15 +28,19 @@ export function ehChefeDe(eu: User, users: User[], ...pessoas: (string | undefin
   });
 }
 
-/** Título, descrição, pontos e "exigir comprovante" da tarefa — e excluí-la. */
+/**
+ * Título, descrição, pontos e "exigir comprovante" da tarefa — e excluí-la. O item do PACK
+ * é de quem o recebe: ele mexe no conteúdo mesmo que o chefe o tenha criado.
+ */
 export function podeMexerNoConteudo(
-  t: Pick<Task, "createdBy" | "assigneeId">,
+  t: Pick<Task, "createdBy" | "assigneeId" | "inPack">,
   eu: User,
   users: User[],
 ): boolean {
   return (
     eu.role === "gerente" ||
     t.createdBy === eu.id ||
+    (!!t.inPack && t.assigneeId === eu.id) ||
     ehChefeDe(eu, users, t.createdBy, t.assigneeId)
   );
 }

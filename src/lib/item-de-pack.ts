@@ -1,3 +1,4 @@
+import { dataParaIso } from "@/lib/data-iso";
 import { HORARIO_VALIDO } from "@/lib/prazo";
 import { RECORRENCIA_DO_PACK } from "@/lib/recorrencia";
 import { semAcento } from "@/lib/texto-busca";
@@ -111,4 +112,68 @@ export function tarefaDoItemDePack(
     inPack: true,
     estimatedMinutes: item.minutos,
   };
+}
+
+/* ------------------------- Editar um item já gravado ------------------------- */
+
+/**
+ * O que a linha de edição mexe num item JÁ GRAVADO (09/11/2026): o mesmo recorte da linha de
+ * criação — texto, horário, prioridade e repetição. Tags, minutos e dias específicos ficam
+ * para a janela da tarefa.
+ */
+export type EdicaoDeItem = {
+  titulo: string;
+  /** "HH:mm" ou vazio (vence no fim do dia, 23:59). */
+  horario: string;
+  prioridade: Priority;
+  repetir: boolean;
+};
+
+type ItemGravado = Pick<Task, "title" | "dueDate" | "dueTime" | "priority" | "recurring">;
+
+/** O horário do item, ou vazio se não tem um válido (o que o servidor devolve é "HH:mm"). */
+const horarioDe = (t: Pick<Task, "dueTime">): string =>
+  t.dueTime && HORARIO_VALIDO.test(t.dueTime) ? t.dueTime : "";
+
+/** A tarefa gravada, no formato da linha de edição. */
+export function edicaoDe(t: ItemGravado): EdicaoDeItem {
+  return {
+    titulo: t.title,
+    horario: horarioDe(t),
+    prioridade: t.priority,
+    repetir: t.recurring,
+  };
+}
+
+/**
+ * Só o que MUDOU entre a tarefa e a edição, no formato do `updateTask`; `null` se nada mudou ou
+ * se a edição não vale (título vazio, horário que não é "HH:mm"). Quem chama grava só o que vier:
+ * o que não mudou nem é tocado, e assim a repetição não derruba os dias próprios do item.
+ *
+ * - horário: o MESMO dia do prazo, com o horário novo (vazio = fim do dia, 23:59), como a janela
+ *   da tarefa faz — mudar o horário nunca troca o dia, e um item atrasado continua atrasado;
+ * - repetir: ligar é a repetição do pack (seg a sex); desligar é "só hoje", o mesmo que o criador grava.
+ */
+export function patchDaEdicao(t: ItemGravado, e: EdicaoDeItem): Partial<Task> | null {
+  const titulo = e.titulo.trim().slice(0, 200);
+  if (!titulo) return null;
+  if (e.horario !== "" && !HORARIO_VALIDO.test(e.horario)) return null;
+
+  const patch: Partial<Task> = {};
+  if (titulo !== t.title) patch.title = titulo;
+  if (e.horario !== horarioDe(t)) {
+    const dia = dataParaIso(t.dueDate ? new Date(t.dueDate) : new Date());
+    patch.dueDate = new Date(`${dia}T${e.horario || "23:59"}:00`).toISOString();
+    patch.dueTime = e.horario || null;
+  }
+  if (e.prioridade !== t.priority) patch.priority = e.prioridade;
+  if (e.repetir !== t.recurring) {
+    Object.assign(
+      patch,
+      e.repetir
+        ? RECORRENCIA_DO_PACK
+        : { recurring: false, frequency: "diaria" as const, recurringWeekdays: null },
+    );
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
 }

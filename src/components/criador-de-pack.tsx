@@ -1,15 +1,18 @@
 import { useRef, useState } from "react";
-import { Clock, CornerDownLeft, ListPlus, Plus, Repeat, X } from "lucide-react";
+import { Clock, CornerDownLeft, ListPlus, Plus, Repeat, Trash2, X } from "lucide-react";
 
 import { CampoDeTags } from "@/components/campo-de-tags";
 import {
   PRIORIDADES_DO_PACK,
   chaveDoTitulo,
+  edicaoDe,
   linhasDoPack,
   novoItemDePack,
+  patchDaEdicao,
+  type EdicaoDeItem,
   type ItemDePack,
 } from "@/lib/item-de-pack";
-import type { Priority } from "@/lib/fluxo-types";
+import type { Priority, Task } from "@/lib/fluxo-types";
 
 /* Criar item do pack do jeito de criar tarefa (pedido do usuário, 13/10/2026:
    "criação do pack tem que ser parecido com a tarefa, fácil de criar ali").
@@ -363,5 +366,131 @@ export function RascunhoDePack({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * A linha de EDIÇÃO de um item que já está no pack (09/11/2026): o mesmo desenho do rascunho,
+ * sobre uma tarefa gravada. Texto, horário, prioridade e repetição; a lixeira tira do pack;
+ * "Mais opções" abre a janela completa da tarefa. Enter salva e Esc cancela.
+ *
+ * Salvar entrega só o que MUDOU (`patchDaEdicao`): quem chama grava com `updateTask`. Mudar a
+ * repetição também grava os dias da semana, e eles só existem na tarefa depois de "hidratada"
+ * (`hidratarTarefa`, que quem abre a edição chama): até lá o Salvar espera.
+ */
+export function EdicaoDoItemDoPack({
+  tarefa,
+  compacto = false,
+  aoSalvar,
+  aoCancelar,
+  aoExcluir,
+  aoMaisOpcoes,
+}: {
+  tarefa: Task;
+  /** No cartão estreito da equipe: o texto ocupa a linha inteira e o resto desce. */
+  compacto?: boolean;
+  aoSalvar: (patch: Partial<Task>) => void;
+  aoCancelar: () => void;
+  aoExcluir?: () => void;
+  aoMaisOpcoes?: () => void;
+}) {
+  const [edicao, setEdicao] = useState<EdicaoDeItem>(() => edicaoDe(tarefa));
+  const mudar = (patch: Partial<EdicaoDeItem>) => setEdicao((e) => ({ ...e, ...patch }));
+  const ciclo: Priority[] = ["media", "alta", "baixa"];
+  const prio = PRIORIDADES_DO_PACK.find((p) => p.id === edicao.prioridade)!;
+  const patch = patchDaEdicao(tarefa, edicao);
+  const esperando = edicao.repetir !== tarefa.recurring && !tarefa.satellitesLoaded;
+  const semTitulo = edicao.titulo.trim() === "";
+
+  const salvar = () => {
+    if (esperando || semTitulo) return;
+    // Nada mudou: salvar é só fechar.
+    if (!patch) aoCancelar();
+    else aoSalvar(patch);
+  };
+
+  return (
+    <div
+      role="group"
+      aria-label="Editar item do pack"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          aoCancelar();
+        } else if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
+          e.preventDefault();
+          salvar();
+        }
+      }}
+      className="flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/40 bg-background px-2 py-1.5"
+    >
+      <input
+        autoFocus
+        value={edicao.titulo}
+        maxLength={200}
+        onChange={(e) => mudar({ titulo: e.target.value })}
+        aria-label="Título"
+        className={`h-7 rounded bg-transparent px-1 text-sm outline-none focus:bg-primary/5 focus:ring-1 focus:ring-primary ${
+          compacto ? "w-full basis-full" : "min-w-[10rem] flex-1"
+        }`}
+      />
+      <input
+        type="time"
+        value={edicao.horario}
+        onChange={(e) => mudar({ horario: e.target.value })}
+        aria-label="Horário"
+        title="Horário (opcional)"
+        className="h-7 w-[5.75rem] rounded border border-border bg-transparent px-1 text-[11px] outline-none focus:border-primary"
+      />
+      <button
+        type="button"
+        onClick={() =>
+          mudar({ prioridade: ciclo[(ciclo.indexOf(edicao.prioridade) + 1) % ciclo.length] })
+        }
+        title="Prioridade — clique para trocar"
+        className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${prio.cor}`}
+      >
+        {prio.label}
+      </button>
+      <BotaoRepetir valor={edicao.repetir} aoMudar={(v) => mudar({ repetir: v })} compacto />
+      <span className="ml-auto flex items-center gap-1.5">
+        {aoMaisOpcoes && (
+          <button
+            type="button"
+            onClick={aoMaisOpcoes}
+            className="rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
+            title="Abre a janela completa da tarefa"
+          >
+            Mais opções
+          </button>
+        )}
+        {aoExcluir && (
+          <button
+            type="button"
+            onClick={aoExcluir}
+            className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title="Tirar do pack"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={aoCancelar}
+          className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-secondary"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={salvar}
+          disabled={esperando || semTitulo}
+          title={esperando ? "Carregando os dias da repetição…" : undefined}
+          className="rounded-md bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Salvar
+        </button>
+      </span>
+    </div>
   );
 }

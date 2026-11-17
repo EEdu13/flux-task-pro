@@ -95,8 +95,14 @@ export function sqlChefeDe(...pessoas: string[]): string {
  * Mexe no conteúdo da tarefa `t` — título, descrição, pontos e "exigir
  * comprovante" — e a exclui: quem criou, o chefe de quem criou ou de quem é
  * responsável, e a gerência.
+ *
+ * O item do PACK é de quem o recebe (decisão do usuário, 09/11/2026: "o pack é da
+ * pessoa"): o responsável também mexe no conteúdo dele, mesmo que o chefe o tenha
+ * criado. Sem isso, no 1º dia a pessoa não editava o texto do que o chefe mandou, e do
+ * 2º em diante podia, porque a próxima ocorrência nasce com ela como criadora.
  */
 export const SQL_CONTEUDO_DA_TAREFA = `(@gerente = 1 OR t.criado_por = @eu
+  OR (t.no_pack = 1 AND t.responsavel_id = @eu)
   OR ${sqlChefeDe("t.criado_por", "t.responsavel_id")})`;
 
 /**

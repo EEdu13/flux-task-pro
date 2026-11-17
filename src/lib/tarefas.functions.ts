@@ -730,7 +730,12 @@ async function gravarNoBanco(
            prazo              DATETIMEOFFSET(3),
            no_pack            BIT,
            dia_real_antes     DATE,
-           dia_real_depois    DATE
+           dia_real_depois    DATE,
+           titulo_antes       NVARCHAR(200),
+           prioridade_antes   NVARCHAR(10),
+           recorrente_antes   BIT,
+           recorrente         BIT,
+           no_pack_antes      BIT
          );
 
          IF @id IS NOT NULL AND EXISTS (SELECT 1 FROM gestor.tarefas WHERE id=@id)
@@ -764,7 +769,9 @@ async function gravarNoBanco(
                   inserted.titulo, inserted.pontos, inserted.prioridade,
                   deleted.prazo, inserted.prazo,
                   inserted.no_pack,
-                  deleted.data_real_de_conclusao, inserted.data_real_de_conclusao
+                  deleted.data_real_de_conclusao, inserted.data_real_de_conclusao,
+                  deleted.titulo, deleted.prioridade,
+                  deleted.recorrente, inserted.recorrente, deleted.no_pack
              INTO @efeito (tarefa, criador, nova,
                            responsavel_antes, responsavel_depois,
                            situacao_antes, situacao_depois,
@@ -772,7 +779,9 @@ async function gravarNoBanco(
                            titulo, pontos, prioridade,
                            prazo_antes, prazo,
                            no_pack,
-                           dia_real_antes, dia_real_depois)
+                           dia_real_antes, dia_real_depois,
+                           titulo_antes, prioridade_antes,
+                           recorrente_antes, recorrente, no_pack_antes)
             WHERE id=@id;
          END
          ELSE
@@ -1023,10 +1032,74 @@ async function gravarNoBanco(
                  AND (e.dia_real_antes <> e.dia_real_depois
                       OR (e.dia_real_antes IS NULL AND e.dia_real_depois IS NOT NULL)
                       OR (e.dia_real_antes IS NOT NULL AND e.dia_real_depois IS NULL))
+              UNION ALL
+              /* O que antes não deixava rastro (09/11/2026): o texto, a prioridade, a repetição
+                 e entrar ou sair do pack. Editar o item do pack na própria linha passou a mexer
+                 em tudo isso. O texto compara em binário: trocar só a caixa também é mudança. */
+              SELECT 6, N'editada',
+                     N'mudou o texto de "' + e.titulo_antes + N'" para "' + e.titulo + N'"'
+               WHERE e.nova = 0
+                 AND e.titulo_antes COLLATE Latin1_General_BIN2 <> e.titulo COLLATE Latin1_General_BIN2
+              UNION ALL
+              SELECT 7, N'editada',
+                     N'mudou a prioridade de '
+                     + CASE e.prioridade_antes WHEN N'alta' THEN N'Alta'
+                                               WHEN N'baixa' THEN N'Baixa' ELSE N'Média' END
+                     + N' para '
+                     + CASE e.prioridade WHEN N'alta' THEN N'Alta'
+                                         WHEN N'baixa' THEN N'Baixa' ELSE N'Média' END
+               WHERE e.nova = 0 AND e.prioridade_antes <> e.prioridade
+              UNION ALL
+              SELECT 8, N'editada',
+                     CASE WHEN e.recorrente = 1 THEN N'passou a repetir'
+                          ELSE N'deixou de repetir' END
+               WHERE e.nova = 0 AND e.recorrente_antes <> e.recorrente
+              UNION ALL
+              SELECT 9, N'editada',
+                     CASE WHEN e.no_pack = 1 THEN N'pôs a tarefa no pack'
+                          ELSE N'tirou a tarefa do pack' END
+               WHERE e.nova = 0 AND e.no_pack_antes <> e.no_pack
             ) h;
          END TRY
          BEGIN CATCH
            DECLARE @falha_no_historico NVARCHAR(4000) = ERROR_MESSAGE();
+         END CATCH
+
+         /* O item do pack editado por OUTRA pessoa (09/11/2026): quem o recebe fica sabendo, e
+            a tela dela relê na hora (o tipo 'atribuida' é um dos que disparam a releitura).
+            Só avisa quando:
+              - o item JÁ estava no pack (no_pack antes e depois) e não é a ocorrência de amanhã,
+                que ainda nem nasceu;
+              - o dono é o mesmo antes e depois, e não é quem gravou (editar o seu não avisa a si
+                mesmo; transferir o pack tem o aviso próprio);
+              - a situação não mudou (concluir tem o aviso de conclusão);
+              - mudou o texto, a prioridade, a repetição ou o horário/dia do prazo.
+            O prazo compara dia e HH:mm em Brasília, como o histórico, porque o prazo vai e volta
+            pela tela com o horário acertado no SQL.
+            TRY/CATCH: é aviso de apoio, e uma falha aqui não pode virar "não foi possível salvar"
+            numa tarefa que já foi salva. */
+         BEGIN TRY
+           INSERT INTO gestor.notificacoes
+             (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
+           SELECT e.responsavel_depois, @por, 'atribuida', N'Seu pack foi editado',
+                  e.titulo, e.tarefa
+             FROM @efeito e
+            CROSS APPLY (SELECT e.prazo_antes AT TIME ZONE @fuso AS antes,
+                                e.prazo AT TIME ZONE @fuso AS depois) p
+            WHERE e.nova = 0 AND @nasce_em IS NULL
+              AND e.no_pack_antes = 1 AND e.no_pack = 1
+              AND e.responsavel_antes = e.responsavel_depois
+              AND e.responsavel_depois <> @por
+              AND e.situacao_antes = e.situacao_depois
+              AND (e.titulo_antes COLLATE Latin1_General_BIN2 <> e.titulo COLLATE Latin1_General_BIN2
+                   OR e.prioridade_antes <> e.prioridade
+                   OR e.recorrente_antes <> e.recorrente
+                   OR CAST(p.antes AS DATE) <> CAST(p.depois AS DATE)
+                   OR CONVERT(NVARCHAR(5), CAST(p.antes AS TIME), 108)
+                      <> CONVERT(NVARCHAR(5), CAST(p.depois AS TIME), 108));
+         END TRY
+         BEGIN CATCH
+           DECLARE @falha_no_aviso NVARCHAR(4000) = ERROR_MESSAGE();
          END CATCH
 
          /* A próxima ocorrência leva da anterior o que mora fora desta tabela:
@@ -1195,11 +1268,51 @@ export const arquivarTarefa = createServerFn({ method: "POST" })
 
       const { getPool, sql } = await import("@/integrations/db.server");
       const pool = await getPool();
+      /* Antes de mexer: de quem era e se era do pack, para o aviso logo abaixo. */
+      const antes = (
+        await pool
+          .request()
+          .input("id", sql.UniqueIdentifier, d.id)
+          .query(
+            `SELECT no_pack, responsavel_id, titulo, arquivada_em FROM gestor.tarefas WHERE id=@id`,
+          )
+      ).recordset[0] as
+        | { no_pack: boolean; responsavel_id: number; titulo: string; arquivada_em: Date | null }
+        | undefined;
       const r = await pool
         .request()
         .input("id", sql.UniqueIdentifier, d.id)
         .input("quando", sql.DateTimeOffset, d.arquivar ? new Date() : null)
         .query(`UPDATE gestor.tarefas SET arquivada_em=@quando WHERE id=@id`);
+
+      /* O chefe tirou (ou devolveu, no desfazer) um item do pack de OUTRA pessoa: ela fica sabendo
+         (09/11/2026). Sem `tarefa_id` quando saiu, porque a tarefa arquivada não abre. O tipo
+         'atribuida' faz a tela dela reler na hora. É aviso de apoio: uma falha aqui não pode virar
+         "não deu para excluir" numa tarefa que já foi arquivada. */
+      const mudou =
+        !!antes && (d.arquivar ? antes.arquivada_em === null : antes.arquivada_em !== null);
+      if (r.rowsAffected[0] > 0 && antes?.no_pack && antes.responsavel_id !== eu && mudou) {
+        try {
+          await pool
+            .request()
+            .input("dest", sql.Int, antes.responsavel_id)
+            .input("de", sql.Int, eu)
+            .input(
+              "titulo",
+              sql.NVarChar(160),
+              d.arquivar ? "Item tirado do seu pack" : "Item de volta ao seu pack",
+            )
+            .input("descricao", sql.NVarChar(400), antes.titulo.slice(0, 400))
+            .input("tarefa", sql.UniqueIdentifier, d.arquivar ? null : d.id)
+            .query(
+              `INSERT INTO gestor.notificacoes
+                 (destinatario_id, de_pessoa_id, tipo, titulo, descricao, tarefa_id)
+               VALUES (@dest, @de, 'atribuida', @titulo, @descricao, @tarefa)`,
+            );
+        } catch {
+          /* aviso de apoio */
+        }
+      }
 
       return { ok: r.rowsAffected[0] > 0 };
     }),
