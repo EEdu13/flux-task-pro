@@ -292,7 +292,7 @@ export function paraApp(t: LinhaTarefa): TarefaDoBanco {
 }
 
 /** O que a gravação aceita. Sem campo de identidade — o `semIdentidade` recusa. */
-type EntradaTarefa = {
+export type EntradaTarefa = {
   id: string | null;
   titulo: string;
   descricao: string | null;
@@ -511,6 +511,30 @@ export const salvarTarefa = createServerFn({ method: "POST" })
       return { id: r.id, nova: r.nova };
     }),
   );
+
+/**
+ * Cria uma tarefa NOVA por um caminho do servidor que não tem sessão: a API de integração
+ * (`api-tarefas.server.ts`, 17/11/2026), em que outro sistema da empresa pede a tarefa.
+ *
+ * É a MESMA gravação da tela (`gravarNoBanco`), para a tarefa nascer igual: o aviso "Nova tarefa"
+ * na sineta do responsável, a linha "criada" no histórico (com o texto de `origem`), o "atribuiu
+ * para" e as etiquetas do projeto. `criador` é quem pediu a tarefa e vira o `criado_por`.
+ *
+ * Não é server function, de propósito (o mesmo cuidado de `registrarEntradaWhatsapp`): quem chama
+ * é uma rota que já conferiu a chave do sistema; o navegador não alcança esta função.
+ */
+export async function criarTarefaPeloServidor(
+  criador: number,
+  d: Omit<EntradaTarefa, "id" | "situacao" | "dataReal" | "nasceEm" | "anteriorId">,
+): Promise<string> {
+  const r = await gravarNoBanco(
+    criador,
+    { ...d, id: null, situacao: "pendente", dataReal: null, nasceEm: null, anteriorId: null },
+    true,
+  );
+  if (!r) throw new Error("A tarefa não foi gravada.");
+  return r.id;
+}
 
 /**
  * A próxima ocorrência de uma recorrente que acabou de ser concluída.

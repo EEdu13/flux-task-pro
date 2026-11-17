@@ -225,6 +225,16 @@ export const listarPessoas = createServerFn({ method: "POST" }).handler(
 /** A lista de `listarPessoas`, guardada — ver lá. */
 const CHAVE_QUADRO_DE_PESSOAS = "pessoas:quadro";
 
+/**
+ * O mesmo quadro, para quem roda no SERVIDOR sem sessão: a API de integração (17/11/2026), que
+ * acha o responsável e quem pediu a tarefa pelo id ou pelo e-mail. A mesma cópia de um minuto.
+ * Função comum, não server function: o navegador não alcança.
+ */
+export async function pessoasDoQuadro(): Promise<PessoaDoQuadro[]> {
+  const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+  return (await compartilhado(CHAVE_QUADRO_DE_PESSOAS, 60_000, quadroDePessoas)).pessoas;
+}
+
 /** Descarta o quadro guardado: quem acabou de gravar o próprio perfil se vê na hora. */
 async function esquecerQuadroDePessoas(): Promise<void> {
   const { esquecer } = await import("@/lib/cache-compartilhado.server");

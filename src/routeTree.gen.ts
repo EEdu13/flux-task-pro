@@ -44,7 +44,12 @@ import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/publi
 import { Route as ApiAtaAudioAtaBlocoRouteImport } from './routes/api/ata-audio.$ata.$bloco'
 import { Route as ApiPublicAppLatestRouteImport } from './routes/api/public/app/latest'
 import { Route as ApiPublicFotoNomeRouteImport } from './routes/api/public/foto/$nome'
+import { Route as ApiPublicV1PessoasRouteImport } from './routes/api/public/v1/pessoas'
+import { Route as ApiPublicV1ProjetosRouteImport } from './routes/api/public/v1/projetos'
+import { Route as ApiPublicV1StatusRouteImport } from './routes/api/public/v1/status'
+import { Route as ApiPublicV1TarefasRouteImport } from './routes/api/public/v1/tarefas'
 import { Route as ApiPublicAppBaixarArquivoRouteImport } from './routes/api/public/app/baixar.$arquivo'
+import { Route as ApiPublicV1TarefasIdRouteImport } from './routes/api/public/v1/tarefas.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -223,12 +228,37 @@ const ApiPublicFotoNomeRoute = ApiPublicFotoNomeRouteImport.update({
   path: '/api/public/foto/$nome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicV1PessoasRoute = ApiPublicV1PessoasRouteImport.update({
+  id: '/api/public/v1/pessoas',
+  path: '/api/public/v1/pessoas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1ProjetosRoute = ApiPublicV1ProjetosRouteImport.update({
+  id: '/api/public/v1/projetos',
+  path: '/api/public/v1/projetos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1StatusRoute = ApiPublicV1StatusRouteImport.update({
+  id: '/api/public/v1/status',
+  path: '/api/public/v1/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1TarefasRoute = ApiPublicV1TarefasRouteImport.update({
+  id: '/api/public/v1/tarefas',
+  path: '/api/public/v1/tarefas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicAppBaixarArquivoRoute =
   ApiPublicAppBaixarArquivoRouteImport.update({
     id: '/api/public/app/baixar/$arquivo',
     path: '/api/public/app/baixar/$arquivo',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicV1TarefasIdRoute = ApiPublicV1TarefasIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiPublicV1TarefasRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -266,7 +296,12 @@ export interface FileRoutesByFullPath {
   '/api/ata-audio/$ata/$bloco': typeof ApiAtaAudioAtaBlocoRoute
   '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
+  '/api/public/v1/pessoas': typeof ApiPublicV1PessoasRoute
+  '/api/public/v1/projetos': typeof ApiPublicV1ProjetosRoute
+  '/api/public/v1/status': typeof ApiPublicV1StatusRoute
+  '/api/public/v1/tarefas': typeof ApiPublicV1TarefasRouteWithChildren
   '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
+  '/api/public/v1/tarefas/$id': typeof ApiPublicV1TarefasIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -304,7 +339,12 @@ export interface FileRoutesByTo {
   '/api/ata-audio/$ata/$bloco': typeof ApiAtaAudioAtaBlocoRoute
   '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
+  '/api/public/v1/pessoas': typeof ApiPublicV1PessoasRoute
+  '/api/public/v1/projetos': typeof ApiPublicV1ProjetosRoute
+  '/api/public/v1/status': typeof ApiPublicV1StatusRoute
+  '/api/public/v1/tarefas': typeof ApiPublicV1TarefasRouteWithChildren
   '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
+  '/api/public/v1/tarefas/$id': typeof ApiPublicV1TarefasIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -343,7 +383,12 @@ export interface FileRoutesById {
   '/api/ata-audio/$ata/$bloco': typeof ApiAtaAudioAtaBlocoRoute
   '/api/public/app/latest': typeof ApiPublicAppLatestRoute
   '/api/public/foto/$nome': typeof ApiPublicFotoNomeRoute
+  '/api/public/v1/pessoas': typeof ApiPublicV1PessoasRoute
+  '/api/public/v1/projetos': typeof ApiPublicV1ProjetosRoute
+  '/api/public/v1/status': typeof ApiPublicV1StatusRoute
+  '/api/public/v1/tarefas': typeof ApiPublicV1TarefasRouteWithChildren
   '/api/public/app/baixar/$arquivo': typeof ApiPublicAppBaixarArquivoRoute
+  '/api/public/v1/tarefas/$id': typeof ApiPublicV1TarefasIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -383,7 +428,12 @@ export interface FileRouteTypes {
     | '/api/ata-audio/$ata/$bloco'
     | '/api/public/app/latest'
     | '/api/public/foto/$nome'
+    | '/api/public/v1/pessoas'
+    | '/api/public/v1/projetos'
+    | '/api/public/v1/status'
+    | '/api/public/v1/tarefas'
     | '/api/public/app/baixar/$arquivo'
+    | '/api/public/v1/tarefas/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -421,7 +471,12 @@ export interface FileRouteTypes {
     | '/api/ata-audio/$ata/$bloco'
     | '/api/public/app/latest'
     | '/api/public/foto/$nome'
+    | '/api/public/v1/pessoas'
+    | '/api/public/v1/projetos'
+    | '/api/public/v1/status'
+    | '/api/public/v1/tarefas'
     | '/api/public/app/baixar/$arquivo'
+    | '/api/public/v1/tarefas/$id'
   id:
     | '__root__'
     | '/'
@@ -459,7 +514,12 @@ export interface FileRouteTypes {
     | '/api/ata-audio/$ata/$bloco'
     | '/api/public/app/latest'
     | '/api/public/foto/$nome'
+    | '/api/public/v1/pessoas'
+    | '/api/public/v1/projetos'
+    | '/api/public/v1/status'
+    | '/api/public/v1/tarefas'
     | '/api/public/app/baixar/$arquivo'
+    | '/api/public/v1/tarefas/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -498,6 +558,10 @@ export interface RootRouteChildren {
   ApiAtaAudioAtaBlocoRoute: typeof ApiAtaAudioAtaBlocoRoute
   ApiPublicAppLatestRoute: typeof ApiPublicAppLatestRoute
   ApiPublicFotoNomeRoute: typeof ApiPublicFotoNomeRoute
+  ApiPublicV1PessoasRoute: typeof ApiPublicV1PessoasRoute
+  ApiPublicV1ProjetosRoute: typeof ApiPublicV1ProjetosRoute
+  ApiPublicV1StatusRoute: typeof ApiPublicV1StatusRoute
+  ApiPublicV1TarefasRoute: typeof ApiPublicV1TarefasRouteWithChildren
   ApiPublicAppBaixarArquivoRoute: typeof ApiPublicAppBaixarArquivoRoute
 }
 
@@ -748,6 +812,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicFotoNomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/v1/pessoas': {
+      id: '/api/public/v1/pessoas'
+      path: '/api/public/v1/pessoas'
+      fullPath: '/api/public/v1/pessoas'
+      preLoaderRoute: typeof ApiPublicV1PessoasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/projetos': {
+      id: '/api/public/v1/projetos'
+      path: '/api/public/v1/projetos'
+      fullPath: '/api/public/v1/projetos'
+      preLoaderRoute: typeof ApiPublicV1ProjetosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/status': {
+      id: '/api/public/v1/status'
+      path: '/api/public/v1/status'
+      fullPath: '/api/public/v1/status'
+      preLoaderRoute: typeof ApiPublicV1StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/tarefas': {
+      id: '/api/public/v1/tarefas'
+      path: '/api/public/v1/tarefas'
+      fullPath: '/api/public/v1/tarefas'
+      preLoaderRoute: typeof ApiPublicV1TarefasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/app/baixar/$arquivo': {
       id: '/api/public/app/baixar/$arquivo'
       path: '/api/public/app/baixar/$arquivo'
@@ -755,8 +847,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAppBaixarArquivoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/v1/tarefas/$id': {
+      id: '/api/public/v1/tarefas/$id'
+      path: '/$id'
+      fullPath: '/api/public/v1/tarefas/$id'
+      preLoaderRoute: typeof ApiPublicV1TarefasIdRouteImport
+      parentRoute: typeof ApiPublicV1TarefasRoute
+    }
   }
 }
+
+interface ApiPublicV1TarefasRouteChildren {
+  ApiPublicV1TarefasIdRoute: typeof ApiPublicV1TarefasIdRoute
+}
+
+const ApiPublicV1TarefasRouteChildren: ApiPublicV1TarefasRouteChildren = {
+  ApiPublicV1TarefasIdRoute: ApiPublicV1TarefasIdRoute,
+}
+
+const ApiPublicV1TarefasRouteWithChildren =
+  ApiPublicV1TarefasRoute._addFileChildren(ApiPublicV1TarefasRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -794,6 +904,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAtaAudioAtaBlocoRoute: ApiAtaAudioAtaBlocoRoute,
   ApiPublicAppLatestRoute: ApiPublicAppLatestRoute,
   ApiPublicFotoNomeRoute: ApiPublicFotoNomeRoute,
+  ApiPublicV1PessoasRoute: ApiPublicV1PessoasRoute,
+  ApiPublicV1ProjetosRoute: ApiPublicV1ProjetosRoute,
+  ApiPublicV1StatusRoute: ApiPublicV1StatusRoute,
+  ApiPublicV1TarefasRoute: ApiPublicV1TarefasRouteWithChildren,
   ApiPublicAppBaixarArquivoRoute: ApiPublicAppBaixarArquivoRoute,
 }
 export const routeTree = rootRouteImport
