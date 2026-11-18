@@ -142,6 +142,109 @@
   white-space: nowrap;
 }
 
+/*
+ * Arrastar (Módulo 4). Sem o modo só-leitura, o SVAR mostra o marcador de progresso
+ * (o CONECTA não tem progresso por tarefa) e as bolinhas de criar dependência (Módulo 5):
+ * escondidos. O cursor da barra o SVAR põe sozinho, direto no elemento (redimensionar
+ * nas pontas, mãozinha no meio); na travada, as pontas não podem sugerir que esticam
+ * (`!important` vence o estilo dele). O fundo do gráfico puxa para andar.
+ */
+.fluxo-gantt .wx-progress-marker,
+.fluxo-gantt .wx-progress-wrapper,
+.fluxo-gantt .wx-bar .wx-link {
+  display: none;
+}
+.fluxo-gantt .wx-chart {
+  cursor: grab;
+}
+.fluxo-gantt .wx-bar:has(.fluxo-gantt-travada),
+.fluxo-gantt .wx-bar.projeto {
+  cursor: pointer !important;
+}
+.fluxo-gantt.fluxo-gantt-andando,
+.fluxo-gantt.fluxo-gantt-andando * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/*
+ * O que dá para fazer com a barra, à vista (pedido do usuário, 18/11/2026: só o cursor
+ * mudava). Ao passar o mouse numa barra que a pessoa pode replanejar:
+ * - ela ganha um contorno e uma sombra leves (dá para pegar e mover);
+ * - aparecem duas ALÇAS nas pontas (dá para esticar). A alça tem a largura exata da área
+ *   em que o SVAR estica a barra: 20% de cada lado, até 40 px (`Be` no código dele); a
+ *   pílula clara dentro dela cresce quando o mouse chega ali.
+ * A barra travada (sem permissão ou concluída) não ganha nada disso: mostra um cadeado.
+ */
+.fluxo-gantt .wx-bar:not(.projeto) {
+  container-type: inline-size;
+}
+.fluxo-gantt .wx-bar:not(.projeto):not(:has(.fluxo-gantt-travada)):hover {
+  box-shadow:
+    0 0 0 2px color-mix(in oklch, var(--foreground) 22%, transparent),
+    0 6px 14px -6px rgb(0 0 0 / 0.45);
+}
+.fluxo-gantt .fluxo-gantt-alca {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  width: min(20%, 40px);
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.fluxo-gantt .fluxo-gantt-alca-inicio {
+  left: 0;
+  justify-content: flex-start;
+  padding-left: 3px;
+}
+.fluxo-gantt .fluxo-gantt-alca-fim {
+  right: 0;
+  justify-content: flex-end;
+  padding-right: 3px;
+}
+.fluxo-gantt .fluxo-gantt-alca::after {
+  content: "";
+  width: 4px;
+  height: 52%;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.85);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.12),
+    0 1px 2px rgb(0 0 0 / 0.3);
+  transition:
+    width 0.15s,
+    height 0.15s,
+    background 0.15s;
+}
+.fluxo-gantt .wx-bar:hover .fluxo-gantt-alca {
+  opacity: 1;
+}
+.fluxo-gantt .fluxo-gantt-alca:hover::after {
+  width: 6px;
+  height: 74%;
+  background: #fff;
+}
+/* Barra estreita demais (um dia na escala de mês): as alças cobririam tudo. */
+@container (max-width: 26px) {
+  .fluxo-gantt-alca {
+    display: none !important;
+  }
+}
+.fluxo-gantt .fluxo-gantt-cadeado {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.fluxo-gantt .wx-bar:hover .fluxo-gantt-cadeado {
+  opacity: 0.9;
+}
+
 /* A coluna de hoje, levemente tingida (escala Dia). */
 .fluxo-gantt .fluxo-gantt-coluna-hoje {
   background: color-mix(in oklch, var(--destructive) 8%, transparent);

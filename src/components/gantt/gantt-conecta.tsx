@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -19,7 +20,8 @@ import {
   type ITask,
 } from "@svar-ui/react-gantt";
 import { Locale } from "@svar-ui/react-core";
-import { CalendarCheck } from "lucide-react";
+import { CalendarCheck, Lock, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import "@svar-ui/react-gantt/all.css";
 import "./gantt.css";
 import { UserAvatar } from "@/components/user-avatar";
@@ -31,24 +33,38 @@ import {
   montarGanttDoProjeto,
   montarGanttGeral,
   projetoDaLinha,
+  replanejamento,
+  somarDias,
   type ItemDoGantt,
+  type MudancaDePlano,
 } from "./montar-gantt";
 import { PALAVRAS_PT } from "./palavras-pt";
 
 /**
- * O Gantt do CONECTA (pedido do Eduardo, 05/11/2026), só leitura por enquanto:
+ * O Gantt do CONECTA (pedido do Eduardo, 05/11/2026):
  * - `modo: "projeto"` (Módulo 2, 17/11): a aba de um projeto, só as tarefas dele;
  * - `modo: "geral"` (Módulo 3, 18/11): todos os projetos, cada um com as suas tarefas
- *   embaixo, recolhidos de início.
+ *   embaixo, recolhidos de início;
+ * - arrastar e redimensionar a barra replaneja a tarefa (Módulo 4, 18/11), e arrastar o
+ *   fundo anda pelo gráfico.
  *
  * Carregado sob demanda por `./index.tsx`: o SVAR e o CSS dele só baixam quando a
  * tela abre. O clique numa tarefa abre o diálogo da casa (`openTask`); no projeto,
- * abre ou recolhe. O editor do próprio SVAR fica desligado.
+ * abre ou recolhe. O editor do próprio SVAR fica desligado, e o SVAR não muda dado
+ * nenhum sozinho: quem grava é `onReplanejar`, pelo mesmo caminho da tela.
  */
 
 interface PropsComuns {
   users: User[];
   onAbrirTarefa: (id: string) => void;
+  /**
+   * Os ids (minúsculos) das tarefas que a pessoa pode arrastar, vindos do servidor com a
+   * mesma regra da trava do prazo. `null` = ainda conferindo; `"erro"` = a conferência
+   * falhou. Nos dois casos nada arrasta.
+   */
+  podeReplanejar: ReadonlySet<string> | null | "erro";
+  /** A barra foi arrastada: grava (e empilha o Desfazer). */
+  onReplanejar: (tarefaId: string, mudanca: MudancaDePlano) => void;
 }
 
 export interface PropsDoProjeto extends PropsComuns {
@@ -69,6 +85,8 @@ export type GanttConectaProps = PropsDoProjeto | PropsGerais;
 interface LinhaDoGantt extends ItemDoGantt {
   pessoaNome: string;
   pessoaIniciais: string;
+  /** A barra não arrasta (projeto, concluída ou sem permissão): o cursor avisa antes. */
+  travada: boolean;
 }
 
 /* Os tipos do SVAR precisam estar registrados: tipo desconhecido vira "task", e a
@@ -180,8 +198,71 @@ function RotuloDaBarra({ data }: { data: ITask }) {
       </div>
     );
   }
-  return <div className="fluxo-gantt-rotulo">{data.text}</div>;
+  /* Ao passar o mouse, a barra mostra o que dá para fazer com ela (pedido do usuário,
+     18/11/2026: só o cursor mudava). Alças nas pontas = esticar; o cadeado = não arrasta. */
+  if (data.travada) {
+    return (
+      <div className="fluxo-gantt-rotulo fluxo-gantt-travada">
+        <Lock className="fluxo-gantt-cadeado" aria-hidden />
+        {data.text}
+      </div>
+    );
+  }
+  return (
+    <div className="fluxo-gantt-rotulo">
+      <span className="fluxo-gantt-alca fluxo-gantt-alca-inicio" aria-hidden />
+      {data.text}
+      <span className="fluxo-gantt-alca fluxo-gantt-alca-fim" aria-hidden />
+    </div>
+  );
 }
+
+/** Por que esta barra não arrasta; `null` = arrasta. */
+function motivoDaTrava(
+  linha: LinhaDoGantt | undefined,
+  pode: GanttConectaProps["podeReplanejar"],
+): string | null {
+  if (!linha) return "Esta linha não se arrasta.";
+  if (linha.ehProjeto) return "A barra do projeto acompanha as tarefas dele: arraste as tarefas.";
+  if (linha.type === "concluida") return "Tarefa concluída: o prazo fica como estava.";
+  if (pode === "erro") {
+    return "Não deu para conferir quem pode replanejar agora. Recarregue a página para tentar de novo.";
+  }
+  if (!pode) return "Um instante: conferindo quem pode replanejar esta tarefa.";
+  if (!pode.has(linha.id.toLowerCase())) {
+    return "Só o responsável, quem criou, a chefia ou a gerência mudam o prazo desta tarefa.";
+  }
+  return null;
+}
+
+/**
+ * O que o SVAR faria sozinho e não pode: criar, apagar, copiar ou mover tarefa (tecla
+ * Delete, Ctrl+C/V, arrastar linha da grade) e mexer em dependência (Módulo 5). Tudo que
+ * muda dado passa por nós.
+ */
+const ACOES_BLOQUEADAS = [
+  "add-task",
+  "delete-task",
+  "copy-task",
+  "move-task",
+  "indent-task",
+  "split-task",
+  "add-link",
+  "update-link",
+  "delete-link",
+] as const;
+
+/**
+ * As dependências (Módulo 5): por ora nenhuma. Constante, e não `[]` no JSX: um array novo a
+ * cada desenho, o SVAR toma por dado novo e recalcula as barras, e no meio de um arraste a
+ * barra voltava para o lugar de antes (prova de 18/11/2026).
+ */
+const SEM_DEPENDENCIAS: never[] = [];
+
+/** Quanto o mouse anda antes de um clique virar arraste do fundo. */
+const LIMIAR_DO_ARRASTE_PX = 4;
+/** Um clique que chega até aqui depois de um arraste é o fim do arraste, não um clique. */
+const CLIQUE_DEPOIS_DO_ARRASTE_MS = 300;
 
 const COLUNA_PESSOA: IColumnConfig = {
   id: "pessoaNome",
@@ -343,7 +424,7 @@ function assinatura(props: GanttConectaProps): string {
 }
 
 export default function GanttConecta(props: GanttConectaProps) {
-  const { modo, users, onAbrirTarefa } = props;
+  const { modo, users, onAbrirTarefa, podeReplanejar, onReplanejar } = props;
   const aparencia = useAparencia();
   const [agora, setAgora] = useState(() => Date.now());
   const [api, setApi] = useState<IApi | null>(null);
@@ -371,14 +452,113 @@ export default function GanttConecta(props: GanttConectaProps) {
       const pessoas = new Map(users.map((u) => [u.id, u]));
       const linhas: LinhaDoGantt[] = m.tasks.map((item) => {
         const p = pessoas.get(item.responsavelId);
-        return { ...item, pessoaNome: p?.name ?? "—", pessoaIniciais: p?.avatar ?? "?" };
+        const linha = {
+          ...item,
+          pessoaNome: p?.name ?? "—",
+          pessoaIniciais: p?.avatar ?? "?",
+          travada: false,
+        };
+        linha.travada = motivoDaTrava(linha, podeReplanejar) !== null;
+        return linha;
       });
-      return { ...m, linhas };
+      return { ...m, linhas, porId: new Map(linhas.map((l) => [l.id, l])) };
     },
     /* Pelo conteúdo (`chave`, `chavePessoas`), não pela identidade das listas: ver `assinatura`. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chave, chavePessoas, agora],
+    [chave, chavePessoas, agora, podeReplanejar],
   );
+
+  /*
+   * O que os ouvintes do SVAR leem na hora do gesto. Eles são registrados uma vez (no
+   * `init`), então leem por refs, e não pelas variáveis de quando foram criados.
+   */
+  const atual = useRef({ montagem, podeReplanejar, onReplanejar, tarefas: props.tarefas });
+  useEffect(() => {
+    atual.current = { montagem, podeReplanejar, onReplanejar, tarefas: props.tarefas };
+  });
+  /** Quando houve o último arraste (de barra ou do fundo): o clique que vem junto não abre nada. */
+  const ultimoArraste = useRef(0);
+  /** O SVAR avisa o fim do arraste duas vezes; grava uma. */
+  const ultimaGravacao = useRef({ chave: "", em: 0 });
+
+  /** O arraste de barra em andamento: onde ela estava (px) quando o gesto começou. */
+  const gesto = useRef<{ id: string; x: number; w: number } | null>(null);
+  /** As datas que a barra terá ao soltar, num rótulo em cima dela. */
+  const mostrarRotulo = useRef<(r: Rotulo | null) => void>(() => {});
+  const setRotulo = (r: Rotulo | null) => mostrarRotulo.current(r);
+
+  const encerrarGesto = () => {
+    gesto.current = null;
+    setRotulo(null);
+  };
+
+  /* Soltou o mouse fora de tudo (ou o SVAR não avisou o fim): o rótulo não pode ficar.
+     Só refs aqui dentro, como em `encerrarGesto`. */
+  useEffect(() => {
+    const aoSoltar = () =>
+      window.setTimeout(() => {
+        gesto.current = null;
+        mostrarRotulo.current(null);
+      }, 0);
+    window.addEventListener("pointerup", aoSoltar);
+    window.addEventListener("pointercancel", aoSoltar);
+    return () => {
+      window.removeEventListener("pointerup", aoSoltar);
+      window.removeEventListener("pointercancel", aoSoltar);
+    };
+  }, []);
+
+  /**
+   * A barra anda de DIA EM DIA enquanto é arrastada, e o rótulo mostra as datas em que ela
+   * vai cair (pedido do usuário, 18/11/2026: ela corria solta, pixel a pixel, caía no dia
+   * mais próximo só ao soltar, e era preciso ir e voltar até acertar o dia, ainda mais na
+   * escala de semana ou de mês, em que o dia tem poucos pixels).
+   *
+   * O SVAR aplica a posição que vem no evento (`$x = left`, `$w = width`), e a
+   * interceptação roda antes: basta encaixar `left`/`width` em dias inteiros, contados de
+   * onde a barra estava no começo do gesto. Ao soltar ele conta os dias do mesmo jeito
+   * (`Math.round(deslocamento / largura do dia)`), então onde a barra está é onde ela fica.
+   */
+  const encaixarEmDias = (
+    a: IApi,
+    linha: LinhaDoGantt,
+    ev: { id: string | number; left?: number; width?: number },
+  ) => {
+    if (typeof ev.left !== "number" || typeof ev.width !== "number") return;
+    const id = String(ev.id);
+    if (!gesto.current || gesto.current.id !== id) {
+      const t = a.getTask(ev.id) as ITask & { $x?: number; $w?: number };
+      gesto.current = { id, x: t.$x ?? ev.left, w: t.$w ?? ev.width };
+    }
+    const escala = a.getState()._scales;
+    const porDia = escala ? escala.lengthUnitWidth / (escala.lengthUnit === "week" ? 7 : 1) : 0;
+    if (!(porDia > 0)) return;
+    const g = gesto.current;
+    const diasInicio = Math.round((ev.left - g.x) / porDia);
+    const diasFim = Math.round((ev.left + ev.width - (g.x + g.w)) / porDia);
+    ev.left = g.x + diasInicio * porDia;
+    ev.width = Math.max(porDia, g.x + g.w + diasFim * porDia - ev.left);
+
+    const inicio = DATA_CURTA.format(somarDias(linha.start, diasInicio));
+    const prazo = DATA_CURTA.format(somarDias(linha.end, diasFim - 1));
+    /* O que o gesto está fazendo agora: mover a barra inteira, puxar uma ponta, ou nada
+       (voltou ao ponto de partida). O deslocamento é o da data que muda. */
+    const conteudo: ConteudoDoRotulo =
+      diasInicio !== 0 && diasFim !== 0
+        ? { datas: `${inicio} → ${prazo}`, dias: diasInicio }
+        : diasFim !== 0
+          ? { datas: `Prazo ${prazo}`, dias: diasFim }
+          : diasInicio !== 0
+            ? { datas: `Início ${inicio}`, dias: diasInicio }
+            : { datas: `${inicio} → ${prazo}`, dias: 0 };
+    const barra = document.querySelector(`.fluxo-gantt .wx-bar[data-id=":${CSS.escape(id)}"]`);
+    if (!barra) return;
+    /* A barra na tela ainda está onde o SVAR a pôs no evento anterior (`$x` de agora): o
+       rótulo vai para onde ela vai, centrado em cima dela. */
+    const caixa = barra.getBoundingClientRect();
+    const xAgora = (a.getTask(ev.id) as { $x?: number }).$x ?? g.x;
+    setRotulo({ x: caixa.left + (ev.left - xAgora) + ev.width / 2, y: caixa.top, ...conteudo });
+  };
 
   const hoje = inicioDoDia(agora).getTime();
   const destacarHoje = useMemo(
@@ -437,6 +617,62 @@ export default function GanttConecta(props: GanttConectaProps) {
       cancelAnimationFrame(animacao.current);
     };
   }, [irParaHoje, escala]);
+
+  /**
+   * Arrastar o FUNDO do gráfico anda por ele, para os lados e para cima e para baixo
+   * (pedido do usuário, 18/11/2026). Só no fundo: o arraste que começa numa barra é dela
+   * (replanejar), e a barra de rolagem fica com o navegador. Rola pelo SVAR, como o "Hoje".
+   */
+  const aoApertar = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!api || e.button !== 0) return;
+    const alvo = e.target as Element;
+    const grafico = alvo.closest?.(".wx-chart") as HTMLElement | null;
+    if (!grafico || alvo.closest(".wx-bar")) return;
+    const caixa = grafico.getBoundingClientRect();
+    if (
+      e.clientX - caixa.left > grafico.clientWidth ||
+      e.clientY - caixa.top > grafico.clientHeight
+    ) {
+      return;
+    }
+    const raizDoGantt = e.currentTarget;
+    const estado = api.getState();
+    const inicio = {
+      x: e.clientX,
+      y: e.clientY,
+      left: estado.scrollLeft ?? 0,
+      top: estado.scrollTop ?? 0,
+    };
+    const maxLeft = Math.max(0, grafico.scrollWidth - grafico.clientWidth);
+    const maxTop = Math.max(0, grafico.scrollHeight - grafico.clientHeight);
+    let andando = false;
+    const mover = (ev: PointerEvent) => {
+      const dx = ev.clientX - inicio.x;
+      const dy = ev.clientY - inicio.y;
+      if (!andando && Math.hypot(dx, dy) < LIMIAR_DO_ARRASTE_PX) return;
+      if (!andando) {
+        andando = true;
+        raizDoGantt.classList.add("fluxo-gantt-andando");
+      }
+      ev.preventDefault();
+      void api.exec("scroll-chart", {
+        left: Math.min(maxLeft, Math.max(0, inicio.left - dx)),
+        top: Math.min(maxTop, Math.max(0, inicio.top - dy)),
+      });
+    };
+    const soltar = () => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      window.removeEventListener("pointercancel", soltar);
+      if (andando) {
+        ultimoArraste.current = performance.now();
+        raizDoGantt.classList.remove("fluxo-gantt-andando");
+      }
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+    window.addEventListener("pointercancel", soltar);
+  };
 
   const Tema = aparencia?.escuro ? WillowDark : Willow;
   const estilo = aparencia
@@ -503,10 +739,16 @@ export default function GanttConecta(props: GanttConectaProps) {
           ref={setRaiz}
           className="fluxo-gantt min-h-0 flex-1"
           style={estilo}
+          onPointerDown={aoApertar}
           onClick={(e) => {
             if (!api) return;
+            /* O fim de um arraste (de barra ou do fundo) não é clique. */
+            if (performance.now() - ultimoArraste.current < CLIQUE_DEPOIS_DO_ARRASTE_MS) return;
+            const el = e.target as Element;
             /* O triângulo do projeto o SVAR já abre e recolhe sozinho. */
-            if ((e.target as Element).closest?.(".wx-toggle-icon")) return;
+            if (el.closest?.(".wx-toggle-icon")) return;
+            /* No fundo vazio do gráfico o clique não abre nada: só a barra e a linha da grade. */
+            if (el.closest?.(".wx-chart") && !el.closest(".wx-bar")) return;
             const alvo = locateTask(e.nativeEvent, api);
             if (!alvo) return;
             if (projetoDaLinha(alvo.id) !== null) {
@@ -522,7 +764,7 @@ export default function GanttConecta(props: GanttConectaProps) {
               <Tema fonts={false} key={`${aparencia.escuro}-${aparencia.borda}`}>
                 <Gantt
                   tasks={montagem.linhas}
-                  links={[]}
+                  links={SEM_DEPENDENCIAS}
                   taskTypes={TIPOS}
                   scales={config.scales}
                   start={montagem.inicio}
@@ -533,11 +775,85 @@ export default function GanttConecta(props: GanttConectaProps) {
                   columns={COLUNAS[modo]}
                   taskTemplate={RotuloDaBarra}
                   highlightTime={destacarHoje}
-                  readonly
                   init={(a: IApi) => {
                     setApi(a);
                     /* O editor do SVAR fica desligado: o duplo clique não abre nada além do nosso. */
                     a.intercept("show-editor", () => false);
+                    for (const acao of ACOES_BLOQUEADAS) a.intercept(acao, () => false);
+                    /* Arrastar: a barra travada nem sai do lugar, e o motivo aparece (um aviso
+                       só por vez: o mesmo `id` substitui o anterior). */
+                    a.intercept(
+                      "drag-task",
+                      (ev: {
+                        id: string | number;
+                        left?: number;
+                        width?: number;
+                        inProgress?: boolean;
+                      }) => {
+                        ultimoArraste.current = performance.now();
+                        const { montagem: m, podeReplanejar: pode } = atual.current;
+                        const linha = m.porId.get(String(ev.id));
+                        const motivo = motivoDaTrava(linha, pode);
+                        if (motivo) {
+                          toast.message(motivo, { id: "gantt-trava" });
+                          return false;
+                        }
+                        if (!ev.inProgress || !linha) return encerrarGesto();
+                        encaixarEmDias(a, linha, ev);
+                      },
+                    );
+                    /* Soltou: o SVAR quer mudar a tarefa (manda o objeto INTEIRO, não só as
+                       datas). Só valem as datas, de quem pode, e só se o dia mudou; fora isso
+                       o SVAR não muda nada. Quem grava é `onReplanejar`. */
+                    a.intercept(
+                      "update-task",
+                      (ev: {
+                        id: string | number;
+                        task: Partial<ITask>;
+                        diff?: number;
+                        inProgress?: boolean;
+                      }) => {
+                        if (ev.inProgress) return;
+                        encerrarGesto();
+                        const { montagem: m, podeReplanejar: pode, tarefas } = atual.current;
+                        const linha = m.porId.get(String(ev.id));
+                        if (!linha || motivoDaTrava(linha, pode) || !ev.task) return false;
+                        /* No fim do arraste o SVAR manda os campos que o gesto mexe com os valores
+                           de ANTES (mover: start e end; ponta esquerda: start; direita: end) e o
+                           deslocamento em `diff`, na unidade da escala (nas nossas, o dia). */
+                        let start = linha.start;
+                        let end = linha.end;
+                        if (typeof ev.diff === "number" && ev.diff !== 0) {
+                          const unidade = a.getState()._scales?.lengthUnit;
+                          const dias = ev.diff * (unidade === "week" ? 7 : 1);
+                          if ("start" in ev.task) start = somarDias(linha.start, dias);
+                          if ("end" in ev.task) end = somarDias(linha.end, dias);
+                        } else {
+                          start = ev.task.start ?? linha.start;
+                          end =
+                            ev.task.end ??
+                            (ev.task.start && typeof ev.task.duration === "number"
+                              ? somarDias(ev.task.start, ev.task.duration)
+                              : linha.end);
+                        }
+                        const tarefa = tarefas.find((t) => t.id === linha.id);
+                        const mudanca = replanejamento(
+                          linha,
+                          { start, end },
+                          {
+                            dueTime: tarefa?.dueTime,
+                          },
+                        );
+                        if (!mudanca) return false;
+                        const chaveDoGesto = `${linha.id}|${mudanca.startDate ?? ""}|${mudanca.dueDate ?? ""}`;
+                        const ultima = ultimaGravacao.current;
+                        if (ultima.chave === chaveDoGesto && performance.now() - ultima.em < 1500) {
+                          return;
+                        }
+                        ultimaGravacao.current = { chave: chaveDoGesto, em: performance.now() };
+                        atual.current.onReplanejar(linha.id, mudanca);
+                      },
+                    );
                     /* Quem a pessoa abre ou recolhe, para continuar assim quando os dados mudam. */
                     a.on("open-task", (ev: { id: string | number; mode: boolean }) => {
                       const projeto = projetoDaLinha(ev.id);
@@ -553,7 +869,74 @@ export default function GanttConecta(props: GanttConectaProps) {
           )}
         </div>
       )}
+      <RotuloDoArraste mostrar={mostrarRotulo} />
     </div>
+  );
+}
+
+/** O que o rótulo do arraste diz: as datas e quantos dias a data que muda anda (0 = como estava). */
+interface ConteudoDoRotulo {
+  datas: string;
+  dias: number;
+}
+
+/** Onde e o que o rótulo do arraste mostra. */
+interface Rotulo extends ConteudoDoRotulo {
+  x: number;
+  y: number;
+}
+
+/**
+ * O rótulo com as datas durante o arraste, com estado PRÓPRIO: ele muda a cada movimento
+ * do mouse, e se o estado morasse no Gantt, cada mudança redesenharia o SVAR no meio do
+ * gesto (e o SVAR, ao redesenhar, devolvia a barra ao lugar de antes: prova de 18/11/2026).
+ * O Gantt fala com ele pela função que ele deixa em `mostrar`.
+ */
+function RotuloDoArraste({ mostrar }: { mostrar: { current: (r: Rotulo | null) => void } }) {
+  const [rotulo, setRotulo] = useState<Rotulo | null>(null);
+  useEffect(() => {
+    mostrar.current = setRotulo;
+    return () => {
+      mostrar.current = () => {};
+    };
+  }, [mostrar]);
+  if (!rotulo) return null;
+  const { dias } = rotulo;
+  /* As cores e o "Como estava" pedidos pelo usuário em 18/11/2026: o deslocamento em verde
+     quando a data anda para a frente, em vermelho quando volta, e um rótulo neutro,
+     tracejado, quando a barra voltou ao ponto de partida (soltar ali não muda nada). */
+  const conteudo =
+    dias === 0 ? (
+      <>
+        <RotateCcw className="h-3 w-3" aria-hidden />
+        Como estava · {rotulo.datas}
+      </>
+    ) : (
+      <>
+        {rotulo.datas}
+        <span className="text-muted-foreground" aria-hidden>
+          ·
+        </span>
+        <span className={dias > 0 ? "text-success" : "text-destructive"}>
+          {dias > 0 ? "+" : "−"}
+          {Math.abs(dias)} {Math.abs(dias) === 1 ? "dia" : "dias"}
+        </span>
+      </>
+    );
+  /* No `body`: dentro do layout há `transform`, e o `fixed` sairia do lugar. */
+  return createPortal(
+    <div
+      role="status"
+      className={`pointer-events-none fixed z-50 inline-flex -translate-x-1/2 -translate-y-full items-center gap-1 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-semibold shadow-md ${
+        dias === 0
+          ? "border-dashed border-muted-foreground/60 bg-muted text-muted-foreground"
+          : "border-border bg-popover text-popover-foreground"
+      }`}
+      style={{ left: rotulo.x, top: rotulo.y - 6 }}
+    >
+      {conteudo}
+    </div>,
+    document.body,
   );
 }
 

@@ -164,6 +164,25 @@ export type PermissaoNaTarefa = {
   conteudo: boolean;
 };
 
+/**
+ * As tarefas de PROJETO que `eu` pode replanejar no Gantt, arrastando a barra (18/11/2026).
+ *
+ * A mesma regra da trava do prazo em `salvarTarefa`: muda o prazo e o início quem mexe no
+ * conteúdo da tarefa (quem criou, a chefia, a gerência) ou é o responsável; quem só foi
+ * mencionado, não. A tela só usa isto para não deixar arrastar (e dizer por quê): quem
+ * decide de verdade continua sendo o `salvarTarefa`.
+ */
+export async function tarefasQuePodeReplanejar(eu: number): Promise<string[]> {
+  const { getPool, sql } = await import("@/integrations/db.server");
+  const pool = await getPool();
+  const r = await pool.request().input("eu", sql.Int, eu).query(`${SQL_QUEM_SOU}
+    ${SQL_PREPARA_SUBORDINADOS}
+    SELECT t.id FROM gestor.tarefas t
+     WHERE t.projeto_id IS NOT NULL AND t.arquivada_em IS NULL
+       AND (${SQL_CONTEUDO_DA_TAREFA} OR t.responsavel_id = @eu);`);
+  return (r.recordset as { id: string }[]).map((l) => String(l.id).toLowerCase());
+}
+
 export async function permissaoNaTarefa(eu: number, tarefaId: string): Promise<PermissaoNaTarefa> {
   const l = await consultar<{ ver: number; conteudo: number }>(
     eu,

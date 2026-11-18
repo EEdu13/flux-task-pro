@@ -283,3 +283,61 @@ export function montarGanttGeral(
   const itens = blocos.flatMap((b) => [b.projeto, ...b.filhas]);
   return { tasks: itens, ...eixo.comFolga(), semPrazo };
 }
+
+/* ---------------------------- Arrastar a barra ---------------------------- */
+
+/** O que muda numa tarefa quando a barra é arrastada. Só vem o que mudou. */
+export interface MudancaDePlano {
+  /** ISO da meia-noite (hora local) do novo início. */
+  startDate?: string;
+  /** ISO do novo prazo, no horário dela (ou 23:59). */
+  dueDate?: string;
+}
+
+/** Arredonda para o começo do dia mais próximo: nas escalas de semana e mês o arraste cai no meio do dia. */
+function diaMaisProximo(d: Date): Date {
+  return inicioDoDia(d.getTime() + DIA_MS / 2);
+}
+
+/** Dias de calendário de `a` até `b` (arredondado: dias de 23 ou 25 horas não atrapalham). */
+function diasEntre(a: Date, b: Date): number {
+  return Math.round(
+    (inicioDoDia(b.getTime()).getTime() - inicioDoDia(a.getTime()).getTime()) / DIA_MS,
+  );
+}
+
+/**
+ * Compara a barra de antes com a de depois do arraste e diz o que mudou na tarefa:
+ * - moveu a barra inteira: início e prazo andam juntos;
+ * - puxou a ponta da direita: só o prazo;
+ * - puxou a ponta da esquerda: só o início.
+ *
+ * Tudo em dias inteiros. O prazo fica no horário que a tarefa já tinha (`dueTime`) e, sem
+ * horário, às 23:59: a mesma regra do diálogo da tarefa (`task-dialog.tsx`). Se o início
+ * passar do prazo, ele fica no dia do prazo. `null` = nada mudou.
+ */
+export function replanejamento(
+  antes: { start: Date; end: Date },
+  depois: { start: Date; end: Date },
+  tarefa: { dueTime?: string | null },
+): MudancaDePlano | null {
+  const andouInicio = diasEntre(antes.start, diaMaisProximo(depois.start));
+  const andouFim = diasEntre(antes.end, diaMaisProximo(depois.end));
+  if (andouInicio === 0 && andouFim === 0) return null;
+
+  const inicio = somarDias(inicioDoDia(antes.start.getTime()), andouInicio);
+  const diaDoPrazo = somarDias(inicioDoDia(antes.end.getTime()), andouFim - 1);
+  const mudanca: MudancaDePlano = {};
+  if (andouFim !== 0) {
+    const [h, m] = /^([01]\d|2[0-3]):([0-5]\d)$/.test(tarefa.dueTime ?? "")
+      ? tarefa.dueTime!.split(":").map(Number)
+      : [23, 59];
+    const prazo = new Date(diaDoPrazo);
+    prazo.setHours(h!, m!, 0, 0);
+    mudanca.dueDate = prazo.toISOString();
+  }
+  if (andouInicio !== 0) {
+    mudanca.startDate = (inicio > diaDoPrazo ? diaDoPrazo : inicio).toISOString();
+  }
+  return mudanca;
+}

@@ -7,6 +7,7 @@ import {
   montarGanttDoProjeto,
   montarGanttGeral,
   projetoDaLinha,
+  replanejamento,
   situacaoNoGantt,
   type ProjetoParaGantt,
   type TarefaParaGantt,
@@ -287,4 +288,57 @@ test("id da linha do projeto vai e volta; tarefa não é projeto", () => {
   assert.equal(projetoDaLinha(idDaLinhaDoProjeto("abc-123")), "abc-123");
   assert.equal(projetoDaLinha("abc-123"), null);
   assert.equal(projetoDaLinha(42), null);
+});
+
+/* ---------------------------- Arrastar a barra ---------------------------- */
+
+const barra = (ini: number, fimExclusivo: number) => ({ start: dia(ini), end: dia(fimExclusivo) });
+
+test("arrastar a barra inteira muda início e prazo juntos", () => {
+  // barra 10–20 (fim exclusivo 21) movida 3 dias para a frente
+  assert.deepEqual(replanejamento(barra(10, 21), barra(13, 24), {}), {
+    startDate: dia(13).toISOString(),
+    dueDate: dia(23, 23, 59).toISOString(),
+  });
+});
+
+test("puxar a ponta da direita muda só o prazo", () => {
+  assert.deepEqual(replanejamento(barra(10, 21), barra(10, 26), {}), {
+    dueDate: dia(25, 23, 59).toISOString(),
+  });
+});
+
+test("puxar a ponta da esquerda muda só o início", () => {
+  assert.deepEqual(replanejamento(barra(10, 21), barra(7, 21), {}), {
+    startDate: dia(7).toISOString(),
+  });
+});
+
+test("o prazo guarda o horário escolhido; sem horário, 23:59", () => {
+  assert.deepEqual(replanejamento(barra(10, 21), barra(10, 22), { dueTime: "08:40" }), {
+    dueDate: dia(21, 8, 40).toISOString(),
+  });
+  assert.deepEqual(replanejamento(barra(10, 21), barra(10, 22), { dueTime: "lixo" }), {
+    dueDate: dia(21, 23, 59).toISOString(),
+  });
+});
+
+test("arraste no meio do dia (escala semana/mês) encaixa no dia mais próximo", () => {
+  const depois = { start: dia(13, 14), end: dia(24, 14) }; // 14h: arredonda para o dia seguinte
+  assert.deepEqual(replanejamento(barra(10, 21), depois, {}), {
+    startDate: dia(14).toISOString(),
+    dueDate: dia(24, 23, 59).toISOString(),
+  });
+  const quase = { start: dia(10, 9), end: dia(21, 9) }; // 9h: fica no mesmo dia, nada muda
+  assert.equal(replanejamento(barra(10, 21), quase, {}), null);
+});
+
+test("soltar no mesmo lugar não muda nada", () => {
+  assert.equal(replanejamento(barra(10, 21), barra(10, 21), {}), null);
+});
+
+test("início puxado para depois do prazo fica no dia do prazo", () => {
+  assert.deepEqual(replanejamento(barra(10, 21), barra(25, 21), {}), {
+    startDate: dia(20).toISOString(),
+  });
 });
