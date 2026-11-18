@@ -37,7 +37,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { ProjectTracking } from "@/components/project-tracking";
 import { ProjectPortfolio } from "@/components/project-portfolio";
 import { FupSemanal } from "@/components/fup-semanal";
-import { GanttDoProjeto } from "@/components/gantt";
+import { GanttDoProjeto, GanttGeral } from "@/components/gantt";
 import { CampoData } from "@/components/campo-data";
 import { useFluxo } from "@/lib/fluxo-store";
 import { podeEditarProjeto } from "@/lib/permissoes";
@@ -67,11 +67,14 @@ const riskBadge: Record<RiskLevel, string> = {
 };
 
 export const Route = createFileRoute("/projetos")({
-  /* `?projeto=<id>`: o aviso "te adicionou a um projeto" abre direto nele. */
-  validateSearch: (s: Record<string, unknown>): { projeto?: string } =>
-    typeof s.projeto === "string" && /^[0-9a-f-]{36}$/i.test(s.projeto)
+  /* `?projeto=<id>`: o aviso "te adicionou a um projeto" abre direto nele.
+     `?visao=gantt`: abre direto no Gantt de todos os projetos (link para mandar). */
+  validateSearch: (s: Record<string, unknown>): { projeto?: string; visao?: "gantt" } => ({
+    ...(typeof s.projeto === "string" && /^[0-9a-f-]{36}$/i.test(s.projeto)
       ? { projeto: s.projeto }
-      : {},
+      : {}),
+    ...(s.visao === "gantt" ? { visao: "gantt" as const } : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Projetos · SGL - CONECTA" },
@@ -156,6 +159,7 @@ function ProjetosPage() {
     currentUser,
     completions,
     minutes,
+    tasks,
   } = useFluxo();
 
   // Todos da empresa podem ser chamados / atribuídos — sem limite por setor.
@@ -166,13 +170,28 @@ function ProjetosPage() {
   }, [users, currentUser.id]);
   const projects = visibleProjects();
   const [selectedId, setSelectedId] = useState<string | null>(projects[0]?.id ?? null);
-  const [topView, setTopView] = useState<"portfolio" | "detalhe" | "fup">("portfolio");
+  const { projeto: projetoDaUrl, visao: visaoDaUrl } = Route.useSearch();
+  const [topView, setTopView] = useState<"portfolio" | "detalhe" | "fup" | "gantt">(
+    visaoDaUrl === "gantt" ? "gantt" : "portfolio",
+  );
+
+  /* O Gantt de todos os projetos (Módulo 3, 18/11/2026): as tarefas dos projetos que a
+     pessoa vê. `visibleProjects()` devolve uma lista nova a cada render; a chave
+     dos ids evita refazer o filtro à toa (o Gantt ainda compara pelo conteúdo). */
+  const idsDosProjetos = projects.map((p) => p.id.toLowerCase()).join("|");
+  const tarefasDosProjetos = useMemo(() => {
+    const ids = new Set(idsDosProjetos.split("|"));
+    return tasks.filter((t) => !!t.projectId && ids.has(t.projectId.toLowerCase()));
+  }, [tasks, idsDosProjetos]);
+  /* O link `?visao=gantt` clicado com a tela já aberta (não remonta a página). */
+  useEffect(() => {
+    if (visaoDaUrl === "gantt") setTopView("gantt");
+  }, [visaoDaUrl]);
 
   /* Veio de um aviso de projeto: abre ele. Pelo efeito, e não só no estado
      inicial, por dois motivos — clicar no aviso com a tela de Projetos já
      aberta não remonta a página, e o projeto pode chegar um instante depois,
      quando a releitura disparada pelo aviso responde. */
-  const { projeto: projetoDaUrl } = Route.useSearch();
   const projetoPedido = projetoDaUrl
     ? projects.find((p) => p.id.toLowerCase() === projetoDaUrl.toLowerCase())?.id
     : undefined;
@@ -320,6 +339,18 @@ function ProjetosPage() {
                 <Presentation className="h-3.5 w-3.5" />
                 FUP
               </button>
+              <button
+                onClick={() => setTopView("gantt")}
+                title="Todos os projetos numa linha do tempo"
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                  topView === "gantt"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <SquareChartGantt className="h-3.5 w-3.5" />
+                Gantt
+              </button>
             </div>
             {topView === "detalhe" && (
               <>
@@ -354,7 +385,19 @@ function ProjetosPage() {
           </div>
         </header>
 
-        {topView === "fup" ? (
+        {topView === "gantt" ? (
+          <section
+            className="overflow-hidden rounded-2xl border border-border bg-card"
+            style={{ height: "clamp(420px, calc(100vh - 200px), 1100px)" }}
+          >
+            <GanttGeral
+              projetos={projects}
+              tarefas={tarefasDosProjetos}
+              users={users}
+              onAbrirTarefa={openTask}
+            />
+          </section>
+        ) : topView === "fup" ? (
           <FupSemanal
             projects={projects}
             getTasks={projectTasks}

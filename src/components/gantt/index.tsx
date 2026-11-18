@@ -1,12 +1,12 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { ehFalhaDeCarregamento } from "@/components/conversor/falha-de-carregamento";
-import type { GanttConectaProps } from "./gantt-conecta";
+import type { GanttConectaProps, PropsDoProjeto, PropsGerais } from "./gantt-conecta";
 
 /**
- * A porta do Gantt (17/11/2026). O SVAR e o CSS dele pesam, e só quem abre a aba
- * precisa deles: o componente vem por `import()`, só no navegador (o SVAR mede a
- * tela, e o servidor não tem tela).
+ * A porta do Gantt (17/11/2026). O SVAR e o CSS dele pesam, e só quem abre o
+ * Gantt precisa deles: o componente vem por `import()`, só no navegador (o SVAR
+ * mede a tela, e o servidor não tem tela).
  */
 const GanttConecta = lazy(() => import("./gantt-conecta"));
 
@@ -61,8 +61,8 @@ function Carregando() {
   );
 }
 
-export function GanttDoProjeto(props: GanttConectaProps) {
-  /* Só depois de montar: no servidor (SSR) a aba desenha o "Abrindo". */
+function Porta(props: GanttConectaProps) {
+  /* Só depois de montar: no servidor (SSR) a tela desenha o "Abrindo". */
   const [montado, setMontado] = useState(false);
   useEffect(() => setMontado(true), []);
   return (
@@ -76,4 +76,14 @@ export function GanttDoProjeto(props: GanttConectaProps) {
       )}
     </LimiteDoGantt>
   );
+}
+
+/** A aba Gantt de um projeto: só as tarefas dele. */
+export function GanttDoProjeto(props: Omit<PropsDoProjeto, "modo">) {
+  return <Porta {...props} modo="projeto" />;
+}
+
+/** A visão geral: todos os projetos, cada um com as suas tarefas embaixo. */
+export function GanttGeral(props: Omit<PropsGerais, "modo">) {
+  return <Porta {...props} modo="geral" />;
 }

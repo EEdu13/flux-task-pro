@@ -1,15 +1,15 @@
 /*
  * O Gantt (SVAR) vestido com as cores do CONECTA (17/11/2026).
  *
- * Tudo dentro de `.fluxo-gantt`: o CSS do SVAR só existe quando a aba abre, e
+ * Tudo dentro de `.fluxo-gantt`: o CSS do SVAR só existe quando a tela abre, e
  * nada daqui vaza para o resto do app. Os temas Willow/WillowDark do SVAR dão a
  * base; por cima, as variáveis `--wx-*` apontam para os nossos tokens, que mudam
  * com a paleta e com o claro/escuro.
  */
 
+/* A altura vem do pai (divide com a barra de escalas: `flex-1`). */
 .fluxo-gantt {
   position: relative;
-  height: 100%;
 }
 
 /*
@@ -67,22 +67,31 @@
   --wx-gantt-task-border: 1px solid transparent;
 }
 
-/* Barras pela situação da tarefa: as cores de `statusColor` (fluxo-types.ts). */
-.fluxo-gantt .wx-bar.pendente {
+/*
+ * Barras pela situação da tarefa: as cores de `statusColor` (fluxo-types.ts). A
+ * legenda da barra de escalas usa as mesmas (ela fica fora de `.fluxo-gantt`).
+ */
+.fluxo-gantt .wx-bar.pendente,
+.fluxo-gantt-legenda.pendente {
   background: oklch(0.68 0.025 155);
 }
-.fluxo-gantt .wx-bar.andamento {
+.fluxo-gantt .wx-bar.andamento,
+.fluxo-gantt-legenda.andamento {
   background: oklch(0.746 0.148 233);
 }
-.fluxo-gantt .wx-bar.concluida {
+.fluxo-gantt .wx-bar.concluida,
+.fluxo-gantt-legenda.concluida {
   background: oklch(0.792 0.181 146);
   opacity: 0.55;
 }
-.fluxo-gantt .wx-bar.atrasada {
+.fluxo-gantt .wx-bar.atrasada,
+.fluxo-gantt-legenda.atrasada {
   background: var(--destructive);
 }
-/* Sem prazo: a linha fica na lista da esquerda; a barra existe só para o SVAR. */
-.fluxo-gantt .wx-bar.semprazo {
+/* Sem prazo, e projeto sem tarefa com prazo: a linha fica na lista da esquerda; a
+   barra existe só para o SVAR. */
+.fluxo-gantt .wx-bar.semprazo,
+.fluxo-gantt .wx-bar.projetovazio {
   visibility: hidden;
   pointer-events: none;
 }
@@ -93,6 +102,13 @@
   border-color: transparent;
 }
 
+.fluxo-gantt-legenda {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
 /* O texto da barra: o título, cortado com reticências. */
 .fluxo-gantt .fluxo-gantt-rotulo {
   overflow: hidden;
@@ -101,6 +117,29 @@
   white-space: nowrap;
   font-weight: 600;
   font-size: 12px;
+}
+
+/* A barra do projeto: a cor do projeto, cobrindo a barra inteira. */
+.fluxo-gantt .wx-bar.projeto {
+  overflow: hidden;
+  border-color: transparent;
+  background: transparent;
+}
+.fluxo-gantt .fluxo-gantt-barra-projeto {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: inherit;
+  background: var(--fluxo-cor-projeto);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.35);
+  white-space: nowrap;
 }
 
 /* A coluna de hoje, levemente tingida (escala Dia). */
@@ -120,7 +159,60 @@
   pointer-events: none;
 }
 
+/*
+ * O triângulo de abrir e recolher o projeto. O do SVAR é uma letra da fonte de
+ * ícones dele, que vem do CDN e fica desligada (`fonts={false}`): desenhado aqui
+ * pela classe que ele já põe (`wxi-menu-right` fechado, `wxi-menu-down` aberto).
+ */
+.fluxo-gantt .wx-toggle-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fluxo-gantt .wx-toggle-icon:hover {
+  background: var(--secondary);
+}
+.fluxo-gantt .wx-toggle-icon::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: -2px;
+  border-right: 2px solid var(--muted-foreground);
+  border-bottom: 2px solid var(--muted-foreground);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.fluxo-gantt .wx-toggle-icon.wxi-menu-down::before {
+  margin-top: -3px;
+  margin-left: 0;
+  transform: rotate(45deg);
+}
+
 /* Colunas da esquerda. */
+.fluxo-gantt .fluxo-gantt-titulo {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fluxo-gantt .fluxo-gantt-titulo-projeto {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.fluxo-gantt .fluxo-gantt-bolinha {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+}
 .fluxo-gantt .fluxo-gantt-pessoa {
   display: flex;
   height: 100%;
@@ -134,4 +226,7 @@
 .fluxo-gantt .fluxo-gantt-prazo-atrasado {
   color: var(--destructive);
   font-weight: 600;
+}
+.fluxo-gantt .fluxo-gantt-prazo-projeto {
+  font-weight: 700;
 }

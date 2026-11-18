@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   barraDaTarefa,
+  entraNaVisaoGeral,
+  idDaLinhaDoProjeto,
   montarGanttDoProjeto,
+  montarGanttGeral,
+  projetoDaLinha,
   situacaoNoGantt,
+  type ProjetoParaGantt,
   type TarefaParaGantt,
 } from "../src/components/gantt/montar-gantt.ts";
 
@@ -142,4 +147,144 @@ test("montagem vazia: eixo em volta de hoje", () => {
   assert.deepEqual(m.tasks, []);
   assert.deepEqual(m.inicio, dia(14));
   assert.deepEqual(m.fim, dia(25));
+});
+
+/* ------------------------------ Visão geral ------------------------------ */
+
+const projeto = (id: string, p: Partial<ProjetoParaGantt> = {}): ProjetoParaGantt => ({
+  id,
+  name: id,
+  ownerId: "9",
+  ...p,
+});
+
+test("visão geral: concluídas só dos últimos 30 dias; abertas sempre", () => {
+  const ha = (n: number) => new Date(AGORA - n * 86_400_000).toISOString();
+  assert.equal(entraNaVisaoGeral(tarefa({ id: "a", dueDate: ha(400) }), AGORA), true);
+  assert.equal(
+    entraNaVisaoGeral(tarefa({ id: "b", status: "concluida", completedAt: ha(10) }), AGORA),
+    true,
+  );
+  assert.equal(
+    entraNaVisaoGeral(tarefa({ id: "c", status: "concluida", completedAt: ha(31) }), AGORA),
+    false,
+  );
+  // sem data de conclusão, vale o prazo
+  assert.equal(
+    entraNaVisaoGeral(tarefa({ id: "d", status: "concluida", dueDate: ha(5) }), AGORA),
+    true,
+  );
+  assert.equal(
+    entraNaVisaoGeral(tarefa({ id: "e", status: "concluida", dueDate: ha(60) }), AGORA),
+    false,
+  );
+  assert.equal(
+    entraNaVisaoGeral(tarefa({ id: "f", status: "concluida", dueDate: null }), AGORA),
+    false,
+  );
+});
+
+test("visão geral: cada projeto com as suas tarefas embaixo; barra do projeto cobre as delas", () => {
+  const m = montarGanttGeral(
+    [projeto("P1", { color: "red" }), projeto("p2")],
+    [
+      tarefa({
+        id: "a",
+        projectId: "P1",
+        startDate: dia(12).toISOString(),
+        dueDate: dia(15, 23, 59).toISOString(),
+      }),
+      tarefa({
+        id: "b",
+        projectId: "p1",
+        startDate: dia(14).toISOString(),
+        dueDate: dia(25, 23, 59).toISOString(),
+      }),
+      tarefa({
+        id: "c",
+        projectId: "P2",
+        startDate: dia(5).toISOString(),
+        dueDate: dia(6, 23, 59).toISOString(),
+      }),
+      tarefa({ id: "solta", startDate: dia(1).toISOString() }), // sem projeto: fica fora
+      tarefa({ id: "outro", projectId: "P3" }), // projeto que a pessoa não vê: fica fora
+    ],
+    AGORA,
+    nunca,
+    new Set(["P1"]),
+  );
+  assert.deepEqual(
+    m.tasks.map((t) => t.id),
+    ["projeto:p2", "c", "projeto:P1", "a", "b"],
+  );
+  const p1 = m.tasks.find((t) => t.id === "projeto:P1")!;
+  assert.deepEqual([p1.start, p1.end], [dia(12), dia(26)]);
+  assert.equal(p1.type, "projeto");
+  assert.equal(p1.open, true);
+  assert.equal(p1.cor, "red");
+  assert.equal(p1.ehProjeto, true);
+  assert.equal(p1.responsavelId, "9");
+  assert.equal(m.tasks.find((t) => t.id === "projeto:p2")!.open, false);
+  assert.equal(m.tasks.find((t) => t.id === "a")!.parent, "projeto:P1");
+});
+
+test("visão geral: projeto sem tarefa com prazo fica no fim, com a barra escondida", () => {
+  const m = montarGanttGeral(
+    [projeto("Zeta"), projeto("Alfa"), projeto("Com barra")],
+    [
+      tarefa({ id: "s", projectId: "Zeta", dueDate: null }),
+      tarefa({ id: "x", projectId: "Com barra" }),
+    ],
+    AGORA,
+    nunca,
+    new Set(),
+  );
+  assert.deepEqual(
+    m.tasks.filter((t) => t.ehProjeto).map((t) => [t.text, t.type]),
+    [
+      ["Com barra", "projeto"],
+      ["Alfa", "projetovazio"],
+      ["Zeta", "projetovazio"],
+    ],
+  );
+  const zeta = m.tasks.find((t) => t.id === "projeto:Zeta")!;
+  assert.deepEqual([zeta.start, zeta.end], [dia(17), dia(18)]);
+  assert.equal(m.semPrazo, 1);
+});
+
+test("visão geral: concluída antiga não entra nem estica a barra do projeto", () => {
+  const m = montarGanttGeral(
+    [projeto("P")],
+    [
+      tarefa({
+        id: "nova",
+        projectId: "P",
+        startDate: dia(15).toISOString(),
+        dueDate: dia(19, 23, 59).toISOString(),
+      }),
+      tarefa({
+        id: "velha",
+        projectId: "P",
+        status: "concluida",
+        startDate: new Date(2026, 5, 1).toISOString(),
+        dueDate: new Date(2026, 5, 5, 23, 59).toISOString(),
+        completedAt: new Date(2026, 5, 5, 10).toISOString(),
+      }),
+    ],
+    AGORA,
+    nunca,
+    new Set(),
+  );
+  assert.deepEqual(
+    m.tasks.map((t) => t.id),
+    ["projeto:P", "nova"],
+  );
+  assert.deepEqual(m.tasks[0]!.start, dia(15));
+  assert.deepEqual(m.inicio, dia(12)); // 15/11 menos 3 dias
+});
+
+test("id da linha do projeto vai e volta; tarefa não é projeto", () => {
+  assert.equal(projetoDaLinha(idDaLinhaDoProjeto("abc-123")), "abc-123");
+  assert.equal(projetoDaLinha("abc-123"), null);
+  assert.equal(projetoDaLinha(42), null);
 });
