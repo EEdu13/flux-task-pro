@@ -203,9 +203,9 @@ export function projetoDaLinha(id: string | number): string | null {
 export const DIAS_DE_CONCLUIDAS = 30;
 
 /**
- * A tarefa entra na visão geral? As abertas sempre; as concluídas só nos últimos 30
- * dias, pela data de conclusão (sem ela, pelo prazo; sem nenhum dos dois, fica fora).
- * O Módulo 6 troca isto por um filtro de período.
+ * A tarefa entra na visão geral no período PADRÃO? As abertas sempre; as concluídas só nos
+ * últimos 30 dias, pela data de conclusão (sem ela, pelo prazo; sem nenhum dos dois, fica
+ * fora). Escolher outro período no filtro troca esta regra (ver `filtrarGantt`).
  */
 export function entraNaVisaoGeral(t: TarefaParaGantt, agora: number): boolean {
   if (t.status !== "concluida") return true;
@@ -217,6 +217,7 @@ export function entraNaVisaoGeral(t: TarefaParaGantt, agora: number): boolean {
  * Todos os projetos, cada um com as suas tarefas embaixo. A barra do projeto vai da
  * tarefa que começa antes à que termina depois (só as que têm prazo). Recolhidos de
  * início; `abertos` diz quais a pessoa abriu, para não fechar quando os dados mudam.
+ * Entram as tarefas que chegarem: quem decide quais é o filtro (`filtrarGantt`).
  *
  * A tarefa acha o projeto pelo id sem diferença de caixa (`mesmoId` do store: há
  * projetos antigos gravados com o id em minúsculas).
@@ -233,7 +234,7 @@ export function montarGanttGeral(
   for (const p of projetos) doProjeto.set(p.id.toLowerCase(), []);
   for (const t of tarefas) {
     const lista = t.projectId ? doProjeto.get(t.projectId.toLowerCase()) : undefined;
-    if (lista && entraNaVisaoGeral(t, agora)) lista.push(t);
+    if (lista) lista.push(t);
   }
 
   let semPrazo = 0;
@@ -444,4 +445,123 @@ export function criariaCiclo(
     fila.push(...(esperaPor.get(atual) ?? []));
   }
   return false;
+}
+
+/* -------------------------------- Filtros -------------------------------- */
+
+/** A situação como o filtro a vê: "Atrasada" é uma escolha própria (ganha de a fazer e andamento). */
+export type SituacaoDoFiltro = "pendente" | "andamento" | "atrasada" | "concluida";
+
+/**
+ * O período: o PADRÃO (na visão geral, as abertas e as concluídas há até 30 dias; num
+ * projeto, todas), TUDO (inclusive concluídas antigas) ou um INTERVALO de dias
+ * ("AAAA-MM-DD"; um lado vazio = sem limite daquele lado).
+ */
+export type PeriodoDoGantt =
+  { tipo: "padrao" } | { tipo: "tudo" } | { tipo: "intervalo"; de: string; ate: string };
+
+export interface FiltrosDoGantt {
+  /** Setor de quem é responsável; "todos" = sem filtro. Pessoas marcadas valem mais. */
+  setor: string;
+  /** Ids de quem é responsável; vazio = todas. */
+  pessoas: readonly string[];
+  /** Ids dos projetos; vazio = todos. */
+  projetos: readonly string[];
+  /** Vazio = todas. */
+  situacoes: readonly SituacaoDoFiltro[];
+  periodo: PeriodoDoGantt;
+}
+
+export const FILTROS_VAZIOS: FiltrosDoGantt = {
+  setor: "todos",
+  pessoas: [],
+  projetos: [],
+  situacoes: [],
+  periodo: { tipo: "padrao" },
+};
+
+/** Algum filtro que tira tarefa da tela? (Período "tudo" não tira: mostra mais.) */
+export function filtraTarefas(f: FiltrosDoGantt): boolean {
+  return (
+    f.setor !== "todos" ||
+    f.pessoas.length > 0 ||
+    f.projetos.length > 0 ||
+    f.situacoes.length > 0 ||
+    f.periodo.tipo === "intervalo"
+  );
+}
+
+export function situacaoDoFiltro(
+  t: TarefaParaGantt,
+  agora: number,
+  atrasada: RegraDeAtraso,
+): SituacaoDoFiltro {
+  if (t.status === "concluida") return "concluida";
+  if (t.dueDate && atrasada(t, agora)) return "atrasada";
+  return t.status;
+}
+
+/** "AAAA-MM-DD" → meia-noite local daquele dia; `null` se vazio ou inválido. */
+function diaDoCampo(valor: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+/**
+ * O que o Gantt mostra, depois dos filtros (Módulo 6, 18/11/2026). Os filtros somam entre
+ * si. No intervalo, entra a tarefa cuja barra passa por algum dia dele (a sem prazo, que
+ * não tem barra, fica fora). Com algum filtro tirando tarefas, o projeto que ficou sem
+ * nenhuma some; sem filtro, aparecem todos (um projeto vazio também é informação).
+ */
+export function filtrarGantt<T extends TarefaParaGantt, P extends ProjetoParaGantt>(
+  tarefas: readonly T[],
+  projetos: readonly P[],
+  filtros: FiltrosDoGantt,
+  contexto: {
+    agora: number;
+    atrasada: RegraDeAtraso;
+    /** O setor de uma pessoa (o do responsável). */
+    setorDe: (pessoaId: string) => string | undefined;
+    /** O padrão da visão geral (abertas + concluídas há até 30 dias); num projeto, não. */
+    regraDosTrintaDias: boolean;
+  },
+): { tarefas: T[]; projetos: P[] } {
+  const { agora, atrasada, setorDe, regraDosTrintaDias } = contexto;
+  const doProjeto = filtros.projetos.length
+    ? new Set(filtros.projetos.map((id) => id.toLowerCase()))
+    : null;
+  const pessoas = filtros.pessoas.length ? new Set(filtros.pessoas) : null;
+  const situacoes = filtros.situacoes.length ? new Set(filtros.situacoes) : null;
+  const p = filtros.periodo;
+  const de = p.tipo === "intervalo" ? diaDoCampo(p.de) : null;
+  const ate = p.tipo === "intervalo" ? diaDoCampo(p.ate) : null;
+  const ateExclusivo = ate ? somarDias(ate, 1) : null;
+
+  const passa = (t: T): boolean => {
+    if (doProjeto && !(t.projectId && doProjeto.has(t.projectId.toLowerCase()))) return false;
+    if (pessoas) {
+      if (!pessoas.has(t.assigneeId)) return false;
+    } else if (filtros.setor !== "todos" && setorDe(t.assigneeId) !== filtros.setor) {
+      return false;
+    }
+    if (situacoes && !situacoes.has(situacaoDoFiltro(t, agora, atrasada))) return false;
+    if (p.tipo === "padrao") return !regraDosTrintaDias || entraNaVisaoGeral(t, agora);
+    if (p.tipo === "intervalo") {
+      if (!t.dueDate) return false;
+      const { start, end } = barraDaTarefa(t, agora);
+      if (de && end <= de) return false;
+      if (ateExclusivo && start >= ateExclusivo) return false;
+    }
+    return true;
+  };
+
+  const filtradas = tarefas.filter(passa);
+  let visiveis = doProjeto
+    ? projetos.filter((x) => doProjeto.has(x.id.toLowerCase()))
+    : [...projetos];
+  if (filtraTarefas(filtros)) {
+    const comTarefa = new Set(filtradas.map((t) => t.projectId?.toLowerCase()));
+    visiveis = visiveis.filter((x) => comTarefa.has(x.id.toLowerCase()));
+  }
+  return { tarefas: filtradas, projetos: visiveis };
 }

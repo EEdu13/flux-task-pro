@@ -52,9 +52,9 @@ import {
   ClipboardList,
   Plus,
   Truck,
+  TriangleAlert,
 } from "lucide-react";
 import { useFluxo } from "@/lib/fluxo-store";
-import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
 import { primeiroNome } from "@/integrations/iam/types";
 import { carregarAvataresDe, type AvatarConfig } from "@/lib/avatar-3d";
 import { sectors } from "@/lib/fluxo-types";
@@ -81,7 +81,7 @@ import { BLOCOS, BLOCOS_PRONTOS } from "@/components/conversor/blocos";
  *
  * Para ver de novo sem mexer no banco: `?novidades=1` na URL.
  */
-const VERSAO = "2026-11-17-conversor";
+const VERSAO = "2026-11-18-gantt";
 
 const chaveLocal = (pessoaId: string) => `fluxo:novidades:${pessoaId}`;
 
@@ -93,14 +93,40 @@ type Tela = {
   Ilustracao: (p: { pessoaId: string }) => React.ReactElement;
 };
 
-/* A leva do conversor de arquivos (montada em 05/11/2026), para TODOS. Vai no MESMO deploy do
-   conversor, nunca antes (especificação, C.2): a janela nem abre enquanto `CONVERSOR_LIBERADO` for
-   `false` (ver `estrutura-liberada.ts`). O conversor foi liberado em 17/11/2026, antes da estrutura
-   (decisão do usuário): a estrutura ganha a leva própria dela na liberação (`TELAS_DA_ESTRUTURA`).
-   A tela 3 vale porque tudo roda no computador da pessoa: no navegador, ou pelo Office instalado
-   no app de mesa (11/11/2026). Se um dia algum bloco passar a mandar o arquivo a um servidor, o
-   texto precisa mudar. */
+/* A leva do GANTT (pedido do Eduardo, 05/11/2026; montada em 18/11/2026), para TODOS: a visão
+   geral e a aba do projeto, arrastar para replanejar e as dependências. Vai no mesmo push do
+   Gantt. A do conversor ficou guardada logo abaixo (`TELAS_DO_CONVERSOR`): quem viu continua
+   tendo visto. */
 export const TELAS: Tela[] = [
+  {
+    titulo: "Seus projetos numa linha do tempo",
+    texto:
+      "Em Projetos, o botão Gantt mostra todos os projetos de uma vez, cada um com as suas tarefas embaixo, e cada projeto ganhou a aba Gantt. A linha vermelha é hoje. Veja por dia, semana ou mês e filtre por setor, pessoa, projeto, situação e período.",
+    Ilustracao: IlustracaoGantt,
+    apresenta: true,
+  },
+  {
+    titulo: "Arraste para replanejar",
+    texto:
+      "Arraste a barra para mudar as datas, ou puxe uma das pontas para esticar só o prazo ou só o início. A barra anda de dia em dia e mostra as datas novas antes de você soltar, e o Desfazer fica à mão. Quem replaneja é quem cuida da tarefa: o responsável, quem criou, a chefia e a gerência.",
+    Ilustracao: IlustracaoGanttArrastar,
+    apresenta: true,
+  },
+  {
+    titulo: "Uma tarefa espera a outra",
+    texto:
+      "Clique na bolinha do fim de uma tarefa e depois na bolinha do início da que vai esperar: uma seta liga as duas. Se a tarefa começar antes de a outra terminar, a barra avisa. Para tirar a ligação, clique na seta e depois no ×.",
+    Ilustracao: IlustracaoGanttDependencia,
+    apresenta: true,
+  },
+];
+
+/* A leva do conversor de arquivos (montada em 05/11/2026, no ar em 17/11/2026), para TODOS.
+   Guardada quando entrou a do Gantt (18/11/2026): quem viu continua tendo visto. A tela 3 vale
+   porque tudo roda no computador da pessoa: no navegador, ou pelo Office instalado no app de mesa
+   (11/11/2026). Se um dia algum bloco passar a mandar o arquivo a um servidor, o texto precisa
+   mudar. */
+export const TELAS_DO_CONVERSOR: Tela[] = [
   {
     titulo: "Converta arquivos sem sair do CONECTA",
     texto:
@@ -126,8 +152,8 @@ export const TELAS: Tela[] = [
 
 /**
  * A leva da ESTRUTURA DO DIA (10/11/2026), guardada para a liberação dela (o conversor saiu antes,
- * em 17/11/2026). Na liberação: `VERSAO` nova, estas telas como a leva ativa (a do conversor fica
- * guardada como `TELAS_DO_CONVERSOR`), e a janela só para quem tem equipe para enviar
+ * em 17/11/2026, e o Gantt em seguida). Na liberação: `VERSAO` nova, estas telas como a leva ativa
+ * (a que estiver no ar fica guardada como `TELAS_DE_<leva>`), e a janela só para quem tem equipe para enviar
  * (`useTemEstrutura`, a mesma regra do item "Estrutura do dia" no menu), esperando a estrutura
  * responder (`useEstrutura().pronto`) antes de decidir. Quem não tem estrutura não vê esta leva.
  */
@@ -273,15 +299,14 @@ export function Novidades() {
   const [indice, setIndice] = useState(0);
   const [sentido, setSentido] = useState(1);
 
-  /* A leva ativa é a do conversor, igual para todos (17/11/2026). A da estrutura entra na
+  /* A leva ativa é a do Gantt, igual para todos (18/11/2026). A da estrutura entra na
      liberação dela (ver `TELAS_DA_ESTRUTURA`). */
   const telas = TELAS;
 
   /* Decide se mostra: a cópia local responde na hora; sem ela, pergunta ao
-     banco — a pessoa pode ter visto em outro computador. */
+     banco — a pessoa pode ter visto em outro computador. (Até 18/11/2026 a leva era a do
+     conversor e só abria com a chave dele, `CONVERSOR_ABERTO`; a do Gantt é para todos.) */
   useEffect(() => {
-    // A leva é do conversor: sem a chave dele, a janela nem abre.
-    if (!CONVERSOR_ABERTO) return;
     if (!isAuthenticated || !currentUser.id) return;
     if (new URLSearchParams(window.location.search).get("novidades") === "1") {
       setIndice(0);
@@ -3975,6 +4000,459 @@ function IlustracaoEstruturaRetirada() {
         <span className="absolute left-[258px] top-[134px] inline-flex h-7 w-[112px] items-center justify-center gap-1 rounded-md border border-border text-[10px] font-semibold">
           <Plus className="h-3 w-3" /> Adicionar
         </span>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* ————— Gantt (leva de 18/11/2026) ————— */
+
+/*
+ * Um Gantt em miniatura, desenhado aqui como as outras cenas (segue o tema e a paleta):
+ * a barra de escalas, a grade dos dias com a linha vermelha de hoje e as linhas da
+ * esquerda. As cores das barras são as do Gantt de verdade (`gantt.css`).
+ */
+const GANTT_COR = {
+  pendente: "oklch(0.68 0.025 155)",
+  andamento: "oklch(0.746 0.148 233)",
+  erp: "oklch(0.62 0.16 230)",
+  reforma: "oklch(0.78 0.15 75)",
+} as const;
+/** Onde começa o gráfico (à esquerda fica a lista), a primeira linha e a altura de cada uma. */
+const G_X0 = 118;
+const G_Y0 = 44;
+const G_LINHA = 24;
+const G_DIA = 18;
+const G_DIAS = ["16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29"];
+
+function TopoDoGantt({ escala }: { escala: "Dia" | "Semana" | "Mês" }) {
+  return (
+    <div className="absolute inset-x-0 top-0 flex h-[26px] items-center gap-1.5 border-b border-border px-2">
+      <div className="flex rounded-md bg-secondary/60 p-0.5">
+        {(["Dia", "Semana", "Mês"] as const).map((e) => (
+          <span
+            key={e}
+            className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${e === escala ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+          >
+            {e}
+          </span>
+        ))}
+      </div>
+      <span className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[8px] font-semibold text-muted-foreground">
+        <CalendarCheck className="h-2.5 w-2.5" />
+        Hoje
+      </span>
+    </div>
+  );
+}
+
+/** A grade dos dias (escala Dia) com a coluna e a linha de hoje (18). */
+function DiasDoGantt() {
+  return (
+    <>
+      <div
+        className="absolute right-0 top-[26px] flex h-[18px] border-b border-border"
+        style={{ left: G_X0 }}
+      >
+        {G_DIAS.map((d) => (
+          <span
+            key={d}
+            className={`grid shrink-0 place-items-center border-l border-border/60 text-[7px] ${d === "18" ? "bg-destructive/10 font-bold text-foreground" : "text-muted-foreground"}`}
+            style={{ width: G_DIA }}
+          >
+            {d}
+          </span>
+        ))}
+      </div>
+      <div
+        className="absolute bottom-0 top-[26px] w-px bg-destructive"
+        style={{ left: G_X0 + 2.5 * G_DIA }}
+      />
+    </>
+  );
+}
+
+/** Uma linha da lista da esquerda, com a linha fina da grade embaixo. */
+function LinhaDoGanttMini({
+  i,
+  nome,
+  projeto,
+  aberto,
+}: {
+  i: number;
+  nome: string;
+  projeto?: boolean;
+  aberto?: boolean;
+}) {
+  return (
+    <motion.div
+      initial={false}
+      animate={{ top: G_Y0 + i * G_LINHA }}
+      className="absolute inset-x-0 flex items-center border-b border-border/60 px-2"
+      style={{ height: G_LINHA }}
+    >
+      <span
+        className={`flex w-[110px] items-center gap-1 truncate text-[8.5px] ${projeto ? "font-bold" : "pl-3"}`}
+      >
+        {projeto && (
+          <ChevronRight
+            className={`h-2.5 w-2.5 shrink-0 text-muted-foreground transition-transform ${aberto ? "rotate-90" : ""}`}
+          />
+        )}
+        {nome}
+      </span>
+    </motion.div>
+  );
+}
+
+/** Uma barra do gráfico, em px a partir do começo do gráfico. */
+function BarraMini({
+  i,
+  de,
+  largura,
+  cor,
+  texto,
+  className = "",
+  children,
+}: {
+  i: number;
+  de: number;
+  largura: number;
+  cor: string;
+  texto: React.ReactNode;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <motion.div
+      initial={false}
+      animate={{ top: G_Y0 + i * G_LINHA + 5, left: G_X0 + de, width: largura }}
+      transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+      className={`absolute flex items-center justify-center overflow-visible rounded-[5px] text-[7.5px] font-bold text-white ${className}`}
+      style={{ height: G_LINHA - 10, background: cor }}
+    >
+      <span className="truncate px-1">{texto}</span>
+      {children}
+    </motion.div>
+  );
+}
+
+const ROTEIRO_GANTT: Passo[] = [
+  { id: "inicio", ms: 900, cursor: [260, 170] },
+  { id: "vai-abrir", ms: 450, cursor: [12, 56] },
+  { id: "abre", ms: 1800, clica: true },
+  { id: "vai-mes", ms: 450, cursor: [91, 14] },
+  { id: "mes", ms: 2400, clica: true },
+];
+
+/** Tela 1: a visão geral; abre um projeto (as tarefas embaixo) e troca para a escala Mês. */
+function IlustracaoGantt() {
+  const r = useRoteiro(ROTEIRO_GANTT);
+  const aberto = r.ja("abre");
+  const mes = r.ja("mes");
+  /* As posições estão na escala Semana (52px por semana, a partir de 09/11). Na escala Mês
+     (87px por mês, a partir de 01/11) o tempo encolhe: 8 dias a mais no começo e 0,39 da largura. */
+  const x = (px: number) => (mes ? 23 + px * 0.39 : px);
+  const k = mes ? 0.39 : 1;
+  const semanas = ["09/11", "16/11", "23/11", "30/11", "07/12"];
+  const meses = ["Novembro", "Dezembro", "Janeiro"];
+  const linhas = [
+    { id: "p1", nome: "Implantação do ERP", projeto: true, de: 10, ate: 236, cor: GANTT_COR.erp },
+    ...(aberto
+      ? [
+          { id: "t1", nome: "Migrar clientes", de: 18, ate: 104, cor: GANTT_COR.andamento },
+          { id: "t2", nome: "Configurar financeiro", de: 96, ate: 176, cor: GANTT_COR.pendente },
+          { id: "t3", nome: "Treinar o time", de: 168, ate: 236, cor: GANTT_COR.pendente },
+        ]
+      : []),
+    { id: "p2", nome: "Reforma da sede", projeto: true, de: 52, ate: 196, cor: GANTT_COR.reforma },
+  ];
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        <TopoDoGantt escala={mes ? "Mês" : "Semana"} />
+        <div
+          className="absolute right-0 top-[26px] flex h-[18px] border-b border-border"
+          style={{ left: G_X0 }}
+        >
+          {(mes ? meses : semanas).map((s) => (
+            <span
+              key={s}
+              className="grid shrink-0 place-items-center border-l border-border/60 text-[7px] text-muted-foreground"
+              style={{ width: mes ? 87 : 52 }}
+            >
+              {s}
+            </span>
+          ))}
+        </div>
+        <motion.div
+          initial={false}
+          animate={{ left: G_X0 + x(67) }}
+          className="absolute bottom-0 top-[26px] w-px bg-destructive"
+        />
+        <AnimatePresence initial={false}>
+          {linhas.map((l, i) => (
+            <motion.div
+              key={l.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
+              transition={{ duration: 0.25, delay: l.projeto ? 0 : 0.08 * i }}
+            >
+              <LinhaDoGanttMini
+                i={i}
+                nome={l.nome}
+                projeto={l.projeto}
+                aberto={l.id === "p1" && aberto}
+              />
+              <BarraMini
+                i={i}
+                de={x(l.de)}
+                largura={(l.ate - l.de) * k}
+                cor={l.cor}
+                texto={mes && !l.projeto ? "" : l.nome}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* A tarefa que se arrasta na tela 2: dia 5 a 10 (21/11 a 26/11), linha 2. */
+const ARRASTO_X = G_X0 + 5 * G_DIA + 3 * G_DIA;
+const ARRASTO_Y = G_Y0 + 2 * G_LINHA + G_LINHA / 2;
+
+const ROTEIRO_GANTT_ARRASTAR: Passo[] = [
+  { id: "inicio", ms: 800, cursor: [320, 186] },
+  { id: "vai-barra", ms: 500, cursor: [ARRASTO_X, ARRASTO_Y] },
+  { id: "pega", ms: 450, clica: true },
+  { id: "um", ms: 650, cursor: [ARRASTO_X + G_DIA, ARRASTO_Y] },
+  { id: "dois", ms: 1100, cursor: [ARRASTO_X + 2 * G_DIA, ARRASTO_Y] },
+  { id: "solta", ms: 2700 },
+];
+
+/** Tela 2: arrasta a barra dois dias; ela anda de dia em dia, com o rótulo verde, e solta com Desfazer. */
+function IlustracaoGanttArrastar() {
+  const r = useRoteiro(ROTEIRO_GANTT_ARRASTAR);
+  const passou = r.ja("dois") ? 2 : r.ja("um") ? 1 : 0;
+  const arrastando = r.ja("pega") && !r.ja("solta");
+  const soltou = r.ja("solta");
+  const datas = ["21/11 → 26/11", "22/11 → 27/11", "23/11 → 28/11"];
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        <TopoDoGantt escala="Dia" />
+        <DiasDoGantt />
+        <LinhaDoGanttMini i={0} nome="Implantação do ERP" projeto aberto />
+        <LinhaDoGanttMini i={1} nome="Migrar clientes" />
+        <LinhaDoGanttMini i={2} nome="Configurar financeiro" />
+        <LinhaDoGanttMini i={3} nome="Treinar o time" />
+        <BarraMini
+          i={0}
+          de={0}
+          largura={14 * G_DIA}
+          cor={GANTT_COR.erp}
+          texto="Implantação do ERP"
+        />
+        <BarraMini
+          i={1}
+          de={0}
+          largura={7 * G_DIA}
+          cor={GANTT_COR.andamento}
+          texto="Migrar clientes"
+        />
+        <BarraMini
+          i={2}
+          de={(5 + passou) * G_DIA}
+          largura={6 * G_DIA}
+          cor={GANTT_COR.pendente}
+          texto="Configurar financeiro"
+          className={
+            arrastando ? "shadow-[0_0_0_2px_rgb(0_0_0/0.18),0_6px_14px_-6px_rgb(0_0_0/0.5)]" : ""
+          }
+        >
+          {arrastando && (
+            <>
+              <span className="absolute left-[3px] top-1/2 h-[60%] w-[3px] -translate-y-1/2 rounded-full bg-white/90 shadow" />
+              <span className="absolute right-[3px] top-1/2 h-[60%] w-[3px] -translate-y-1/2 rounded-full bg-white/90 shadow" />
+            </>
+          )}
+        </BarraMini>
+        <BarraMini
+          i={3}
+          de={9 * G_DIA}
+          largura={5 * G_DIA}
+          cor={GANTT_COR.pendente}
+          texto="Treinar o time"
+        />
+        <AnimatePresence>
+          {arrastando && passou > 0 && (
+            <motion.div
+              key="rotulo"
+              initial={{ opacity: 0, y: 4, left: G_X0 + (8 + passou) * G_DIA }}
+              animate={{ opacity: 1, y: 0, left: G_X0 + (8 + passou) * G_DIA }}
+              exit={{ opacity: 0 }}
+              className="absolute top-[78px] z-30 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-1.5 py-0.5 text-[8px] font-semibold text-popover-foreground shadow-md"
+            >
+              {datas[passou]} <span className="text-muted-foreground">·</span>{" "}
+              <span className="text-success">
+                +{passou} {passou === 1 ? "dia" : "dias"}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {soltou && (
+            <motion.div
+              key="aviso"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="absolute bottom-2 right-2 z-30 flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-[8px] shadow-lg"
+            >
+              <span className="font-medium">Prazo de "Configurar financeiro": 26/11 → 28/11</span>
+              <span className="rounded border border-border px-1.5 py-0.5 font-bold">Desfazer</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <Cursor r={r} />
+    </Palco>
+  );
+}
+
+/* Tela 3: A (dias 0–6) e B (dias 5–10). As bolinhas ficam fora da barra, nas pontas. */
+const BOLINHA_FIM_A: readonly [number, number] = [
+  G_X0 + 7 * G_DIA + 8,
+  G_Y0 + G_LINHA + G_LINHA / 2,
+];
+const BOLINHA_INICIO_B: readonly [number, number] = [
+  G_X0 + 5 * G_DIA - 8,
+  G_Y0 + 2 * G_LINHA + G_LINHA / 2,
+];
+
+const ROTEIRO_GANTT_DEPENDENCIA: Passo[] = [
+  { id: "inicio", ms: 800, cursor: [G_X0 + 60, BOLINHA_FIM_A[1]] },
+  { id: "vai-fim", ms: 550, cursor: BOLINHA_FIM_A },
+  { id: "liga-a", ms: 1200, clica: true },
+  { id: "vai-inicio", ms: 650, cursor: BOLINHA_INICIO_B },
+  { id: "liga-b", ms: 3000, clica: true },
+];
+
+/** Tela 3: liga o fim de uma tarefa ao início da outra; a seta aparece e a barra avisa o conflito. */
+function IlustracaoGanttDependencia() {
+  const r = useRoteiro(ROTEIRO_GANTT_DEPENDENCIA);
+  const mostraA = r.ja("inicio") && !r.ja("liga-b");
+  const escolheuA = r.ja("liga-a") && !r.ja("liga-b");
+  const ligou = r.ja("liga-b");
+  const fimA = G_X0 + 7 * G_DIA;
+  const inicioB = G_X0 + 5 * G_DIA;
+  const yA = BOLINHA_FIM_A[1];
+  const yB = BOLINHA_INICIO_B[1];
+  const caminho = `M ${fimA} ${yA} H ${fimA + 8} V ${yA + 12} H ${inicioB - 8} V ${yB} H ${inicioB - 2}`;
+  const bolinha =
+    "absolute z-20 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card shadow";
+  return (
+    <Palco w={380} h={216}>
+      <div className={MOLDURA}>
+        <TopoDoGantt escala="Dia" />
+        <DiasDoGantt />
+        <LinhaDoGanttMini i={0} nome="Implantação do ERP" projeto aberto />
+        <LinhaDoGanttMini i={1} nome="Migrar clientes" />
+        <LinhaDoGanttMini i={2} nome="Configurar financeiro" />
+        <BarraMini
+          i={0}
+          de={0}
+          largura={14 * G_DIA}
+          cor={GANTT_COR.erp}
+          texto="Implantação do ERP"
+        />
+        <BarraMini
+          i={1}
+          de={0}
+          largura={7 * G_DIA}
+          cor={GANTT_COR.andamento}
+          texto="Migrar clientes"
+        />
+        <BarraMini
+          i={2}
+          de={5 * G_DIA}
+          largura={6 * G_DIA}
+          cor={GANTT_COR.pendente}
+          texto={
+            ligou ? (
+              <>
+                <TriangleAlert className="mr-0.5 inline h-2.5 w-2.5" />
+                Configurar financeiro
+              </>
+            ) : (
+              "Configurar financeiro"
+            )
+          }
+          className={ligou ? "outline-2 outline-offset-2 outline-dashed outline-warning" : ""}
+        />
+        {mostraA && (
+          <span
+            className={`${bolinha} ${escolheuA ? "scale-125 bg-primary" : "bg-muted-foreground"}`}
+            style={{ left: BOLINHA_FIM_A[0], top: BOLINHA_FIM_A[1] }}
+          />
+        )}
+        {escolheuA && (
+          <span
+            className={`${bolinha} bg-muted-foreground`}
+            style={{ left: BOLINHA_INICIO_B[0], top: BOLINHA_INICIO_B[1] }}
+          />
+        )}
+        {ligou && (
+          <svg className="pointer-events-none absolute inset-0 z-10" width="380" height="216">
+            <motion.path
+              d={caminho}
+              fill="none"
+              stroke="var(--muted-foreground)"
+              strokeWidth="1.6"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            />
+            <motion.path
+              d={`M ${inicioB - 6} ${yB - 3.5} L ${inicioB} ${yB} L ${inicioB - 6} ${yB + 3.5} Z`}
+              fill="var(--muted-foreground)"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.45 }}
+            />
+          </svg>
+        )}
+        <AnimatePresence>
+          {escolheuA && (
+            <motion.div
+              key="passo"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="absolute bottom-2 right-2 z-30 rounded-lg border border-border bg-popover px-2 py-1.5 text-[8px] font-medium shadow-lg"
+            >
+              Agora clique na bolinha do INÍCIO da tarefa que vai esperar.
+            </motion.div>
+          )}
+          {ligou && (
+            <motion.div
+              key="conflito"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              className="absolute z-30 whitespace-nowrap rounded-md border border-border bg-popover px-1.5 py-0.5 text-[8px] font-semibold text-popover-foreground shadow-md"
+              style={{ left: G_X0 + 2 * G_DIA, top: yB + 15 }}
+            >
+              <TriangleAlert className="mr-1 inline h-2.5 w-2.5 text-warning" />
+              Começa antes de "Migrar clientes" terminar
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       <Cursor r={r} />
     </Palco>

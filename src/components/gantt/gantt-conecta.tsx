@@ -28,8 +28,10 @@ import { UserAvatar } from "@/components/user-avatar";
 import { tarefaVencida } from "@/lib/prazo";
 import type { Project, Task, User } from "@/lib/fluxo-types";
 import {
-  DIAS_DE_CONCLUIDAS,
+  FILTROS_VAZIOS,
   conflitosDeDependencia,
+  filtrarGantt,
+  type FiltrosDoGantt,
   criariaCiclo,
   inicioDoDia,
   ligacoesDoGantt,
@@ -44,6 +46,7 @@ import {
   type MudancaDePlano,
 } from "./montar-gantt";
 import { PALAVRAS_PT } from "./palavras-pt";
+import { BarraDeFiltros } from "./filtros-do-gantt";
 
 /**
  * O Gantt do CONECTA (pedido do Eduardo, 05/11/2026):
@@ -463,6 +466,8 @@ export default function GanttConecta(props: GanttConectaProps) {
   const [raiz, setRaiz] = useState<HTMLDivElement | null>(null);
   /* A visão geral cobre meses: abre na semana. O projeto, no dia. */
   const [escala, setEscala] = useState<Escala>(modo === "geral" ? "semana" : "dia");
+  /* Os filtros (Módulo 6): só desta tela, começam limpos a cada vez que ela abre. */
+  const [filtros, setFiltros] = useState<FiltrosDoGantt>(FILTROS_VAZIOS);
   /* Os projetos que a pessoa abriu. Num ref: abrir não pode remontar os dados (o SVAR
      recomeçaria), mas quando os dados mudam eles nascem já abertos. */
   const abertos = useRef(new Set<string>());
@@ -474,6 +479,10 @@ export default function GanttConecta(props: GanttConectaProps) {
 
   const chave = assinatura(props);
   const chavePessoas = users.map((u) => `${u.id}|${u.name}|${u.avatar}`).join("\n");
+  /* O Gantt remonta quando o tema muda (a grade é desenhada uma vez só). A montagem é refeita
+     junto, para ler os projetos abertos de AGORA: com a de antes, trocar o tema recolhia tudo
+     o que a pessoa tinha aberto (checagem de 18/11/2026). */
+  const chaveDoTema = aparencia ? `${aparencia.escuro}-${aparencia.borda}` : "";
   /* As setas também pelo conteúdo: um array novo a cada desenho, o SVAR toma por dado novo
      e recalcula as barras, e no meio de um arraste a barra voltava para o lugar de antes
      (prova de 18/11/2026). */
@@ -484,12 +493,29 @@ export default function GanttConecta(props: GanttConectaProps) {
   const montagem = useMemo(
     () => {
       const atrasada = (t: Parameters<typeof tarefaVencida>[0], ms: number) => tarefaVencida(t, ms);
+      const pessoas = new Map(users.map((u) => [u.id, u]));
+      /* Primeiro os filtros (setor, pessoa, projeto, situação e período), depois o desenho. */
+      const filtrado = filtrarGantt(
+        props.tarefas,
+        props.modo === "geral" ? props.projetos : [],
+        filtros,
+        {
+          agora,
+          atrasada,
+          setorDe: (id) => pessoas.get(id)?.sector,
+          regraDosTrintaDias: props.modo === "geral",
+        },
+      );
       const m =
         props.modo === "geral"
-          ? montarGanttGeral(props.projetos, props.tarefas, agora, atrasada, abertos.current)
-          : montarGanttDoProjeto(props.tarefas, agora, atrasada);
-      const pessoas = new Map(users.map((u) => [u.id, u]));
-      const conflitos = conflitosDeDependencia(m.tasks, dependencias);
+          ? montarGanttGeral(filtrado.projetos, filtrado.tarefas, agora, atrasada, abertos.current)
+          : montarGanttDoProjeto(filtrado.tarefas, agora, atrasada);
+      /* O conflito é do plano, não da vista: conta com TODAS as tarefas, até as que o filtro
+         escondeu (a que espera continua avisando que começa antes de a outra terminar). */
+      const conflitos = conflitosDeDependencia(
+        montarGanttDoProjeto(props.tarefas, agora, atrasada).tasks,
+        dependencias,
+      );
       const linhas: LinhaDoGantt[] = m.tasks.map((item) => {
         const p = pessoas.get(item.responsavelId);
         const linha = {
@@ -507,13 +533,21 @@ export default function GanttConecta(props: GanttConectaProps) {
         linhas,
         porId: new Map(linhas.map((l) => [l.id, l])),
         setas: ligacoesDoGantt(m.tasks, dependencias),
+        mostrando: filtrado.tarefas.length,
       };
     },
     /* Pelo conteúdo (`chave`, `chavePessoas`, `chaveDasSetas`), não pela identidade das
-       listas: ver `assinatura`. */
+       listas: ver `assinatura`. Os filtros só mudam pela mão da pessoa; o tema, ver `chaveDoTema`. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chave, chavePessoas, chaveDasSetas, agora, podeReplanejar],
+    [chave, chavePessoas, chaveDasSetas, agora, podeReplanejar, filtros, chaveDoTema],
   );
+
+  /* Os rostos do filtro: só quem é responsável por alguma tarefa deste Gantt. */
+  const pessoasDoGantt = useMemo(() => {
+    const responsaveis = new Set(props.tarefas.map((t) => t.assigneeId));
+    return users.filter((u) => responsaveis.has(u.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave, chavePessoas]);
 
   /*
    * O que os ouvintes do SVAR leem na hora do gesto. Eles são registrados uma vez (no
@@ -791,19 +825,35 @@ export default function GanttConecta(props: GanttConectaProps) {
           <Legenda classe="andamento" rotulo="Em andamento" />
           <Legenda classe="atrasada" rotulo="Atrasada" />
           <Legenda classe="concluida" rotulo="Concluída" />
-          {modo === "geral" && (
-            <span title="O filtro de período chega numa próxima etapa">
-              · abertas e concluídas nos últimos {DIAS_DE_CONCLUIDAS} dias
-            </span>
-          )}
         </span>
       </div>
+      <BarraDeFiltros
+        filtros={filtros}
+        aoMudar={setFiltros}
+        pessoas={pessoasDoGantt}
+        projetos={props.modo === "geral" ? props.projetos : null}
+        mostrando={montagem.mostrando}
+        total={props.tarefas.length}
+      />
 
       {vazio ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          {modo === "geral"
-            ? "Nenhum projeto para mostrar."
-            : "Este projeto ainda não tem tarefas."}
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+          {props.tarefas.length > 0 || (props.modo === "geral" && props.projetos.length > 0) ? (
+            <>
+              Nada com esses filtros.
+              <button
+                type="button"
+                onClick={() => setFiltros(FILTROS_VAZIOS)}
+                className="rounded-md border border-border px-3 py-1 text-xs font-semibold text-foreground transition hover:border-primary/60"
+              >
+                Limpar filtros
+              </button>
+            </>
+          ) : modo === "geral" ? (
+            "Nenhum projeto para mostrar."
+          ) : (
+            "Este projeto ainda não tem tarefas."
+          )}
         </div>
       ) : (
         <div
@@ -856,7 +906,7 @@ export default function GanttConecta(props: GanttConectaProps) {
           {aparencia && (
             <Locale words={PALAVRAS_PT}>
               {/* A chave remonta o Gantt quando o tema muda: a grade é desenhada uma vez só. */}
-              <Tema fonts={false} key={`${aparencia.escuro}-${aparencia.borda}`}>
+              <Tema fonts={false} key={chaveDoTema}>
                 <Gantt
                   tasks={montagem.linhas}
                   links={montagem.setas}

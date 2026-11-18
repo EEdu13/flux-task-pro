@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  FILTROS_VAZIOS,
   barraDaTarefa,
   conflitosDeDependencia,
   criariaCiclo,
   entraNaVisaoGeral,
+  filtrarGantt,
+  filtraTarefas,
+  situacaoDoFiltro,
   idDaLinhaDoProjeto,
   ligacoesDoGantt,
   montarGanttDoProjeto,
@@ -257,9 +261,8 @@ test("visão geral: projeto sem tarefa com prazo fica no fim, com a barra escond
   assert.equal(m.semPrazo, 1);
 });
 
-test("visão geral: concluída antiga não entra nem estica a barra do projeto", () => {
-  const m = montarGanttGeral(
-    [projeto("P")],
+test("visão geral: concluída antiga não entra (período padrão) nem estica a barra do projeto", () => {
+  const filtradas = filtrarGantt(
     [
       tarefa({
         id: "nova",
@@ -276,10 +279,11 @@ test("visão geral: concluída antiga não entra nem estica a barra do projeto",
         completedAt: new Date(2026, 5, 5, 10).toISOString(),
       }),
     ],
-    AGORA,
-    nunca,
-    new Set(),
+    [projeto("P")],
+    FILTROS_VAZIOS,
+    { agora: AGORA, atrasada: nunca, setorDe: () => undefined, regraDosTrintaDias: true },
   );
+  const m = montarGanttGeral(filtradas.projetos, filtradas.tarefas, AGORA, nunca, new Set());
   assert.deepEqual(
     m.tasks.map((t) => t.id),
     ["projeto:P", "nova"],
@@ -412,4 +416,136 @@ test("ciclo: ela mesma, direto e por outras; sem ciclo quando não fecha", () =>
   assert.equal(criariaCiclo(deps, "a", "c"), true); // por outras, sem caixa
   assert.equal(criariaCiclo(deps, "D", "C"), false);
   assert.equal(criariaCiclo(deps, "C", "A"), false); // C esperar A também: não fecha nada
+});
+
+/* -------------------------------- Filtros -------------------------------- */
+
+const SETORES: Record<string, string> = { "1": "ti", "2": "rh", "3": "ti" };
+const ctx = (
+  regraDosTrintaDias = true,
+  atrasada: (t: TarefaParaGantt) => boolean = () => false,
+) => ({
+  agora: AGORA,
+  atrasada,
+  setorDe: (id: string) => SETORES[id],
+  regraDosTrintaDias,
+});
+const BASE = [
+  tarefa({
+    id: "a",
+    projectId: "P1",
+    assigneeId: "1",
+    startDate: dia(10).toISOString(),
+    dueDate: dia(12, 23, 59).toISOString(),
+  }),
+  tarefa({
+    id: "b",
+    projectId: "P1",
+    assigneeId: "2",
+    status: "andamento",
+    startDate: dia(14).toISOString(),
+    dueDate: dia(20, 23, 59).toISOString(),
+  }),
+  tarefa({
+    id: "c",
+    projectId: "P2",
+    assigneeId: "3",
+    status: "concluida",
+    dueDate: dia(15, 23, 59).toISOString(),
+    completedAt: dia(15, 10).toISOString(),
+  }),
+  tarefa({ id: "s", projectId: "P2", assigneeId: "1", dueDate: null }),
+  tarefa({
+    id: "velha",
+    projectId: "P2",
+    assigneeId: "1",
+    status: "concluida",
+    startDate: new Date(2026, 5, 1).toISOString(),
+    dueDate: new Date(2026, 5, 5, 23, 59).toISOString(),
+    completedAt: new Date(2026, 5, 5, 10).toISOString(),
+  }),
+];
+const PROJS = [projeto("P1"), projeto("P2"), projeto("Vazio")];
+const ids = (r: { tarefas: TarefaParaGantt[] }) => r.tarefas.map((t) => t.id);
+const com = (f: Partial<typeof FILTROS_VAZIOS>) => ({ ...FILTROS_VAZIOS, ...f });
+
+test("filtro vazio: período padrão tira só a concluída antiga; todos os projetos ficam", () => {
+  const r = filtrarGantt(BASE, PROJS, FILTROS_VAZIOS, ctx());
+  assert.deepEqual(ids(r), ["a", "b", "c", "s"]);
+  assert.deepEqual(
+    r.projetos.map((p) => p.id),
+    ["P1", "P2", "Vazio"],
+  );
+  assert.equal(filtraTarefas(FILTROS_VAZIOS), false);
+});
+
+test("num projeto, o padrão mostra tudo; e 'tudo' mostra a antiga na visão geral", () => {
+  assert.deepEqual(ids(filtrarGantt(BASE, [], FILTROS_VAZIOS, ctx(false))), [
+    "a",
+    "b",
+    "c",
+    "s",
+    "velha",
+  ]);
+  assert.deepEqual(ids(filtrarGantt(BASE, PROJS, com({ periodo: { tipo: "tudo" } }), ctx())), [
+    "a",
+    "b",
+    "c",
+    "s",
+    "velha",
+  ]);
+});
+
+test("setor é o do responsável; pessoa marcada vale mais que o setor", () => {
+  assert.deepEqual(ids(filtrarGantt(BASE, PROJS, com({ setor: "ti" }), ctx())), ["a", "c", "s"]);
+  assert.deepEqual(ids(filtrarGantt(BASE, PROJS, com({ setor: "ti", pessoas: ["2"] }), ctx())), [
+    "b",
+  ]);
+});
+
+test("situação: várias juntas, com 'atrasada' à parte", () => {
+  const atrasaA = (t: TarefaParaGantt) => t.id === "a";
+  assert.equal(situacaoDoFiltro(BASE[0]!, AGORA, atrasaA), "atrasada");
+  assert.deepEqual(
+    ids(filtrarGantt(BASE, PROJS, com({ situacoes: ["atrasada"] }), ctx(true, atrasaA))),
+    ["a"],
+  );
+  assert.deepEqual(
+    ids(
+      filtrarGantt(BASE, PROJS, com({ situacoes: ["andamento", "concluida"] }), ctx(true, atrasaA)),
+    ),
+    ["b", "c"],
+  );
+});
+
+test("período: entra quem tem barra passando pelo intervalo; sem prazo fica fora", () => {
+  // a: 10–12, b: 14–20, c: criada 10, prazo 15
+  const r = filtrarGantt(
+    BASE,
+    PROJS,
+    com({ periodo: { tipo: "intervalo", de: "2026-11-13", ate: "2026-11-14" } }),
+    ctx(),
+  );
+  assert.deepEqual(ids(r), ["b", "c"]);
+  const soAte = filtrarGantt(
+    BASE,
+    PROJS,
+    com({ periodo: { tipo: "intervalo", de: "", ate: "2026-11-11" } }),
+    ctx(),
+  );
+  assert.deepEqual(ids(soAte), ["a", "c", "velha"]);
+});
+
+test("filtro que tira tarefas some com projeto vazio; filtro de projeto escolhe os projetos", () => {
+  const r = filtrarGantt(BASE, PROJS, com({ pessoas: ["2"] }), ctx());
+  assert.deepEqual(
+    r.projetos.map((p) => p.id),
+    ["P1"],
+  );
+  const p = filtrarGantt(BASE, PROJS, com({ projetos: ["p2"] }), ctx());
+  assert.deepEqual(ids(p), ["c", "s"]);
+  assert.deepEqual(
+    p.projetos.map((x) => x.id),
+    ["P2"],
+  );
 });
