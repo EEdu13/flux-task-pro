@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   barraDaTarefa,
+  conflitosDeDependencia,
+  criariaCiclo,
   entraNaVisaoGeral,
   idDaLinhaDoProjeto,
+  ligacoesDoGantt,
   montarGanttDoProjeto,
   montarGanttGeral,
+  pontasDaLigacao,
   projetoDaLinha,
   replanejamento,
   situacaoNoGantt,
@@ -341,4 +345,71 @@ test("início puxado para depois do prazo fica no dia do prazo", () => {
   assert.deepEqual(replanejamento(barra(10, 21), barra(25, 21), {}), {
     startDate: dia(20).toISOString(),
   });
+});
+
+/* ------------------------------ Dependências ------------------------------ */
+
+const item = (id: string, ini: number, fimExclusivo: number, extra: Record<string, unknown> = {}) =>
+  ({
+    id,
+    text: id,
+    type: "pendente",
+    start: dia(ini),
+    end: dia(fimExclusivo),
+    responsavelId: "1",
+    prazo: dia(fimExclusivo - 1, 23, 59).toISOString(),
+    ...extra,
+  }) as Parameters<typeof ligacoesDoGantt>[0][number];
+
+test("setas: só entre tarefas do Gantt, com os ids das linhas, sem repetir", () => {
+  const itens = [
+    item("AAA", 1, 5),
+    item("BBB", 5, 9),
+    item("projeto:P", 1, 9, { ehProjeto: true }),
+  ];
+  const l = ligacoesDoGantt(itens, [
+    { tarefaId: "bbb", dependeDeId: "aaa" }, // caixa diferente: casa
+    { tarefaId: "BBB", dependeDeId: "AAA" }, // repetida
+    { tarefaId: "ccc", dependeDeId: "aaa" }, // tarefa fora do Gantt
+    { tarefaId: "bbb", dependeDeId: "projeto:P" }, // projeto não tem seta
+  ]);
+  assert.deepEqual(l, [{ id: "AAA>BBB", source: "AAA", target: "BBB", type: "e2s" }]);
+  assert.deepEqual(pontasDaLigacao("AAA>BBB"), { tarefaId: "BBB", dependeDeId: "AAA" });
+  assert.equal(pontasDaLigacao("lixo"), null);
+});
+
+test("conflito: começa antes de a outra terminar", () => {
+  const itens = [
+    item("A", 1, 6),
+    item("B", 4, 9),
+    item("C", 6, 9),
+    item("S", 2, 3, { prazo: null }),
+  ];
+  const c = conflitosDeDependencia(itens, [
+    { tarefaId: "B", dependeDeId: "A" }, // B começa dia 4, A termina no fim do dia 5: conflito
+    { tarefaId: "C", dependeDeId: "A" }, // C começa dia 6, logo depois de A: certo
+    { tarefaId: "S", dependeDeId: "A" }, // S sem prazo: sem barra, sem aviso
+  ]);
+  assert.deepEqual([...c], [["B", 'Começa antes de "A" terminar']]);
+});
+
+test("conflito com duas dependências junta os nomes", () => {
+  const itens = [item("A", 1, 6), item("Z", 1, 7), item("B", 4, 9)];
+  const c = conflitosDeDependencia(itens, [
+    { tarefaId: "B", dependeDeId: "A" },
+    { tarefaId: "B", dependeDeId: "Z" },
+  ]);
+  assert.equal(c.get("B"), 'Começa antes de "A" e "Z" terminar');
+});
+
+test("ciclo: ela mesma, direto e por outras; sem ciclo quando não fecha", () => {
+  const deps = [
+    { tarefaId: "B", dependeDeId: "A" }, // B espera A
+    { tarefaId: "C", dependeDeId: "B" }, // C espera B
+  ];
+  assert.equal(criariaCiclo(deps, "A", "A"), true);
+  assert.equal(criariaCiclo(deps, "A", "B"), true); // A esperar B, que já espera A
+  assert.equal(criariaCiclo(deps, "a", "c"), true); // por outras, sem caixa
+  assert.equal(criariaCiclo(deps, "D", "C"), false);
+  assert.equal(criariaCiclo(deps, "C", "A"), false); // C esperar A também: não fecha nada
 });

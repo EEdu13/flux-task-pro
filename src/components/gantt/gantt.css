@@ -143,16 +143,120 @@
 }
 
 /*
- * Arrastar (Módulo 4). Sem o modo só-leitura, o SVAR mostra o marcador de progresso
- * (o CONECTA não tem progresso por tarefa) e as bolinhas de criar dependência (Módulo 5):
- * escondidos. O cursor da barra o SVAR põe sozinho, direto no elemento (redimensionar
- * nas pontas, mãozinha no meio); na travada, as pontas não podem sugerir que esticam
- * (`!important` vence o estilo dele). O fundo do gráfico puxa para andar.
+ * Arrastar (Módulo 4). Sem o modo só-leitura, o SVAR mostra o marcador de progresso (o
+ * CONECTA não tem progresso por tarefa): escondido. O cursor da barra o SVAR põe sozinho,
+ * direto no elemento (redimensionar nas pontas, mãozinha no meio); na travada, as pontas
+ * não podem sugerir que esticam (`!important` vence o estilo dele). O fundo do gráfico
+ * puxa para andar.
  */
 .fluxo-gantt .wx-progress-marker,
-.fluxo-gantt .wx-progress-wrapper,
-.fluxo-gantt .wx-bar .wx-link {
+.fluxo-gantt .wx-progress-wrapper {
   display: none;
+}
+
+/*
+ * Dependências (Módulo 5). As bolinhas de ligar ficam FORA da barra, nas pontas (as alças
+ * de esticar ficam dentro): clicar na do fim de uma tarefa e depois na do início da outra.
+ * O SVAR só as mostra ao passar o mouse e quando a ligação é possível (`.wx-target`).
+ * Projeto não liga; tarefa travada pode ser a que termina antes (bolinha do fim), não a
+ * que espera (a do início some).
+ */
+.fluxo-gantt .wx-bar .wx-link {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--card);
+  background: var(--muted-foreground);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  transition:
+    transform 0.12s,
+    background 0.12s;
+}
+.fluxo-gantt .wx-bar .wx-link.wx-left {
+  left: -17px;
+}
+.fluxo-gantt .wx-bar .wx-link.wx-right {
+  right: -17px;
+}
+.fluxo-gantt .wx-bar .wx-link .wx-inner {
+  display: none;
+}
+.fluxo-gantt .wx-bar .wx-link:hover,
+.fluxo-gantt .wx-bar .wx-link.wx-selected {
+  background: var(--primary);
+  transform: translateY(-50%) scale(1.3);
+}
+.fluxo-gantt .wx-bar.projeto .wx-link,
+.fluxo-gantt .wx-bar.projetovazio .wx-link,
+.fluxo-gantt .wx-bar:has(.fluxo-gantt-travada) .wx-link.wx-left {
+  display: none;
+}
+/* A seta selecionada fica vermelha, e o × de apagar aparece na tarefa que espera. O × do
+   SVAR é uma letra da fonte de ícones dele (desligada): desenhado aqui. */
+.fluxo-gantt .wx-willow-theme,
+.fluxo-gantt .wx-willow-dark-theme {
+  --wx-color-danger: var(--destructive);
+}
+/* Ao passar o mouse, a seta engrossa e ganha a cor do tema: dá para clicar nela (pedido do
+   usuário, 18/11/2026: fina, de 2 px, ela não parecia clicável). A selecionada continua
+   vermelha, e grossa. */
+.fluxo-gantt .wx-links .wx-line > .wx-line-draw {
+  transition:
+    stroke 0.12s,
+    stroke-width 0.12s;
+}
+.fluxo-gantt .wx-links .wx-line-selectable:hover > .wx-line-draw {
+  stroke: var(--primary);
+  stroke-width: 3.5;
+}
+.fluxo-gantt .wx-links .wx-line.wx-line-selected > .wx-line-draw,
+.fluxo-gantt .wx-links .wx-line.wx-line-selected:hover > .wx-line-draw {
+  stroke: var(--destructive);
+  stroke-width: 3.5;
+}
+.fluxo-gantt .wx-bar button.wx-button.wx-delete-button.wx-delete-link {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid var(--card);
+  border-radius: 999px;
+  background: var(--destructive);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+  cursor: pointer;
+}
+.fluxo-gantt .wx-bar button.wx-button.wx-delete-button.wx-delete-link.wx-left {
+  left: -24px;
+}
+.fluxo-gantt .wx-bar button.wx-button.wx-delete-button.wx-delete-link.wx-right {
+  right: -24px;
+}
+.fluxo-gantt .wx-delete-button-icon {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+}
+.fluxo-gantt .wx-delete-button-icon::before {
+  content: "×";
+  color: #fff;
+  font: 700 15px/1 var(--wx-font-family);
+}
+
+/* Começa antes de uma da qual depende terminar: borda de alerta e o triângulo. */
+.fluxo-gantt .wx-bar:has(.fluxo-gantt-conflito) {
+  outline: 2px dashed var(--warning);
+  outline-offset: 2px;
+}
+.fluxo-gantt .fluxo-gantt-alerta {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  vertical-align: -2px;
 }
 .fluxo-gantt .wx-chart {
   cursor: grab;

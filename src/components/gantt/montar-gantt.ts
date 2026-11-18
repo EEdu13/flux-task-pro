@@ -341,3 +341,107 @@ export function replanejamento(
   }
   return mudanca;
 }
+
+/* ------------------------------ Dependências ------------------------------ */
+
+/** `tarefaId` só começa quando `dependeDeId` terminar (fim → início). Ids em qualquer caixa. */
+export interface Dependencia {
+  tarefaId: string;
+  dependeDeId: string;
+}
+
+/** A seta no formato do SVAR: da que precisa terminar (`source`) para a que espera (`target`). */
+export interface LigacaoDoGantt {
+  id: string;
+  source: string;
+  target: string;
+  type: "e2s";
+}
+
+/** O id da seta: "<a que termina antes>><a que espera>", com os ids como estão nas linhas. */
+export const idDaLigacao = (dependeDeId: string, tarefaId: string) => `${dependeDeId}>${tarefaId}`;
+
+/** As duas pontas de uma seta, a partir do id dela; `null` se não é uma das nossas. */
+export function pontasDaLigacao(id: string | number): Dependencia | null {
+  const [dependeDeId, tarefaId, ...resto] = String(id).split(">");
+  return dependeDeId && tarefaId && resto.length === 0 ? { tarefaId, dependeDeId } : null;
+}
+
+/**
+ * As setas que o Gantt desenha: só as que ligam duas TAREFAS que estão nele (nunca projeto),
+ * com os ids das linhas (o servidor manda em minúsculas; as tarefas vêm em maiúsculas).
+ */
+export function ligacoesDoGantt(
+  itens: readonly ItemDoGantt[],
+  dependencias: readonly Dependencia[],
+): LigacaoDoGantt[] {
+  const porId = new Map(itens.filter((i) => !i.ehProjeto).map((i) => [i.id.toLowerCase(), i.id]));
+  const vistas = new Set<string>();
+  const ligacoes: LigacaoDoGantt[] = [];
+  for (const d of dependencias) {
+    const espera = porId.get(d.tarefaId.toLowerCase());
+    const antes = porId.get(d.dependeDeId.toLowerCase());
+    if (!espera || !antes || espera === antes) continue;
+    const id = idDaLigacao(antes, espera);
+    if (vistas.has(id)) continue;
+    vistas.add(id);
+    ligacoes.push({ id, source: antes, target: espera, type: "e2s" });
+  }
+  return ligacoes;
+}
+
+/**
+ * As tarefas que começam antes de uma da qual dependem terminar: id da linha → o aviso
+ * ("Começa antes de "X" terminar"). Só entre barras de verdade (com prazo).
+ */
+export function conflitosDeDependencia(
+  itens: readonly ItemDoGantt[],
+  dependencias: readonly Dependencia[],
+): Map<string, string> {
+  const porId = new Map(itens.filter((i) => !i.ehProjeto).map((i) => [i.id.toLowerCase(), i]));
+  const nomes = new Map<string, string[]>();
+  for (const d of dependencias) {
+    const espera = porId.get(d.tarefaId.toLowerCase());
+    const antes = porId.get(d.dependeDeId.toLowerCase());
+    if (!espera || !antes || !espera.prazo || !antes.prazo) continue;
+    if (espera.start.getTime() < antes.end.getTime()) {
+      nomes.set(espera.id, [...(nomes.get(espera.id) ?? []), antes.text]);
+    }
+  }
+  return new Map(
+    [...nomes].map(([id, lista]) => [
+      id,
+      `Começa antes de ${lista.map((n) => `"${n}"`).join(" e ")} terminar`,
+    ]),
+  );
+}
+
+/**
+ * Ligar `tarefaId` a esperar `dependeDeId` fecharia um ciclo? Sim se forem a mesma tarefa
+ * ou se `dependeDeId` já espera, direto ou por outras, por `tarefaId`. O servidor confere
+ * de novo; aqui é para avisar antes de pedir.
+ */
+export function criariaCiclo(
+  dependencias: readonly Dependencia[],
+  tarefaId: string,
+  dependeDeId: string,
+): boolean {
+  const alvo = tarefaId.toLowerCase();
+  const inicio = dependeDeId.toLowerCase();
+  if (alvo === inicio) return true;
+  const esperaPor = new Map<string, string[]>();
+  for (const d of dependencias) {
+    const t = d.tarefaId.toLowerCase();
+    esperaPor.set(t, [...(esperaPor.get(t) ?? []), d.dependeDeId.toLowerCase()]);
+  }
+  const vistos = new Set<string>();
+  const fila = [inicio];
+  while (fila.length) {
+    const atual = fila.pop()!;
+    if (atual === alvo) return true;
+    if (vistos.has(atual)) continue;
+    vistos.add(atual);
+    fila.push(...(esperaPor.get(atual) ?? []));
+  }
+  return false;
+}

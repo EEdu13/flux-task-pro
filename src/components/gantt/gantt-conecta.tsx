@@ -20,7 +20,7 @@ import {
   type ITask,
 } from "@svar-ui/react-gantt";
 import { Locale } from "@svar-ui/react-core";
-import { CalendarCheck, Lock, RotateCcw } from "lucide-react";
+import { CalendarCheck, Lock, RotateCcw, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import "@svar-ui/react-gantt/all.css";
 import "./gantt.css";
@@ -29,12 +29,17 @@ import { tarefaVencida } from "@/lib/prazo";
 import type { Project, Task, User } from "@/lib/fluxo-types";
 import {
   DIAS_DE_CONCLUIDAS,
+  conflitosDeDependencia,
+  criariaCiclo,
   inicioDoDia,
+  ligacoesDoGantt,
   montarGanttDoProjeto,
   montarGanttGeral,
+  pontasDaLigacao,
   projetoDaLinha,
   replanejamento,
   somarDias,
+  type Dependencia,
   type ItemDoGantt,
   type MudancaDePlano,
 } from "./montar-gantt";
@@ -46,7 +51,9 @@ import { PALAVRAS_PT } from "./palavras-pt";
  * - `modo: "geral"` (Módulo 3, 18/11): todos os projetos, cada um com as suas tarefas
  *   embaixo, recolhidos de início;
  * - arrastar e redimensionar a barra replaneja a tarefa (Módulo 4, 18/11), e arrastar o
- *   fundo anda pelo gráfico.
+ *   fundo anda pelo gráfico;
+ * - setas de dependência (Módulo 5, 18/11): ligar pelas bolinhas das pontas, apagar
+ *   clicando na seta, e a barra avisa quando começa antes da outra terminar.
  *
  * Carregado sob demanda por `./index.tsx`: o SVAR e o CSS dele só baixam quando a
  * tela abre. O clique numa tarefa abre o diálogo da casa (`openTask`); no projeto,
@@ -65,6 +72,12 @@ interface PropsComuns {
   podeReplanejar: ReadonlySet<string> | null | "erro";
   /** A barra foi arrastada: grava (e empilha o Desfazer). */
   onReplanejar: (tarefaId: string, mudanca: MudancaDePlano) => void;
+  /** As dependências que a pessoa vê (vindas do servidor; ids em qualquer caixa). */
+  dependencias: readonly Dependencia[];
+  /** Ligar: `tarefaId` passa a esperar `dependeDeId`. Grava (e empilha o Desfazer). */
+  onLigar: (tarefaId: string, dependeDeId: string) => void;
+  /** Desligar a seta. Grava (e empilha o Desfazer). */
+  onDesligar: (tarefaId: string, dependeDeId: string) => void;
 }
 
 export interface PropsDoProjeto extends PropsComuns {
@@ -87,6 +100,8 @@ interface LinhaDoGantt extends ItemDoGantt {
   pessoaIniciais: string;
   /** A barra não arrasta (projeto, concluída ou sem permissão): o cursor avisa antes. */
   travada: boolean;
+  /** Começa antes de uma da qual depende terminar: o aviso. `null` = tudo certo. */
+  conflito: string | null;
 }
 
 /* Os tipos do SVAR precisam estar registrados: tipo desconhecido vira "task", e a
@@ -198,19 +213,33 @@ function RotuloDaBarra({ data }: { data: ITask }) {
       </div>
     );
   }
+  /* Começa antes de uma da qual depende terminar (Módulo 5): o triângulo de alerta, a borda
+     (ver `gantt.css`) e o motivo ao parar o mouse em cima. */
+  const conflito = data.conflito as string | null | undefined;
+  const alerta = conflito ? (
+    <TriangleAlert className="fluxo-gantt-alerta" aria-label={conflito} />
+  ) : null;
   /* Ao passar o mouse, a barra mostra o que dá para fazer com ela (pedido do usuário,
      18/11/2026: só o cursor mudava). Alças nas pontas = esticar; o cadeado = não arrasta. */
   if (data.travada) {
     return (
-      <div className="fluxo-gantt-rotulo fluxo-gantt-travada">
+      <div
+        className={`fluxo-gantt-rotulo fluxo-gantt-travada${conflito ? " fluxo-gantt-conflito" : ""}`}
+        title={conflito ?? undefined}
+      >
+        {alerta}
         <Lock className="fluxo-gantt-cadeado" aria-hidden />
         {data.text}
       </div>
     );
   }
   return (
-    <div className="fluxo-gantt-rotulo">
+    <div
+      className={`fluxo-gantt-rotulo${conflito ? " fluxo-gantt-conflito" : ""}`}
+      title={conflito ?? undefined}
+    >
       <span className="fluxo-gantt-alca fluxo-gantt-alca-inicio" aria-hidden />
+      {alerta}
       {data.text}
       <span className="fluxo-gantt-alca fluxo-gantt-alca-fim" aria-hidden />
     </div>
@@ -237,8 +266,8 @@ function motivoDaTrava(
 
 /**
  * O que o SVAR faria sozinho e não pode: criar, apagar, copiar ou mover tarefa (tecla
- * Delete, Ctrl+C/V, arrastar linha da grade) e mexer em dependência (Módulo 5). Tudo que
- * muda dado passa por nós.
+ * Delete, Ctrl+C/V, arrastar linha da grade) e mudar o tipo de uma seta. Ligar e desligar
+ * setas passa pelos ouvintes do `init` (Módulo 5). Tudo que muda dado passa por nós.
  */
 const ACOES_BLOQUEADAS = [
   "add-task",
@@ -247,17 +276,20 @@ const ACOES_BLOQUEADAS = [
   "move-task",
   "indent-task",
   "split-task",
-  "add-link",
   "update-link",
-  "delete-link",
 ] as const;
 
-/**
- * As dependências (Módulo 5): por ora nenhuma. Constante, e não `[]` no JSX: um array novo a
- * cada desenho, o SVAR toma por dado novo e recalcula as barras, e no meio de um arraste a
- * barra voltava para o lugar de antes (prova de 18/11/2026).
- */
-const SEM_DEPENDENCIAS: never[] = [];
+/** Por que esta tarefa não pode ESPERAR outra (ser a ponta de chegada de uma seta). */
+function motivoParaNaoEsperar(
+  linha: LinhaDoGantt,
+  pode: GanttConectaProps["podeReplanejar"],
+): string | null {
+  if (linha.type === "concluida") return "Tarefa concluída: não passa a esperar outra.";
+  const motivo = motivoDaTrava(linha, pode);
+  return motivo?.startsWith("Só o responsável")
+    ? "Só o responsável, quem criou, a chefia ou a gerência ligam dependências a esta tarefa."
+    : motivo;
+}
 
 /** Quanto o mouse anda antes de um clique virar arraste do fundo. */
 const LIMIAR_DO_ARRASTE_PX = 4;
@@ -424,7 +456,7 @@ function assinatura(props: GanttConectaProps): string {
 }
 
 export default function GanttConecta(props: GanttConectaProps) {
-  const { modo, users, onAbrirTarefa, podeReplanejar, onReplanejar } = props;
+  const { modo, users, onAbrirTarefa, podeReplanejar, onReplanejar, dependencias } = props;
   const aparencia = useAparencia();
   const [agora, setAgora] = useState(() => Date.now());
   const [api, setApi] = useState<IApi | null>(null);
@@ -442,6 +474,13 @@ export default function GanttConecta(props: GanttConectaProps) {
 
   const chave = assinatura(props);
   const chavePessoas = users.map((u) => `${u.id}|${u.name}|${u.avatar}`).join("\n");
+  /* As setas também pelo conteúdo: um array novo a cada desenho, o SVAR toma por dado novo
+     e recalcula as barras, e no meio de um arraste a barra voltava para o lugar de antes
+     (prova de 18/11/2026). */
+  const chaveDasSetas = dependencias
+    .map((d) => `${d.dependeDeId}>${d.tarefaId}`.toLowerCase())
+    .sort()
+    .join("|");
   const montagem = useMemo(
     () => {
       const atrasada = (t: Parameters<typeof tarefaVencida>[0], ms: number) => tarefaVencida(t, ms);
@@ -450,6 +489,7 @@ export default function GanttConecta(props: GanttConectaProps) {
           ? montarGanttGeral(props.projetos, props.tarefas, agora, atrasada, abertos.current)
           : montarGanttDoProjeto(props.tarefas, agora, atrasada);
       const pessoas = new Map(users.map((u) => [u.id, u]));
+      const conflitos = conflitosDeDependencia(m.tasks, dependencias);
       const linhas: LinhaDoGantt[] = m.tasks.map((item) => {
         const p = pessoas.get(item.responsavelId);
         const linha = {
@@ -457,25 +497,56 @@ export default function GanttConecta(props: GanttConectaProps) {
           pessoaNome: p?.name ?? "—",
           pessoaIniciais: p?.avatar ?? "?",
           travada: false,
+          conflito: conflitos.get(item.id) ?? null,
         };
         linha.travada = motivoDaTrava(linha, podeReplanejar) !== null;
         return linha;
       });
-      return { ...m, linhas, porId: new Map(linhas.map((l) => [l.id, l])) };
+      return {
+        ...m,
+        linhas,
+        porId: new Map(linhas.map((l) => [l.id, l])),
+        setas: ligacoesDoGantt(m.tasks, dependencias),
+      };
     },
-    /* Pelo conteúdo (`chave`, `chavePessoas`), não pela identidade das listas: ver `assinatura`. */
+    /* Pelo conteúdo (`chave`, `chavePessoas`, `chaveDasSetas`), não pela identidade das
+       listas: ver `assinatura`. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chave, chavePessoas, agora, podeReplanejar],
+    [chave, chavePessoas, chaveDasSetas, agora, podeReplanejar],
   );
 
   /*
    * O que os ouvintes do SVAR leem na hora do gesto. Eles são registrados uma vez (no
    * `init`), então leem por refs, e não pelas variáveis de quando foram criados.
    */
-  const atual = useRef({ montagem, podeReplanejar, onReplanejar, tarefas: props.tarefas });
-  useEffect(() => {
-    atual.current = { montagem, podeReplanejar, onReplanejar, tarefas: props.tarefas };
+  const atual = useRef({
+    montagem,
+    podeReplanejar,
+    onReplanejar,
+    tarefas: props.tarefas,
+    dependencias,
+    onLigar: props.onLigar,
+    onDesligar: props.onDesligar,
   });
+  useEffect(() => {
+    atual.current = {
+      montagem,
+      podeReplanejar,
+      onReplanejar,
+      tarefas: props.tarefas,
+      dependencias,
+      onLigar: props.onLigar,
+      onDesligar: props.onDesligar,
+    };
+  });
+  /**
+   * Ligando uma seta: já clicou na primeira bolinha, falta a segunda. Só o `onClick` mexe
+   * nisto: no segundo clique o SVAR dispara o `add-link` ANTES de o clique chegar até nós.
+   */
+  const ligando = useRef(false);
+  /** O aviso do segundo passo. Um id por vez: reusar o id logo depois de fechar, o sonner engole. */
+  const avisoDeLigar = useRef(0);
+  const fecharAvisoDeLigar = () => toast.dismiss(`gantt-ligar-${avisoDeLigar.current}`);
   /** Quando houve o último arraste (de barra ou do fundo): o clique que vem junto não abre nada. */
   const ultimoArraste = useRef(0);
   /** O SVAR avisa o fim do arraste duas vezes; grava uma. */
@@ -742,9 +813,33 @@ export default function GanttConecta(props: GanttConectaProps) {
           onPointerDown={aoApertar}
           onClick={(e) => {
             if (!api) return;
+            const el = e.target as Element;
+            /* Ligar uma seta: o SVAR cuida das duas bolinhas; aqui só o aviso do segundo passo. */
+            if (el.classList?.contains("wx-link")) {
+              if (!ligando.current) {
+                ligando.current = true;
+                fecharAvisoDeLigar();
+                avisoDeLigar.current += 1;
+                toast.message(
+                  el.classList.contains("wx-left")
+                    ? "Agora clique na bolinha do FIM da tarefa que precisa terminar antes."
+                    : "Agora clique na bolinha do INÍCIO da tarefa que vai esperar.",
+                  { id: `gantt-ligar-${avisoDeLigar.current}`, duration: 8000 },
+                );
+              } else {
+                ligando.current = false;
+                fecharAvisoDeLigar();
+              }
+              return;
+            }
+            if (ligando.current) {
+              ligando.current = false;
+              fecharAvisoDeLigar();
+            }
             /* O fim de um arraste (de barra ou do fundo) não é clique. */
             if (performance.now() - ultimoArraste.current < CLIQUE_DEPOIS_DO_ARRASTE_MS) return;
-            const el = e.target as Element;
+            /* O × de apagar a seta é do SVAR. */
+            if (el.closest?.(".wx-delete-button")) return;
             /* O triângulo do projeto o SVAR já abre e recolhe sozinho. */
             if (el.closest?.(".wx-toggle-icon")) return;
             /* No fundo vazio do gráfico o clique não abre nada: só a barra e a linha da grade. */
@@ -764,7 +859,7 @@ export default function GanttConecta(props: GanttConectaProps) {
               <Tema fonts={false} key={`${aparencia.escuro}-${aparencia.borda}`}>
                 <Gantt
                   tasks={montagem.linhas}
-                  links={SEM_DEPENDENCIAS}
+                  links={montagem.setas}
                   taskTypes={TIPOS}
                   scales={config.scales}
                   start={montagem.inicio}
@@ -780,6 +875,71 @@ export default function GanttConecta(props: GanttConectaProps) {
                     /* O editor do SVAR fica desligado: o duplo clique não abre nada além do nosso. */
                     a.intercept("show-editor", () => false);
                     for (const acao of ACOES_BLOQUEADAS) a.intercept(acao, () => false);
+                    /* Ligar (Módulo 5): o SVAR não guarda a seta sozinho. Vale fim → início;
+                       ligado ao contrário (início com fim), é a mesma intenção, invertida. */
+                    a.intercept(
+                      "add-link",
+                      (ev: {
+                        link?: {
+                          source?: string | number;
+                          target?: string | number;
+                          type?: string;
+                        };
+                      }) => {
+                        fecharAvisoDeLigar();
+                        const {
+                          montagem: m,
+                          podeReplanejar: pode,
+                          dependencias: deps,
+                        } = atual.current;
+                        const de = m.porId.get(String(ev.link?.source));
+                        const para = m.porId.get(String(ev.link?.target));
+                        const avisar = (texto: string) => {
+                          toast.message(texto, { id: "gantt-trava" });
+                          return false;
+                        };
+                        if (!de || !para || de.ehProjeto || para.ehProjeto) {
+                          return avisar("A dependência liga duas tarefas, não projetos.");
+                        }
+                        const tipo = ev.link?.type;
+                        const [antes, espera] =
+                          tipo === "e2s" ? [de, para] : tipo === "s2e" ? [para, de] : [null, null];
+                        if (!antes || !espera) {
+                          return avisar(
+                            "Ligue o FIM da tarefa que precisa terminar antes ao INÍCIO da que vai esperar.",
+                          );
+                        }
+                        const motivo = motivoParaNaoEsperar(espera, pode);
+                        if (motivo) return avisar(motivo);
+                        const ja = deps.some(
+                          (d) =>
+                            d.tarefaId.toLowerCase() === espera.id.toLowerCase() &&
+                            d.dependeDeId.toLowerCase() === antes.id.toLowerCase(),
+                        );
+                        if (ja) return avisar("Essa dependência já existe.");
+                        if (criariaCiclo(deps, espera.id, antes.id)) {
+                          return avisar(
+                            `Isso criaria um ciclo: "${antes.text}" já espera, direto ou por outras, por "${espera.text}".`,
+                          );
+                        }
+                        atual.current.onLigar(espera.id, antes.id);
+                        return false;
+                      },
+                    );
+                    /* Apagar: clique na seta, depois no × que aparece na tarefa que espera. */
+                    a.intercept("delete-link", (ev: { id: string | number }) => {
+                      const pontas = pontasDaLigacao(ev.id);
+                      const { montagem: m, podeReplanejar: pode } = atual.current;
+                      const espera = pontas ? m.porId.get(pontas.tarefaId) : undefined;
+                      if (!pontas || !espera) return false;
+                      const motivo = motivoParaNaoEsperar(espera, pode);
+                      if (motivo && espera.type !== "concluida") {
+                        toast.message(motivo, { id: "gantt-trava" });
+                        return false;
+                      }
+                      atual.current.onDesligar(pontas.tarefaId, pontas.dependeDeId);
+                      return false;
+                    });
                     /* Arrastar: a barra travada nem sai do lugar, e o motivo aparece (um aviso
                        só por vez: o mesmo `id` substitui o anterior). */
                     a.intercept(
