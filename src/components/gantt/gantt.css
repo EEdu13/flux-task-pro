@@ -1,0 +1,137 @@
+/*
+ * O Gantt (SVAR) vestido com as cores do CONECTA (17/11/2026).
+ *
+ * Tudo dentro de `.fluxo-gantt`: o CSS do SVAR só existe quando a aba abre, e
+ * nada daqui vaza para o resto do app. Os temas Willow/WillowDark do SVAR dão a
+ * base; por cima, as variáveis `--wx-*` apontam para os nossos tokens, que mudam
+ * com a paleta e com o claro/escuro.
+ */
+
+.fluxo-gantt {
+  position: relative;
+  height: 100%;
+}
+
+/*
+ * Em TODO elemento do SVAR, até nos que ele abre fora da nossa caixa: o CSS dele
+ * declara Open Sans e Roboto com endereço em cdn.svar.dev, e o navegador baixaria
+ * de lá assim que um elemento usasse a fonte padrão dele. Com a nossa fonte,
+ * nada sai para o CDN de terceiros (o `fonts={false}` do tema já evita os links
+ * de ícones e fontes que ele colocaria na página).
+ */
+.wx-theme.wx-willow-theme,
+.wx-theme.wx-willow-dark-theme,
+.wx-theme.wx-material-theme {
+  --wx-font-family: "Manrope Variable", "Manrope", ui-sans-serif, sans-serif;
+}
+
+/* O SVAR não ocupa a altura do pai sozinho. */
+.fluxo-gantt .wx-theme {
+  height: 100%;
+}
+
+.fluxo-gantt .wx-willow-theme,
+.fluxo-gantt .wx-willow-dark-theme {
+  --wx-font-family: "Manrope Variable", "Manrope", ui-sans-serif, sans-serif;
+  --wx-font-size: 13px;
+  --wx-font-size-sm: 11px;
+  --wx-background: var(--card);
+  --wx-background-alt: var(--secondary);
+  --wx-background-hover: var(--secondary);
+  --wx-color-font: var(--foreground);
+  --wx-color-font-alt: var(--muted-foreground);
+  --wx-color-primary: var(--primary);
+  --wx-color-primary-font: var(--primary-foreground);
+  --wx-border-color: var(--border);
+  --wx-border: 1px solid var(--border);
+  --wx-table-border: 1px solid var(--border);
+  --wx-table-header-background: var(--secondary);
+  --wx-table-select-background: color-mix(in oklch, var(--primary) 10%, transparent);
+  --wx-table-select-border: inset 3px 0 var(--primary);
+  --wx-grid-header-text-transform: none;
+  --wx-grid-header-font-color: var(--muted-foreground);
+  --wx-timescale-font-color: var(--muted-foreground);
+  /*
+   * A grade do gráfico é uma imagem que o SVAR desenha uma vez, ao montar, e ele
+   * só entende cor em HEX nesta variável (corta o texto a partir do "#"). Nossos
+   * tokens são oklch: o componente converte o `--border` para hex e põe em
+   * `--fluxo-borda-hex`, e monta o Gantt de novo quando o tema muda.
+   */
+  --wx-gantt-border: var(--fluxo-borda-hex, 1px solid #1d1e261a);
+  --wx-gantt-select-color: color-mix(in oklch, var(--primary) 10%, transparent);
+  --wx-gantt-link-color: var(--muted-foreground);
+  --wx-gantt-link-color-hovered: var(--foreground);
+  --wx-gantt-bar-border-radius: 6px;
+  --wx-gantt-bar-shadow: none;
+  --wx-gantt-task-font-color: #fff;
+  --wx-gantt-task-border: 1px solid transparent;
+}
+
+/* Barras pela situação da tarefa: as cores de `statusColor` (fluxo-types.ts). */
+.fluxo-gantt .wx-bar.pendente {
+  background: oklch(0.68 0.025 155);
+}
+.fluxo-gantt .wx-bar.andamento {
+  background: oklch(0.746 0.148 233);
+}
+.fluxo-gantt .wx-bar.concluida {
+  background: oklch(0.792 0.181 146);
+  opacity: 0.55;
+}
+.fluxo-gantt .wx-bar.atrasada {
+  background: var(--destructive);
+}
+/* Sem prazo: a linha fica na lista da esquerda; a barra existe só para o SVAR. */
+.fluxo-gantt .wx-bar.semprazo {
+  visibility: hidden;
+  pointer-events: none;
+}
+.fluxo-gantt .wx-bar.pendente,
+.fluxo-gantt .wx-bar.andamento,
+.fluxo-gantt .wx-bar.concluida,
+.fluxo-gantt .wx-bar.atrasada {
+  border-color: transparent;
+}
+
+/* O texto da barra: o título, cortado com reticências. */
+.fluxo-gantt .fluxo-gantt-rotulo {
+  overflow: hidden;
+  padding: 0 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* A coluna de hoje, levemente tingida (escala Dia). */
+.fluxo-gantt .fluxo-gantt-coluna-hoje {
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
+}
+
+/* A linha de hoje: a nossa, porque a do SVAR (markers) é da versão paga. */
+.fluxo-gantt .fluxo-gantt-hoje {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  width: 2px;
+  height: 100%;
+  margin-left: -1px;
+  background: var(--destructive);
+  pointer-events: none;
+}
+
+/* Colunas da esquerda. */
+.fluxo-gantt .fluxo-gantt-pessoa {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+.fluxo-gantt .fluxo-gantt-sem-prazo {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.fluxo-gantt .fluxo-gantt-prazo-atrasado {
+  color: var(--destructive);
+  font-weight: 600;
+}

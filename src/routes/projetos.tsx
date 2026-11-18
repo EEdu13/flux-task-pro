@@ -26,6 +26,9 @@ import {
   AtSign,
   TrendingUp,
   Presentation,
+  SquareChartGantt,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
@@ -34,6 +37,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { ProjectTracking } from "@/components/project-tracking";
 import { ProjectPortfolio } from "@/components/project-portfolio";
 import { FupSemanal } from "@/components/fup-semanal";
+import { GanttDoProjeto } from "@/components/gantt";
 import { CampoData } from "@/components/campo-data";
 import { useFluxo } from "@/lib/fluxo-store";
 import { podeEditarProjeto } from "@/lib/permissoes";
@@ -50,7 +54,7 @@ import { reduzirFoto } from "@/lib/foto-reduzida";
 import { SeletorDeCor } from "@/components/seletor-de-cor";
 import { prazoVencido, rotuloDoPrazo } from "@/lib/prazo";
 
-type ProjectView = "lista" | "board" | "acompanhamento";
+type ProjectView = "lista" | "board" | "acompanhamento" | "gantt";
 
 /** Cor do selo de risco na lista lateral — leitura de relance. */
 const riskBadge: Record<RiskLevel, string> = {
@@ -181,6 +185,10 @@ function ProjetosPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "todos">("todos");
   const [view, setView] = useState<ProjectView>("lista");
+  /* Na aba Gantt a lista de projetos (320px) se recolhe: num notebook sobrariam
+     ~450px para o gráfico. O botão "Projetos" da aba a traz de volta. */
+  const [listaNoGantt, setListaNoGantt] = useState(false);
+  const listaRecolhida = view === "gantt" && !listaNoGantt;
   const [quickTitle, setQuickTitle] = useState("");
   /* A observação nasce junto com a subtarefa. Sem este campo ela só podia ser
      escrita depois, abrindo a tarefa em "Minhas tarefas" — a criação no projeto
@@ -371,8 +379,8 @@ function ProjetosPage() {
             }}
           />
         ) : (
-        <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-          <aside className="flex flex-col gap-2">
+        <div className={`grid gap-4 ${listaRecolhida ? "" : "lg:grid-cols-[320px_1fr]"}`}>
+          <aside className={`flex flex-col gap-2 ${listaRecolhida ? "hidden" : ""}`}>
             <div className="mb-1 flex items-center justify-between px-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Meus projetos
@@ -486,6 +494,8 @@ function ProjetosPage() {
                 currentUserId={currentUser.id}
                 view={view}
                 setView={setView}
+                listaRecolhida={listaRecolhida}
+                alternarLista={() => setListaNoGantt((v) => !v)}
                 completions={completions}
                 updateProject={updateProject}
                 updateTask={updateTask}
@@ -548,6 +558,9 @@ interface ProjectDetailProps {
   currentUserId: string;
   view: ProjectView;
   setView: (v: ProjectView) => void;
+  /** Só na aba Gantt: a lista de projetos está escondida para dar largura ao gráfico. */
+  listaRecolhida: boolean;
+  alternarLista: () => void;
   completions: CompletionEntry[];
   updateProject: ReturnType<typeof useFluxo>["updateProject"];
   updateTask: ReturnType<typeof useFluxo>["updateTask"];
@@ -577,6 +590,8 @@ function ProjectDetail({
   currentUserId,
   view,
   setView,
+  listaRecolhida,
+  alternarLista,
   completions,
   updateProject,
   updateTask,
@@ -750,15 +765,34 @@ function ProjectDetail({
           >
             Acompanhamento
           </TabBtn>
+          <TabBtn
+            active={view === "gantt"}
+            onClick={() => setView("gantt")}
+            icon={<SquareChartGantt className="h-3.5 w-3.5" />}
+          >
+            Gantt
+          </TabBtn>
         </div>
-        <span className="text-[11px] text-muted-foreground">
-          Cada subtarefa aparece em <b className="text-foreground">Minhas tarefas</b> da pessoa responsável.
-        </span>
+        {view === "gantt" ? (
+          <button
+            type="button"
+            onClick={alternarLista}
+            className="mb-1 hidden items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] font-semibold text-muted-foreground transition hover:border-primary/60 hover:text-foreground lg:inline-flex"
+            title={listaRecolhida ? "Mostrar a lista de projetos" : "Esconder a lista de projetos"}
+          >
+            {listaRecolhida ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+            Projetos
+          </button>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">
+            Cada subtarefa aparece em <b className="text-foreground">Minhas tarefas</b> da pessoa responsável.
+          </span>
+        )}
       </div>
 
       <div className="p-4">
-        {/* Quick add row (Asana-style) — fora do acompanhamento, que é só leitura. */}
-        {view !== "acompanhamento" && (
+        {/* Quick add row (Asana-style) — fora do acompanhamento e do Gantt, que são só leitura. */}
+        {view !== "acompanhamento" && view !== "gantt" && (
         <div className="relative mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-secondary/40 px-3 py-2 focus-within:border-primary focus-within:bg-secondary/70">
           <Plus className="h-4 w-4 text-primary" />
           <input
@@ -878,6 +912,13 @@ function ProjectDetail({
             completions={completions}
             users={users}
           />
+        ) : view === "gantt" ? (
+          <div
+            className="overflow-hidden rounded-xl border border-border"
+            style={{ height: "clamp(360px, calc(100vh - 340px), 900px)" }}
+          >
+            <GanttDoProjeto tarefas={subtasks} users={users} onAbrirTarefa={openTask} />
+          </div>
         ) : view === "lista" ? (
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="grid grid-cols-[auto_1fr_140px_120px_36px] items-center gap-2 border-b border-border bg-secondary/40 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
