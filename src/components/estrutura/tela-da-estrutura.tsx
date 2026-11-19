@@ -119,6 +119,11 @@ export function TelaDaEstrutura({
   useEffect(() => {
     marcasRef.current = marcas;
   }, [marcas]);
+  /* Quem tem o seletor (o Eduardo) VÊ as outras equipes, mas só aponta na dele: nelas a tela é só
+     de leitura, sem marcar, enviar, corrigir nem "Adicionar" (decisão do usuário, 18/11/2026). O
+     servidor recusa do mesmo jeito (`exigirQuePodeAlterar`). */
+  const soConsulta = est.trocaDeEquipe && !!est.inicial && !!equipe && equipe !== est.inicial;
+  const editavel = editando && !soConsulta;
 
   // As equipes: ao abrir a tela, pede o que há de mais novo (o menu vive do que a aba já tinha).
   useEffect(() => {
@@ -191,10 +196,10 @@ export function TelaDaEstrutura({
 
   // O rascunho: só de dia aberto, e só para a equipe e o dia a que as marcas pertencem.
   useEffect(() => {
-    if (editando && lista && !doDia?.enviada && chaveDasMarcas === chaveDoRascunho(equipe, dia)) {
+    if (editavel && lista && !doDia?.enviada && chaveDasMarcas === chaveDoRascunho(equipe, dia)) {
       RASCUNHOS.set(chaveDasMarcas, marcas);
     }
-  }, [marcas, editando, lista, doDia, chaveDasMarcas, equipe, dia]);
+  }, [marcas, editavel, lista, doDia, chaveDasMarcas, equipe, dia]);
 
   /* -------------------------------- Ações -------------------------------- */
 
@@ -351,8 +356,8 @@ export function TelaDaEstrutura({
 
   const faltam = lista ? quantosFaltam(marcas, lista.pessoas, lista.veiculos) : 0;
   const equipeVazia = lista !== null && lista.pessoas.length === 0 && lista.veiculos.length === 0;
-  /** Puxar quem está sem equipe: só em edição, e só liberado. */
-  const podeAdicionar = editando && ADICIONAR_NA_EQUIPE_LIGADO;
+  /** Puxar quem está sem equipe: só em edição (nunca na equipe só de consulta), e só liberado. */
+  const podeAdicionar = editavel && ADICIONAR_NA_EQUIPE_LIGADO;
   const meuId = lista ? idDoLogado(lista.pessoas, currentUser.name) : null;
   const enviada = doDia?.enviada === true;
   /** Sem conseguir ler as equipes (rede, PWA fora do ar) a tela mostra o erro, e não um esqueleto eterno. */
@@ -391,6 +396,12 @@ export function TelaDaEstrutura({
           )}
         </div>
 
+        {est.diagnostico && (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
+            <b>Diagnóstico (só você vê):</b> {est.diagnostico}
+          </p>
+        )}
+
         <BarraDaSemana
           dias={semana}
           diaSelecionado={dia}
@@ -408,7 +419,7 @@ export function TelaDaEstrutura({
               </span>
             )}
           </h2>
-          {enviada && !editando && (
+          {enviada && !editando && !soConsulta && (
             <button
               type="button"
               onClick={() => {
@@ -423,12 +434,18 @@ export function TelaDaEstrutura({
           )}
         </div>
 
-        {enviada && !editando && (
+        {soConsulta && (
+          <p className="rounded-lg border border-border bg-secondary/50 px-3 py-2 text-xs font-medium text-muted-foreground">
+            Só para consulta: você vê a {equipe}, mas envia e altera apenas a sua ({est.inicial}).
+            {lista && !enviada && " Este dia ainda não tem estrutura enviada."}
+          </p>
+        )}
+        {enviada && !editavel && (
           <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs font-medium text-emerald-800 dark:text-emerald-300">
             Estrutura enviada. Você está vendo o que foi guardado para este dia.
           </p>
         )}
-        {enviada && editando && (
+        {enviada && editavel && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-900 dark:text-amber-200">
             <span>Corrigindo a estrutura já enviada: o envio anterior será substituído.</span>
             <button
@@ -464,7 +481,7 @@ export function TelaDaEstrutura({
             <ListaDePessoas
               pessoas={lista.pessoas}
               marcas={marcas}
-              editando={editando}
+              editando={editavel}
               estava={estavaP}
               euId={meuId}
               aoMarcar={marcarP}
@@ -473,12 +490,12 @@ export function TelaDaEstrutura({
             <ListaDeVeiculos
               veiculos={lista.veiculos}
               marcas={marcas}
-              editando={editando}
+              editando={editavel}
               estava={estavaV}
               aoMarcar={marcarV}
               aoAdicionar={podeAdicionar ? () => setAdicionando("veiculos") : undefined}
             />
-            {!editando && doDia && doDia.foraDaLista.length > 0 && (
+            {!editavel && doDia && doDia.foraDaLista.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 Também constavam neste dia, mas não estão mais na equipe:{" "}
                 {doDia.foraDaLista.map((x) => `${x.nome} (${x.status})`).join(", ")}.
@@ -487,7 +504,7 @@ export function TelaDaEstrutura({
           </>
         )}
 
-        {lista && !equipeVazia && editando && (
+        {lista && !equipeVazia && editavel && (
           <BarraDeAcoes
             faltam={faltam}
             podeDesfazer={antes !== null}

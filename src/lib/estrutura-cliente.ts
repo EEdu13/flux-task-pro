@@ -36,6 +36,8 @@ export interface EstadoDaEstrutura {
   cobrancaDoDia: string;
   /** A última busca falhou (a tela de verdade mostra; o card e o menu calam). */
   erro: MotivoDaFalha | null;
+  /** Só do Eduardo: a lista do PWA não trouxe a equipe dele e a tela usa a configurada (o porquê). */
+  diagnostico: string | null;
 }
 
 const VAZIO: EstadoDaEstrutura = {
@@ -47,6 +49,7 @@ const VAZIO: EstadoDaEstrutura = {
   cobranca: [],
   cobrancaDoDia: "",
   erro: null,
+  diagnostico: null,
 };
 
 let estado: EstadoDaEstrutura = VAZIO;
@@ -107,6 +110,7 @@ export function carregarEquipes(forcar = false): Promise<void> {
         trocaDeEquipe: r.trocaDeEquipe,
         inicial: r.inicial,
         erro: null,
+        diagnostico: r.diagnostico ?? null,
       });
     })
     .catch((e: unknown) => {

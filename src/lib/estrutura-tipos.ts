@@ -66,6 +66,11 @@ export interface EquipesDaPessoa {
   trocaDeEquipe: boolean;
   /** A equipe em que a tela abre: a da própria pessoa. Vazio = sem equipe. */
   inicial: string;
+  /**
+   * Só para quem tem o seletor (o Eduardo), quando a lista do PWA não trouxe a equipe dele e a tela
+   * usa a configurada: o que a lista respondeu, numa linha (18/11/2026). Ausente = tudo certo.
+   */
+  diagnostico?: string;
 }
 
 export interface PessoaDaEquipe {
@@ -251,6 +256,7 @@ export type MotivoDaFalha =
   | "envio_incerto" // tempo esgotado ou 5xx no POST: pode ter gravado
   | "adicao_desligada" // puxar para a equipe ainda não está liberado
   | "candidato_indisponivel" // já não está sem equipe (alguém puxou antes) ou está fora do alcance
+  | "so_consulta" // quem tem o seletor vê outras equipes, mas só envia e altera a dele
   | "inesperado";
 
 export interface FalhaDaEstrutura {

@@ -48,6 +48,8 @@ export function mensagemDaFalha(e: unknown): string {
       return "Adicionar à equipe ainda não está liberado.";
     case "candidato_indisponivel":
       return "Alguém da lista já não está sem equipe: outra pessoa pode ter puxado antes. A lista foi atualizada.";
+    case "so_consulta":
+      return f.message || "Esta equipe é só para consulta: você envia e altera apenas a sua.";
     default:
       return f.message || "Algo deu errado. Tente de novo.";
   }

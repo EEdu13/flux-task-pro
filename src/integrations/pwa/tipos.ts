@@ -18,6 +18,11 @@ export interface EquipePwa {
 export interface MinhasEquipesPwa {
   modoAdm: boolean;
   equipes: EquipePwa[];
+  /**
+   * A FORMA da resposta numa linha (chaves, `modoAdm`, quantos itens, campos do 1º item e os códigos
+   * das equipes; nenhum nome nem CPF), para o diagnóstico do piloto (18/11/2026).
+   */
+  resumo: string;
 }
 
 export interface PessoaPwa {

@@ -40,6 +40,28 @@ function formatoInesperado(onde: string): never {
 
 /* ------------------------------ Equipes ------------------------------ */
 
+/**
+ * A FORMA de `minhas-equipes` numa linha, para o diagnóstico do piloto (18/11/2026: a lista do
+ * Eduardo volta vazia e não se sabe por quê). Só chaves, o valor de `modoAdm`, a contagem e os
+ * códigos das equipes: nenhum nome, nenhum CPF.
+ */
+function resumoDeMinhasEquipes(o: Record<string, unknown>): string {
+  const itens = Array.isArray(o.equipes) ? o.equipes : null;
+  const primeiro = itens ? objeto(itens[0]) : null;
+  const codigos = (itens ?? []).map((x) => texto(objeto(x)?.equipe)).filter(Boolean);
+  return [
+    `chaves: ${Object.keys(o).join(", ") || "nenhuma"}`,
+    `modoAdm: ${JSON.stringify(o.modoAdm) ?? "ausente"}`,
+    itens ? `${itens.length} item(ns) em "equipes"` : `"equipes" não é lista`,
+    primeiro ? `campos do 1º item: ${Object.keys(primeiro).join(", ")}` : "",
+    codigos.length > 0
+      ? `códigos: ${codigos.slice(0, 12).join(", ")}${codigos.length > 12 ? "…" : ""}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /** `{ modoAdm, equipes: [{ lider, equipe, projeto, cliente }] }`. Quem não é ADM recebe `{ modoAdm: false, equipes: [] }`. */
 export function lerMinhasEquipes(body: unknown): MinhasEquipesPwa {
   const o = objeto(body);
@@ -51,7 +73,7 @@ export function lerMinhasEquipes(body: unknown): MinhasEquipesPwa {
       ? [{ equipe, lider: texto(e.lider), projeto: texto(e.projeto), cliente: texto(e.cliente) }]
       : [];
   });
-  return { modoAdm: o.modoAdm === true, equipes };
+  return { modoAdm: o.modoAdm === true, equipes, resumo: resumoDeMinhasEquipes(o) };
 }
 
 /* --------------------------- Pessoas e frota --------------------------- */

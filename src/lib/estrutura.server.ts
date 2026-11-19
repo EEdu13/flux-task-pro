@@ -157,28 +157,83 @@ const chaveCobranca = (eu: number) => `estrutura:cobranca:${eu}`;
  */
 const VALIDADE_DAS_EQUIPES = 12 * 60 * MIN;
 
+/** A equipe entra para esta pessoa agora? Fora da estrutura não; antes da liberação, só as do piloto. */
+const equipeVale = (codigo: string): boolean =>
+  equipeParticipa(codigo) &&
+  (ESTRUTURA_LIBERADA || PILOTO_DA_ESTRUTURA.equipes.includes(codigo.trim().toUpperCase()));
+
+/** O que se guarda de `minhas-equipes`: as equipes (vazio se não veio `modoAdm`) e a forma da resposta. */
+interface EquipesGuardadas {
+  equipes: EquipePwa[];
+  resumo: string;
+}
+
 /**
  * As equipes da pessoa, do jeito que o PWA diz (`minhas-equipes`), menos as que estão fora da
  * estrutura e, enquanto não está liberada, só as do piloto. Quem não tem o seletor fica só com as
  * equipes que ele mesmo lidera (ver `soAsQueLidera`). `fresco` ignora o que está guardado.
+ *
+ * Quem tem o seletor (o Eduardo) tem a equipe dele CONFIGURADA (`QUEM_TROCA_DE_EQUIPE`). Se a lista
+ * do PWA não a trouxer (veio vazia, sem `modoAdm`, num formato que não lemos, ou deu erro), a tela
+ * usa a configurada e diz o que a lista respondeu (pedido do usuário, 18/11/2026: a lista dele volta
+ * vazia e não se sabe por quê). Líder, projeto e cliente ficam em branco de propósito: o envio e a
+ * cobrança já tiram os dois primeiros do organograma que o PWA devolve com as pessoas da equipe. O
+ * resto da tela segue falando com o PWA com o token dele: se o PWA não o aceitar, a tela mostra o erro.
  */
+async function equipesComDiagnostico(
+  eu: number,
+  token: string,
+  opcoes: { fresco?: boolean },
+): Promise<{ equipes: EquipePwa[]; diagnostico: string | null }> {
+  if (opcoes.fresco) esquecer(chaveEquipes(eu));
+  const dele = QUEM_TROCA_DE_EQUIPE[eu]?.trim().toUpperCase();
+  let guardadas: EquipesGuardadas;
+  try {
+    guardadas = await compartilhado(
+      chaveEquipes(eu),
+      VALIDADE_DAS_EQUIPES,
+      async (): Promise<EquipesGuardadas> => {
+        const r = await pwa.minhasEquipes(token);
+        return { equipes: r.modoAdm ? r.equipes : [], resumo: r.resumo };
+      },
+    );
+  } catch (e) {
+    /* Só quem tem a equipe configurada segue sem a lista; os outros veem o erro, como sempre. */
+    if (!dele || !(e instanceof ErroDaEstrutura)) throw e;
+    guardadas = { equipes: [], resumo: `deu erro: ${e.message.replace(/\.+$/, "")}` };
+  }
+  const valem = guardadas.equipes.filter((e) => equipeVale(e.equipe));
+  if (!dele) return { equipes: soAsQueLidera(valem, (await quemSou(eu)).nome), diagnostico: null };
+  if (!equipeVale(dele) || valem.some((e) => e.equipe.trim().toUpperCase() === dele)) {
+    return { equipes: valem, diagnostico: null };
+  }
+  return {
+    equipes: [{ equipe: dele, lider: "", projeto: "", cliente: "" }, ...valem],
+    diagnostico: `A lista de equipes do apontamento não trouxe a ${dele}, então a tela usa a configurada para você. O que a lista respondeu: ${guardadas.resumo}.`,
+  };
+}
+
 export async function equipesDe(
   eu: number,
   token: string,
   opcoes: { fresco?: boolean } = {},
 ): Promise<EquipePwa[]> {
-  if (opcoes.fresco) esquecer(chaveEquipes(eu));
-  const todas = await compartilhado(chaveEquipes(eu), VALIDADE_DAS_EQUIPES, async () => {
-    const r = await pwa.minhasEquipes(token);
-    return r.modoAdm ? r.equipes : [];
-  });
-  const valem = todas.filter(
-    (e) =>
-      equipeParticipa(e.equipe) &&
-      (ESTRUTURA_LIBERADA || PILOTO_DA_ESTRUTURA.equipes.includes(e.equipe.trim().toUpperCase())),
-  );
-  if (trocaDeEquipe(eu)) return valem;
-  return soAsQueLidera(valem, (await quemSou(eu)).nome);
+  return (await equipesComDiagnostico(eu, token, opcoes)).equipes;
+}
+
+/**
+ * Quem tem o seletor (o Eduardo) VÊ as outras equipes, mas só envia e altera a dele (decisão do
+ * usuário, 18/11/2026): nas outras, a troca de equipe é só para consultar. Vale no envio (que também
+ * retira da equipe) e no "Adicionar". Os outros só alcançam a própria equipe (`soAsQueLidera`).
+ */
+function exigirQuePodeAlterar(eu: number, equipe: string): void {
+  const dele = QUEM_TROCA_DE_EQUIPE[eu]?.trim().toUpperCase();
+  if (dele && equipe.trim().toUpperCase() !== dele) {
+    throw new ErroDaEstrutura(
+      "so_consulta",
+      `Você pode ver esta equipe, mas só envia e altera a sua (${dele}).`,
+    );
+  }
 }
 
 /**
@@ -228,12 +283,15 @@ export async function minhasEquipes(
   if (!(await estruturaAbertaPara(eu))) {
     return { aberta: false, equipes: [], trocaDeEquipe: false, inicial: "" };
   }
-  const equipes = await comToken((token) => equipesDe(eu, token, opcoes));
+  const { equipes, diagnostico } = await comToken((token) =>
+    equipesComDiagnostico(eu, token, opcoes),
+  );
   return {
     aberta: true,
     equipes: equipes.map((e) => ({ equipe: e.equipe, projeto: e.projeto, cliente: e.cliente })),
     trocaDeEquipe: trocaDeEquipe(eu),
     inicial: await equipeInicial(eu, equipes),
+    ...(diagnostico ? { diagnostico } : {}),
   };
 }
 
@@ -544,6 +602,7 @@ const atorDe = (eq: EquipePwa): string => eq.lider || "CONECTA";
  */
 export async function enviar(eu: number, pedido: PedidoDeEnvio): Promise<ResultadoDoEnvio> {
   await exigirAberta(eu);
+  exigirQuePodeAlterar(eu, pedido.equipe);
 
   // 1. O dia. Nunca futuro; antes das 4h só com a confirmação da madrugada.
   const hoje = hojeEmBrasilia();
@@ -818,6 +877,7 @@ export async function candidatosParaEquipe(
 ): Promise<Candidatos> {
   await exigirAberta(eu);
   exigirAdicao();
+  exigirQuePodeAlterar(eu, equipe);
   return comToken(async (token) => {
     const eq = await exigirEquipe(eu, token, equipe);
     const alcance = await alcanceDaEquipe(token, eq, false);
@@ -848,6 +908,7 @@ export async function candidatosParaEquipe(
 export async function adicionar(eu: number, pedido: PedidoDeAdicao): Promise<ResultadoDaAdicao> {
   await exigirAberta(eu);
   exigirAdicao();
+  exigirQuePodeAlterar(eu, pedido.equipe);
   if (pedido.pessoas.length + pedido.veiculos.length === 0) {
     throw new ErroDaEstrutura("dado_recusado", "Escolha quem entra na equipe.");
   }
