@@ -139,12 +139,24 @@ function folha(aba: Aba): string {
     .map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${Math.max(8, w)}" customWidth="1"/>`)
     .join("");
   const ultima = `${coluna(Math.max(0, larguras.length - 1))}${Math.max(1, aba.linhas.length)}`;
-  const mesclas = (aba.mesclas ?? [])
-    .filter((m) => m.linhas * m.colunas > 1)
-    .map(
-      (m) =>
-        `<mergeCell ref="${coluna(m.coluna)}${m.linha + 1}:${coluna(m.coluna + m.colunas - 1)}${m.linha + m.linhas}"/>`,
+  // Mescla que cruza outra deixa o arquivo "com problema" para o Excel: ele repara e tira TODAS as
+  // mesclas da aba (23/11/2026). A que cruza uma já aceita fica de fora.
+  const aceitas: Mescla[] = [];
+  for (const m of aba.mesclas ?? []) {
+    if (m.linhas * m.colunas <= 1) continue;
+    const cruza = aceitas.some(
+      (a) =>
+        m.linha < a.linha + a.linhas &&
+        a.linha < m.linha + m.linhas &&
+        m.coluna < a.coluna + a.colunas &&
+        a.coluna < m.coluna + m.colunas,
     );
+    if (!cruza) aceitas.push(m);
+  }
+  const mesclas = aceitas.map(
+    (m) =>
+      `<mergeCell ref="${coluna(m.coluna)}${m.linha + 1}:${coluna(m.coluna + m.colunas - 1)}${m.linha + m.linhas}"/>`,
+  );
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +

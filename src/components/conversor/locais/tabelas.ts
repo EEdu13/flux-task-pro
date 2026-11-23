@@ -749,28 +749,46 @@ export function acharGrades(tracos: Tracos): Grade[] {
         }
       }
     }
-    const caixas = new Map<number, { r0: number; r1: number; c0: number; c1: number }>();
+    // Cada grupo de células sem borda entre elas. O grupo que não é um retângulo cheio (um "L", como no
+    // carimbo do mapa de plantio, 23/11/2026) não vira uma mescla só: a caixa dele invadia a célula
+    // vizinha, e o Excel pedia para "reparar" a planilha e tirava TODAS as mesclas da aba. Ele vira um
+    // bloco por linha, com as células seguidas daquela linha.
+    const grupos = new Map<number, number[]>();
     for (let i = 0; i < nl * nc; i++) {
-      const [r, c] = [Math.floor(i / nc), i % nc];
       const k = raizC(i);
-      const cx = caixas.get(k);
-      if (!cx) caixas.set(k, { r0: r, r1: r, c0: c, c1: c });
-      else
-        Object.assign(cx, {
-          r0: Math.min(cx.r0, r),
-          r1: Math.max(cx.r1, r),
-          c0: Math.min(cx.c0, c),
-          c1: Math.max(cx.c1, c),
-        });
+      const g = grupos.get(k);
+      if (g) g.push(i);
+      else grupos.set(k, [i]);
     }
-    const regioes = [...caixas.values()]
-      .map(({ r0, r1, c0, c1 }) => ({
-        linha: r0,
-        coluna: c0,
-        linhas: r1 - r0 + 1,
-        colunas: c1 - c0 + 1,
-      }))
-      .sort((a, b) => a.linha - b.linha || a.coluna - b.coluna);
+    const regioes: Regiao[] = [];
+    for (const celulas of grupos.values()) {
+      let [r0, r1, c0, c1] = [Infinity, -Infinity, Infinity, -Infinity];
+      for (const i of celulas) {
+        const [r, c] = [Math.floor(i / nc), i % nc];
+        [r0, r1, c0, c1] = [Math.min(r0, r), Math.max(r1, r), Math.min(c0, c), Math.max(c1, c)];
+      }
+      if (celulas.length === (r1 - r0 + 1) * (c1 - c0 + 1)) {
+        regioes.push({ linha: r0, coluna: c0, linhas: r1 - r0 + 1, colunas: c1 - c0 + 1 });
+        continue;
+      }
+      const porLinha = new Map<number, number[]>();
+      for (const i of celulas) {
+        const r = Math.floor(i / nc);
+        const cs = porLinha.get(r);
+        if (cs) cs.push(i % nc);
+        else porLinha.set(r, [i % nc]);
+      }
+      for (const [r, cs] of porLinha) {
+        cs.sort((a, b) => a - b);
+        let ini = cs[0]!;
+        for (let j = 1; j <= cs.length; j++) {
+          if (j < cs.length && cs[j] === cs[j - 1]! + 1) continue;
+          regioes.push({ linha: r, coluna: ini, linhas: 1, colunas: cs[j - 1]! - ini + 1 });
+          if (j < cs.length) ini = cs[j]!;
+        }
+      }
+    }
+    regioes.sort((a, b) => a.linha - b.linha || a.coluna - b.coluna);
     if (regioes.length < 2) continue;
     grades.push({ xs, ys, regioes });
   }
