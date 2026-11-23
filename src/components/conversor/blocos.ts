@@ -67,7 +67,11 @@ export const GERAM_PDF_NOVO: ReadonlySet<IdDoBloco> = new Set<IdDoBloco>([
 /** Teto do modo local (a especificação: 200 MB por arquivo). O navegador segura tudo na memória. */
 export const LIMITE_LOCAL_BYTES = 200 * 1024 * 1024;
 
-/** Teto de arquivos de uma vez nos blocos que aceitam vários (a especificação: juntar até 30). */
+/**
+ * Teto de arquivos de uma vez no Imagens → PDF (a especificação: até 30). O Juntar PDFs não tem
+ * teto de quantidade desde 23/11/2026 (pedido do usuário): ele lê um PDF por vez, e o que pesa é o
+ * PDF juntado, cujo tamanho a tela de ordenar confere antes (`EtapaOrdenar`, em `etapas.tsx`).
+ */
 export const MAXIMO_DE_ARQUIVOS = 30;
 
 export const GRUPOS: readonly GrupoDoBloco[] = ["PDF", "PARA PDF", "IMAGEM"];
@@ -170,7 +174,6 @@ export const BLOCOS: readonly Bloco[] = [
     icone: FileStack,
     aceita: PDF,
     varios: true,
-    maximo: MAXIMO_DE_ARQUIVOS,
     etapa: "ordenar",
     executar: async (arquivos, _opcoes, ao) =>
       (await import("./locais/pdf")).juntarPdfs(arquivos, ao),

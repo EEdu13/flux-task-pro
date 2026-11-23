@@ -17,7 +17,8 @@ import {
   RotateCw,
   X,
 } from "lucide-react";
-import { formatBytes } from "@/lib/attachments";
+import { formatBytes, isTauri } from "@/lib/attachments";
+import { fraseDeGrandeDemais, LIMITE_DO_APP_BYTES } from "@/lib/baixar-arquivo";
 import { useArrasteDeLinhas } from "@/components/arraste";
 import {
   aceitaArquivo,
@@ -142,6 +143,13 @@ function EtapaOrdenar({ bloco, arquivos, aoTrocarArquivos, aoVoltar, aoConverter
   const juntar = bloco.id === "juntar-pdfs";
   const minimo = juntar ? 2 : 1;
   const maximo = bloco.maximo ?? Number.POSITIVE_INFINITY;
+  /* O Juntar não tem teto de quantidade (23/11/2026): o que segura é o TAMANHO. O PDF juntado
+     fica com mais ou menos a soma dos PDFs, e o app de mesa salva até 200 MB: sem esta conta, o
+     trabalho todo era feito e só no fim vinha o "grande demais para o app". No app, o botão
+     trava; no navegador, que não tem esse teto, fica só o aviso (um PDF enorme pesa na memória). */
+  const soma = juntar ? arquivos.reduce((total, f) => total + f.size, 0) : 0;
+  const passaDoTeto = soma > LIMITE_DO_APP_BYTES;
+  const travadoNoApp = passaDoTeto && isTauri();
   const [aviso, setAviso] = useState<string | null>(null);
   const [arrastando, setArrastando] = useState(false);
   /* A prévia grande de cada linha (a 1ª página do PDF, a imagem inteira) abre ao passar o
@@ -228,6 +236,18 @@ function EtapaOrdenar({ bloco, arquivos, aoTrocarArquivos, aoVoltar, aoConverter
           </ol>
         </SortableContext>
       </DndContext>
+      {juntar && arquivos.length > 0 && (
+        <p className="mt-2 text-xs text-white/50">
+          {arquivos.length} {arquivos.length === 1 ? "PDF" : "PDFs"} · {formatBytes(soma)} no total
+        </p>
+      )}
+      {juntar && passaDoTeto && (
+        <p className="mt-3 text-xs text-amber-300" role="status">
+          {travadoNoApp
+            ? `Os PDFs somam ${formatBytes(soma)}. ${fraseDeGrandeDemais(LIMITE_DO_APP_BYTES, "tire alguns da lista e junte em duas partes.")}`
+            : `Os PDFs somam ${formatBytes(soma)}: o PDF juntado vai ficar grande, e juntar pode demorar.`}
+        </p>
+      )}
       {aviso && <p className="mt-3 text-xs text-amber-300">{aviso}</p>}
       <Rodape
         aoVoltar={aoVoltar}
@@ -236,7 +256,7 @@ function EtapaOrdenar({ bloco, arquivos, aoTrocarArquivos, aoVoltar, aoConverter
             ? `Juntar ${arquivos.length} PDFs`
             : `Gerar PDF com ${arquivos.length} ${arquivos.length === 1 ? "imagem" : "imagens"}`
         }
-        desabilitado={arquivos.length < minimo}
+        desabilitado={arquivos.length < minimo || travadoNoApp}
         aoConfirmar={() => aoConverter({})}
         extra={
           arquivos.length < maximo ? (

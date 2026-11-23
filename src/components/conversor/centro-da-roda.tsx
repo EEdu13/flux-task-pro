@@ -234,7 +234,11 @@ function ConteudoDoBloco({
       {!compacto && (
         <p className="text-xs text-white/45">
           {bloco.soNoApp ? "No seu computador, pelo Office" : "No seu computador"}
-          {bloco.varios && bloco.maximo ? ` · até ${bloco.maximo} arquivos` : ""}
+          {bloco.varios
+            ? bloco.maximo
+              ? ` · até ${bloco.maximo} arquivos`
+              : " · vários arquivos de uma vez"
+            : ""}
         </p>
       )}
       {/* O que se perde no caminho, antes de soltar ou escolher o arquivo (12/11/2026). */}
