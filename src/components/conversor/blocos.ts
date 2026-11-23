@@ -119,7 +119,7 @@ export const BLOCOS: readonly Bloco[] = [
     rotulo: "PDF → Excel",
     dica: "Tabelas do PDF numa planilha",
     atencao:
-      "Conversão aproximada: confira a planilha. PDF escaneado precisa passar pelo OCR antes.",
+      "Conversão aproximada: confira a planilha. Tabela em imagem é lida pelo OCR: confira os números.",
     de: "PDF",
     para: "Excel",
     grupo: "PDF",

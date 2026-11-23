@@ -23,6 +23,7 @@ import {
   type Resultado,
 } from "../tipos";
 import { ateCancelar, blobDe, liberarCanvas, nomeBase, pararSeCancelado } from "./arquivos";
+import { abrirLeitor, quantosLeitores } from "./leitor-ocr";
 import { carregar } from "./pdf";
 import { abrirNoPdfjs } from "./pdfjs";
 
@@ -77,29 +78,6 @@ const CONFIANCA_DE_AVISO = 70;
 const TINTA_MINIMA = 0.0005;
 /** Largura de cada letra da fonte invisível, com a fonte em tamanho 1 (`Widths` 500 com `FontMatrix` 0,001). */
 const LARGURA_DA_LETRA = 0.5;
-/**
- * Prazo para um leitor abrir (motor e idioma baixados na primeira vez, numa rede lenta). Passou
- * disto, não vai abrir: com o arquivo do idioma faltando, o tesseract.js fica parado em vez de
- * falhar (visto em 12/11/2026), e a pessoa esperaria para sempre.
- */
-const PRAZO_PARA_ABRIR_MS = 120_000;
-
-/** A promessa, ou o erro de `erro()` se ela passar de `ms`. */
-function comPrazo<T>(promessa: Promise<T>, ms: number, erro: () => Error): Promise<T> {
-  return new Promise((ok, falha) => {
-    const relogio = setTimeout(() => falha(erro()), ms);
-    promessa.then(
-      (v) => {
-        clearTimeout(relogio);
-        ok(v);
-      },
-      (e: unknown) => {
-        clearTimeout(relogio);
-        falha(e);
-      },
-    );
-  });
-}
 
 type Visualizacao = {
   width: number;
@@ -135,15 +113,6 @@ async function letrasDaPagina(pagina: {
     if (str) letras += str.replace(/\s/g, "").length;
   }
   return letras;
-}
-
-/** Quantos leitores em paralelo: metade dos núcleos, até 4, menos se a memória for pouca. */
-function quantosLeitores(paginas: number): number {
-  const nucleos = navigator.hardwareConcurrency || 2;
-  // `deviceMemory` (GB) só existe no Chromium, que é o Chrome, o Edge e o app de mesa.
-  const memoria = (navigator as { deviceMemory?: number }).deviceMemory ?? 8;
-  const pelaMemoria = memoria <= 4 ? 2 : 4;
-  return Math.max(1, Math.min(4, Math.floor(nucleos / 2), pelaMemoria, paginas));
 }
 
 /** Desenha a página num canvas branco, no giro pedido, a ~300 dpi ou até `ladoMaximo`. */
@@ -416,39 +385,14 @@ export async function ocrNoPdf(
       );
     };
 
-    const { createScheduler, createWorker, OEM } = await import("tesseract.js");
+    const { createScheduler } = await import("tesseract.js");
     ao.progresso(0.02);
-    let desistiu = false;
-    const criarLeitor = () => {
-      const criando = createWorker(idioma === "por+eng" ? ["por", "eng"] : "por", OEM.LSTM_ONLY, {
-        workerPath: "/tesseract/worker.min.js",
-        corePath: "/tesseract/core",
-        langPath: "/tesseract/lang",
-        gzip: true,
-        workerBlobURL: false,
-        logger: (m: { status: string; progress: number; userJobId?: string }) => {
-          if (m.status !== "recognizing text" || !m.userJobId?.startsWith("pagina-")) return;
-          emLeitura.set(m.userJobId, m.progress);
-          andar();
-        },
+    const criarLeitor = () =>
+      abrirLeitor(idioma === "por+eng" ? ["por", "eng"] : "por", ao.sinal, (m) => {
+        if (m.status !== "recognizing text" || !m.userJobId?.startsWith("pagina-")) return;
+        emLeitura.set(m.userJobId, m.progress);
+        andar();
       });
-      // Cancelado (ou desistido) enquanto o Tesseract carregava: ele termina de abrir sozinho, e é
-      // encerrado ali.
-      criando.then(
-        (w) => {
-          if (ao.sinal?.aborted || desistiu) void w.terminate();
-        },
-        () => {},
-      );
-      const noPrazo = comPrazo(criando, PRAZO_PARA_ABRIR_MS, () => {
-        desistiu = true;
-        return new ErroDeConversao(
-          "O leitor de OCR não abriu. Recarregue a página e tente de novo.",
-          "OCR_NAO_ABRIU",
-        );
-      });
-      return ateCancelar(noPrazo, ao.sinal);
-    };
     agenda = createScheduler();
     const leitores = quantosLeitores(escaneadas.length);
     // O primeiro baixa o idioma e o guarda no navegador; os outros já o acham guardado.

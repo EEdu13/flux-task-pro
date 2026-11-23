@@ -309,6 +309,9 @@ export type CodigosDoPdfjs = {
   eoFillStroke: number;
   closeFillStroke: number;
   closeEOFillStroke: number;
+  paintImageXObject: number;
+  paintInlineImageXObject: number;
+  paintImageMaskXObject: number;
 };
 
 // Os comandos de dentro de um caminho no pdf.js 6 (o `DrawOPS` dele, que não é exportado).
@@ -465,6 +468,179 @@ export function tracosDoDesenho(
     horizontais: juntarColineares(horizontais, true),
     verticais: juntarColineares(verticais, false),
   };
+}
+
+/* ------------------------- 8. As imagens da página ------------------------- */
+
+/** Uma imagem pintada na página: onde (em pontos, na orientação de leitura) e com quantos pixels. */
+export type ImagemDoDesenho = {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  pxLargura: number;
+  pxAltura: number;
+};
+
+/**
+ * 8a. As imagens do desenho da página (23/11/2026): a tabela que veio como imagem (print do Excel
+ * colado no PDF) não tem texto para o pdf.js ler — `tabela-em-imagem.ts` a lê com o OCR. A imagem é
+ * pintada no quadrado 0..1 da matriz do momento, como no `tracosDoDesenho`.
+ */
+export function imagensDoDesenho(
+  lista: ListaDeOperacoes,
+  ops: CodigosDoPdfjs,
+  visualizacao: number[],
+): ImagemDoDesenho[] {
+  const imagens: ImagemDoDesenho[] = [];
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const pilha: number[][] = [];
+  for (let i = 0; i < lista.fnArray.length; i++) {
+    const fn = lista.fnArray[i];
+    const args = lista.argsArray[i] as unknown[] | null | undefined;
+    if (fn === ops.save) pilha.push(ctm);
+    else if (fn === ops.restore) ctm = pilha.pop() ?? ctm;
+    else if (fn === ops.transform && args) ctm = compor(ctm, Array.from(args as number[]));
+    else if (fn === ops.paintFormXObjectBegin) {
+      pilha.push(ctm);
+      const matriz = args?.[0] as ArrayLike<number> | null | undefined;
+      if (matriz && matriz.length === 6) ctm = compor(ctm, Array.from(matriz));
+    } else if (fn === ops.paintFormXObjectEnd) ctm = pilha.pop() ?? ctm;
+    else if (
+      (fn === ops.paintImageXObject ||
+        fn === ops.paintInlineImageXObject ||
+        fn === ops.paintImageMaskXObject) &&
+      args
+    ) {
+      // paintImageXObject: [id, largura, altura]; as outras: [{ width, height, ... }].
+      const dados = args[0] as { width?: number; height?: number } | string | undefined;
+      const pxLargura = typeof dados === "object" ? (dados?.width ?? 0) : Number(args[1] ?? 0);
+      const pxAltura = typeof dados === "object" ? (dados?.height ?? 0) : Number(args[2] ?? 0);
+      const m = compor(visualizacao, ctm) as [number, number, number, number, number, number];
+      const cantos = [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ].map(([x, y]) => [m[0] * x! + m[2] * y! + m[4], m[1] * x! + m[3] * y! + m[5]] as const);
+      const xs = cantos.map((c) => c[0]);
+      const ys = cantos.map((c) => c[1]);
+      imagens.push({
+        x0: Math.min(...xs),
+        x1: Math.max(...xs),
+        y0: Math.min(...ys),
+        y1: Math.max(...ys),
+        pxLargura,
+        pxAltura,
+      });
+    }
+  }
+  return imagens;
+}
+
+/**
+ * Uma região da página para o OCR, e a escala (pixels por ponto) em que ela vai ser desenhada: na
+ * largura (`pxPorPt`) e na altura (`pxPorPtY`). As duas seguem a imagem — a escaneada esticada para
+ * caber na página tem uma escala em cada eixo, e desenhá-la com uma só borra as letras.
+ */
+export type RegiaoParaLer = {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  pxPorPt: number;
+  pxPorPtY: number;
+};
+
+/** Imagem menor que isto (fração da página) é logo, carimbo, assinatura — não tabela. */
+const AREA_MINIMA_DA_IMAGEM = 0.02;
+/** Mais letras de texto de verdade que isto por cima da imagem: ela já tem texto (o PDF que passou pelo OCR). */
+const LETRAS_POR_CIMA = 15;
+/** A escala do desenho: a da própria imagem, entre ~180 e ~400 dpi... */
+const ESCALA_MINIMA = 2.5;
+const ESCALA_MAXIMA = 5.5;
+/** ...e com teto de pixels (a página inteira escaneada, a 400 dpi, passa de 15 milhões). */
+const PIXELS_MAXIMOS = 36_000_000;
+
+/**
+ * 8b. As imagens que valem ler com o OCR: grandes (2% da página ou mais, ao menos 1 polegada de largura)
+ * e sem texto de verdade por cima. As que se encostam (a imagem cortada em faixas) viram uma região só.
+ */
+export function regioesParaLer(
+  imagens: ImagemDoDesenho[],
+  trechos: Trecho[],
+  larguraDaPagina: number,
+  alturaDaPagina: number,
+): RegiaoParaLer[] {
+  const areaDaPagina = larguraDaPagina * alturaDaPagina;
+  const candidatas = imagens
+    .map((im) => ({
+      x0: Math.max(0, im.x0),
+      y0: Math.max(0, im.y0),
+      x1: Math.min(larguraDaPagina, im.x1),
+      y1: Math.min(alturaDaPagina, im.y1),
+      nativa: im.x1 > im.x0 ? im.pxLargura / (im.x1 - im.x0) : 0,
+      // Altura sobre largura, na escala da imagem (1 = não esticada). Fora de 1/2..2, algo estranho
+      // (imagem girada): desenha sem esticar.
+      proporcao: (() => {
+        const kx = im.x1 > im.x0 ? im.pxLargura / (im.x1 - im.x0) : 0;
+        const ky = im.y1 > im.y0 ? im.pxAltura / (im.y1 - im.y0) : 0;
+        const p = kx > 0 && ky > 0 ? ky / kx : 1;
+        return p >= 0.5 && p <= 2 ? p : 1;
+      })(),
+    }))
+    .filter(
+      (r) =>
+        r.x1 - r.x0 >= 72 &&
+        r.y1 - r.y0 >= 30 &&
+        (r.x1 - r.x0) * (r.y1 - r.y0) >= AREA_MINIMA_DA_IMAGEM * areaDaPagina,
+    );
+  // As que se encostam (até 2 pt) viram uma só.
+  const juntas: typeof candidatas = [];
+  for (const c of candidatas) {
+    const outra = juntas.find(
+      (j) => c.x0 <= j.x1 + 2 && j.x0 <= c.x1 + 2 && c.y0 <= j.y1 + 2 && j.y0 <= c.y1 + 2,
+    );
+    if (outra) {
+      outra.x0 = Math.min(outra.x0, c.x0);
+      outra.y0 = Math.min(outra.y0, c.y0);
+      outra.x1 = Math.max(outra.x1, c.x1);
+      outra.y1 = Math.max(outra.y1, c.y1);
+      if (c.nativa > outra.nativa) {
+        outra.nativa = c.nativa;
+        outra.proporcao = c.proporcao;
+      }
+    } else {
+      juntas.push({ ...c });
+    }
+  }
+  return juntas
+    .filter((r) => {
+      let letras = 0;
+      for (const t of trechos) {
+        const p = centro(t);
+        if (p.x >= r.x0 && p.x <= r.x1 && p.y >= r.y0 && p.y <= r.y1) {
+          letras += t.texto.replace(/\s/g, "").length;
+        }
+      }
+      return letras <= LETRAS_POR_CIMA;
+    })
+    .map((r) => {
+      const area = (r.x1 - r.x0) * (r.y1 - r.y0);
+      const escala = Math.min(
+        Math.max(r.nativa, ESCALA_MINIMA),
+        ESCALA_MAXIMA,
+        Math.sqrt(PIXELS_MAXIMOS / (area * r.proporcao)),
+      );
+      return {
+        x0: r.x0,
+        y0: r.y0,
+        x1: r.x1,
+        y1: r.y1,
+        pxPorPt: escala,
+        pxPorPtY: escala * r.proporcao,
+      };
+    });
 }
 
 /** Uma célula da grade, ou um bloco de células mescladas (0 = a primeira). */
@@ -682,9 +858,16 @@ function tabelaDaGrade(g: Grade, trechos: Trecho[]): Secao | null {
 
 /**
  * A página em partes, de cima para baixo: o texto solto (que vai pelas colunas do item 2) e as
- * tabelas desenhadas (item 5).
+ * tabelas desenhadas (item 5). `prontas`: partes montadas à parte, que entram pela altura `y` — a
+ * tabela em imagem lida pelo OCR (23/11/2026), montada só com ela para não cair dentro da moldura
+ * que o PDF desenha em volta da página.
  */
-export function montarPagina(trechos: Trecho[], tracos: Tracos, altura: number): PaginaMontada {
+export function montarPagina(
+  trechos: Trecho[],
+  tracos: Tracos,
+  altura: number,
+  prontas: { y: number; secoes: Secao[] }[] = [],
+): PaginaMontada {
   const grades = acharGrades(tracos);
   const dentro = grades.map((): Trecho[] => []);
   const fora: Trecho[] = [];
@@ -700,12 +883,14 @@ export function montarPagina(trechos: Trecho[], tracos: Tracos, altura: number):
     if (i >= 0) dentro[i]!.push(t);
     else fora.push(t);
   }
-  const tabelas: { y: number; secao: Secao }[] = [];
+  const tabelas: { y: number; secoes: Secao[] }[] = [];
   grades.forEach((g, i) => {
     const tabela = tabelaDaGrade(g, dentro[i]!);
-    if (tabela) tabelas.push({ y: g.ys[0]!, secao: tabela });
+    if (tabela) tabelas.push({ y: g.ys[0]!, secoes: [tabela] });
     else fora.push(...dentro[i]!); // moldura de seção, não tabela: o texto volta para o jeito comum
   });
+  tabelas.push(...prontas.filter((p) => p.secoes.length > 0));
+  tabelas.sort((a, b) => a.y - b.y);
   const secoes: Secao[] = [];
   let atual: Linha[] = [];
   let k = 0;
@@ -718,12 +903,12 @@ export function montarPagina(trechos: Trecho[], tracos: Tracos, altura: number):
       altura > 0 && (l.y < altura * FAIXA_DA_BORDA || l.y > altura * (1 - FAIXA_DA_BORDA));
     while (k < tabelas.length && tabelas[k]!.y < l.y - l.altura) {
       fecharTexto();
-      secoes.push(tabelas[k++]!.secao);
+      secoes.push(...tabelas[k++]!.secoes);
     }
     atual.push(l);
   }
   fecharTexto();
-  while (k < tabelas.length) secoes.push(tabelas[k++]!.secao);
+  while (k < tabelas.length) secoes.push(...tabelas[k++]!.secoes);
   return { altura, secoes };
 }
 
