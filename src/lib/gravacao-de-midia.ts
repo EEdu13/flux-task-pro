@@ -93,7 +93,8 @@ export function motivoDaRecusa(
     }
     return {
       titulo: `O ${aparelho} está bloqueado para este site`,
-      descricao: `Clique no cadeado ao lado do endereço, libere o ${aparelho} e tente de novo.`,
+      // No app de mesa não há cadeado: o caminho certo, de cada lugar, está nas Configurações.
+      descricao: `Veja como liberar em Configurações → Câmera e microfone e tente de novo.`,
     };
   }
   if (nome === "NotFoundError" || nome === "OverconstrainedError") {

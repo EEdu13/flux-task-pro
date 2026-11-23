@@ -87,7 +87,6 @@ const novaPipeline = (): Pipeline => ({
   refSeq: 0,
 });
 
-
 /** "sex, 18/09" */
 const rotuloDia = (d: Date) =>
   d
@@ -857,7 +856,7 @@ function legendaDoMicrofone(estado: EstadoMicrofone, pausado: boolean, semSuport
     case "ativo":
       return "";
     case "negado":
-      return "Sem permissão para o microfone. Libere nas configurações do navegador ou do app.";
+      return "Sem permissão para o microfone. Veja como liberar em Configurações → Câmera e microfone.";
     case "indisponivel":
       return "Nenhum microfone encontrado.";
     default:
@@ -913,7 +912,11 @@ function EscolhaDoMicrofone({
           Padrão do sistema
         </option>
         {microfones.map((m, i) => (
-          <option key={m.deviceId} value={m.deviceId} className="bg-popover text-popover-foreground">
+          <option
+            key={m.deviceId}
+            value={m.deviceId}
+            className="bg-popover text-popover-foreground"
+          >
             {m.label ? nomeDoMicrofone(m.label) : `Microfone ${i + 1}`}
           </option>
         ))}

@@ -427,7 +427,10 @@ export function useGestos(o: { ligado: boolean; falando: boolean }): Gestos {
           }
         }
         if (nome === "NotAllowedError" || nome === "SecurityError") {
-          falhar("negado", "A câmera foi bloqueada para esta página.");
+          falhar(
+            "negado",
+            "A câmera está bloqueada. Veja como liberar em Configurações → Câmera e microfone.",
+          );
         } else if (nome === "NotReadableError" || nome === "AbortError") {
           falhar("ocupada", "Câmera em uso por outro programa (Teams, Zoom…).");
           agendarNovaTentativa();

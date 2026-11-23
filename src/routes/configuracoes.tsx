@@ -20,7 +20,9 @@ import {
   User as UserIcon,
   Users,
   Smile,
+  Video,
 } from "lucide-react";
+import { PermissoesDeMidia } from "@/components/permissoes-de-midia";
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { roleLabels, sectors } from "@/lib/fluxo-types";
@@ -63,7 +65,7 @@ export const Route = createFileRoute("/configuracoes")({
   component: SettingsPage,
 });
 
-type Tab = "perfil" | "avatar" | "aparencia" | "notificacoes" | "conta";
+type Tab = "perfil" | "avatar" | "aparencia" | "notificacoes" | "midia" | "conta";
 
 function SettingsPage() {
   const { currentUser, updateCurrentUser, logout, users } = useFluxo();
@@ -184,6 +186,8 @@ function SettingsPage() {
     { id: "avatar", label: "Meu avatar", icon: Smile },
     { id: "aparencia", label: "Aparência", icon: Palette },
     { id: "notificacoes", label: "Notificações", icon: Bell },
+    // A recusa da câmera e do microfone não voltava mais (23/11/2026): aqui a pessoa vê e libera.
+    { id: "midia", label: "Câmera e microfone", icon: Video },
     { id: "conta", label: "Conta", icon: LogOut },
   ];
 
@@ -325,6 +329,7 @@ function SettingsPage() {
 
           {/* Mural (14/10/2026): dia e mês do aniversário, sem ano. */}
           {tab === "avatar" && <AbaAvatar />}
+          {tab === "midia" && <PermissoesDeMidia />}
           {tab === "perfil" && <MeuAniversario />}
           {/* Mural, fase 2 (14/10/2026): aparecer ou não nas conquistas automáticas. */}
           {tab === "perfil" && <ConquistasNoMural />}

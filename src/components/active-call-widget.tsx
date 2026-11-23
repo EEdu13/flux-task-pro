@@ -302,7 +302,7 @@ function mensagemDoErroDeDispositivo(aparelho: string, e: Error): string {
       return `Não deu para ligar ${aparelho}: outro programa parece estar usando o mesmo aparelho agora.`;
     case "NotAllowedError":
     case "PermissionDeniedError":
-      return `O navegador não deixou ligar ${aparelho}. Confira a permissão do site.`;
+      return `O navegador não deixou ligar ${aparelho}. Veja como liberar em Configurações → Câmera e microfone.`;
     case "NotFoundError":
     case "OverconstrainedError":
       return `Não encontrei ${aparelho} que você tinha escolhido. Confira se o aparelho continua conectado.`;

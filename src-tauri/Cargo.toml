@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.3"
+version = "0.2.4"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
@@ -27,3 +27,9 @@ tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
+
+# Câmera e microfone sem a pergunta do WebView2 (`permissoes.rs`, 0.2.4): as mesmas versões que o
+# Tauri já usa por dentro, para não entrar uma segunda cópia.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"

@@ -1,6 +1,7 @@
 use std::io::Write;
 
 mod office;
+mod permissoes;
 mod salvar;
 
 use tauri::{
@@ -319,6 +320,12 @@ pub fn run() {
             salvar::salvar_arquivo
         ])
         .setup(|app| {
+            // Câmera e microfone do nosso site sem a pergunta do WebView2, que, recusada uma vez,
+            // não voltava mais (ver `permissoes.rs`).
+            if let Some(janela) = app.get_webview_window("main") {
+                permissoes::liberar_camera_e_microfone(&janela);
+            }
+
             // Atualização automática (só no app de verdade, não no `tauri dev`).
             if !cfg!(debug_assertions) {
                 iniciar_atualizador(app.handle().clone());
