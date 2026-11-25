@@ -1888,6 +1888,49 @@ html.fluxo-nudge-shake body {
   animation-play-state: paused;
 }
 
+/* Brilho na aba recolhida dos lançadores (`BotaoRecolher`, quick-fab.tsx).
+   Uma faixa de luz sobe pela aba, descansa, e repete — é o que avisa que ali
+   há um botão, já que recolhido ele é só uma aba de 18px na borda da tela.
+   Mora num ::after para não mexer no botão: o gradiente é 3× mais alto que a
+   aba e o `background-position` corre por ele, então a faixa entra por baixo
+   e sai por cima. A varredura dura ~1,2s dos 5s; o resto é pausa. */
+.fluxo-aba-brilho {
+  position: relative;
+  overflow: hidden;
+}
+.fluxo-aba-brilho::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    transparent 36%,
+    rgba(255, 255, 255, 0.7) 50%,
+    transparent 64%
+  );
+  background-size: 100% 300%;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  /* O atraso só vale na 1ª volta: deixa a aba terminar de chegar à borda
+     antes de a primeira luz passar. */
+  animation: fluxo-aba-brilho 5s ease-in-out 0.6s infinite;
+}
+@keyframes fluxo-aba-brilho {
+  0% {
+    background-position: 0 0;
+  }
+  24%,
+  100% {
+    background-position: 0 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fluxo-aba-brilho::after {
+    animation: none;
+  }
+}
+
 /* ==========================================================================
    Meet-style call surface
    Applied to the LiveKit container inside .fluxo-meet. Gives us the dark

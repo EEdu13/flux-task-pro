@@ -208,6 +208,10 @@ export function QuickFab() {
     // z acima do ChatDock (z-120): o balão do chat mora no mesmo canto e ficava
     // por cima dos painéis daqui. Continua abaixo dos avisos (200) e do trator
     // (250), que são eventos e devem cobrir tudo.
+    //
+    // `right-5` é o `RECUO_DA_BORDA` do `BotaoRecolher`: a aba recolhida
+    // desconta esses 20px para encostar na borda da tela. Mudar um sem o outro
+    // deixa a aba flutuando ou cortada.
     <div
       ref={rootRef}
       className="fixed bottom-24 right-5 z-[130] flex flex-col items-end gap-2 lg:bottom-5"
@@ -632,6 +636,12 @@ export function QuickFab() {
   );
 }
 
+/** Distância do canto até a borda da tela — o `right-5` do contêiner do `QuickFab`. */
+const RECUO_DA_BORDA = 20;
+
+/** Largura da aba quando recolhido. Estreita de propósito: ver `BotaoRecolher`. */
+const LARGURA_DA_ABA = 18;
+
 /**
  * O terceiro círculo: recolhe e devolve os outros dois.
  *
@@ -640,6 +650,13 @@ export function QuickFab() {
  * hierarquia: ele não é uma ação do app, é o controle do canto. Um estilo
  * diferente (cartão com borda, como estava) fazia parecer outro componente que
  * tinha ido parar ali por acidente.
+ *
+ * Recolhido, ele deixa de ser círculo e vira uma ABA colada na borda direita da
+ * tela (meia-lua, 18px). Como círculo ele ficava a 20px da borda, e na conversa
+ * aberta isso caía em cima do microfone do compositor, que mora justamente na
+ * ponta direita da linha — quem recolhe quer o canto livre, não um botão
+ * atrapalhando o que está embaixo. Colado na borda, ele deixa de invadir a área
+ * útil e continua achável: a seta aponta para dentro da tela.
  *
  * A seta gira 180° em vez de trocar de ícone: o mesmo elemento apontando para
  * o outro lado diz "isto volta" melhor do que dois desenhos diferentes.
@@ -655,9 +672,29 @@ function BotaoRecolher({
     <motion.button
       type="button"
       onClick={aoAlternar}
+      /* Largura, deslocamento e cantos da direita animam juntos: o círculo
+         estreita e escorrega até a borda, sem pular entre dois desenhos.
+         O `x` empurra a aba por cima do `right-5` do contêiner (ver
+         `RECUO_DA_BORDA`) — transform e não margem negativa, para o layout do
+         resto da linha não mexer. `initial={false}` pelo mesmo motivo do raio:
+         sem entrada animada na primeira pintura.
+
+         A física é a do raio e do balão (`stiffness: 420, damping: 30,
+         mass: 0.7`) — mudar aqui sem espelhar lá dessincroniza os três. */
+      initial={false}
+      animate={{
+        width: recolhido ? LARGURA_DA_ABA : 40,
+        x: recolhido ? RECUO_DA_BORDA : 0,
+        borderTopRightRadius: recolhido ? 0 : 20,
+        borderBottomRightRadius: recolhido ? 0 : 20,
+        transition: { type: "spring", stiffness: 420, damping: 30, mass: 0.7 },
+      }}
       whileTap={{ scale: 0.88 }}
       whileHover={{ scale: 1.08 }}
       transition={{ type: "spring", stiffness: 500, damping: 26 }}
+      /* O zoom do hover cresce a partir da borda: a aba não pode "sair" da
+         tela nem avançar sobre o compositor do chat. */
+      style={{ transformOrigin: recolhido ? "100% 50%" : "50% 50%" }}
       title={recolhido ? "Mostrar chat e ações rápidas" : "Recolher chat e ações rápidas"}
       aria-label={recolhido ? "Mostrar chat e ações rápidas" : "Recolher chat e ações rápidas"}
       aria-expanded={!recolhido}
@@ -665,16 +702,24 @@ function BotaoRecolher({
          dele. A coluna do raio tem 48px de círculo + 4 de espaço + 16 de
          rótulo; com `items-end` puro, este botão encostaria no rodapé e
          apareceria na altura do texto. A margem também é o que impede o botão
-         de pular de lugar quando o raio some. */
+         de pular de lugar quando o raio some.
+         `shrink-0`: a largura vem do `animate`; sem isto o flex a encolheria
+         para caber na linha, que fica vazia quando o raio sai. */
       /* `transition-[filter]` e não `transition`: pelo mesmo motivo do balão do
          chat — o utilitário cheio faria a transição CSS competir com o
          `whileHover`/`whileTap` daqui, que também mexem em `scale`. */
-      className="mb-6 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition-[filter] hover:brightness-110"
+      /* `fluxo-aba-brilho` só recolhido: a luz que sobe pela aba (ver
+         styles.css). Aberto o botão já é um círculo grande e inconfundível. */
+      className={`mb-6 flex h-10 shrink-0 items-center justify-center rounded-l-full bg-primary text-primary-foreground shadow-xl ring-2 ring-primary/30 transition-[filter] hover:brightness-110 ${
+        recolhido ? "fluxo-aba-brilho" : ""
+      }`}
     >
+      {/* `relative z-10`: a luz é um ::after absoluto e pintaria por cima da
+          seta; assim a seta fica sempre nítida e o brilho passa por trás. */}
       <motion.span
         animate={{ rotate: recolhido ? 180 : 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 28 }}
-        className="flex"
+        className="relative z-10 flex"
       >
         <ChevronRight className="h-4 w-4" />
       </motion.span>
