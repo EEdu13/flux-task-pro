@@ -19,12 +19,12 @@ import {
 import { ListaDeProjetos } from "@/components/escolher-projeto";
 import { useFluxo } from "@/lib/fluxo-store";
 import { podeMexerNoConteudo } from "@/lib/permissoes";
-import { toast } from "sonner";
 import { useUndo } from "@/lib/undo-stack";
 import { startFocus } from "@/components/focus-overlay";
 import { emojisRapidos, lembrarEmoji } from "@/lib/emojis";
 import { abrirAgradecer } from "@/components/mural/agradecer";
 import { abrirTarefaEmEvento } from "@/components/mural/tarefa-em-evento";
+import { abrirClonarTarefa } from "@/components/clonar-tarefa";
 
 interface Detail {
   id: string;
@@ -33,8 +33,7 @@ interface Detail {
 }
 
 export function TaskContextMenu() {
-  const { tasks, users, updateTask, deleteTask, createTask, openTask, currentUser, reactToTask } =
-    useFluxo();
+  const { tasks, users, updateTask, deleteTask, openTask, currentUser, reactToTask } = useFluxo();
   const { push: pushUndo } = useUndo();
   const [ctx, setCtx] = useState<Detail | null>(null);
   /* "Atribuir ao projeto" troca o conteúdo do menu pela lista de projetos
@@ -224,25 +223,10 @@ export function TaskContextMenu() {
             )}
           {/* Tarefa que é um encontro (o "Cultivar" de toda segunda) vira evento (17/10/2026). */}
           {item(CalendarPlus, "Divulgar como evento no mural", () => abrirTarefaEmEvento(task))}
-          {item(Copy, "Duplicar", () => {
-            createTask({
-              title: `${task.title} (cópia)`,
-              description: task.description,
-              sector: task.sector,
-              createdBy: currentUser.id,
-              assigneeId: task.assigneeId,
-              mentions: task.mentions,
-              frequency: task.frequency,
-              status: "pendente",
-              score: task.score,
-              dueDate: task.dueDate,
-              dueTime: task.dueTime,
-              recurring: task.recurring,
-              priority: task.priority,
-              tags: task.tags,
-            });
-            toast.success("Tarefa duplicada");
-          })}
+          {/* Era o "Duplicar", que criava a cópia na hora e perdia checklist,
+              projeto, estimativa e recorrência. Agora abre a mesma janela do
+              botão do cartão (25/11/2026). */}
+          {item(Copy, "Clonar tarefa", () => abrirClonarTarefa(task))}
           <div className="my-1 h-px bg-border" />
           {/* O desfazer vem de `deleteTask`, que devolve a própria tarefa. Este
             menu empilhava um segundo, por cima, que recriava a tarefa como

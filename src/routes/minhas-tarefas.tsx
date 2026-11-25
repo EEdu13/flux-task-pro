@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   CheckSquare,
+  Copy,
   Flame,
   Clock,
   Filter,
@@ -62,6 +63,7 @@ import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 
 import { MyView } from "@/components/my-view";
+import { abrirClonarTarefa } from "@/components/clonar-tarefa";
 import { formatDueBucket } from "@/lib/use-theme";
 import { concluidaHoje, noPackDeHoje } from "@/lib/pack";
 import { focusSummaryToday } from "@/lib/focus-log";
@@ -1977,6 +1979,12 @@ const ConteudoDoCartao = memo(function ConteudoDoCartao({
             </span>
           )}
         </div>
+        {/* No vão entre o prazo e o temporizador: `flex-1` ocupa o espaço e
+            centraliza o botão nele; quando o cartão estreita, ele quebra para
+            a linha de baixo junto com o resto. */}
+        <div className="flex flex-1 justify-center">
+          <BotaoClonar task={t} />
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <TaskTimerControls taskId={t.id} estimatedMinutes={t.estimatedMinutes} />
           {/* Foto, com as iniciais por trás como reserva. O
@@ -2133,6 +2141,39 @@ function SetaDeColuna({
       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border"
     >
       {voltando ? <Undo2 className="h-3 w-3" /> : <ArrowRight className="h-3.5 w-3.5" />}
+    </motion.button>
+  );
+}
+
+/** Pára o evento no botão: o cartão abre no clique e o dnd-kit arrasta no apertar. */
+const pararNoBotao = (e: React.SyntheticEvent) => e.stopPropagation();
+
+/**
+ * "Clonar tarefa" no rodapé do cartão (25/11/2026): abre a janela que cria uma
+ * tarefa nova com tudo desta, pedindo o prazo novo — ver `clonar-tarefa.tsx`.
+ *
+ * Mesma pílula do "Reagir" compacto, para o cartão não ganhar um terceiro estilo
+ * de botão. Para o clique e o apertar, como o Reagir: sem isso, clicar abriria a
+ * tarefa e o apertar começaria a arrastar o cartão.
+ */
+function BotaoClonar({ task }: { task: Task }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        abrirClonarTarefa(task);
+      }}
+      onPointerDown={pararNoBotao}
+      onMouseDown={pararNoBotao}
+      onDoubleClick={pararNoBotao}
+      draggable={false}
+      whileTap={{ scale: 0.9 }}
+      title="Criar uma tarefa nova igual a esta, com outro prazo"
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+    >
+      <Copy className="h-3.5 w-3.5" />
+      Clonar tarefa
     </motion.button>
   );
 }

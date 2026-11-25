@@ -19,6 +19,7 @@ import { FocusOverlay } from "@/components/focus-overlay";
 import { Novidades } from "@/components/novidades";
 import { PortaDoAgradecer } from "@/components/mural/agradecer";
 import { PortaDoEventoDaTarefa } from "@/components/mural/tarefa-em-evento";
+import { PortaDoClonarTarefa } from "@/components/clonar-tarefa";
 import { PortaDoWrapped } from "@/components/wrapped/porta-do-wrapped";
 import { ConfeteDeAniversario } from "@/components/confete-de-aniversario";
 import { Conversor } from "@/components/conversor/conversor";
@@ -70,6 +71,7 @@ export function GlobaisDoApp() {
       {/* "Agradecer" do Mural, aberto também pela tarefa (14/10/2026). */}
       <PortaDoAgradecer />
       <PortaDoEventoDaTarefa />
+      <PortaDoClonarTarefa />
       {/* Wrapped do mês (19/10/2026): abre sozinho no dia 1º (06:30) — ver `porta-do-wrapped.tsx`. */}
       <PortaDoWrapped />
       <ConfeteDeAniversario />

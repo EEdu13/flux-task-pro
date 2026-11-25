@@ -23,14 +23,7 @@ import { CampoDeTags } from "@/components/campo-de-tags";
 import { ReacoesDaTarefa } from "@/components/reacoes-da-tarefa";
 import { abrirAgradecer } from "@/components/mural/agradecer";
 import { dataParaIso, isoParaData } from "@/lib/data-iso";
-import {
-  DIAS_SEMANA,
-  MESES,
-  ULTIMO_DIA_DO_MES,
-  ULTIMO_DIA_UTIL,
-  descreverRecorrencia,
-  primeiraDataDaRegra,
-} from "@/lib/recorrencia";
+import { EditorDeRecorrencia } from "@/components/editor-de-recorrencia";
 import { toast } from "sonner";
 import { HORARIO_VALIDO } from "@/lib/prazo";
 import { BotaoBonificar } from "@/components/recompensas/botao-bonificar";
@@ -1200,222 +1193,21 @@ export function TaskDialog() {
               </div>
             )}
 
-            <div className="rounded-md border border-border bg-secondary/40 p-3">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={recurring}
-                  onChange={(e) => (e.target.checked ? ligarRecorrencia() : setRecurring(false))}
-                />
-                Tarefa recorrente (repete automaticamente ao concluir)
-              </label>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-muted-foreground">Atalhos:</span>
-                {/* "Dias úteis" era `diaria` empurrando só o PRIMEIRO prazo para
-                    a segunda — dali em diante a série caía no sábado e no
-                    domingo (relato de 08/10/2026). Agora é semanal, de
-                    segunda a sexta, como o pack. */}
-                {([
-                  { label: "Dias úteis", freq: "semanal" as Frequency, days: 30, weekdays: true },
-                  { label: "Diária", freq: "diaria" as Frequency, days: 30 },
-                  { label: "Dia sim, dia não", freq: "alternado" as Frequency, days: 30 },
-                  { label: "Semanal", freq: "semanal" as Frequency, days: 90 },
-                  { label: "Mensal", freq: "mensal" as Frequency, days: 365 },
-                ] as { label: string; freq: Frequency; days: number; weekdays?: boolean }[]).map((p) => {
-                  const ehUteis = recurringWeekdays.join() === "1,2,3,4,5";
-                  const active =
-                    recurring && frequency === p.freq && (p.freq !== "semanal" || !!p.weekdays === ehUteis);
-                  return (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() => {
-                        ligarRecorrencia();
-                        setFrequency(p.freq);
-                        const end = new Date();
-                        end.setDate(end.getDate() + p.days);
-                        setRecurringUntil(dataParaIso(end));
-                        if (p.freq === "semanal") setRecurringWeekdays(p.weekdays ? [1, 2, 3, 4, 5] : []);
-                        if (p.weekdays) {
-                          // `new Date("2026-09-13")` é meia-noite UTC — sábado
-                          // às 21h no Brasil, e o domingo não era pulado.
-                          const d = isoParaData(dueDate) ?? new Date();
-                          const dow = d.getDay();
-                          if (dow === 0) d.setDate(d.getDate() + 1);
-                          if (dow === 6) d.setDate(d.getDate() + 2);
-                          setDueDate(dataParaIso(d));
-                        }
-                      }}
-                      className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
-                        active
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-card hover:border-primary/50"
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-                {recurring && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRecurring(false);
-                      setRecurringUntil("");
-                    }}
-                    className="ml-auto text-[11px] text-muted-foreground hover:text-destructive"
-                  >
-                    remover recorrência
-                  </button>
-                )}
-              </div>
-              {/* Especificação fina, só do tipo escolhido. Antes "mensal" não
-                  dizia qual dia e "semanal" não dizia quais dias — a série
-                  caía sempre no mesmo dia do prazo original. */}
-              {recurring && frequency === "semanal" && (
-                <div className="mt-3 border-t border-border/60 pt-2.5">
-                  <span className="text-[11px] font-medium text-foreground">
-                    Repete nestes dias:
-                  </span>
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {DIAS_SEMANA.map((nome, dia) => {
-                      const marcado = recurringWeekdays.includes(dia);
-                      return (
-                        <button
-                          key={nome}
-                          type="button"
-                          onClick={() =>
-                            setRecurringWeekdays((atual) =>
-                              atual.includes(dia)
-                                ? atual.filter((d) => d !== dia)
-                                : [...atual, dia].sort((a, b) => a - b),
-                            )
-                          }
-                          aria-pressed={marcado}
-                          className={`h-7 w-9 rounded-md border text-[11px] font-semibold transition ${
-                            marcado
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                          }`}
-                        >
-                          {nome}
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => setRecurringWeekdays([1, 2, 3, 4, 5])}
-                      className="ml-1 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
-                    >
-                      Dias úteis
-                    </button>
-                  </div>
-                  {recurringWeekdays.length === 0 && (
-                    <p className="mt-1.5 text-[10px] text-muted-foreground">
-                      Sem nenhum marcado, repete no mesmo dia da semana do prazo.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {recurring && (frequency === "mensal" || frequency === "anual") && (
-                <div className="mt-3 border-t border-border/60 pt-2.5">
-                  <span className="text-[11px] font-medium text-foreground">
-                    {frequency === "anual" ? "Repete todo ano em:" : "Repete no dia:"}
-                  </span>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    {frequency === "anual" && (
-                      <select
-                        value={(isoParaData(dueDate) ?? new Date()).getMonth()}
-                        onChange={(e) => {
-                          const mes = Number(e.target.value);
-                          const atual = isoParaData(dueDate) ?? new Date();
-                          setDueDate(
-                            dataParaIso(
-                              primeiraDataDaRegra("anual", recurringMonthDay ?? atual.getDate(), mes),
-                            ),
-                          );
-                        }}
-                        className="input max-w-40 py-1 text-xs capitalize"
-                        aria-label="Mês"
-                      >
-                        {MESES.map((nome, i) => (
-                          <option key={nome} value={i}>
-                            {nome}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <select
-                      value={recurringMonthDay ?? ""}
-                      onChange={(e) => {
-                        const dia = e.target.value === "" ? null : Number(e.target.value);
-                        setRecurringMonthDay(dia);
-                        // O prazo acompanha a regra: escolher "último dia útil"
-                        // com o prazo em hoje criaria a primeira no dia errado.
-                        if (dia !== null) {
-                          const mes = (isoParaData(dueDate) ?? new Date()).getMonth();
-                          setDueDate(
-                            dataParaIso(
-                              primeiraDataDaRegra(frequency === "anual" ? "anual" : "mensal", dia, mes),
-                            ),
-                          );
-                        }
-                      }}
-                      className="input max-w-[13rem] py-1 text-xs"
-                      aria-label="Dia"
-                    >
-                      <option value="">Mesmo dia do prazo</option>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>
-                          Dia {d}
-                        </option>
-                      ))}
-                      <option value={ULTIMO_DIA_DO_MES}>Último dia do mês</option>
-                      <option value={ULTIMO_DIA_UTIL}>Último dia útil do mês</option>
-                    </select>
-                    {recurringMonthDay !== null && recurringMonthDay > 28 && (
-                      <span className="text-[10px] text-warning">
-                        Meses mais curtos usam o último dia disponível.
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {recurring && (
-                <div className="mt-2 flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Repetir até (opcional):</span>
-                  <CampoData
-                    value={recurringUntil}
-                    onChange={setRecurringUntil}
-                    placeholder="Sem limite"
-                    title="Repetir até"
-                    className="max-w-40 py-1 text-xs"
-                  />
-                  {recurringUntil && (
-                    <button
-                      type="button"
-                      onClick={() => setRecurringUntil("")}
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      limpar
-                    </button>
-                  )}
-                  {/* A regra por extenso vale mais que o rótulo da frequência:
-                      "Mensal" não conta que cai no dia 15. */}
-                  <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                    {descreverRecorrencia({
-                      recurring,
-                      frequency,
-                      recurringWeekdays,
-                      recurringMonthDay,
-                      dueDate,
-                    })}
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* O bloco de recorrência mora em `EditorDeRecorrencia` desde 25/11/2026,
+                compartilhado com o "Clonar tarefa". O estado continua aqui. */}
+            <EditorDeRecorrencia
+              valor={{ recurring, frequency, recurringWeekdays, recurringMonthDay, recurringUntil }}
+              prazo={dueDate}
+              aoMudar={(p) => {
+                if (p.recurring !== undefined) setRecurring(p.recurring);
+                if (p.frequency !== undefined) setFrequency(p.frequency);
+                if (p.recurringWeekdays !== undefined) setRecurringWeekdays(p.recurringWeekdays);
+                if (p.recurringMonthDay !== undefined) setRecurringMonthDay(p.recurringMonthDay);
+                if (p.recurringUntil !== undefined) setRecurringUntil(p.recurringUntil);
+              }}
+              aoMudarPrazo={setDueDate}
+              aoLigar={ligarRecorrencia}
+            />
 
             {canEditContent && (
             <div className="rounded-md border border-border bg-secondary/40 p-3">

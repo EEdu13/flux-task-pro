@@ -29,6 +29,7 @@ import {
 import { toast } from "sonner";
 import { confirmar } from "@/components/confirm-dialog";
 import { SeloDoProjeto } from "@/components/selo-do-projeto";
+import { abrirClonarTarefa } from "@/components/clonar-tarefa";
 import { rotuloDoPrazo } from "@/lib/prazo";
 import { DndContext, type UniqueIdentifier } from "@dnd-kit/core";
 import { arrayMove, SortableContext } from "@dnd-kit/sortable";
@@ -63,7 +64,7 @@ export function MyView({
   tasks: Task[];
   onEdit: (id: string) => void;
 }) {
-  const { currentUser, users, updateTask, deleteTask, createTask } = useFluxo();
+  const { currentUser, users, updateTask, deleteTask } = useFluxo();
   const view = useMyView(currentUser.id);
   const [managing, setManaging] = useState(false);
   const [newCol, setNewCol] = useState<{ name: string; type: ColumnType; options: string }>({
@@ -159,26 +160,6 @@ export function MyView({
     view.setMetaFor(id, { color: undefined, note: undefined });
     for (const c of view.columns) view.setCell(id, c.id, "");
     toast.success("Linha limpa");
-  };
-
-  const duplicateTask = (t: Task) => {
-    createTask({
-      title: `${t.title} (cópia)`,
-      description: t.description,
-      sector: t.sector,
-      createdBy: currentUser.id,
-      assigneeId: t.assigneeId,
-      mentions: t.mentions,
-      frequency: t.frequency,
-      status: "pendente",
-      score: t.score,
-      dueDate: t.dueDate,
-      dueTime: t.dueTime,
-      recurring: t.recurring,
-      priority: t.priority,
-      tags: t.tags,
-    });
-    toast.success("Tarefa duplicada");
   };
 
   return (
@@ -453,7 +434,8 @@ export function MyView({
                 () => updateTask(t.id, { inPack: !t.inPack }),
               )}
               {itemBtn(<StickyNote className="h-3.5 w-3.5" />, "Editar nota", () => setNoteOpen(t.id))}
-              {itemBtn(<Copy className="h-3.5 w-3.5" />, "Duplicar tarefa", () => duplicateTask(t))}
+              {/* Era o "Duplicar tarefa": agora abre a janela de clonar (25/11/2026). */}
+              {itemBtn(<Copy className="h-3.5 w-3.5" />, "Clonar tarefa", () => abrirClonarTarefa(t))}
               <div className="my-1 h-px bg-border" />
               {itemBtn(<Eraser className="h-3.5 w-3.5" />, "Limpar linha (cor, nota, colunas)", () => clearRow(t.id))}
               {canDelete &&

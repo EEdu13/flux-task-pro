@@ -148,12 +148,17 @@ interface Store {
    * `checklist` é opcional na criação: dá para nascer com os passos já
    * montados. Antes era obrigatoriamente vazio, e a pessoa tinha que criar,
    * salvar, reabrir e só então adicionar os itens.
+   *
+   * Devolve o id da tarefa nova — o "Editar" do aviso do Clonar abre por ele.
+   * `origem` é a frase da linha "criada" no histórico (no lugar de "criou esta
+   * tarefa"), como a ata e o modelo de pack já faziam por fora daqui.
    */
   createTask: (
     t: Omit<Task, "id" | "createdAt" | "order" | "comments" | "checklist" | "activity"> & {
       checklist?: ChecklistItem[];
     },
-  ) => void;
+    opcoes?: { origem?: string },
+  ) => string;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   moveTask: (id: string, status: Status, targetIndex?: number) => void;
@@ -1575,7 +1580,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
     setCurrentUserId: (id) => setState((s) => ({ ...s, currentUserId: id })),
     currentUser,
 
-    createTask: (t) => {
+    createTask: (t, opcoes) => {
       /* Tudo o que sai da tela — o id, a gravação, o envio do anexo — acontece
          aqui fora, e o `setState` lá embaixo só acrescenta a tarefa pronta.
 
@@ -1624,7 +1629,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
          nesta máquina, onde a sineta de ninguém os leria. Quem os escreve
          agora é o servidor: a atribuição em `salvarTarefa`, a menção em
          `salvarSatelites`, cada um no comando que cria o fato. */
-      const gravada = gravarTarefa(task);
+      const gravada = gravarTarefa(task, opcoes?.origem);
 
       /* Anexo escolhido antes da tarefa existir.
          A grade de criação em massa deixa anexar arquivo numa linha que ainda
@@ -1658,6 +1663,7 @@ export function FluxoProvider({ children }: { children: ReactNode }) {
 
       // Repetida pelo React, esta atualização acrescenta a MESMA tarefa.
       setState((s) => ({ ...s, tasks: [{ ...task, attachments: [] }, ...s.tasks] }));
+      return id;
     },
 
     updateTask: (id, patch) => {
