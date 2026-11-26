@@ -8,7 +8,8 @@
  * própria pessoa, e a regra (data, hierarquia, duplicidade, folgas) fica num
  * lugar só.
  *
- * Está pronta e ESCONDIDA. As chaves, da mais larga à mais estreita:
+ * LIBERADA em 26/11/2026 (decisão do usuário, depois de o Eduardo apontar de verdade pela 400AC).
+ * As chaves, da mais larga à mais estreita:
  *
  * - `ESTRUTURA_LIBERADA`: todo líder que o PWA reconhecer vê a tela, o card do
  *   Início e o lembrete do Pack. Com `false`, só o piloto.
@@ -21,15 +22,15 @@
  *   O dev NUNCA envia de verdade, qualquer que seja a chave: o `npm run dev`
  *   usa o mesmo `.env` da produção (ver `transporte.server.ts`).
  *
- * Para liberar: `ESTRUTURA_LIBERADA = true`, o piloto desligado e a leva da
- * estrutura nas Novidades (`TELAS_DA_ESTRUTURA` em `novidades.tsx`, só para quem
- * tem estrutura; a do conversor fica guardada), no mesmo deploy.
+ * Para recolher: `ESTRUTURA_LIBERADA = false` volta ao piloto (o Eduardo, só na 400AC).
+ * A leva da estrutura nas Novidades (`TELAS_DA_ESTRUTURA` em `novidades.tsx`) sai só
+ * para quem tem estrutura, junto com a liberação.
  */
-export const ESTRUTURA_LIBERADA = false;
+export const ESTRUTURA_LIBERADA = true;
 
 export const PILOTO_DA_ESTRUTURA: { pessoas: readonly number[]; equipes: readonly string[] } = {
   /* Ids da IAM de quem testa em produção: o Eduardo (465, o mesmo `DONO` das Recompensas).
-     Vazio = ninguém: a estrutura fica invisível em produção até alguém ser posto aqui. */
+     Só vale com `ESTRUTURA_LIBERADA = false` (o caminho de volta ao piloto); liberada, não filtra ninguém. */
   pessoas: [465],
   equipes: ["400AC"],
 };
@@ -38,9 +39,19 @@ export const PILOTO_DA_ESTRUTURA: { pessoas: readonly number[]; equipes: readonl
  * Quem tem o seletor de equipe, e em que equipe a tela abre para ele. Decisão do usuário,
  * 10/11/2026: o Eduardo é usuário GLOBAL na IAM (o PWA devolve todas as equipes para ele), então
  * só ele troca de equipe, e a tela abre direto na dele. Os outros veem só a própria equipe, sem
- * seletor, e são só os supervisores (a gerência não vê a aba: para ela virá outra coisa).
+ * seletor, e são os supervisores e os líderes de `LIDERES_SEM_PAPEL_DE_SUPERVISOR` (a gerência
+ * não vê a aba: para ela virá outra coisa).
  */
 export const QUEM_TROCA_DE_EQUIPE: Readonly<Record<number, string>> = { 465: "400AC" };
+
+/**
+ * Líderes de equipe ADM que o CONECTA marca como `adm` (o papel sai de quem chefia alguém na tabela
+ * de colaboradores, e eles lideram a equipe pelo organograma sem chefiar ninguém ali), mas que
+ * apontam a estrutura da própria equipe. Abrem a aba mesmo sem o papel `supervisor`. Ids da IAM.
+ * Decisão do usuário, 26/11/2026: Elaine (400AG), Valdir (400AH) e Elisama (400AL). Líder novo com
+ * perfil `adm` entra aqui; a gerência (papel `gerente`) não entra.
+ */
+export const LIDERES_SEM_PAPEL_DE_SUPERVISOR: readonly number[] = [136, 435, 531];
 
 /* Ligado em 17/11/2026 (decisão do usuário) para o primeiro envio real, com o Eduardo na 400AC:
    enquanto `ESTRUTURA_LIBERADA` for `false`, só o piloto (ele, só nessa equipe) alcança o envio. */
@@ -68,10 +79,12 @@ export const CONVERSOR_LIBERADO = true;
 export const CONVERSOR_ABERTO = import.meta.env.DEV || CONVERSOR_LIBERADO;
 
 /**
- * Gerências e a 400AJ (Compras): fora por ora, decisão do Eduardo (05/11/2026).
- * O que o PWA devolver em `minhas-equipes` é filtrado por esta lista.
+ * As gerências: fora por ora, decisão do Eduardo (05/11/2026), mantida pelo usuário em 26/11/2026.
+ * A 400AJ (Compras) estava aqui também, sem ninguém e sem nunca ter enviado; entrou em 26/11/2026,
+ * agora com o Sandro como líder (decisão do usuário). O que o PWA devolver em `minhas-equipes` é
+ * filtrado por esta lista.
  */
-export const EQUIPES_FORA_DA_ESTRUTURA: readonly string[] = ["400AX", "400AY", "400AZ", "400AJ"];
+export const EQUIPES_FORA_DA_ESTRUTURA: readonly string[] = ["400AX", "400AY", "400AZ"];
 
 /**
  * Os projetos cujas equipes ADM entram na estrutura: só o 400 (o escritório da matriz). As equipes

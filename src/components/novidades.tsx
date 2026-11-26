@@ -60,14 +60,23 @@ import { carregarAvataresDe, type AvatarConfig } from "@/lib/avatar-3d";
 import { sectors } from "@/lib/fluxo-types";
 import { ESTILO_DO_ACENTO } from "@/components/conversor/acento";
 import { BLOCOS, BLOCOS_PRONTOS } from "@/components/conversor/blocos";
+import { estadoDaEstrutura, useEstrutura } from "@/lib/estrutura-cliente";
+import {
+  haLevaParaVer,
+  levasDaJanela,
+  levasPendentes,
+  versaoAoFechar,
+} from "@/lib/novidades-levas";
 
 /**
  * "O que mudou" — a janela de novidades que aparece UMA vez por pessoa,
  * depois do login (pedido do usuário, 08/10/2026). A pessoa vai passando as
  * telas; ao terminar ou fechar, não volta mais.
  *
- * Para a próxima leva de novidades, troque `VERSAO` e as `TELAS`: quem já viu
- * a versão anterior vê a nova uma vez.
+ * Para a próxima leva de novidades, crie a versão e as telas dela (a que estava no ar fica
+ * guardada como `TELAS_DE_<leva>`) e ensine `novidades-levas.ts` a dizer quem a vê: quem já
+ * viu a versão anterior vê a nova uma vez. Desde 26/11/2026 são duas levas no ar, cada uma com a
+ * sua versão: a do Gantt (para todos) e a da estrutura (só para quem tem equipe para enviar).
  *
  * O "já vi" fica no banco (`gestor.preferencias`, chave "novidades"), para
  * não reaparecer em outro computador, e numa cópia local, para não piscar
@@ -81,8 +90,6 @@ import { BLOCOS, BLOCOS_PRONTOS } from "@/components/conversor/blocos";
  *
  * Para ver de novo sem mexer no banco: `?novidades=1` na URL.
  */
-const VERSAO = "2026-11-18-gantt";
-
 const chaveLocal = (pessoaId: string) => `fluxo:novidades:${pessoaId}`;
 
 type Tela = {
@@ -93,11 +100,11 @@ type Tela = {
   Ilustracao: (p: { pessoaId: string }) => React.ReactElement;
 };
 
-/* A leva do GANTT (pedido do Eduardo, 05/11/2026; montada em 18/11/2026), para TODOS: a visão
-   geral e a aba do projeto, arrastar para replanejar e as dependências. Vai no mesmo push do
-   Gantt. A do conversor ficou guardada logo abaixo (`TELAS_DO_CONVERSOR`): quem viu continua
-   tendo visto. */
-export const TELAS: Tela[] = [
+/* A leva do GANTT (pedido do Eduardo, 05/11/2026; montada em 18/11/2026, no ar desde 19/11/2026),
+   para TODOS: a visão geral e a aba do projeto, arrastar para replanejar e as dependências. Segue
+   valendo para quem ainda não a viu; a da estrutura vem depois (`TELAS_DA_ESTRUTURA`). A do
+   conversor ficou guardada logo abaixo (`TELAS_DO_CONVERSOR`): quem viu continua tendo visto. */
+export const TELAS_DO_GANTT: Tela[] = [
   {
     titulo: "Seus projetos numa linha do tempo",
     texto:
@@ -151,11 +158,10 @@ export const TELAS_DO_CONVERSOR: Tela[] = [
 ];
 
 /**
- * A leva da ESTRUTURA DO DIA (10/11/2026), guardada para a liberação dela (o conversor saiu antes,
- * em 17/11/2026, e o Gantt em seguida). Na liberação: `VERSAO` nova, estas telas como a leva ativa
- * (a que estiver no ar fica guardada como `TELAS_DE_<leva>`), e a janela só para quem tem equipe para enviar
- * (`useTemEstrutura`, a mesma regra do item "Estrutura do dia" no menu), esperando a estrutura
- * responder (`useEstrutura().pronto`) antes de decidir. Quem não tem estrutura não vê esta leva.
+ * A leva da ESTRUTURA DO DIA (montada em 10/11/2026, no ar desde 26/11/2026, quando a estrutura
+ * foi liberada). É só para quem tem equipe para enviar (a mesma regra do item "Estrutura do dia" no
+ * menu, `useTemEstrutura`), e a janela espera a estrutura responder (`useEstrutura().pronto`)
+ * antes de decidir. Quem não tem estrutura não vê esta leva; quem ainda não viu a do Gantt vê as duas.
  */
 export const TELAS_DA_ESTRUTURA: Tela[] = [
   {
@@ -299,38 +305,61 @@ export function Novidades() {
   const [indice, setIndice] = useState(0);
   const [sentido, setSentido] = useState(1);
 
-  /* A leva ativa é a do Gantt, igual para todos (18/11/2026). A da estrutura entra na
-     liberação dela (ver `TELAS_DA_ESTRUTURA`). */
-  const telas = TELAS;
+  /* As telas DESTA abertura: a leva do Gantt (para quem ainda não a viu) e a da estrutura (para quem
+     tem equipe para enviar), escolhidas ANTES de abrir, porque os apresentadores são sorteados uma
+     vez e a lista não pode mudar de tamanho com a janela aberta. A prévia mostra a da estrutura. */
+  const [telas, setTelas] = useState<Tela[]>(TELAS_DA_ESTRUTURA);
+  /* O que guardar ao fechar (`null` na prévia, que não mexe no "já vi"). */
+  const aGravar = useRef<string | null>(null);
+  const previaAberta = useRef(false);
+  /* A decisão espera a estrutura responder: sem saber se a pessoa tem equipe, não dá para escolher
+     as levas. Fica verdadeiro uma vez só (nem a falha volta atrás), então o efeito roda de novo
+     uma vez, e a leitura de "tem estrutura" é a de agora (`estadoDaEstrutura`), não a da renderização. */
+  const { pronto: estruturaPronta } = useEstrutura();
 
   /* Decide se mostra: a cópia local responde na hora; sem ela, pergunta ao
-     banco — a pessoa pode ter visto em outro computador. (Até 18/11/2026 a leva era a do
-     conversor e só abria com a chave dele, `CONVERSOR_ABERTO`; a do Gantt é para todos.) */
+     banco — a pessoa pode ter visto em outro computador. */
   useEffect(() => {
     if (!isAuthenticated || !currentUser.id) return;
     if (new URLSearchParams(window.location.search).get("novidades") === "1") {
+      if (previaAberta.current) return;
+      previaAberta.current = true;
+      setTelas(TELAS_DA_ESTRUTURA);
+      aGravar.current = null;
       setIndice(0);
       setAberta(true);
       return;
     }
+    if (!estruturaPronta) return;
+    const e = estadoDaEstrutura();
+    const tem = e.pronto && e.aberta && e.equipes.length > 0;
+    let local: string | null = null;
     try {
-      if (localStorage.getItem(chaveLocal(currentUser.id)) === VERSAO) return;
+      local = localStorage.getItem(chaveLocal(currentUser.id));
     } catch {
       /* sem armazenamento: segue para o banco */
     }
+    if (!haLevaParaVer(levasDaJanela(local, tem))) return;
     let vivo = true;
     import("@/lib/perfil.functions")
       .then((m) => m.minhasPreferencias())
       .then((p) => {
         if (!vivo) return;
-        if (p.novidades === VERSAO) {
+        const levas = levasPendentes(local, p.novidades, tem);
+        if (!haLevaParaVer(levas)) {
           try {
-            localStorage.setItem(chaveLocal(currentUser.id), VERSAO);
+            if (p.novidades) localStorage.setItem(chaveLocal(currentUser.id), p.novidades);
           } catch {
             /* ok */
           }
           return;
         }
+        setTelas([
+          ...(levas.gantt ? TELAS_DO_GANTT : []),
+          ...(levas.estrutura ? TELAS_DA_ESTRUTURA : []),
+        ]);
+        aGravar.current = versaoAoFechar(tem);
+        setIndice(0);
         // Um respiro depois do login, para não brigar com a tela entrando.
         window.setTimeout(() => vivo && setAberta(true), 1200);
       })
@@ -338,17 +367,19 @@ export function Novidades() {
     return () => {
       vivo = false;
     };
-  }, [isAuthenticated, currentUser.id]);
+  }, [isAuthenticated, currentUser.id, estruturaPronta]);
 
   const marcarComoVista = () => {
     setAberta(false);
+    const versao = aGravar.current;
+    if (!versao) return;
     try {
-      localStorage.setItem(chaveLocal(currentUser.id), VERSAO);
+      localStorage.setItem(chaveLocal(currentUser.id), versao);
     } catch {
       /* o banco guarda */
     }
     void import("@/lib/perfil.functions")
-      .then((m) => m.salvarPreferencia({ data: { chave: "novidades", valor: VERSAO } }))
+      .then((m) => m.salvarPreferencia({ data: { chave: "novidades", valor: versao } }))
       .catch(() => {});
   };
 

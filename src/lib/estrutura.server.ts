@@ -39,6 +39,7 @@ import {
   ADICIONAR_NA_EQUIPE_LIGADO,
   equipeParticipa,
   ESTRUTURA_LIBERADA,
+  LIDERES_SEM_PAPEL_DE_SUPERVISOR,
   PILOTO_DA_ESTRUTURA,
   QUEM_TROCA_DE_EQUIPE,
 } from "@/lib/estrutura-liberada";
@@ -104,12 +105,15 @@ function trocaDeEquipe(eu: number): boolean {
 /**
  * A estrutura está aberta para esta pessoa? Só liberada para todos ou para quem está no piloto, e
  * só para SUPERVISOR (decisão do usuário, 10/11/2026): a gerência não vê
- * a aba (para ela virá outra coisa) e quem não chefia ninguém não aponta. O Eduardo vê sempre. É a
- * PRIMEIRA linha de toda função: fechada, nada é lido nem chamado, nem o PWA.
+ * a aba (para ela virá outra coisa) e quem não chefia ninguém não aponta. O Eduardo vê sempre. Os
+ * líderes de equipe ADM que o CONECTA marca como `adm` (`LIDERES_SEM_PAPEL_DE_SUPERVISOR`, 26/11/2026)
+ * também abrem, sem perguntar o papel. É a PRIMEIRA linha de toda função: fechada, nada é lido nem
+ * chamado, nem o PWA.
  */
 export async function estruturaAbertaPara(eu: number): Promise<boolean> {
   if (!ESTRUTURA_LIBERADA && !PILOTO_DA_ESTRUTURA.pessoas.includes(eu)) return false;
   if (QUEM_TROCA_DE_EQUIPE[eu] !== undefined) return true;
+  if (LIDERES_SEM_PAPEL_DE_SUPERVISOR.includes(eu)) return true;
   return (await quemSou(eu)).papel === "supervisor";
 }
 
