@@ -12,8 +12,8 @@ import {
 import { AZUL, AZUL_CLARO, AZUL_ESCURO, ehNovembro } from "@/components/abertura-novembro-azul";
 
 /**
- * Abertura do login da PlantSil Florestal, 25 anos (pedido de 11/11/2026: a
- * Larsil virou PlantSil, festivo pelos 25 anos, mesclado com o Novembro Azul).
+ * Abertura do login da Plantsil Florestal, 25 anos (pedido de 11/11/2026: a
+ * Larsil virou Plantsil, festivo pelos 25 anos, mesclado com o Novembro Azul).
  *
  * A cena monta o emblema do logotipo peça por peça: o disco verde, a chuva azul
  * do Novembro Azul caindo dentro dele, o solo de terra subindo, as cinco mudas
@@ -333,7 +333,7 @@ function Cena({ azul }: { azul: boolean }) {
 }
 
 /**
- * O "O" do CONECTA na marca: o emblema PlantSil, com o layoutId que recebe o
+ * O "O" do CONECTA na marca: o emblema Plantsil, com o layoutId que recebe o
  * selo montado na cena. Em novembro, o anel externo ganha o brilho azul.
  */
 export function OPlantsil({ azul }: { azul?: boolean }) {

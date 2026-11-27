@@ -619,7 +619,7 @@ export function FluxoLayout({
               (10 e 26px), ajustada para os 36px daqui. */}
           <img
             src={plantsilEmblema}
-            alt="PlantSil Florestal"
+            alt="Plantsil Florestal"
             className="h-9 w-9 shrink-0 object-contain"
             style={{
               filter:
@@ -1049,7 +1049,7 @@ export function FluxoLayout({
           </button>
           <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
             <Building2 className="hidden h-4 w-4 sm:block" />
-            <span className="hidden sm:inline">PlantSil</span>
+            <span className="hidden sm:inline">Plantsil</span>
             {breadcrumb && (
               <>
                 <span className="hidden sm:inline">/</span>

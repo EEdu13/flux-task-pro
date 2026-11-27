@@ -7,7 +7,7 @@ export const KEY = "fluxo.theme";
 export const PALETTE_KEY = "fluxo.palette";
 
 /**
- * Virada para a marca PlantSil 25 anos (11/11/2026): uma vez por navegador, a
+ * Virada para a marca Plantsil 25 anos (11/11/2026): uma vez por navegador, a
  * paleta passa para "plantsil", não importa o que estava. Depois disso a
  * escolha volta a ser livre — quem trocar de cor fica com a que trocou.
  * `MARCA_REMOTA_KEY` faz o mesmo com a preferência guardada no banco, que
@@ -51,8 +51,8 @@ export const paletteOptions: {
 }[] = [
   {
     id: "plantsil",
-    name: "PlantSil 25 anos",
-    description: "Verde PlantSil, dourado e terra da marca nova. Padrão do SGL - CONECTA.",
+    name: "Plantsil 25 anos",
+    description: "Verde Plantsil, dourado e terra da marca nova. Padrão do SGL - CONECTA.",
     swatch: ["#f4f1ea", "#1e3d2f", "#d9ae5c", "#8a5a2b"],
   },
   {
@@ -340,7 +340,7 @@ export async function sincronizarPreferencias(): Promise<void> {
       /* sem armazenamento: segue o que o banco disser */
     }
     if (!marcaNoBanco) {
-      // Primeira vez depois da virada: o banco passa a guardar a PlantSil.
+      // Primeira vez depois da virada: o banco passa a guardar a Plantsil.
       lojaPaleta.definir("plantsil", true);
       if (paleta !== "plantsil") {
         void import("@/lib/perfil.functions")

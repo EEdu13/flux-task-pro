@@ -40,7 +40,7 @@ function expDoToken(token: string): number | null {
  * login. Para derrubar todo mundo de novo (troca de marca, incidente), basta
  * avançar esta data e publicar.
  *
- * 12/11/2026: troca para PlantSil 25 anos — todos entram de novo e veem a
+ * 12/11/2026: troca para Plantsil 25 anos — todos entram de novo e veem a
  * abertura nova. Token sem `iat` legível passa (não dá para saber a idade, e
  * prender alguém num laço de login seria pior).
  */

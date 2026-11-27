@@ -3,7 +3,7 @@ import plantsilEmblema from "@/assets/plantsil-emblema.svg";
 import type { LeituraDoMicrofone } from "@/lib/use-microfone";
 
 /**
- * A faixa de voz da Tarefa por voz: o emblema da PlantSil no centro, com o anel de
+ * A faixa de voz da Tarefa por voz: o emblema da Plantsil no centro, com o anel de
  * plasma em volta, e a voz se espalhando dela para os dois lados — ondas e
  * barras de espectro que vão até as bordas, na largura da caixa de cima.
  *
@@ -563,7 +563,7 @@ export function FaixaDeVoz({
       <img
         ref={logoRef}
         src={plantsilEmblema}
-        alt="PlantSil Florestal"
+        alt="Plantsil Florestal"
         draggable={false}
         className="pointer-events-none absolute left-1/2 top-1/2 select-none"
         style={{ width: logo, height: logo, transform: "translate(-50%, -50%)" }}

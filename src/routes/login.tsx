@@ -60,7 +60,7 @@ export const Route = createFileRoute("/login")({
       {
         name: "description",
         content:
-          "SGL - CONECTA: o ambiente completo da PlantSil Florestal para organizar tarefas, conectar equipes e transformar trabalho em resultado.",
+          "SGL - CONECTA: o ambiente completo da Plantsil Florestal para organizar tarefas, conectar equipes e transformar trabalho em resultado.",
       },
     ],
   }),
@@ -94,7 +94,7 @@ function LoginPage() {
       <FestaDeFundo />
       <div className="relative z-10 mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-10 px-6 py-12 lg:grid-cols-2 lg:gap-16 lg:py-0">
         {/* Em outubro, a abertura do Outubro Rosa termina na marca (16/10/2026). */}
-        {/* Desde 11/11/2026, a da PlantSil 25 anos — que em novembro traz o
+        {/* Desde 11/11/2026, a da Plantsil 25 anos — que em novembro traz o
             Novembro Azul junto (chuva azul, laço no selo e o selo do mês). */}
         {ehOutubro() ? (
           <AberturaOutubroRosa marca={<Marca campanha="rosa" />} />
@@ -229,7 +229,7 @@ function FormIam() {
         onSubmit={submit}
         className="relative rounded-2xl border border-white/10 bg-[color-mix(in_oklab,var(--auth-base)_88%,white)]/90 p-8 backdrop-blur-xl"
       >
-        <Cabecalho subtitulo="Acesso corporativo PlantSil Florestal" login={login} />
+        <Cabecalho subtitulo="Acesso corporativo Plantsil Florestal" login={login} />
 
         <div className="mb-1 flex items-center justify-between gap-2">
           <label
@@ -336,7 +336,7 @@ function FormIam() {
           )}
         </button>
 
-        {/* O emblema da PlantSil no lugar do escudo genérico que estava aqui.
+        {/* O emblema da Plantsil no lugar do escudo genérico que estava aqui.
 
             A frase fala dos "outros sistemas da empresa", e a marca ao lado é
             justamente o que responde qual empresa — vira informação, onde o
@@ -388,7 +388,7 @@ function FormDemo() {
       onSubmit={submit}
       className="relative rounded-2xl border border-white/10 bg-[color-mix(in_oklab,var(--auth-base)_88%,white)]/90 p-8 backdrop-blur-xl"
     >
-      <Cabecalho subtitulo="Workspace PlantSil" />
+      <Cabecalho subtitulo="Workspace Plantsil" />
 
       <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-white/60">
         Perfil de acesso
@@ -770,9 +770,9 @@ function Aurora() {
 }
 
 function Marca({ campanha }: { campanha?: Campanha }) {
-  /* Marca PlantSil 25 anos (11/11/2026). O logotipo comemorativo vem em cima,
+  /* Marca Plantsil 25 anos (11/11/2026). O logotipo comemorativo vem em cima,
      como assinatura festiva; o título continua sendo o SGL - CONECTA, agora
-     com o emblema da PlantSil no lugar do "O" (as medidas em em, a folga de
+     com o emblema da Plantsil no lugar do "O" (as medidas em em, a folga de
      0.056em e o overshoot de 0.76em seguem a conta antiga da Sora).
 
      Em outubro o "O" ainda é o anel rosa da campanha; no resto do ano é o
@@ -782,7 +782,7 @@ function Marca({ campanha }: { campanha?: Campanha }) {
     <div className="space-y-7">
       <motion.img
         src={plantsil25}
-        alt="PlantSil Florestal · 25 anos"
+        alt="Plantsil Florestal · 25 anos"
         className="h-auto w-full max-w-md"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -791,7 +791,7 @@ function Marca({ campanha }: { campanha?: Campanha }) {
       />
       <div className="inline-flex items-center gap-2 rounded-full border border-[#D9AE5C]/40 bg-[#D9AE5C]/10 px-3 py-1 text-xs text-[#f3dca6] backdrop-blur">
         <Sparkles className="h-3.5 w-3.5" />
-        <span>25 anos plantando futuro · PlantSil Florestal</span>
+        <span>25 anos plantando futuro · Plantsil Florestal</span>
       </div>
       <h1 className="text-5xl font-semibold leading-tight tracking-tight sm:text-6xl">
         SGL -{" "}
@@ -847,7 +847,7 @@ function Marca({ campanha }: { campanha?: Campanha }) {
         </span>
       </h1>
       <p className="max-w-lg text-sm leading-relaxed text-white/70">
-        O ambiente completo da PlantSil Florestal para organizar tarefas, conectar equipes e
+        O ambiente completo da Plantsil Florestal para organizar tarefas, conectar equipes e
         transformar trabalho em resultado.
       </p>
       {campanha === "rosa" && <SeloOutubroRosa />}
@@ -871,7 +871,7 @@ function Marca({ campanha }: { campanha?: Campanha }) {
       {/* Assinatura: fica por último e fora do cartão de login (logo colada em
           campo de senha é o que phishing imita). O ano sai do relógio. */}
       <p className="pt-2 text-[11px] text-white/40">
-        © {new Date().getFullYear()} PlantSil Florestal · Silvicultura de qualidade · Todos os
+        © {new Date().getFullYear()} Plantsil Florestal · Silvicultura de qualidade · Todos os
         direitos reservados
       </p>
     </div>

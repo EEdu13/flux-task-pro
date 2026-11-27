@@ -315,7 +315,7 @@ function Forro() {
 
 /* ───────── Janelas com vista ───────── */
 
-/** Céu, morro e talhões de eucalipto — a vista da PlantSil, desenhada por código. */
+/** Céu, morro e talhões de eucalipto — a vista da Plantsil, desenhada por código. */
 function desenharPaisagem(g: CanvasRenderingContext2D, w: number, h: number) {
   const ceu = g.createLinearGradient(0, 0, 0, h * 0.6);
   ceu.addColorStop(0, "#6fb6e8");

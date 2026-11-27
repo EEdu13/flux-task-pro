@@ -1,6 +1,6 @@
 /**
- * As peças do emblema PlantSil (o círculo do logotipo), recortadas do SVG oficial
- * (export/PlantSil-3a-frases, 11/11/2026) para a abertura montar uma a uma.
+ * As peças do emblema Plantsil (o círculo do logotipo), recortadas do SVG oficial
+ * (export/Plantsil-3a-frases, 11/11/2026) para a abertura montar uma a uma.
  * Coordenadas no viewBox "2.56 2.56 122.88 122.88" (centro 64,64).
  */
 

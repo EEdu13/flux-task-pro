@@ -3,7 +3,7 @@ import plantsilLogo from "@/assets/plantsil-25anos-cor.svg";
 import { tocarBuzina } from "@/lib/sons";
 
 /**
- * Trator da PlantSil atravessando a tela puxando uma faixa — no estilo do
+ * Trator da Plantsil atravessando a tela puxando uma faixa — no estilo do
  * aviãozinho de praia com publicidade. Dispara ao receber o evento
  * `fluxo:tractor` (com { message?, durationSec? }); atravessa uma vez e some.
  */
@@ -98,7 +98,7 @@ function Convoy({ run, onEnd }: { run: Travessia; onEnd: () => void }) {
         {/* Faixa (trailer) */}
         <div className="fluxo-tractor-banner">
           <div className="fluxo-tractor-banner-fabric">
-            <img src={plantsilLogo} alt="PlantSil Florestal · 25 anos" className="fluxo-tractor-logo" />
+            <img src={plantsilLogo} alt="Plantsil Florestal · 25 anos" className="fluxo-tractor-logo" />
             <span className="fluxo-tractor-msg">{run.message}</span>
           </div>
           {/* franjas */}
