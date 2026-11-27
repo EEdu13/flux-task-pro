@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   FileText,
+  GripHorizontal,
   Loader2,
   Maximize2,
   Minus,
@@ -598,6 +599,54 @@ function usePosicaoNaSobra(alvo: RefObject<HTMLElement | null>): Posicao | null 
   return pos;
 }
 
+/* ------------------------------------------------------------------ */
+/* Arrastar a minimizada (27/11/2026)                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Com o chat aberto, a sobra à direita é o próprio chat: o cartão caía em cima
+ * dele e não saía de lá. Agora dá para arrastar o cartão para onde quiser. Um
+ * clique sem arrastar continua abrindo a ata. O lugar escolhido fica guardado
+ * neste computador e vale nas próximas vezes que a ata for minimizada; sem ele,
+ * o cartão volta à regra automática acima.
+ */
+const CHAVE_DA_POSICAO = "fluxo:ata-minimizada-posicao";
+/** Distância mínima até a borda da janela. */
+const MARGEM_DA_TELA = 8;
+/** Abaixo disso o gesto é clique, não arraste. */
+const LIMIAR_DO_ARRASTE = 4;
+
+type Lugar = { left: number; top: number };
+
+function lerLugarGuardado(): Lugar | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAVE_DA_POSICAO) ?? "null") as Lugar | null;
+    return v && Number.isFinite(v.left) && Number.isFinite(v.top)
+      ? { left: v.left, top: v.top }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarLugar(l: Lugar) {
+  try {
+    localStorage.setItem(CHAVE_DA_POSICAO, JSON.stringify(l));
+  } catch {
+    /* sem armazenamento: vale só até fechar a ata */
+  }
+}
+
+/** Mantém o cartão inteiro dentro da janela. */
+function dentroDaTela(l: Lugar, largura: number, altura: number): Lugar {
+  const prender = (v: number, max: number) =>
+    Math.min(Math.max(v, MARGEM_DA_TELA), Math.max(MARGEM_DA_TELA, max));
+  return {
+    left: prender(l.left, window.innerWidth - largura - MARGEM_DA_TELA),
+    top: prender(l.top, window.innerHeight - altura - MARGEM_DA_TELA),
+  };
+}
+
 export function AtaMinimizada({
   ata,
   alvo,
@@ -608,7 +657,40 @@ export function AtaMinimizada({
   aoExpandir: () => void;
 }) {
   const pos = usePosicaoNaSobra(alvo);
+  /** Onde a pessoa deixou o cartão (null = lugar automático). */
+  const [movida, setMovida] = useState<Lugar | null>(() =>
+    typeof window === "undefined" ? null : lerLugarGuardado(),
+  );
+  const [arrastando, setArrastando] = useState(false);
+  const arraste = useRef<{ x0: number; y0: number; inicio: Lugar; movendo: boolean } | null>(null);
+  /** O clique que vem no fim de um arraste não abre a ata. */
+  const engolirClique = useRef(false);
+  // Janela mudou de tamanho: redesenha para o cartão não ficar fora dela.
+  const [, setTela] = useState(0);
+  useEffect(() => {
+    const aoMudar = () => setTela((n) => n + 1);
+    window.addEventListener("resize", aoMudar);
+    return () => window.removeEventListener("resize", aoMudar);
+  }, []);
+
   if (!pos || typeof document === "undefined") return null;
+  const lugar = movida ? dentroDaTela(movida, pos.width, pos.height) : pos;
+
+  const soltar = (el: HTMLElement, pointerId: number) => {
+    const a = arraste.current;
+    arraste.current = null;
+    if (!a?.movendo) return;
+    if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+    engolirClique.current = true;
+    const novo = dentroDaTela(
+      { left: parseFloat(el.style.left), top: parseFloat(el.style.top) },
+      pos.width,
+      pos.height,
+    );
+    setMovida(novo);
+    guardarLugar(novo);
+    setArrastando(false);
+  };
   const e = ata.estado;
   const s = situacao(ata);
   const escrevendo = !!e?.escrevendo;
@@ -621,24 +703,78 @@ export function AtaMinimizada({
   return createPortal(
     <motion.button
       type="button"
-      onClick={aoExpandir}
+      onClick={() => {
+        if (engolirClique.current) {
+          engolirClique.current = false;
+          return;
+        }
+        aoExpandir();
+      }}
+      onPointerDown={(ev) => {
+        if (ev.button !== 0) return;
+        // O left/top do estilo, e não o retângulo na tela: o leve aumento
+        // durante o arraste mexeria no retângulo.
+        const st = ev.currentTarget.style;
+        engolirClique.current = false;
+        arraste.current = {
+          x0: ev.clientX,
+          y0: ev.clientY,
+          inicio: {
+            left: parseFloat(st.left) || lugar.left,
+            top: parseFloat(st.top) || lugar.top,
+          },
+          movendo: false,
+        };
+      }}
+      onPointerMove={(ev) => {
+        const a = arraste.current;
+        if (!a) return;
+        const dx = ev.clientX - a.x0;
+        const dy = ev.clientY - a.y0;
+        if (!a.movendo) {
+          if (Math.hypot(dx, dy) < LIMIAR_DO_ARRASTE) return;
+          a.movendo = true;
+          ev.currentTarget.setPointerCapture(ev.pointerId);
+          setArrastando(true);
+        }
+        // Direto no elemento: arrastar não redesenha a ata a cada movimento.
+        const l = dentroDaTela(
+          { left: a.inicio.left + dx, top: a.inicio.top + dy },
+          pos.width,
+          pos.height,
+        );
+        ev.currentTarget.style.left = `${l.left}px`;
+        ev.currentTarget.style.top = `${l.top}px`;
+      }}
+      onPointerUp={(ev) => soltar(ev.currentTarget, ev.pointerId)}
+      onPointerCancel={(ev) => soltar(ev.currentTarget, ev.pointerId)}
       initial={{ opacity: 0, x: 16, filter: "blur(6px)" }}
-      animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+      animate={{ opacity: 1, x: 0, filter: "blur(0px)", scale: arrastando ? 1.02 : 1 }}
       transition={{ type: "spring", stiffness: 260, damping: 30 }}
       style={{
         position: "fixed",
-        left: pos.left,
-        top: pos.top,
+        left: lugar.left,
+        top: lugar.top,
         width: pos.width,
         height: pos.height,
       }}
-      className="group z-45 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-neutral-950/85 text-left text-white shadow-2xl backdrop-blur-md focus-visible:outline-2 focus-visible:outline-primary"
-      title="Abrir a ata"
+      className={`group z-45 flex touch-none select-none flex-col overflow-hidden rounded-xl border bg-neutral-950/85 text-left text-white backdrop-blur-md focus-visible:outline-2 focus-visible:outline-primary ${
+        arrastando
+          ? "cursor-grabbing border-primary/40 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.7)]"
+          : "cursor-grab border-white/10 shadow-2xl"
+      }`}
+      title="Clique para abrir a ata · arraste para mudar de lugar"
       aria-label={`${rotulo}. Abrir a ata.`}
     >
       <span className="flex w-full shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2 text-[11px] font-semibold">
         <PontoAoVivo aceso={s.aoVivo} />
         <span className="min-w-0 flex-1 truncate">{rotulo}</span>
+        <GripHorizontal
+          className={`h-3.5 w-3.5 shrink-0 transition ${
+            arrastando ? "opacity-100" : "opacity-40 group-hover:opacity-80"
+          }`}
+          aria-hidden="true"
+        />
         <Maximize2 className="h-3 w-3 shrink-0 opacity-50 transition group-hover:opacity-100" />
       </span>
 
