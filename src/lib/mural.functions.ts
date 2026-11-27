@@ -47,8 +47,22 @@ export type FotoDoPost = {
   tamanho: number;
   url: string;
 };
-export type ComentarioDoMural = { id: string; autorId: string; texto: string; em: string };
 export type ReacaoDoMural = { userId: string; emoji: string };
+export type ComentarioDoMural = {
+  id: string;
+  autorId: string;
+  texto: string;
+  em: string;
+  /**
+   * O comentário que este responde (27/11/2026); null = direto no post. Só um
+   * nível: a resposta de uma resposta fica pendurada na mesma raiz.
+   */
+  respostaDe: string | null;
+  /** Uma reação por pessoa, como no post (27/11/2026). */
+  reacoes: ReacaoDoMural[];
+  /** Na raiz: quantas respostas existem ao todo (o feed só traz as 2 últimas). */
+  totalRespostas: number;
+};
 
 /**
  * O tipo do post (fases 2 e 3, 14/10/2026). "comunicado" anda junto com a
@@ -273,6 +287,44 @@ type LinhaPost = {
   enquete_fechada_em: Date | null;
 };
 
+/** Um comentário como sai do banco (27/11/2026: com a resposta e, no feed, a contagem). */
+type LinhaComentario = {
+  id: string;
+  autor_id: number;
+  texto: string;
+  criado_em: Date;
+  resposta_de: string | null;
+  n_resp?: number;
+};
+type LinhaReacaoDeComentario = { comentario_id: string; pessoa_id: number; emoji: string };
+
+/** As reações de comentário agrupadas pelo comentário (chave em maiúsculas). */
+function reacoesPorComentario(linhas: LinhaReacaoDeComentario[]): Map<string, ReacaoDoMural[]> {
+  const m = new Map<string, ReacaoDoMural[]>();
+  for (const r of linhas) {
+    const k = String(r.comentario_id).toUpperCase();
+    const lista = m.get(k) ?? [];
+    lista.push({ userId: String(r.pessoa_id), emoji: r.emoji });
+    m.set(k, lista);
+  }
+  return m;
+}
+
+function paraComentario(
+  c: LinhaComentario,
+  reacoes: Map<string, ReacaoDoMural[]>,
+): ComentarioDoMural {
+  return {
+    id: c.id,
+    autorId: String(c.autor_id),
+    texto: c.texto,
+    em: c.criado_em.toISOString(),
+    respostaDe: c.resposta_de ?? null,
+    reacoes: reacoes.get(String(c.id).toUpperCase()) ?? [],
+    totalRespostas: Number(c.n_resp ?? 0),
+  };
+}
+
 /**
  * Uma página do feed, numa ida só ao banco. A tabela `@pg` guarda os ids da
  * página (21: o 21º só diz se há próxima); o resto é buscado por ela, cada
@@ -345,12 +397,30 @@ async function buscarPagina(cursor: { em: Date; id: string } | null, filtro: Fil
        FROM @pg pg JOIN gestor.mural_reacoes r ON r.post_id = pg.id
       ORDER BY r.em;
 
-     SELECT pg.id AS post_id, c.id, c.autor_id, c.texto, c.criado_em
+     /* Comentários (27/11/2026, com resposta): os 2 últimos direto no post,
+        cada um com quantas respostas tem, e as 2 últimas respostas de cada. */
+     DECLARE @cm TABLE (post_id UNIQUEIDENTIFIER NOT NULL, id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+                        autor_id INT NOT NULL, texto NVARCHAR(1000) NOT NULL,
+                        criado_em DATETIMEOFFSET(3) NOT NULL, resposta_de UNIQUEIDENTIFIER NULL,
+                        n_resp INT NOT NULL);
+     INSERT INTO @cm (post_id, id, autor_id, texto, criado_em, resposta_de, n_resp)
+     SELECT pg.id, c.id, c.autor_id, c.texto, c.criado_em, NULL,
+            (SELECT COUNT(*) FROM gestor.mural_comentarios r
+              WHERE r.resposta_de = c.id AND r.resposta_de IS NOT NULL AND r.excluido_em IS NULL)
        FROM @pg pg
       CROSS APPLY (SELECT TOP 2 mc.id, mc.autor_id, mc.texto, mc.criado_em
                      FROM gestor.mural_comentarios mc
-                    WHERE mc.post_id = pg.id AND mc.excluido_em IS NULL
+                    WHERE mc.post_id = pg.id AND mc.excluido_em IS NULL AND mc.resposta_de IS NULL
                     ORDER BY mc.criado_em DESC) c;
+     INSERT INTO @cm (post_id, id, autor_id, texto, criado_em, resposta_de, n_resp)
+     SELECT raiz.post_id, r.id, r.autor_id, r.texto, r.criado_em, raiz.id, 0
+       FROM (SELECT post_id, id FROM @cm WHERE n_resp > 0) raiz
+      CROSS APPLY (SELECT TOP 2 mr.id, mr.autor_id, mr.texto, mr.criado_em
+                     FROM gestor.mural_comentarios mr
+                    WHERE mr.resposta_de = raiz.id AND mr.resposta_de IS NOT NULL
+                      AND mr.excluido_em IS NULL
+                    ORDER BY mr.criado_em DESC) r;
+     SELECT post_id, id, autor_id, texto, criado_em, resposta_de, n_resp FROM @cm;
 
      SELECT l.post_id, l.pessoa_id
        FROM @pg pg
@@ -368,7 +438,11 @@ async function buscarPagina(cursor: { em: Date; id: string } | null, filtro: Fil
 
      SELECT e.post_id, e.pessoa_id
        FROM @pg pg JOIN gestor.mural_evento_presencas e ON e.post_id = pg.id
-      ORDER BY e.em;`,
+      ORDER BY e.em;
+
+     SELECT r.comentario_id, r.pessoa_id, r.emoji
+       FROM @cm c JOIN gestor.mural_comentario_reacoes r ON r.comentario_id = c.id
+      ORDER BY r.em;`,
   );
   const sets = r.recordsets as unknown as Record<string, unknown>[][];
   const linhas = (sets[0] ?? []) as unknown as LinhaPost[];
@@ -408,25 +482,18 @@ async function buscarPagina(cursor: { em: Date; id: string } | null, filtro: Fil
     userId: String(x.pessoa_id),
     emoji: x.emoji,
   }));
+  const reacoesDosComentarios = reacoesPorComentario(
+    (sets[8] ?? []) as unknown as LinhaReacaoDeComentario[],
+  );
   const comentarios = new Map<string, ComentarioDoMural[]>();
-  for (const c of (sets[3] ?? []) as {
-    post_id: string;
-    id: string;
-    autor_id: number;
-    texto: string;
-    criado_em: Date;
-  }[]) {
+  for (const c of (sets[3] ?? []) as unknown as (LinhaComentario & { post_id: string })[]) {
     const k = chave(c.post_id);
     const lista = comentarios.get(k) ?? [];
-    // Vieram do mais novo para o mais velho; na tela a conversa lê de cima para baixo.
-    lista.unshift({
-      id: c.id,
-      autorId: String(c.autor_id),
-      texto: c.texto,
-      em: c.criado_em.toISOString(),
-    });
+    lista.push(paraComentario(c, reacoesDosComentarios));
     comentarios.set(k, lista);
   }
+  // Na tela a conversa lê de cima para baixo: do mais velho para o mais novo.
+  for (const lista of comentarios.values()) lista.sort((a, b) => a.em.localeCompare(b.em));
   const leitores = porPost(4, (l: { post_id: string; pessoa_id: number }) => String(l.pessoa_id));
   const homenageados = porPost(5, (l: { post_id: string; pessoa_id: number }) =>
     String(l.pessoa_id),
@@ -589,7 +656,11 @@ export const feedDoMural = createServerFn({ method: "POST" })
     ),
   );
 
-/** Todos os comentários de um post ("ver mais"), em ordem cronológica. */
+/**
+ * Todos os comentários de um post ("ver mais"), em ordem cronológica — as
+ * respostas vêm na mesma lista (a tela pendura cada uma na sua raiz) e cada
+ * comentário com as suas reações (27/11/2026).
+ */
 export const comentariosDoPost = createServerFn({ method: "POST" })
   .validator(semIdentidade((e: { postId: string }) => ({ postId: exigirGuid(e?.postId, "Post") })))
   .handler(
@@ -602,23 +673,35 @@ export const comentariosDoPost = createServerFn({ method: "POST" })
           .request()
           .input("p", sql.UniqueIdentifier, d.postId)
           .query(
-            `SELECT TOP 200 c.id, c.autor_id, c.texto, c.criado_em
+            `SET NOCOUNT ON;
+             DECLARE @cm TABLE (id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY, autor_id INT NOT NULL,
+                                texto NVARCHAR(1000) NOT NULL, criado_em DATETIMEOFFSET(3) NOT NULL,
+                                resposta_de UNIQUEIDENTIFIER NULL);
+             INSERT INTO @cm (id, autor_id, texto, criado_em, resposta_de)
+             SELECT TOP 300 c.id, c.autor_id, c.texto, c.criado_em, c.resposta_de
                FROM gestor.mural_comentarios c
               WHERE c.post_id = @p AND c.excluido_em IS NULL
-              ORDER BY c.criado_em DESC`,
+              ORDER BY c.criado_em DESC;
+             SELECT id, autor_id, texto, criado_em, resposta_de FROM @cm ORDER BY criado_em;
+             SELECT r.comentario_id, r.pessoa_id, r.emoji
+               FROM @cm c JOIN gestor.mural_comentario_reacoes r ON r.comentario_id = c.id
+              ORDER BY r.em;`,
           ),
       );
+      const sets = r.recordsets as unknown as unknown[][];
+      const reacoes = reacoesPorComentario((sets[1] ?? []) as LinhaReacaoDeComentario[]);
+      const lista = ((sets[0] ?? []) as LinhaComentario[]).map((c) => paraComentario(c, reacoes));
+      // Aqui a lista é completa: a contagem de respostas sai dela mesma.
+      const respostas = new Map<string, number>();
+      for (const c of lista)
+        if (c.respostaDe) {
+          const k = c.respostaDe.toUpperCase();
+          respostas.set(k, (respostas.get(k) ?? 0) + 1);
+        }
       return {
-        comentarios: (
-          r.recordset as { id: string; autor_id: number; texto: string; criado_em: Date }[]
-        )
-          .map((c) => ({
-            id: c.id,
-            autorId: String(c.autor_id),
-            texto: c.texto,
-            em: c.criado_em.toISOString(),
-          }))
-          .reverse(),
+        comentarios: lista.map((c) =>
+          c.respostaDe ? c : { ...c, totalRespostas: respostas.get(c.id.toUpperCase()) ?? 0 },
+        ),
       };
     }),
   );
@@ -1028,24 +1111,32 @@ export const reagirNoPost = createServerFn({ method: "POST" })
 /**
  * Comenta num post. Quem foi marcado com @ no comentário recebe um aviso
  * 'mural' (fase 2, 14/10/2026) — e só ele: comentar não avisa o autor.
+ *
+ * Com `respostaDe` (27/11/2026) é uma resposta a um comentário do mesmo post.
+ * Só um nível: responder a uma resposta grava a raiz dela. A tela já põe o
+ * "@Nome" de quem está sendo respondido no texto, e é essa menção que avisa —
+ * a regra continua sendo "só avisa quem foi marcado".
  */
 export const comentarNoPost = createServerFn({ method: "POST" })
   .validator(
-    semIdentidade((e: { postId: string; texto: string; mencoes?: string[] }) => {
-      const texto = limparTexto(e?.texto, MAX_COMENTARIO);
-      if (!texto) throw new Error("Comentário vazio");
-      return {
-        postId: exigirGuid(e?.postId, "Post"),
-        texto,
-        mencoes: idsDePessoas(e?.mencoes, MAX_MENCOES),
-      };
-    }),
+    semIdentidade(
+      (e: { postId: string; texto: string; mencoes?: string[]; respostaDe?: string | null }) => {
+        const texto = limparTexto(e?.texto, MAX_COMENTARIO);
+        if (!texto) throw new Error("Comentário vazio");
+        return {
+          postId: exigirGuid(e?.postId, "Post"),
+          texto,
+          mencoes: idsDePessoas(e?.mencoes, MAX_MENCOES),
+          respostaDe: e?.respostaDe ? exigirGuid(e.respostaDe, "Comentário") : null,
+        };
+      },
+    ),
   )
   .handler(
     comSessao(
       async (
         eu,
-        d: { postId: string; texto: string; mencoes: number[] },
+        d: { postId: string; texto: string; mencoes: number[]; respostaDe: string | null },
       ): Promise<ComentarioDoMural> => {
         const { esquecerFeed, idsAtivos, noMural } = await import("@/lib/mural.server");
         const ativos = new Set(d.mencoes.length ? await idsAtivos() : []);
@@ -1058,34 +1149,113 @@ export const comentarNoPost = createServerFn({ method: "POST" })
             .input("p", sql.UniqueIdentifier, d.postId)
             .input("eu", sql.Int, eu)
             .input("texto", sql.NVarChar(MAX_COMENTARIO), d.texto)
+            .input("resp", sql.UniqueIdentifier, d.respostaDe)
             .input("marcados", sql.NVarChar(sql.MAX), JSON.stringify(marcados))
             .input("trecho", sql.NVarChar(400), d.texto.slice(0, 400))
+            .input(
+              "titulo",
+              sql.NVarChar(120),
+              d.respostaDe
+                ? "te marcou numa resposta do mural"
+                : "te marcou num comentário do mural",
+            )
             .query(
               `SET NOCOUNT ON;
+               /* A raiz da conversa: o próprio comentário respondido, ou a raiz
+                  dele se ele já for uma resposta. Tem que ser do mesmo post e
+                  não pode ter sido excluído. */
+               DECLARE @raiz UNIQUEIDENTIFIER = NULL;
+               IF @resp IS NOT NULL
+                 SELECT @raiz = COALESCE(c.resposta_de, c.id)
+                   FROM gestor.mural_comentarios c
+                  WHERE c.id = @resp AND c.post_id = @p AND c.excluido_em IS NULL;
                DECLARE @novo TABLE (id UNIQUEIDENTIFIER, criado_em DATETIMEOFFSET(3));
-               INSERT INTO gestor.mural_comentarios (post_id, autor_id, texto)
+               INSERT INTO gestor.mural_comentarios (post_id, autor_id, texto, resposta_de)
                OUTPUT inserted.id, inserted.criado_em INTO @novo
-               SELECT @p, @eu, @texto
+               SELECT @p, @eu, @texto, @raiz
                 WHERE EXISTS (SELECT 1 FROM gestor.mural_posts WHERE id = @p AND excluido_em IS NULL)
+                  AND (@resp IS NULL OR @raiz IS NOT NULL)
                   -- Freio: 20 comentários por minuto por pessoa.
                   AND (SELECT COUNT(*) FROM gestor.mural_comentarios
                         WHERE autor_id = @eu AND criado_em > DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())) < 20;
                IF EXISTS (SELECT 1 FROM @novo)
                  INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao)
-                 SELECT CAST(j.value AS INT), @eu, 'mural', N'te marcou num comentário do mural', @trecho
+                 SELECT CAST(j.value AS INT), @eu, 'mural', @titulo, @trecho
                    FROM OPENJSON(@marcados) j;
-               SELECT id, criado_em FROM @novo;`,
+               SELECT id, criado_em, @raiz AS resposta_de FROM @novo;`,
             ),
         );
-        const l = r.recordset[0] as { id: string; criado_em: Date } | undefined;
-        if (!l) throw new Error("Não foi possível comentar agora.");
+        const l = r.recordset[0] as
+          { id: string; criado_em: Date; resposta_de: string | null } | undefined;
+        if (!l)
+          throw new Error(
+            d.respostaDe
+              ? "Não foi possível responder: o comentário pode ter sido excluído."
+              : "Não foi possível comentar agora.",
+          );
         await esquecerFeed();
-        return { id: l.id, autorId: String(eu), texto: d.texto, em: l.criado_em.toISOString() };
+        return {
+          id: l.id,
+          autorId: String(eu),
+          texto: d.texto,
+          em: l.criado_em.toISOString(),
+          respostaDe: l.resposta_de ?? null,
+          reacoes: [],
+          totalRespostas: 0,
+        };
       },
     ),
   );
 
-/** Exclui um comentário: quem escreveu ou a gerência. */
+/**
+ * Reage num comentário (27/11/2026), igual ao post: uma reação por pessoa, o
+ * mesmo emoji tira (a tela manda `null`), outro troca. Não avisa ninguém.
+ */
+export const reagirNoComentario = createServerFn({ method: "POST" })
+  .validator(
+    semIdentidade((e: { comentarioId: string; emoji: string | null }) => {
+      const comentarioId = exigirGuid(e?.comentarioId, "Comentário");
+      const emoji = e?.emoji === null ? null : emojiValido(e?.emoji);
+      if (e?.emoji !== null && !emoji) throw new Error("Reação inválida");
+      return { comentarioId, emoji };
+    }),
+  )
+  .handler(
+    comSessao(async (eu, d: { comentarioId: string; emoji: string | null }) => {
+      const { esquecerFeed, noMural } = await import("@/lib/mural.server");
+      const { getPool, sql } = await import("@/integrations/db.server");
+      const pool = await getPool();
+      const req = pool
+        .request()
+        .input("c", sql.UniqueIdentifier, d.comentarioId)
+        .input("eu", sql.Int, eu)
+        .input("emoji", sql.NVarChar(16), d.emoji);
+      await noMural(() =>
+        d.emoji
+          ? req.query(
+              `IF EXISTS (SELECT 1 FROM gestor.mural_comentarios WHERE id = @c AND excluido_em IS NULL)
+               BEGIN
+                 UPDATE gestor.mural_comentario_reacoes SET emoji = @emoji, em = SYSDATETIMEOFFSET()
+                  WHERE comentario_id = @c AND pessoa_id = @eu;
+                 IF @@ROWCOUNT = 0
+                   INSERT INTO gestor.mural_comentario_reacoes (comentario_id, pessoa_id, emoji)
+                   VALUES (@c, @eu, @emoji);
+               END`,
+            )
+          : req.query(
+              `DELETE FROM gestor.mural_comentario_reacoes WHERE comentario_id = @c AND pessoa_id = @eu`,
+            ),
+      );
+      await esquecerFeed();
+      return { ok: true };
+    }),
+  );
+
+/**
+ * Exclui um comentário: quem escreveu ou a gerência. Se ele for a raiz de uma
+ * conversa, as respostas saem junto (27/11/2026) — `removidos` diz quantos
+ * comentários saíram ao todo, para a contagem da tela.
+ */
 export const excluirComentarioDoMural = createServerFn({ method: "POST" })
   .validator(semIdentidade((e: { id: string }) => ({ id: exigirGuid(e?.id, "Comentário") })))
   .handler(
@@ -1101,13 +1271,26 @@ export const excluirComentarioDoMural = createServerFn({ method: "POST" })
           .input("eu", sql.Int, eu)
           .input("gerente", sql.Bit, gerente ? 1 : 0)
           .query(
-            `UPDATE gestor.mural_comentarios SET excluido_em = SYSDATETIMEOFFSET()
-              WHERE id = @id AND excluido_em IS NULL AND (autor_id = @eu OR @gerente = 1)`,
+            `SET NOCOUNT ON;
+             DECLARE @n INT = 0;
+             UPDATE gestor.mural_comentarios SET excluido_em = SYSDATETIMEOFFSET()
+              WHERE id = @id AND excluido_em IS NULL AND (autor_id = @eu OR @gerente = 1);
+             SET @n = @@ROWCOUNT;
+             IF @n > 0
+             BEGIN
+               UPDATE gestor.mural_comentarios SET excluido_em = SYSDATETIMEOFFSET()
+                WHERE resposta_de = @id AND resposta_de IS NOT NULL AND excluido_em IS NULL;
+               SET @n = @n + @@ROWCOUNT;
+             END
+             SELECT @n AS removidos;`,
           ),
       );
-      if ((r.rowsAffected[0] ?? 0) === 0) throw new Error("Você não pode excluir este comentário.");
+      const removidos = Number(
+        (r.recordset[0] as { removidos: number } | undefined)?.removidos ?? 0,
+      );
+      if (removidos === 0) throw new Error("Você não pode excluir este comentário.");
       await esquecerFeed();
-      return { ok: true };
+      return { ok: true, removidos };
     }),
   );
 

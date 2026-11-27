@@ -14,7 +14,6 @@ import {
   Pencil,
   Pin,
   PinOff,
-  Send,
   Trash2,
   TreePine,
   Vote,
@@ -38,7 +37,7 @@ const AvatarComemorando = lazy(() => import("@/components/mural/avatar-comemoran
 const GrupoAbracado = lazy(() =>
   import("@/components/mural/avatar-comemorando").then((m) => ({ default: m.GrupoAbracado })),
 );
-import { mencionadosNoTexto, useMencoes } from "@/components/mural/mencoes";
+import { ComentariosDoPost } from "@/components/mural/comentarios-do-post";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
 import { openAttachment } from "@/lib/attachments";
@@ -55,7 +54,6 @@ import {
 } from "@/lib/mural-cliente";
 import { sectors, type Attachment } from "@/lib/fluxo-types";
 import type {
-  ComentarioDoMural,
   FotoDoPost,
   PostDoMural,
   SeloDaConquista,
@@ -330,21 +328,8 @@ export function CartaoDoPost({
   const [fotosNovas, setFotosNovas] = useState<FotoNova[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [menu, setMenu] = useState(false);
-  const [comentarios, setComentarios] = useState<ComentarioDoMural[] | null>(null);
-  const [carregandoComentarios, setCarregandoComentarios] = useState(false);
-  const [novoComentario, setNovoComentario] = useState("");
-  const [comentando, setComentando] = useState(false);
   const [verLeituras, setVerLeituras] = useState(false);
   const [marcandoCiente, setMarcandoCiente] = useState(false);
-  const mencoes = useMencoes<HTMLInputElement>({
-    texto: novoComentario,
-    setTexto: setNovoComentario,
-    max: 1000,
-    paraCima: true,
-  });
-
-  const listaDeComentarios = comentarios ?? post.comentarios;
-  const faltamComentarios = post.totalComentarios - listaDeComentarios.length;
 
   const nomeDe = (id: string) => users.find((u) => u.id === id)?.name ?? "alguém";
   const homenageadosCurto = post.homenageados.map((id) => nomeCurto(nomeDe(id)));
@@ -511,63 +496,6 @@ export function CartaoDoPost({
       aoRecarregar();
     } catch (e) {
       toast.error(erroAmigavel(e, "Não foi possível fixar."));
-    }
-  };
-
-  const verMaisComentarios = async () => {
-    setCarregandoComentarios(true);
-    try {
-      const { comentariosDoPost } = await import("@/lib/mural.functions");
-      const r = await comentariosDoPost({ data: { postId: post.id } });
-      setComentarios(r.comentarios);
-    } catch (e) {
-      toast.error(erroAmigavel(e, "Não foi possível carregar os comentários."));
-    } finally {
-      setCarregandoComentarios(false);
-    }
-  };
-
-  const comentar = async () => {
-    const texto = novoComentario.trim();
-    if (!texto || comentando) return;
-    setComentando(true);
-    try {
-      const { comentarNoPost } = await import("@/lib/mural.functions");
-      const c = await comentarNoPost({
-        data: { postId: post.id, texto, mencoes: mencionadosNoTexto(texto, users) },
-      });
-      setNovoComentario("");
-      if (comentarios) setComentarios([...comentarios, c]);
-      aoMudar({
-        ...post,
-        comentarios: [...post.comentarios, c].slice(-2),
-        totalComentarios: post.totalComentarios + 1,
-      });
-    } catch (e) {
-      toast.error(erroAmigavel(e, "Não foi possível comentar."));
-    } finally {
-      setComentando(false);
-    }
-  };
-
-  const excluirComentario = async (c: ComentarioDoMural) => {
-    const ok = await confirmar({
-      titulo: "Excluir este comentário?",
-      confirmar: "Excluir",
-      perigo: true,
-    });
-    if (!ok) return;
-    try {
-      const { excluirComentarioDoMural } = await import("@/lib/mural.functions");
-      await excluirComentarioDoMural({ data: { id: c.id } });
-      if (comentarios) setComentarios(comentarios.filter((x) => x.id !== c.id));
-      aoMudar({
-        ...post,
-        comentarios: post.comentarios.filter((x) => x.id !== c.id),
-        totalComentarios: Math.max(0, post.totalComentarios - 1),
-      });
-    } catch (e) {
-      toast.error(erroAmigavel(e, "Não foi possível excluir."));
     }
   };
 
@@ -904,106 +832,8 @@ export function CartaoDoPost({
           )}
         </div>
 
-        {/* Comentários */}
-        {faltamComentarios > 0 && (
-          <button
-            type="button"
-            onClick={() => void verMaisComentarios()}
-            disabled={carregandoComentarios}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-          >
-            {carregandoComentarios && <Loader2 className="h-3 w-3 animate-spin" />}
-            Ver mais {faltamComentarios} {faltamComentarios === 1 ? "comentário" : "comentários"}
-          </button>
-        )}
-        {listaDeComentarios.length > 0 && (
-          <ul className="mt-2 space-y-2">
-            {listaDeComentarios.map((c) => {
-              const u = users.find((x) => x.id === c.autorId);
-              const nome = u?.name ?? "Alguém";
-              const podeExcluir = c.autorId === currentUser.id || souGerente;
-              return (
-                <li key={c.id} className="group flex gap-2">
-                  <UserAvatar
-                    nome={nome}
-                    iniciais={u?.avatar ?? iniciaisDe(nome)}
-                    className="h-7 w-7 text-[9px]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="inline-block max-w-full rounded-2xl bg-secondary/70 px-3 py-1.5">
-                      <div className="text-xs font-semibold">{nome}</div>
-                      <TextoDoPost texto={c.texto} users={users} className="text-sm" />
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 pl-3 text-[10px] text-muted-foreground">
-                      {formatRelative(c.em)}
-                      {podeExcluir && (
-                        <button
-                          type="button"
-                          onClick={() => void excluirComentario(c)}
-                          className="opacity-0 transition hover:text-destructive group-hover:opacity-100 focus:opacity-100"
-                        >
-                          Excluir
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        <div className="mt-3 flex items-center gap-2">
-          <UserAvatar
-            nome={currentUser.name}
-            iniciais={currentUser.avatar}
-            className="h-7 w-7 text-[9px]"
-          />
-          <div className="relative flex min-w-0 flex-1 items-center rounded-full border border-border bg-background pr-1 focus-within:ring-2 focus-within:ring-ring">
-            <input
-              ref={mencoes.campoRef}
-              value={novoComentario}
-              onChange={(e) => {
-                setNovoComentario(e.target.value.slice(0, 1000));
-                mencoes.aoMudar(e.target.value, e.target.selectionStart);
-              }}
-              onKeyDown={(e) => {
-                if (mencoes.aoTeclar(e)) return;
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void comentar();
-                }
-              }}
-              onBlur={mencoes.fechar}
-              placeholder="Escreva um comentário… (@ para marcar alguém)"
-              className="min-w-0 flex-1 bg-transparent px-3 py-1.5 text-sm focus:outline-none"
-            />
-            {mencoes.lista}
-            {novoComentario && (
-              <button
-                type="button"
-                onClick={() => setNovoComentario("")}
-                aria-label="Limpar"
-                className="rounded-full p-1 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => void comentar()}
-              disabled={!novoComentario.trim() || comentando}
-              aria-label="Enviar comentário"
-              className="rounded-full p-1.5 text-primary transition hover:bg-primary/10 disabled:opacity-40"
-            >
-              {comentando ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </button>
-          </div>
-        </div>
+        {/* Comentários, com Reagir e Responder (27/11/2026) */}
+        <ComentariosDoPost post={post} souGerente={souGerente} aoMudar={aoMudar} />
       </div>
 
       {verLeituras && (

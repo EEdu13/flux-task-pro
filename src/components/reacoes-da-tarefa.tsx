@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { Plus, SmilePlus } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -100,7 +100,6 @@ export function BarraDeReacoes({
         atual={minha}
         aoEscolher={reagir}
         compacto={compacto}
-        pessoaId={currentUser.id}
         pulo={pulo}
       />
       <AnimatePresence initial={false}>
@@ -129,7 +128,7 @@ export function BarraDeReacoes({
   );
 }
 
-type Item = { userId: string; emoji: string; user?: User };
+export type Item = { userId: string; emoji: string; user?: User };
 
 /** O resumo (emojis + fotinhas + nomes) que abre a lista de quem reagiu. */
 function QuemReagiu({
@@ -198,41 +197,71 @@ function QuemReagiu({
         className="z-[460] w-64 rounded-xl p-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-xs font-semibold">
-            {lista.length} {lista.length === 1 ? "reação" : "reações"}
-          </span>
-          <span className="flex gap-0.5 text-base">{topo.join("")}</span>
-        </div>
-        <ul className="max-h-64 overflow-y-auto p-1">
-          {lista.map((r) => (
-            <li key={r.userId} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/60">
-              <UserAvatar
-                nome={r.user?.name ?? ""}
-                iniciais={r.user?.avatar ?? ""}
-                className="h-7 w-7 text-[10px]"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-medium">{nome(r) === "Você" ? "Você" : (r.user?.name ?? "Alguém")}</div>
-                {r.user?.jobTitle && nome(r) !== "Você" && (
-                  <div className="truncate text-[10px] text-muted-foreground">{r.user.jobTitle}</div>
-                )}
-              </div>
-              <span className="text-xl">{r.emoji}</span>
-            </li>
-          ))}
-        </ul>
-        {minha && (
-          <button
-            type="button"
-            onClick={aoTirarMinha}
-            className="w-full border-t border-border px-3 py-2 text-left text-[11px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-          >
-            Tirar a minha reação
-          </button>
-        )}
+        <ListaDeQuemReagiu
+          lista={lista}
+          topo={topo}
+          ehEu={(r) => nome(r) === "Você"}
+          minha={minha}
+          aoTirarMinha={aoTirarMinha}
+        />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * O miolo da lista "quem reagiu": o total, os emojis e cada pessoa com o seu.
+ * Separado (27/11/2026) para o comentário do Mural usar a mesma lista.
+ */
+export function ListaDeQuemReagiu({
+  lista,
+  topo,
+  ehEu,
+  minha,
+  aoTirarMinha,
+}: {
+  lista: Item[];
+  topo: string[];
+  ehEu: (r: Item) => boolean;
+  minha: string | null;
+  aoTirarMinha: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <span className="text-xs font-semibold">
+          {lista.length} {lista.length === 1 ? "reação" : "reações"}
+        </span>
+        <span className="flex gap-0.5 text-base">{topo.join("")}</span>
+      </div>
+      <ul className="max-h-64 overflow-y-auto p-1">
+        {lista.map((r) => (
+          <li key={r.userId} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-secondary/60">
+            <UserAvatar
+              nome={r.user?.name ?? ""}
+              iniciais={r.user?.avatar ?? ""}
+              className="h-7 w-7 text-[10px]"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium">{ehEu(r) ? "Você" : (r.user?.name ?? "Alguém")}</div>
+              {r.user?.jobTitle && !ehEu(r) && (
+                <div className="truncate text-[10px] text-muted-foreground">{r.user.jobTitle}</div>
+              )}
+            </div>
+            <span className="text-xl">{r.emoji}</span>
+          </li>
+        ))}
+      </ul>
+      {minha && (
+        <button
+          type="button"
+          onClick={aoTirarMinha}
+          className="w-full border-t border-border px-3 py-2 text-left text-[11px] text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+        >
+          Tirar a minha reação
+        </button>
+      )}
+    </>
   );
 }
 
@@ -240,15 +269,60 @@ function SeletorDeReacao({
   atual,
   aoEscolher,
   compacto,
-  pessoaId,
   pulo,
 }: {
   atual: string | null;
   aoEscolher: (emoji: string) => void;
   compacto: boolean;
-  pessoaId: string;
   pulo: ReturnType<typeof useAnimationControls>;
 }) {
+  return (
+    <EscolherEmoji atual={atual} aoEscolher={aoEscolher}>
+      <motion.button
+        type="button"
+        animate={pulo}
+        whileHover={{ rotate: [0, -8, 8, -4, 0], transition: { duration: 0.45 } }}
+        whileTap={{ scale: 0.88 }}
+        title={atual ? "Trocar a reação" : "Reagir"}
+        aria-label="Reagir à tarefa"
+        className={`inline-flex shrink-0 items-center gap-1 rounded-full border font-semibold transition-colors ${
+          compacto ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs"
+        } ${
+          atual
+            ? "border-primary/50 bg-primary/10 text-primary"
+            : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-primary"
+        }`}
+      >
+        {atual ? (
+          <span className={compacto ? "text-sm leading-none" : "text-base leading-none"}>{atual}</span>
+        ) : (
+          <SmilePlus className={compacto ? "h-3.5 w-3.5" : "h-4 w-4"} />
+        )}
+        {atual ? "Reagiu" : "Reagir"}
+      </motion.button>
+    </EscolherEmoji>
+  );
+}
+
+/**
+ * O balão de escolher emoji (os mais usados por quem está reagindo + "todos"),
+ * aberto por qualquer botão passado como filho. Separado em 27/11/2026: o
+ * "Reagir" dos comentários do Mural abre o mesmo balão da tarefa e do post.
+ */
+export function EscolherEmoji({
+  atual,
+  aoEscolher,
+  children,
+  align = "start",
+}: {
+  atual: string | null;
+  aoEscolher: (emoji: string) => void;
+  /** O botão que abre o balão (vai como `asChild`: precisa repassar a ref). */
+  children: ReactNode;
+  align?: "start" | "center" | "end";
+}) {
+  const { currentUser } = useFluxo();
+  const pessoaId = currentUser.id;
   const [aberto, setAberto] = useState(false);
   const [todos, setTodos] = useState(false);
   // Relidos a cada abertura: o que foi usado agora há pouco já vem na frente.
@@ -268,37 +342,17 @@ function SeletorDeReacao({
         if (!v) setTodos(false);
       }}
     >
-      <PopoverTrigger asChild>
-        <motion.button
-          type="button"
-          animate={pulo}
-          whileHover={{ rotate: [0, -8, 8, -4, 0], transition: { duration: 0.45 } }}
-          whileTap={{ scale: 0.88 }}
-          title={atual ? "Trocar a reação" : "Reagir"}
-          aria-label="Reagir à tarefa"
-          className={`inline-flex shrink-0 items-center gap-1 rounded-full border font-semibold transition-colors ${
-            compacto ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs"
-          } ${
-            atual
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-primary"
-          }`}
-        >
-          {atual ? (
-            <span className={compacto ? "text-sm leading-none" : "text-base leading-none"}>{atual}</span>
-          ) : (
-            <SmilePlus className={compacto ? "h-3.5 w-3.5" : "h-4 w-4"} />
-          )}
-          {atual ? "Reagiu" : "Reagir"}
-        </motion.button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
-        align="start"
+        align={align}
         side="top"
-        className="z-[460] w-auto max-w-[19rem] rounded-2xl p-1.5"
+        /* Largura pelo conteúdo (27/11/2026): com o teto fixo de 19rem a fileira
+           (8 emojis + o "+") passava do balão e o "+" ficava do lado de fora.
+           Numa tela estreita a fileira quebra em vez de vazar. */
+        className="z-[460] w-max max-w-[calc(100vw-1rem)] rounded-2xl p-1.5"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-wrap items-center justify-center gap-0.5">
           {rapidos.map((e, i) => (
             <motion.div
               key={e}
@@ -309,17 +363,41 @@ function SeletorDeReacao({
               <BotaoEmoji emoji={e} marcado={e === atual} aoClicar={() => escolher(e)} grande />
             </motion.div>
           ))}
-          <button
+          <span aria-hidden className="mx-1 h-6 w-px bg-border" />
+          <motion.button
             type="button"
             onClick={() => setTodos((v) => !v)}
-            title="Todos os emojis"
-            aria-label="Todos os emojis"
-            className={`grid h-9 w-9 place-items-center rounded-full transition ${
-              todos ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+            title={todos ? "Fechar a lista" : "Todos os emojis"}
+            aria-label={todos ? "Fechar a lista de emojis" : "Todos os emojis"}
+            aria-expanded={todos}
+            /* Entra por último, na mesma onda dos emojis; o atraso fica só na
+               entrada, para o passar do mouse responder na hora. */
+            initial={{ scale: 0.5, opacity: 0, y: 12 }}
+            animate={{
+              scale: 1,
+              opacity: 1,
+              y: 0,
+              transition: {
+                type: "spring",
+                stiffness: 520,
+                damping: 20,
+                delay: rapidos.length * 0.03,
+              },
+            }}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.9 }}
+            className={`grid h-9 w-9 place-items-center rounded-full border transition-colors ${
+              todos
+                ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                : "border-dashed border-muted-foreground/40 text-muted-foreground hover:border-solid hover:border-primary/60 hover:bg-primary/10 hover:text-primary"
             }`}
           >
-            <Plus className="h-4 w-4" />
-          </button>
+            {/* O "+" gira e vira "×" com a lista aberta. */}
+            <Plus
+              strokeWidth={2.5}
+              className={`h-4 w-4 transition-transform duration-200 ${todos ? "rotate-45" : ""}`}
+            />
+          </motion.button>
         </div>
         {todos && (
           <div className="mt-1.5 max-h-64 overflow-y-auto border-t border-border pt-1.5">
@@ -328,7 +406,7 @@ function SeletorDeReacao({
                 <div className="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   {c.nome}
                 </div>
-                <div className="grid grid-cols-8 gap-0.5">
+                <div className="grid grid-cols-8 justify-items-center gap-0.5">
                   {c.emojis.map((e) => (
                     <BotaoEmoji key={`${c.nome}${e}`} emoji={e} marcado={e === atual} aoClicar={() => escolher(e)} />
                   ))}
