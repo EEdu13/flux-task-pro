@@ -17,7 +17,7 @@ import {
 import { FluxoLayout } from "@/components/fluxo-layout";
 import { useFluxo } from "@/lib/fluxo-store";
 import { formatRelative } from "@/lib/use-theme";
-import { tituloDoAviso } from "@/lib/aviso";
+import { rumoDoAvisoDoMural, tituloDoAviso } from "@/lib/aviso";
 
 export const Route = createFileRoute("/inbox")({
   head: () => ({
@@ -136,8 +136,9 @@ function InboxPage() {
                         to: "/projetos",
                         search: n.projectId ? { projeto: n.projectId } : {},
                       });
-                    // Comunicado e marcação no Mural (14/10/2026).
-                    if (n.type === "comunicado" || n.type === "mural") navigate({ to: "/mural" });
+                    // Comunicado e marcação no Mural (14/10/2026); desde 27/11/2026, direto no post.
+                    if (n.type === "comunicado" || n.type === "mural")
+                      navigate(rumoDoAvisoDoMural(n));
                   }}
                   className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-secondary/50 ${
                     n.read ? "opacity-70" : ""

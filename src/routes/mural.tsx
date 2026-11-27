@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CalendarDays,
@@ -54,7 +54,17 @@ import type {
  * guardada à parte no servidor —, e "Do campo" pode ser visto em galeria.
  */
 
+const GUID = /^[0-9a-f-]{36}$/i;
+
 export const Route = createFileRoute("/mural")({
+  /* O post (e o comentário) a mostrar ao chegar (27/11/2026): é para onde o
+     clique num aviso do Mural leva — ver `rumoDoAvisoDoMural`. */
+  validateSearch: (s: Record<string, unknown>): { post?: string; comentario?: string } => ({
+    ...(typeof s.post === "string" && GUID.test(s.post) ? { post: s.post.toUpperCase() } : {}),
+    ...(typeof s.comentario === "string" && GUID.test(s.comentario)
+      ? { comentario: s.comentario.toUpperCase() }
+      : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Mural · SGL - CONECTA" },
@@ -144,6 +154,17 @@ function MuralPage() {
   const [destaque, setDestaque] = useState<string | null>(null);
   /** Post a mostrar assim que a página do filtro novo chegar (ver `abrirPost`). */
   const [procurando, setProcurando] = useState<string | null>(null);
+  const procurandoRef = useRef<string | null>(null);
+  procurandoRef.current = procurando;
+  /** Veio de um aviso: se o post não está na tela, carrega mais páginas até achar. */
+  const insistirRef = useRef(false);
+  /** O comentário a destacar quando o post abrir (aviso de comentário ou reação nele). */
+  const [comentarioEmFoco, setComentarioEmFoco] = useState<{
+    post: string;
+    comentario: string;
+  } | null>(null);
+  const busca = Route.useSearch();
+  const navigate = useNavigate();
   const vivoRef = useRef(true);
   const filtroRef = useRef<FiltroDoMural>("tudo");
 
@@ -285,11 +306,26 @@ function MuralPage() {
    * Leva até um post. Se ele não está na tela (um evento do painel lateral,
    * por exemplo), troca para a ficha do tipo dele e procura quando chegar.
    */
-  const abrirPost = (id: string, tipo?: FiltroDoMural) => {
+  const abrirPost = (id: string, tipo?: FiltroDoMural, insistir = false) => {
+    insistirRef.current = insistir;
     if (galeria && filtro === "campo") setGaleria(false);
     if (rolarAte(id)) return;
-    // Não achou em alguns segundos (post antigo, além da primeira página): desiste.
-    window.setTimeout(() => setProcurando((p) => (p === id ? null : p)), 6000);
+    /* Não achou em alguns segundos (post antigo, além da primeira página):
+       desiste. Vindo de um aviso, espera mais — vai carregando páginas — e,
+       se mesmo assim não achar, diz que o post não está mais lá. */
+    window.setTimeout(
+      () => {
+        if (procurandoRef.current !== id) return;
+        setProcurando(null);
+        if (insistir) {
+          setComentarioEmFoco(null);
+          toast.info("Não encontrei esse post no mural.", {
+            description: "Ele pode ter sido excluído.",
+          });
+        }
+      },
+      insistir ? 20_000 : 6000,
+    );
     if (tipo && tipo !== filtroRef.current) {
       setProcurando(id);
       trocarFiltro(tipo);
@@ -298,13 +334,43 @@ function MuralPage() {
     // O cartão pode estar só esperando a lista sair da galeria.
     setProcurando(id);
   };
+  const carregarMaisRef = useRef(carregarMais);
+  carregarMaisRef.current = carregarMais;
+  /** Até quantas páginas a mais o aviso pode puxar procurando o post. */
+  const paginasProcuradasRef = useRef(0);
   useEffect(() => {
     if (!procurando) return;
     const t = window.setTimeout(() => {
-      if (rolarAte(procurando)) setProcurando(null);
+      if (rolarAte(procurando)) {
+        setProcurando(null);
+        return;
+      }
+      if (
+        insistirRef.current &&
+        estado.proximo &&
+        !carregandoMais &&
+        paginasProcuradasRef.current < 10
+      ) {
+        paginasProcuradasRef.current += 1;
+        void carregarMaisRef.current();
+      }
     }, 60);
     return () => window.clearTimeout(t);
-  }, [procurando, estado.posts, galeria, rolarAte]);
+  }, [procurando, estado.posts, estado.proximo, carregandoMais, galeria, rolarAte]);
+
+  /* Chegou de um aviso (27/11/2026): espera a primeira página e vai até o post
+     (e o comentário). Depois limpa o endereço, para recarregar a página não
+     pular de novo. */
+  useEffect(() => {
+    if (!busca.post || estado.ativo !== true) return;
+    const { post, comentario } = busca;
+    paginasProcuradasRef.current = 0;
+    setComentarioEmFoco(comentario ? { post, comentario } : null);
+    abrirPost(post, "tudo", true);
+    void navigate({ to: "/mural", search: {}, replace: true });
+    // abrirPost muda a cada desenho; o que importa é o pedido do endereço.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca.post, busca.comentario, estado.ativo]);
 
   const cartao = (p: PostDoMural) => (
     <CartaoDoPost
@@ -316,6 +382,8 @@ function MuralPage() {
       aoRemover={removerPost}
       aoRecarregar={() => void carregarInicio()}
       destacado={destaque === p.id}
+      comentarioEmFoco={comentarioEmFoco?.post === p.id ? comentarioEmFoco.comentario : null}
+      aoFocarComentario={() => setComentarioEmFoco(null)}
     />
   );
 

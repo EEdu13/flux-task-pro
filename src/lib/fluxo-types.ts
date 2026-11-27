@@ -290,6 +290,9 @@ export interface Notification {
   projectId?: string;
   /** Aviso da agenda travada: o compromisso que o clique abre no calendário. */
   compromissoId?: string;
+  /** Aviso do Mural (27/11/2026): o post, e o comentário, que o clique abre. */
+  muralPostId?: string;
+  muralComentarioId?: string;
 }
 
 export interface Meta {

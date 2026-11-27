@@ -53,6 +53,8 @@ const CHAVE_PESSOAS = "mural:pessoas";
 const CHAVE_ANIVERSARIOS = "mural:aniversarios";
 /** Os próximos eventos do painel lateral (fase 3, 14/10/2026). */
 export const CHAVE_EVENTOS = "mural:eventos";
+/** Os posts mais recentes, para o indicador de novidades do menu (27/11/2026). */
+export const CHAVE_RECENTES = "mural:recentes";
 
 /**
  * Os filtros do feed (fase 2/3, 14/10/2026). Cada um tem a primeira página
@@ -80,6 +82,7 @@ export async function esquecerFeed(): Promise<void> {
   const { esquecer } = await import("@/lib/cache-compartilhado.server");
   for (const f of FILTROS_DO_FEED) esquecer(chaveDoFeed(f));
   esquecer(CHAVE_EVENTOS);
+  esquecer(CHAVE_RECENTES);
 }
 
 /**

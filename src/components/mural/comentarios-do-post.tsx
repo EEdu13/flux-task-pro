@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { CornerDownRight, Loader2, MessageCircle, SendHorizontal, Smile, X } from "lucide-react";
 import { toast } from "sonner";
@@ -47,10 +47,19 @@ export function ComentariosDoPost({
   post,
   souGerente,
   aoMudar,
+  emFoco = null,
+  aoFocar,
 }: {
   post: PostDoMural;
   souGerente: boolean;
   aoMudar: (p: PostDoMural) => void;
+  /**
+   * O comentário a mostrar e destacar (27/11/2026: o clique num aviso de
+   * comentário ou de reação nele). Se ele não veio com o feed, a conversa
+   * inteira é buscada. `aoFocar` avisa que já foi mostrado.
+   */
+  emFoco?: string | null;
+  aoFocar?: () => void;
 }) {
   const { currentUser, users } = useFluxo();
   /** A conversa inteira, depois de um "ver mais"; antes disso vale a do feed. */
@@ -114,6 +123,41 @@ export function ComentariosDoPost({
       setCarregando(false);
     }
   };
+
+  /* O comentário do aviso (27/11/2026): se está na tela, rola até ele e
+     acende; se não veio com o feed, busca a conversa inteira primeiro. Se nem
+     assim aparece (foi excluído), fica só o post. */
+  const [focado, setFocado] = useState<string | null>(null);
+  const buscouParaOFoco = useRef(false);
+  useEffect(() => {
+    if (!emFoco) {
+      buscouParaOFoco.current = false;
+      return;
+    }
+    if (!lista.some((c) => mesmoId(c.id, emFoco))) {
+      if (!todos && !buscouParaOFoco.current) {
+        buscouParaOFoco.current = true;
+        void verTodos();
+      } else if (todos && !carregando) aoFocar?.();
+      return;
+    }
+    // Um respiro: o Mural acabou de rolar até o post; o comentário vem por cima.
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`comentario-${emFoco.toUpperCase()}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setFocado(emFoco.toUpperCase());
+      aoFocar?.();
+    }, 450);
+    return () => window.clearTimeout(t);
+    // verTodos/aoFocar mudam a cada desenho; o que importa é o pedido e a lista.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emFoco, lista, todos, carregando]);
+  useEffect(() => {
+    if (!focado) return;
+    const t = window.setTimeout(() => setFocado(null), 2600);
+    return () => window.clearTimeout(t);
+  }, [focado]);
 
   /** Comenta no post (`alvo` null) ou responde a um comentário. */
   const enviar = async (texto: string, alvo: string | null): Promise<boolean> => {
@@ -214,6 +258,7 @@ export function ComentariosDoPost({
       autorDoPost={!post.automatico && c.autorId === post.autorId}
       podeExcluir={c.autorId === currentUser.id || souGerente}
       respondendo={!!respondendo && mesmoId(respondendo.alvo, c.id)}
+      focado={mesmoId(focado, c.id)}
       aoReagir={(e) => void reagir(c, e)}
       aoResponder={() => responder(c)}
       aoExcluir={() => void excluir(c)}
@@ -331,6 +376,7 @@ function ItemDoComentario({
   autorDoPost,
   podeExcluir,
   respondendo,
+  focado,
   aoReagir,
   aoResponder,
   aoExcluir,
@@ -341,6 +387,8 @@ function ItemDoComentario({
   autorDoPost: boolean;
   podeExcluir: boolean;
   respondendo: boolean;
+  /** Acabou de ser aberto por um aviso: acende por uns segundos. */
+  focado: boolean;
   aoReagir: (emoji: string | null) => void;
   aoResponder: () => void;
   aoExcluir: () => void;
@@ -360,7 +408,8 @@ function ItemDoComentario({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.18 }}
-      className="group/coment flex gap-2.5"
+      id={`comentario-${c.id.toUpperCase()}`}
+      className="group/coment flex scroll-mt-24 gap-2.5"
     >
       <UserAvatar
         nome={nome}
@@ -370,9 +419,13 @@ function ItemDoComentario({
       <div className="min-w-0 flex-1">
         <div className="relative inline-block max-w-full">
           <div
-            className={`rounded-2xl rounded-tl-md px-3.5 py-2 shadow-sm ring-1 transition-colors ${
-              meu ? "bg-primary/10 ring-primary/20" : "bg-card ring-border/70"
-            } ${respondendo ? "ring-2 ring-primary/50" : ""}`}
+            className={`rounded-2xl rounded-tl-md px-3.5 py-2 shadow-sm ring-1 transition-all duration-500 ${
+              focado
+                ? "bg-primary/20 ring-2 ring-primary shadow-md"
+                : meu
+                  ? "bg-primary/10 ring-primary/20"
+                  : "bg-card ring-border/70"
+            } ${respondendo && !focado ? "ring-2 ring-primary/50" : ""}`}
           >
             <div className="flex min-w-0 items-center gap-1.5">
               <span

@@ -302,6 +302,8 @@ export function CartaoDoPost({
   aoRemover,
   aoRecarregar,
   destacado = false,
+  comentarioEmFoco = null,
+  aoFocarComentario,
 }: {
   post: PostDoMural;
   destinatarios: number;
@@ -310,6 +312,9 @@ export function CartaoDoPost({
   aoRemover: (id: string) => void;
   aoRecarregar: () => void;
   destacado?: boolean;
+  /** O comentário a mostrar e destacar (veio de um aviso, 27/11/2026). */
+  comentarioEmFoco?: string | null;
+  aoFocarComentario?: () => void;
 }) {
   const { currentUser, users } = useFluxo();
   const autor = users.find((u) => u.id === post.autorId);
@@ -833,7 +838,13 @@ export function CartaoDoPost({
         </div>
 
         {/* Comentários, com Reagir e Responder (27/11/2026) */}
-        <ComentariosDoPost post={post} souGerente={souGerente} aoMudar={aoMudar} />
+        <ComentariosDoPost
+          post={post}
+          souGerente={souGerente}
+          aoMudar={aoMudar}
+          emFoco={comentarioEmFoco}
+          aoFocar={aoFocarComentario}
+        />
       </div>
 
       {verLeituras && (

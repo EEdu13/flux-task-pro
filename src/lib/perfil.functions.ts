@@ -443,6 +443,9 @@ const CHAVES = [
   /* "Abrir o conversor segurando Ctrl", "1" ou "0" (04/11/2026). Ligada por
      padrão: sem linha aqui, vale ligada — ver `conversor/preferencia.ts`. */
   "conversor_ctrl",
+  /* Até quando a pessoa já viu o Mural, ISO (27/11/2026): o menu conta como
+     novos os posts dos outros depois disso — ver `use-novidades-do-mural.ts`. */
+  "mural_visto",
 ] as const;
 type Chave = (typeof CHAVES)[number];
 const chaveValida = (v: unknown): v is Chave =>

@@ -902,19 +902,21 @@ export const publicarNoMural = createServerFn({ method: "POST" })
              INSERT INTO gestor.mural_homenageados (post_id, pessoa_id)
              SELECT @id, CAST(j.value AS INT) FROM OPENJSON(@homenageados) j;
 
-             INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao)
-             SELECT CAST(j.value AS INT), @eu, 'comunicado', N'publicou um comunicado', @trecho
+             /* mural_post_id (27/11/2026): o clique no aviso leva até este post. */
+             INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao, mural_post_id)
+             SELECT CAST(j.value AS INT), @eu, 'comunicado', N'publicou um comunicado', @trecho, @id
                FROM OPENJSON(@todos) j;
 
-             INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao)
+             INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao, mural_post_id)
              SELECT CAST(j.value AS INT), @eu, 'mural', N'te agradeceu no mural',
                     COALESCE(LEFT(NULLIF(@texto, N''), 400),
                              (SELECT LEFT(N'Pela entrega de "' + t.titulo + N'"', 400)
-                                FROM gestor.tarefas t WHERE t.id = @tarefa))
+                                FROM gestor.tarefas t WHERE t.id = @tarefa)),
+                    @id
                FROM OPENJSON(@homenageados) j;
 
-             INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao)
-             SELECT CAST(j.value AS INT), @eu, 'mural', N'te marcou no mural', @trecho
+             INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao, mural_post_id)
+             SELECT CAST(j.value AS INT), @eu, 'mural', N'te marcou no mural', @trecho, @id
                FROM OPENJSON(@marcados) j;
              COMMIT;
              SELECT @id AS id, CAST(NULL AS NVARCHAR(10)) AS erro;`,
@@ -1070,7 +1072,106 @@ export const fixarComunicado = createServerFn({ method: "POST" })
 
 /* -------------------- Reações, comentários, "ciente" -------------------- */
 
-/** Uma reação por pessoa por post: o mesmo emoji tira, outro troca. Não avisa ninguém. */
+/**
+ * O aviso agrupado de reação no mural (27/11/2026). Pedido do usuário: as
+ * reações chegam na caixa de entrada num aviso só — "Eduardo · e mais 3
+ * pessoas reagiram ao seu post no mural" — e o clique leva até o post.
+ *
+ * Quem recebe: o autor do post ou do comentário. Num post automático
+ * (boas-vindas, tempo de casa, conquista), a pessoa homenageada, se for uma só
+ * — a conquista do time inteiro não avisa ninguém. Reagir ao próprio post não
+ * avisa, e tirar a reação também não.
+ *
+ * O grupo é (quem recebe, `grupo`), com `grupo` = "reacao:p:<post>" ou
+ * "reacao:c:<comentário>". Enquanto o aviso do grupo não foi lido, cada reação
+ * nova só o reescreve (quem reagiu por último, quantos são, os emojis) e o
+ * traz para o topo; não aparece um aviso novo nem notificação do Windows de
+ * novo. Depois de lido, a próxima reação abre um aviso novo, que conta só
+ * quem reagiu depois da leitura.
+ *
+ * Nunca derruba a reação: se o aviso falhar, fica só o registro no log.
+ */
+const SQL_AVISO_DE_REACAO = (alvo: "post" | "comentario") => `
+  SET NOCOUNT ON; SET XACT_ABORT ON;
+  DECLARE @d INT, @post UNIQUEIDENTIFIER, @comentario UNIQUEIDENTIFIER = NULL,
+          @trecho NVARCHAR(300), @oque NVARCHAR(60);
+  ${
+    alvo === "post"
+      ? `SELECT @post = p.id,
+                @trecho = LEFT(COALESCE(NULLIF(p.titulo, N''), p.texto), 300),
+                @oque = CASE WHEN p.automatico = 1 THEN N'ao post sobre você no mural'
+                             ELSE N'ao seu post no mural' END,
+                @d = CASE WHEN p.automatico = 0 THEN p.autor_id
+                          ELSE (SELECT CASE WHEN COUNT(*) = 1 THEN MIN(h.pessoa_id) END
+                                  FROM gestor.mural_homenageados h WHERE h.post_id = p.id) END
+           FROM gestor.mural_posts p
+          WHERE p.id = @alvo AND p.excluido_em IS NULL;`
+      : `SELECT @post = c.post_id, @comentario = c.id, @d = c.autor_id,
+                @trecho = LEFT(c.texto, 300),
+                @oque = CASE WHEN c.resposta_de IS NULL THEN N'ao seu comentário no mural'
+                             ELSE N'à sua resposta no mural' END
+           FROM gestor.mural_comentarios c
+           JOIN gestor.mural_posts p ON p.id = c.post_id AND p.excluido_em IS NULL
+          WHERE c.id = @alvo AND c.excluido_em IS NULL;`
+  }
+  IF @d IS NULL OR @d = @eu RETURN;
+
+  -- Conta quem reagiu depois do último aviso deste grupo que a pessoa já leu.
+  DECLARE @desde DATETIMEOFFSET(3) =
+    (SELECT MAX(n.em) FROM gestor.notificacoes n
+      WHERE n.grupo = @grupo AND n.destinatario_id = @d AND n.lida = 1);
+  DECLARE @reacoes TABLE (emoji NVARCHAR(16));
+  INSERT INTO @reacoes (emoji)
+  ${
+    alvo === "post"
+      ? `SELECT r.emoji FROM gestor.mural_reacoes r WHERE r.post_id = @post`
+      : `SELECT r.emoji FROM gestor.mural_comentario_reacoes r WHERE r.comentario_id = @comentario`
+  }
+     AND r.pessoa_id <> @d AND (@desde IS NULL OR r.em > @desde);
+  DECLARE @n INT = (SELECT COUNT(*) FROM @reacoes);
+  IF @n = 0 RETURN;
+  DECLARE @emojis NVARCHAR(100) =
+    (SELECT STRING_AGG(e.emoji, N'') FROM (SELECT DISTINCT TOP (5) emoji FROM @reacoes) e);
+
+  DECLARE @titulo NVARCHAR(160) = CASE
+    WHEN @n = 1 THEN CONCAT(N'reagiu ', @oque)
+    WHEN @n = 2 THEN CONCAT(N'e mais 1 pessoa reagiram ', @oque)
+    ELSE CONCAT(N'e mais ', @n - 1, N' pessoas reagiram ', @oque) END;
+  DECLARE @desc NVARCHAR(400) =
+    LEFT(CONCAT(@emojis, CASE WHEN ISNULL(@trecho, N'') <> N'' THEN CONCAT(N' · ', @trecho) ELSE N'' END), 400);
+
+  BEGIN TRAN;
+    -- A trava impede duas reações ao mesmo tempo de abrirem dois avisos.
+    IF EXISTS (SELECT 1 FROM gestor.notificacoes WITH (UPDLOCK, HOLDLOCK)
+                WHERE grupo = @grupo AND destinatario_id = @d AND lida = 0)
+      UPDATE gestor.notificacoes
+         SET de_pessoa_id = @eu, titulo = @titulo, descricao = @desc, em = SYSDATETIMEOFFSET()
+       WHERE grupo = @grupo AND destinatario_id = @d AND lida = 0;
+    ELSE
+      INSERT INTO gestor.notificacoes
+             (destinatario_id, de_pessoa_id, tipo, titulo, descricao, mural_post_id, mural_comentario_id, grupo)
+      VALUES (@d, @eu, 'mural', @titulo, @desc, @post, @comentario, @grupo);
+  COMMIT;`;
+
+async function avisarReacao(eu: number, alvo: "post" | "comentario", id: string): Promise<void> {
+  try {
+    const { getPool, sql } = await import("@/integrations/db.server");
+    const pool = await getPool();
+    await pool
+      .request()
+      .input("alvo", sql.UniqueIdentifier, id)
+      .input("eu", sql.Int, eu)
+      .input("grupo", sql.NVarChar(80), `reacao:${alvo === "post" ? "p" : "c"}:${id.toUpperCase()}`)
+      .query(SQL_AVISO_DE_REACAO(alvo));
+  } catch (e) {
+    console.warn("[mural] aviso de reação:", (e as Error)?.message);
+  }
+}
+
+/**
+ * Uma reação por pessoa por post: o mesmo emoji tira, outro troca. Desde
+ * 27/11/2026 o dono do post recebe o aviso agrupado (ver `avisarReacao`).
+ */
 export const reagirNoPost = createServerFn({ method: "POST" })
   .validator(
     semIdentidade((e: { postId: string; emoji: string | null }) => {
@@ -1104,6 +1205,7 @@ export const reagirNoPost = createServerFn({ method: "POST" })
           : req.query(`DELETE FROM gestor.mural_reacoes WHERE post_id = @p AND pessoa_id = @eu`),
       );
       await esquecerFeed();
+      if (d.emoji) await avisarReacao(eu, "post", d.postId);
       return { ok: true };
     }),
   );
@@ -1178,9 +1280,11 @@ export const comentarNoPost = createServerFn({ method: "POST" })
                   -- Freio: 20 comentários por minuto por pessoa.
                   AND (SELECT COUNT(*) FROM gestor.mural_comentarios
                         WHERE autor_id = @eu AND criado_em > DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())) < 20;
+               -- O aviso leva até o post e o comentário (27/11/2026).
                IF EXISTS (SELECT 1 FROM @novo)
-                 INSERT INTO gestor.notificacoes (destinatario_id, de_pessoa_id, tipo, titulo, descricao)
-                 SELECT CAST(j.value AS INT), @eu, 'mural', @titulo, @trecho
+                 INSERT INTO gestor.notificacoes
+                        (destinatario_id, de_pessoa_id, tipo, titulo, descricao, mural_post_id, mural_comentario_id)
+                 SELECT CAST(j.value AS INT), @eu, 'mural', @titulo, @trecho, @p, (SELECT TOP 1 id FROM @novo)
                    FROM OPENJSON(@marcados) j;
                SELECT id, criado_em, @raiz AS resposta_de FROM @novo;`,
             ),
@@ -1209,7 +1313,8 @@ export const comentarNoPost = createServerFn({ method: "POST" })
 
 /**
  * Reage num comentário (27/11/2026), igual ao post: uma reação por pessoa, o
- * mesmo emoji tira (a tela manda `null`), outro troca. Não avisa ninguém.
+ * mesmo emoji tira (a tela manda `null`), outro troca. Quem escreveu o
+ * comentário recebe o aviso agrupado (ver `avisarReacao`).
  */
 export const reagirNoComentario = createServerFn({ method: "POST" })
   .validator(
@@ -1247,6 +1352,7 @@ export const reagirNoComentario = createServerFn({ method: "POST" })
             ),
       );
       await esquecerFeed();
+      if (d.emoji) await avisarReacao(eu, "comentario", d.comentarioId);
       return { ok: true };
     }),
   );
@@ -1586,3 +1692,50 @@ export const salvarMeuAniversario = createServerFn({ method: "POST" })
       return { ok: true };
     }),
   );
+
+/* -------------------- Novidades para o menu (27/11/2026) -------------------- */
+
+/** Um post recente, só o necessário para o menu contar o que é novo. */
+export type RecenteDoMural = { id: string; em: string; autorId: string };
+
+/**
+ * Os posts mais recentes do feed (até 30, dos últimos 14 dias), para o menu
+ * lateral mostrar quantos são novos para quem pergunta. Pedido do usuário:
+ * "um indicador de atividade no Mural para indicar novas postagens para
+ * motivar o pessoal a visualizar ele".
+ *
+ * A lista é a mesma para todo mundo: fica guardada 1 minuto para todos
+ * (`compartilhado`) e é esquecida a cada gravação no mural — o banco é lido no
+ * máximo uma vez por minuto por servidor, e não uma vez por pessoa. O "até
+ * onde eu já vi" de cada um fica na preferência `mural_visto`, e a conta é
+ * feita na tela. Os comunicados fixados ficam de fora: já têm a faixa do
+ * Início e o aviso na sineta.
+ */
+export const recentesDoMural = createServerFn({ method: "POST" }).handler(
+  comSessaoSemEntrada(async (): Promise<{ recentes: RecenteDoMural[] }> => {
+    const { compartilhado } = await import("@/lib/cache-compartilhado.server");
+    const { CHAVE_RECENTES, ehMuralInativo } = await import("@/lib/mural.server");
+    try {
+      const recentes = await compartilhado(CHAVE_RECENTES, 60_000, async () => {
+        const { getPool } = await import("@/integrations/db.server");
+        const pool = await getPool();
+        const r = await pool.request().query(
+          `SELECT TOP 30 p.id, p.autor_id, p.criado_em
+             FROM gestor.mural_posts p
+            WHERE p.excluido_em IS NULL AND p.fixado_em IS NULL
+              AND p.criado_em >= DATEADD(DAY, -14, SYSDATETIMEOFFSET())
+            ORDER BY p.criado_em DESC, p.id DESC`,
+        );
+        return (r.recordset as { id: string; autor_id: number; criado_em: Date }[]).map((l) => ({
+          id: l.id,
+          em: l.criado_em.toISOString(),
+          autorId: String(l.autor_id),
+        }));
+      });
+      return { recentes };
+    } catch (e) {
+      if (ehMuralInativo(e)) return { recentes: [] };
+      throw e;
+    }
+  }),
+);

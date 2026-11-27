@@ -15,3 +15,21 @@ export function tituloDoAviso(n: Notification, users: User[]): string {
   const nome = n.fromUserId ? users.find((u) => u.id === n.fromUserId)?.name : undefined;
   return nome ? `${nome} · ${n.title}` : n.title;
 }
+
+/**
+ * Para onde vai o clique num aviso do Mural (27/11/2026): direto no post, e no
+ * comentário quando o aviso é de um. Aviso antigo, sem post gravado, abre o
+ * Mural no topo como antes. Um lugar só, para a sineta e a caixa de entrada
+ * levarem ao mesmo ponto.
+ */
+export function rumoDoAvisoDoMural(n: Notification) {
+  return {
+    to: "/mural" as const,
+    search: n.muralPostId
+      ? {
+          post: n.muralPostId,
+          ...(n.muralComentarioId ? { comentario: n.muralComentarioId } : {}),
+        }
+      : {},
+  };
+}

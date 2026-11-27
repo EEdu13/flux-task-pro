@@ -54,6 +54,9 @@ export type NotificacaoDoBanco = {
   projectId?: string;
   /** Aviso da agenda travada (14/10/2026): qual compromisso. Ver `paraApp`. */
   compromissoId?: string;
+  /** Aviso do Mural (27/11/2026): o post (e o comentário) que o clique abre. */
+  muralPostId?: string;
+  muralComentarioId?: string;
 };
 
 const TIPOS = [
@@ -103,6 +106,8 @@ type LinhaNotificacao = {
   sala: string | null;
   titulo_da_sala: string | null;
   projeto_id: string | null;
+  mural_post_id: string | null;
+  mural_comentario_id: string | null;
   lida: boolean;
   em: Date;
 };
@@ -126,6 +131,8 @@ function paraApp(n: LinhaNotificacao): NotificacaoDoBanco {
        do compromisso — ver `entregarAlertasDeCompromisso`. */
     projectId: n.tipo === "compromisso" ? undefined : (n.projeto_id ?? undefined),
     compromissoId: n.tipo === "compromisso" ? (n.projeto_id ?? undefined) : undefined,
+    muralPostId: n.mural_post_id ?? undefined,
+    muralComentarioId: n.mural_comentario_id ?? undefined,
   };
 }
 
@@ -208,7 +215,8 @@ export const listarNotificacoes = createServerFn({ method: "POST" }).handler(
       .input("eu", sql.Int, eu)
       .query(
         `SELECT TOP (200) id, destinatario_id, de_pessoa_id, tipo, titulo, descricao,
-                tarefa_id, sala, titulo_da_sala, projeto_id, lida, em
+                tarefa_id, sala, titulo_da_sala, projeto_id, mural_post_id, mural_comentario_id,
+                lida, em
            FROM gestor.notificacoes
           WHERE destinatario_id=@eu
           ORDER BY em DESC`,

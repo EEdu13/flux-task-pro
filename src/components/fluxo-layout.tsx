@@ -44,7 +44,7 @@ import { useSouDonoDasRecompensas } from "@/lib/use-recompensas";
 import { useFluxo } from "@/lib/fluxo-store";
 import { useChat } from "@/lib/chat-store";
 import { roleLabels, type Notification as Aviso } from "@/lib/fluxo-types";
-import { tituloDoAviso } from "@/lib/aviso";
+import { rumoDoAvisoDoMural, tituloDoAviso } from "@/lib/aviso";
 import { avisarNoSistema } from "@/lib/aviso-do-sistema";
 import { formatRelative, useTheme } from "@/lib/use-theme";
 import { InlineTaskCreator } from "@/components/inline-task-creator";
@@ -62,6 +62,17 @@ import { useCallInviter } from "@/lib/call-inviter-context";
 import { abrirConversor } from "@/components/conversor/abrir";
 import { CONVERSOR_ABERTO } from "@/lib/estrutura-liberada";
 import { useTemEstrutura } from "@/lib/estrutura-cliente";
+import { useNovidadesDoMural } from "@/lib/use-novidades-do-mural";
+
+/** O brilho pulsando atrás do número de novidades do Mural (27/11/2026). */
+function BrilhoDeNovidade() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-full bg-sidebar-primary opacity-70 motion-safe:animate-ping motion-safe:[animation-duration:2.2s]"
+    />
+  );
+}
 
 const nav: { to: string; label: string; icon: typeof Home }[] = [
   { to: "/", label: "Início", icon: Home },
@@ -136,6 +147,12 @@ export function FluxoLayout({
   const { theme, toggle } = useTheme();
   const { naoLidasFora: chatNaoLidas } = useChat();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+  /* Posts novos no Mural desde a última visita (27/11/2026): o número no item
+     do menu, para chamar o pessoal a ver. Abrir o Mural zera. */
+  const novidadesDoMural = useNovidadesDoMural(
+    isAuthenticated ? currentUser.id : "",
+    pathname === "/mural",
+  );
   const navigate = useNavigate();
   const { ask: askInvite } = useCallInviter();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -369,8 +386,8 @@ export function FluxoLayout({
     if (n.type === "projeto") {
       navigate({ to: "/projetos", search: n.projectId ? { projeto: n.projectId } : {} });
     }
-    // Comunicado e marcação no Mural (14/10/2026).
-    if (n.type === "comunicado" || n.type === "mural") navigate({ to: "/mural" });
+    // Comunicado e marcação no Mural (14/10/2026); desde 27/11/2026, direto no post.
+    if (n.type === "comunicado" || n.type === "mural") navigate(rumoDoAvisoDoMural(n));
   };
 
   const acoesRef = useRef({
@@ -697,6 +714,21 @@ export function FluxoLayout({
                 ? unread
                 : n.to === "/chat"
                 ? chatNaoLidas
+                : n.to === "/mural"
+                ? novidadesDoMural
+                : undefined;
+            /* O do Mural é convite, não pendência: nunca fica vermelho, mostra
+               "9+" acima de 9 e tem um brilho pulsando para chamar o olho. */
+            const ehNovidade = n.to === "/mural";
+            const textoDoBadge = ehNovidade && badge && badge > 9 ? "9+" : badge;
+            const corDoBadge =
+              atrasadasMinhas && !ehNovidade
+                ? "bg-destructive text-destructive-foreground"
+                : "bg-sidebar-primary text-sidebar-primary-foreground";
+            const tituloDoBadge = ehNovidade
+              ? `${badge} ${badge === 1 ? "post novo" : "posts novos"} no Mural`
+              : atrasadasMinhas
+                ? `${atrasadasMinhas} tarefa(s) atrasada(s)`
                 : undefined;
             return (
               <Link
@@ -732,13 +764,11 @@ export function FluxoLayout({
                   <n.icon className="h-4 w-4" />
                   {collapsed && badge ? (
                     <span
-                      className={`absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold ${
-                        atrasadasMinhas
-                          ? "bg-destructive text-destructive-foreground"
-                          : "bg-sidebar-primary text-sidebar-primary-foreground"
-                      }`}
+                      title={tituloDoBadge}
+                      className={`absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold ${corDoBadge}`}
                     >
-                      {badge}
+                      {ehNovidade && <BrilhoDeNovidade />}
+                      <span className="relative">{textoDoBadge}</span>
                     </span>
                   ) : null}
                 </span>
@@ -750,14 +780,11 @@ export function FluxoLayout({
                     <span className="relative min-w-0 flex-1 truncate">{n.label}</span>
                     {badge ? (
                       <span
-                        title={atrasadasMinhas ? `${atrasadasMinhas} tarefa(s) atrasada(s)` : undefined}
-                        className={`relative ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                          atrasadasMinhas
-                            ? "bg-destructive text-destructive-foreground"
-                            : "bg-sidebar-primary text-sidebar-primary-foreground"
-                        }`}
+                        title={tituloDoBadge}
+                        className={`relative ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${corDoBadge}`}
                       >
-                        {badge}
+                        {ehNovidade && <BrilhoDeNovidade />}
+                        <span className="relative">{textoDoBadge}</span>
                       </span>
                     ) : null}
                   </>
